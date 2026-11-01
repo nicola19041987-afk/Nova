@@ -14,6 +14,7 @@ App.boot = async function () {
   App.chat.renderList();
   App.media.load().catch(() => {}); App.feed.load().catch(() => {});
   App.applyAdult();
+  App.motionStyle = window.Motion ? new Motion.Style(App.ls) : null; App.applyStyle();
   $('#tab-conv').classList.toggle('compact', !!App.ls.get('avatarCompact', false));
   App.sync();
   App.autoChanges();
@@ -22,6 +23,12 @@ App.boot = async function () {
 App.applyAdult = function () {
   App.me.adult = !!(App.me.activated && App.settings.adultMode);
   [App.avatarConv, App.avatarEditor, App.avatarPresence].forEach((a) => { if (a) a.sensual = App.me.adult; });
+};
+
+// Stile di movimento appreso (solo locale, per profilo): rende più naturale l'imitazione e il comportamento a riposo
+App.applyStyle = function () {
+  if (!App.motionStyle) return; const p = App.motionStyle.profile();
+  [App.avatarConv, App.avatarEditor, App.avatarPresence].forEach((a) => a && a.setStyle(p));
 };
 
 // Cambi automatici: al primo avvio del giorno (o secondo la frequenza scelta), piccole variazioni plausibili

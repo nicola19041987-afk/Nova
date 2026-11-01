@@ -26,6 +26,9 @@ App.account = {
     $('#notes-input').value = notes.text || ''; $('#notes-ai').checked = !!notes.toAI;
     // modalità adulti (per utente, solo dopo il consenso vocale)
     $('#set-adult').checked = !!App.settings.adultMode; $('#set-adult').disabled = !App.me.activated;
+    $('#set-drawer').checked = !!App.settings.drawerScene;
+    const kw = await App.api('/api/adult-keyword'); App.kwSet = kw.set;
+    $('#kw-input').value = ''; $('#kw-input').placeholder = kw.set ? '•••••• (impostata: scrivi per cambiarla)' : 'vuoto = funzione spenta';
     $('#adult-info').textContent = App.me.activated ? (App.settings.adultMode ? 'Attiva per te. Nella chat condivisa vale solo se l\'avete attivata entrambi.' : 'Disattivata.') : 'Disponibile solo dopo il consenso vocale.';
     this.renderConsent();
   },
@@ -68,7 +71,7 @@ $('#key-save').addEventListener('click', () => {
 $('#key-clear').addEventListener('click', () => { App.ls.del('key'); $('#key-input').value = ''; App.account.load(); });
 
 async function saveSettings() {
-  App.settings = await App.api('/api/settings', { method: 'PUT', body: { ...App.settings, adultMode: $('#set-adult').checked, autoSave: $('#set-autosave').checked, allowExport: $('#set-export').checked, videoModel: $('#set-video-model').value.trim(), videoDuration: Number($('#set-video-duration').value) } });
+  App.settings = await App.api('/api/settings', { method: 'PUT', body: { ...App.settings, adultMode: $('#set-adult').checked, drawerScene: $('#set-drawer').checked, autoSave: $('#set-autosave').checked, allowExport: $('#set-export').checked, videoModel: $('#set-video-model').value.trim(), videoDuration: Number($('#set-video-duration').value) } });
   App.ls.set('settings', App.settings); App.media && App.media.renderAll(); App.feed && App.feed.render();
 }
 $('#set-autosave').addEventListener('change', saveSettings);
@@ -83,6 +86,7 @@ $('#set-learn-gestures').addEventListener('change', (e) => {
   $('#learn-gestures-info').textContent = e.target.checked ? (App.ls.get('camOn', false) ? 'Attivo: apri una chat e tocca 📷 Presenza. Tutto sul telefono, nessun video inviato.' : 'Attiva anche "Usa la fotocamera" qui sopra, poi apri 📷 Presenza in chat.') : 'Disattivato.';
 });
 $('#set-mirror-moves').addEventListener('change', (e) => { App.ls.set('mirrorMoves', e.target.checked); });
+$('#motion-style-reset').addEventListener('click', () => { if (!App.motionStyle) return; App.motionStyle.reset(); App.applyStyle(); App.toast('Stile di movimento dimenticato (solo su questo telefono)'); });
 
 $('#rules-save').addEventListener('click', async () => {
   const r = await App.api('/api/rules', { method: 'PUT', body: { text: $('#rules-input').value } });
@@ -134,4 +138,12 @@ $('#set-adult').addEventListener('change', async (e) => {
   if (e.target.checked && !confirm('Attivare la modalità adulti (18+)? Contenuti espliciti solo tra adulti consenzienti e con personaggi inventati adulti (25+). Puoi disattivarla quando vuoi.')) { e.target.checked = false; return; }
   try { await saveSettings(); App.applyAdult && App.applyAdult(); App.account.load(); }
   catch (err) { e.target.checked = false; App.toast(err.message); }
+});
+
+$('#set-drawer').addEventListener('change', async () => { await saveSettings(); App.applyScene && App.applyScene(); });
+$('#kw-save').addEventListener('click', async () => {
+  const v = $('#kw-input').value;
+  if (!v.trim() && App.kwSet && !confirm('Togliere la parola chiave?')) return;
+  try { const r = await App.api('/api/adult-keyword', { method: 'PUT', body: { keyword: v } }); App.kwSet = r.set; $('#kw-input').value = ''; App.toast(r.set ? '🔑 Parola chiave salvata (cifrata)' : 'Parola chiave rimossa'); App.account.load(); }
+  catch (e) { App.toast(e.message); }
 });

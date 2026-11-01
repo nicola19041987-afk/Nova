@@ -38,6 +38,14 @@
       on = true; setBtn(); status('🎙️ In ascolto…'); try { rec.start(); } catch {}
     },
     ttsOn: () => ttsOn,
+    // Frase detta dall'avatar anche con la lettura spenta (es. domanda di conferma)
+    sayNow(text) {
+      if (!window.speechSynthesis) return;
+      const u = new SpeechSynthesisUtterance(text); u.lang = 'it-IT';
+      const v = speechSynthesis.getVoices().filter((x) => x.lang && x.lang.toLowerCase().startsWith('it'));
+      if (v.length) u.voice = v.find((x) => /female|donna|alice|elsa|federica|paola/i.test(x.name)) || v[0];
+      App.avatarConv.speakUtterance(u, text); speechSynthesis.cancel(); speechSynthesis.speak(u);
+    },
     stop() { on = false; setBtn(); status(''); if (rec) try { rec.stop(); } catch {} },
     speak(text) {
       if (!ttsOn || !window.speechSynthesis) return;

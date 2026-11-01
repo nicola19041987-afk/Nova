@@ -207,6 +207,12 @@
     try { store(await App.api(`/api/characters/${E.id}/revert/${b.dataset.revert}`, { method: 'POST' })); App.toast('↩️ Look ripristinato'); }
     catch (err) { App.toast(err.message); }
   });
+  $('#mem-base-btn').addEventListener('click', async () => {
+    if (!E.id) return App.toast('Salva prima il personaggio');
+    if (!confirm(`Rigenerare la memoria base di ${E.name} dai campi attuali? I ricordi "base" precedenti di questo personaggio vengono sostituiti (gli altri restano).`)) return;
+    try { if (dirty) await save(); const r = await App.api(`/api/characters/${E.id}/memory-base`, { method: 'POST', body: {} }); await App.account.loadMemory(); App.toast(`🧠 Memoria base: ${r.added.length} elementi (modificabili in Account)`); }
+    catch (err) { App.toast(err.message); }
+  });
   $('#state-reset').addEventListener('click', async () => {
     if (!E.id || !confirm('Azzerare umore, relazione e rancori?')) return;
     try { await save({ resetState: true }); } catch {}

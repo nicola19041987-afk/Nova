@@ -27,6 +27,7 @@
     return kf;
   }
 
+  const ease = (t) => { t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t); }; // smoothstep
   class TalkingAvatar {
     constructor(canvas) {
       this.c = canvas; this.ctx = canvas.getContext('2d', { willReadFrequently: true });
@@ -43,6 +44,17 @@
       this.m = { tilt: 0, pitch: 0, yaw: 0, lift: [0, 0], energy: 0 }; // valori smorzati usati nel disegno
       this.swayPeriod = 6500; this.rhythm = null; // { period, strength }
       this.sensual = false;
+      // Imitazione naturale: coda dei campioni (ritardo 300–800 ms), ampiezza parziale, molle smorzate; stile appreso dell'utente
+      this.mirQ = []; this.lag = 550; this.lagTarget = 550; this.nextLagAt = 0; this.gain = 0.5;
+      this.vel = { tilt: 0, pitch: 0, yaw: 0, l0: 0, l1: 0, gesture: 0 };
+      this.style = { energy: 0.22, headAmp: 0.22, tempo: 1300, gestPerMin: 1.5, confidence: 0 };
+      // microespressioni: sopracciglia, sguardo (saccadi), sorrisi accennati, ammiccamenti variabili, sguardi a riposo
+      this.micro = { brow: 0, browT: 0, browUntil: 0, nextBrow: performance.now() + 4000,
+        gx: 0, gy: 0, gtx: 0, gty: 0, nextSacc: performance.now() + 900,
+        smile: 0, smileT: 0, smileUntil: 0, nextSmile: performance.now() + 7000,
+        look: 0, lookT: 0, nextLook: performance.now() + 5000, idleLift: 0, idleLiftT: 0, nextIdleLift: performance.now() + 9000 };
+      this.blinkDur = 160; this.blinkAmp = 1; this.blinkDouble = 0;
+      this.scene = { nightstand: false, drawerOpen: false }; this.drawerAmt = 0; this.drawerAnim = 0; // comodino (solo disegno, nessuna immagine)
       this.loop = this.loop.bind(this);
       this._frame = 0; this.simUntil = 0;
       this.resize();
@@ -96,10 +108,23 @@
       if (this.badges.length > 4) this.badges.shift();
     }
     // ---- imitazione: valori normalizzati (-1..1) da volto/mani/corpo dell'utente ----
-    setMirror(v) { Object.assign(this.mir, v, { active: true, at: performance.now() }); }
-    clearMirror() { this.mir.active = false; }
+    setMirror(v) {
+      const now = performance.now();
+      this.mirQ.push({ t: now, v: { tilt: v.tilt || 0, pitch: v.pitch || 0, yaw: v.yaw || 0, lift: [(v.lift || [0, 0])[0] || 0, (v.lift || [0, 0])[1] || 0], energy: v.energy || 0 } });
+      while (this.mirQ.length > 2 && this.mirQ[1].t < now - 1200) this.mirQ.shift();
+      this.mir.active = true; this.mir.at = now;
+    }
+    clearMirror() { this.mir.active = false; this.mirQ = []; }
+    // stile di movimento appreso (Motion.Style.profile()): influenza anche il comportamento a riposo, senza fotocamera
+    setStyle(p) { if (!p) return; const c = (v, a, b, d) => (Number.isFinite(v) ? Math.max(a, Math.min(b, v)) : d); this.style = { energy: c(p.energy, 0, 1, 0.22), headAmp: c(p.headAmp, 0, 1, 0.22), tempo: c(p.tempo, 330, 2400, 1300), gestPerMin: c(p.gestPerMin, 0, 20, 1.5), confidence: c(p.confidence, 0, 1, 0) }; }
+    // stato interno per diagnostica/test
+    debugState() { return { lag: Math.round(this.lag), gain: +this.gain.toFixed(3), m: { ...this.m, lift: [...this.m.lift] }, brow: +this.micro.brow.toFixed(3), gaze: [+this.micro.gx.toFixed(3), +this.micro.gy.toFixed(3)], smile: +this.micro.smile.toFixed(3), look: +this.micro.look.toFixed(3), blinkDur: Math.round(this.blinkDur), blinkAmp: this.blinkAmp, style: { ...this.style }, swayPeriod: Math.round(this.swayPeriod) }; }
     // ---- ritmo: periodo (ms) stimato dai movimenti dell'utente; l'oscillazione a riposo si sincronizza ----
     setRhythm(period, strength) { this.rhythm = period ? { period: Math.min(2400, Math.max(330, period)), strength: Math.min(1, strength || 0.5) } : null; }
+    // ---- scena: comodino con cassetto (disegnato sul canvas) ----
+    setScene(sc) { this.scene = { ...this.scene, ...sc }; }
+    // Lei si gira verso il comodino e apre il cassetto (animazione ~3 s); senza animazione resta solo aperto
+    openDrawer(animate) { if (!this.scene.nightstand) return; this.scene.drawerOpen = true; if (animate) this.drawerAnim = performance.now(); }
     setLandmarks(lm) { this.lm = JSON.parse(JSON.stringify(lm)); this.sampleLids(); }
     setColors(c) { this.colors = { ...this.colors, ...c }; if (!this.transparent) this.c.style.background = this.colors.background; }
 
@@ -178,23 +203,46 @@
       const dt = Math.min(100, now - (this._last || now)); this._last = now;
       // ritmo: se l'utente si muove a tempo, l'oscillazione segue il suo periodo (fase continua, niente scatti)
       const sens = this.sensual;
-      const targetPeriod = this.rhythm ? this.rhythm.period * 2 : sens ? 8000 : 6500;
+      const ST = this.style, learned = ST.confidence;
+      // a riposo l'oscillazione segue (in parte) il tempo appreso dell'utente, anche a fotocamera spenta
+      const idlePeriod = (sens ? 8000 : 6500) * (1 - learned * 0.5) + ST.tempo * 3 * learned * 0.5;
+      const targetPeriod = this.rhythm ? this.rhythm.period * 2 : idlePeriod;
       this.swayPeriod += (targetPeriod - this.swayPeriod) * 0.02;
       this._ph = ((this._ph || 0) + dt / this.swayPeriod) % 1;
-      const rAmp = this.rhythm ? 0.028 + this.rhythm.strength * 0.02 : sens ? 0.034 : 0.028;
+      const styleAmp = 0.75 + ST.headAmp * 0.9 + ST.energy * 0.35; // chi si muove di più → lei un po' più mobile
+      const rAmp = (this.rhythm ? 0.028 + this.rhythm.strength * 0.02 : sens ? 0.034 : 0.028) * (this.rhythm ? 1 : styleAmp);
       const breath = Math.sin(now / (sens ? 5200 : 4000) * Math.PI * 2) * (sens ? 1.4 : 1);
       let sway = Math.sin(this._ph * Math.PI * 2) * rAmp + Math.sin(now / 2300) * 0.009;
       let bob = this.rhythm ? Math.abs(Math.sin(this._ph * Math.PI * 2)) * this.rhythm.strength * S * 0.008 : 0;
       const talkNod = this.mouth * 0.02 + (this.speaking ? Math.sin(now / 330) * 0.008 : 0);
-      // imitazione dei movimenti (smorzata; si spegne da sola se i dati non arrivano da 1,5 s)
-      const mirOn = this.mir.active && now - this.mir.at < 1500;
-      const k = 0.18, M = this.m, R = this.mir;
-      M.tilt += ((mirOn ? R.tilt : 0) - M.tilt) * k; M.pitch += ((mirOn ? R.pitch : 0) - M.pitch) * k; M.yaw += ((mirOn ? R.yaw : 0) - M.yaw) * k;
-      M.lift[0] += ((mirOn ? R.lift[0] : 0) - M.lift[0]) * k; M.lift[1] += ((mirOn ? R.lift[1] : 0) - M.lift[1]) * k;
-      M.energy += ((mirOn ? R.energy : 0) - M.energy) * 0.08;
+      // imitazione naturale: legge il campione di 300–800 ms fa (ritardo che varia), ne prende solo una parte (35–65%)
+      // e ci arriva con molle smorzate (movimenti morbidi). Si spegne da sola se i dati non arrivano da ~1,5 s.
+      if (now > this.nextLagAt) { this.lagTarget = 300 + (1 - ST.energy) * 380 + Math.random() * 120; this.nextLagAt = now + 2500 + Math.random() * 3000; }
+      this.lag += (this.lagTarget - this.lag) * Math.min(1, dt / 900);
+      this.gain = 0.5 + Math.sin(now / 7300) * 0.1 + Math.sin(now / 3100 + 1) * 0.05;
+      const mirOn = this.mir.active && now - this.mir.at < 1500 + this.lag;
+      let R = null;
+      if (mirOn) { const tt = now - this.lag; for (let i = this.mirQ.length - 1; i >= 0; i--) if (this.mirQ[i].t <= tt) { R = this.mirQ[i].v; break; } }
+      const M = this.m, V = this.vel, g = this.gain, sdt = dt / 1000;
+      const spring = (cur, tgt, key, K) => { const D = 2 * Math.sqrt(K) * 0.95; V[key] += ((tgt - cur) * K - V[key] * D) * sdt; return cur + V[key] * sdt; };
+      // a riposo: ogni tanto lei guarda altrove (girata e inclinazione leggere, ampiezza secondo lo stile appreso)
+      const mc = this.micro;
+      if (now > mc.nextLook) { mc.lookT = Math.random() < 0.45 ? 0 : (Math.random() * 2 - 1) * (0.25 + ST.headAmp); mc.nextLook = now + 2500 + Math.random() * 5000 * (1.2 - ST.energy); }
+      mc.look += (mc.lookT - mc.look) * Math.min(1, dt / 600);
+      const idle = R ? 0.25 : 1;
+      const tgtTilt = (R ? R.tilt * g : 0) + mc.look * 0.25 * idle, tgtYaw = (R ? R.yaw * g : 0) + mc.look * 0.6 * idle, tgtPitch = R ? R.pitch * g : 0;
+      M.tilt = spring(M.tilt, tgtTilt, 'tilt', 26); M.yaw = spring(M.yaw, tgtYaw, 'yaw', 22); M.pitch = spring(M.pitch, tgtPitch, 'pitch', 26);
+      // piccole alzate di braccio a riposo, più frequenti per chi gesticola di più (solo mezzo busto / figura intera)
+      if (now > mc.nextIdleLift) { mc.idleLiftT = Math.random() * (0.15 + ST.energy * 0.35); mc.nextIdleLift = now + (mc.idleLiftT > 0.05 ? 1600 : 0) + 60000 / Math.max(1, ST.gestPerMin + 2) * (0.6 + Math.random()); setTimeout(() => { mc.idleLiftT = 0; }, 1400 + Math.random() * 900); }
+      M.lift[0] = Math.max(0, spring(M.lift[0], R ? R.lift[0] * (g + 0.1) : 0, 'l0', 18));
+      M.lift[1] = Math.max(0, spring(M.lift[1], R ? R.lift[1] * (g + 0.1) : mc.idleLiftT * (R ? 0 : 1), 'l1', 18));
+      M.energy += ((R ? R.energy * g : ST.energy * 0.12 * learned) - M.energy) * Math.min(1, dt / 500);
       sway += M.tilt * 0.12;
       bob += M.pitch * S * 0.02 + breath * S * 0.004;
-      const shiftX = M.yaw * S * 0.025;
+      // girata verso il comodino durante l'animazione del cassetto
+      let turn = 0;
+      if (this.drawerAnim) { const t = now - this.drawerAnim; if (t > 3400) this.drawerAnim = 0; else turn = ease(t < 1000 ? t / 1000 : t < 2300 ? 1 : 1 - (t - 2300) / 1100); }
+      const shiftX = M.yaw * S * 0.025 - turn * S * 0.05;
       // reazione in corso
       let rx = 0, ry = 0, rRot = 0, smile = sens ? 0.25 : 0, wave = 0;
       const re = this.reaction;
@@ -202,7 +250,7 @@
         const p = (now - re.start) / re.dur;
         if (p >= 1) this.reaction = null;
         else {
-          const env = Math.sin(Math.min(1, p) * Math.PI);
+          const env = p < 0.3 ? ease(p / 0.3) : p > 0.65 ? ease((1 - p) / 0.35) : 1; // attacco e rilascio morbidi
           if (re.kind === 'nod') ry = Math.sin(p * Math.PI * 4) * S * 0.014 * env;
           if (re.kind === 'shake') rx = Math.sin(p * Math.PI * 6) * S * 0.012 * env;
           if (re.kind === 'tilt') rRot = 0.07 * env;
@@ -211,10 +259,29 @@
         }
       }
       // battito di ciglia (in modalità sensuale: più lento, palpebre un po' abbassate)
-      if (now > this.nextBlink) { this.blinkStart = now; this.nextBlink = now + (sens ? 3500 : 2500) + Math.random() * 4000; }
-      const bt = (now - this.blinkStart) / (sens ? 320 : 160); let blink = bt < 1 ? Math.sin(bt * Math.PI) : 0;
+      // ammiccamenti variabili: durata 120–240 ms, a volte doppi o a metà; più frequenti mentre parla
+      if (now > this.nextBlink) {
+        this.blinkStart = now; this.blinkDur = (sens ? 260 : 120) + Math.random() * 120; this.blinkAmp = Math.random() < 0.12 ? 0.55 : 1;
+        const dbl = !this.blinkDouble && Math.random() < 0.15; this.blinkDouble = dbl ? 1 : 0;
+        this.nextBlink = dbl ? now + this.blinkDur + 90 : now + ((sens ? 3500 : 2500) + Math.random() * 4000) * (this.speaking ? 0.7 : 1);
+      }
+      const bt = (now - this.blinkStart) / this.blinkDur; let blink = bt < 1 ? Math.sin(bt * Math.PI) * this.blinkAmp : 0;
+      // sopracciglia: alzate rapide su enfasi/reazioni e piccole alzate spontanee
+      if ((now - this.emph < 120 || (re && now - re.start < 80)) && mc.browUntil < now) { mc.browT = 0.7 + Math.random() * 0.3; mc.browUntil = now + 380; }
+      if (now > mc.nextBrow) { mc.browT = 0.3 + Math.random() * 0.4; mc.browUntil = now + 250 + Math.random() * 250; mc.nextBrow = now + 6000 + Math.random() * 8000; }
+      if (now > mc.browUntil) mc.browT = 0;
+      mc.brow += (mc.browT - mc.brow) * Math.min(1, dt / (mc.browT > mc.brow ? 70 : 220));
+      // sguardo: saccadi rapide verso punti vicini, poi fissazione; con l'imitazione tende a guardare l'utente
+      if (now > mc.nextSacc) { const r = R ? 0.35 : 1; mc.gtx = (Math.random() * 2 - 1) * r - (R ? R.yaw * 0.3 : 0); mc.gty = (Math.random() * 2 - 1) * 0.5 * r; if (Math.random() < 0.35) { mc.gtx = 0; mc.gty = 0; } mc.nextSacc = now + 700 + Math.random() * 2600; }
+      const sk = Math.min(1, dt / 35); mc.gx += (mc.gtx - mc.gx) * sk; mc.gy += (mc.gty - mc.gy) * sk;
+      // sorrisi accennati spontanei (più spesso in modalità sensuale)
+      if (now > mc.nextSmile) { mc.smileT = 0.2 + Math.random() * 0.25; mc.smileUntil = now + 1200 + Math.random() * 1800; mc.nextSmile = now + (sens ? 6000 : 9000) + Math.random() * 12000; }
+      if (now > mc.smileUntil) mc.smileT = 0;
+      mc.smile += (mc.smileT - mc.smile) * Math.min(1, dt / 400);
+      const realSmile = smile; smile = Math.max(smile, mc.smile);
       if (sens) blink = Math.max(blink, 0.22 + Math.sin(now / 3000) * 0.06);
-      if (smile > 0.3) blink = Math.max(blink, smile * 0.25); // occhi che "sorridono"
+      const squint = realSmile; // solo sorrisi veri (reazioni/sensuale) socchiudono gli occhi, non quelli accennati
+      if (squint > 0.3) blink = Math.max(blink, squint * 0.25); // occhi che "sorridono"
 
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, S, S);
@@ -222,7 +289,7 @@
       const col = this.colors;
       ctx.filter = `hue-rotate(${col.hue}deg) saturate(${col.saturation}%) brightness(${col.brightness}%)`;
       ctx.translate(S / 2 + shiftX + rx, S * 0.62 + bob + ry);
-      ctx.rotate(sway + talkNod + rRot);
+      ctx.rotate(sway + talkNod + rRot - turn * 0.05);
       const sc = 1.04 + breath * 0.014;
       ctx.scale(sc, sc + breath * 0.01);
       ctx.translate(-S / 2, -S * 0.62);
@@ -232,7 +299,7 @@
         // Gesti (mezzo busto / figura intera): braccia che si muovono col ritmo e l'intensità del parlato.
         // Approssimazione 2.5D: le zone laterali (braccia) ruotano attorno alle spalle.
         const tgt = (this.speaking ? 0.35 + this.mouth * 0.7 + (now - this.emph < 700 ? 0.6 : 0) : 0) + M.energy * 0.6 + wave * 0.8;
-        this.gesture += (tgt - this.gesture) * 0.06;
+        this.gesture = Math.max(0, spring(this.gesture, tgt, 'gesture', 9)); // gesti morbidi (molla smorzata)
         const lifted = M.lift[0] > 0.05 || M.lift[1] > 0.05;
         if (this.gesturesOn && this.framing !== 'ritratto' && (this.gesture > 0.02 || lifted)) {
           const sh = this.framing === 'figura intera' ? 0.24 : 0.42; // altezza spalle
@@ -267,17 +334,31 @@
           ctx.fillStyle = 'rgba(45,8,14,0.88)';
           ctx.beginPath(); ctx.ellipse(m.x * S, m.y * S + drop * 0.5, S * 0.045 * (0.8 + open * 0.3), Math.max(1, drop * 0.75), 0, 0, Math.PI * 2); ctx.fill();
         }
+        // microespressioni sulla foto: sguardo (zona occhio spostata di poco) e sopracciglia (zona sopra l'occhio sale)
+        const gxp = mc.gx * S * 0.0045, gyp = mc.gy * S * 0.0025, bup = mc.brow * S * 0.007;
+        [this.lm.eyeL, this.lm.eyeR].forEach((e) => {
+          if (Math.abs(gxp) > 0.4 || Math.abs(gyp) > 0.4) {
+            const w = S * 0.075, h = S * 0.036;
+            ctx.save(); ctx.beginPath(); ctx.ellipse(e.x * S, e.y * S, w / 2, h / 2, 0, 0, Math.PI * 2); ctx.clip();
+            ctx.translate(gxp, gyp); drawCover(ctx, this.img, S, { sx: e.x * S - w / 2 - 4, sy: e.y * S - h / 2 - 4, sw: w + 8, sh: h + 8 }); ctx.restore();
+          }
+          if (bup > 0.4) {
+            const w = S * 0.12, h = S * 0.045, cy = e.y * S - S * 0.075; // sopra la palpebra, senza toccare l'occhio
+            ctx.save(); ctx.beginPath(); ctx.ellipse(e.x * S, cy, w / 2, h / 2, 0, 0, Math.PI * 2); ctx.clip();
+            ctx.translate(0, -bup); drawCover(ctx, this.img, S, { sx: e.x * S - w / 2, sy: cy - h / 2, sw: w, sh: h + bup + 4 }); ctx.restore();
+          }
+        });
         if (blink > 0.05) {
           [this.lm.eyeL, this.lm.eyeR].forEach((e, i) => {
             ctx.fillStyle = this.lidColor[i];
-            ctx.beginPath(); ctx.ellipse(e.x * S, e.y * S - S * 0.012 * (1 - blink), S * 0.045, S * 0.026 * blink, 0, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.ellipse(e.x * S, e.y * S - S * 0.026 * (1 - blink), S * 0.045, S * 0.026 * blink, /* la palpebra scende dall'alto */ 0, 0, Math.PI * 2); ctx.fill();
           });
         }
       } else {
         ctx.font = `${S * 0.6}px system-ui, "Apple Color Emoji", "Segoe UI Emoji", sans-serif`;
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         ctx.save(); ctx.translate(S / 2, S / 2); ctx.scale(1 + this.mouth * 0.04, 1 - this.mouth * 0.06 + blink * 0.0);
-        ctx.fillText(this.emoji, 0, S * 0.03); ctx.restore();
+        ctx.translate(mc.gx * S * 0.004, -mc.brow * S * 0.006); ctx.fillText(this.emoji, 0, S * 0.03); ctx.restore();
       }
       ctx.filter = 'none';
       // piccole icone che salgono (risposta ai gesti: 👋 👍 ✌️ 👌 …)
@@ -293,12 +374,39 @@
         g.addColorStop(0, 'rgba(0,0,0,1)'); g.addColorStop(1, 'rgba(0,0,0,0)');
         ctx.fillStyle = g; ctx.fillRect(0, 0, S, S); ctx.globalCompositeOperation = 'source-over';
       }
+      if (this.scene.nightstand) this.drawNightstand(ctx, S, now);
       const stage = this.c.parentElement;
       if (stage) { stage.classList.toggle('speaking', this.speaking); stage.style.setProperty('--glow', col.glow); }
       const pulse = sens ? Math.round(14 + Math.sin(now / 1400) * 8) : 0;
       this.c.style.boxShadow = this.speaking ? `0 0 0 3px ${col.glow}, 0 0 22px ${col.glow}88` : sens ? `0 0 ${pulse}px ${col.glow}66` : '';
     }
   }
+
+  // Comodino stilizzato in basso a sinistra (legno, piano, cassetto con pomello). Aperto: interno scuro e icone astratte.
+  TalkingAvatar.prototype.drawNightstand = function (ctx, S, now) {
+    const animOpen = this.drawerAnim ? Math.min(1, Math.max(0, (now - this.drawerAnim - 1000) / 800)) : 0;
+    const target = this.scene.drawerOpen ? (this.drawerAnim ? animOpen : 1) : 0;
+    this.drawerAmt += (target - this.drawerAmt) * 0.15;
+    const x = S * 0.03, w = S * 0.26, top = S * 0.74, h = S * 0.26, o = this.drawerAmt;
+    ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 0.96;
+    ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(x + S * 0.01, top + S * 0.015, w, h); // ombra
+    ctx.fillStyle = '#6b4226'; ctx.fillRect(x, top, w, h); // corpo
+    ctx.fillStyle = '#8a5a36'; ctx.fillRect(x - S * 0.008, top - S * 0.02, w + S * 0.016, S * 0.024); // piano
+    // lampada stilizzata
+    ctx.fillStyle = '#c9a06a'; ctx.fillRect(x + w * 0.62, top - S * 0.07, S * 0.008, S * 0.05);
+    ctx.fillStyle = 'rgba(255,214,150,0.85)'; ctx.beginPath(); ctx.moveTo(x + w * 0.52, top - S * 0.07); ctx.lineTo(x + w * 0.8, top - S * 0.07); ctx.lineTo(x + w * 0.74, top - S * 0.11); ctx.lineTo(x + w * 0.58, top - S * 0.11); ctx.closePath(); ctx.fill();
+    const dy = top + h * 0.18, dh = h * 0.34, out = o * S * 0.045;
+    if (o > 0.02) { ctx.fillStyle = '#1e120a'; ctx.fillRect(x + w * 0.08, dy, w * 0.84, dh); } // interno
+    ctx.fillStyle = '#7d4f2e'; ctx.fillRect(x + w * 0.06 - out * 0.3, dy + out, w * 0.88 + out * 0.6, dh); // frontale del cassetto
+    ctx.strokeStyle = '#4a2c18'; ctx.lineWidth = Math.max(1, S * 0.004); ctx.strokeRect(x + w * 0.06 - out * 0.3, dy + out, w * 0.88 + out * 0.6, dh);
+    ctx.fillStyle = '#d8b46a'; ctx.beginPath(); ctx.arc(x + w / 2, dy + out + dh / 2, S * 0.009, 0, Math.PI * 2); ctx.fill(); // pomello
+    if (o > 0.5) { // icone astratte (nessuna immagine esplicita)
+      ctx.globalAlpha = (o - 0.5) * 2 * (0.75 + Math.sin(now / 400) * 0.25);
+      ctx.font = `${S * 0.05}px system-ui, "Apple Color Emoji", sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('✨', x + w * 0.3, dy - S * 0.01); ctx.fillText('💗', x + w * 0.7, dy - S * 0.025);
+    }
+    ctx.restore();
+  };
 
   // Disegna l'immagine ritagliata a quadrato (center crop); opzionalmente solo una regione (in coord. del quadrato)
   function drawCover(ctx, img, S, region) {

@@ -47,7 +47,7 @@ async function open() {
   App.avatarPresence.sensual = !!(App.me && App.me.adult);
   setMode(mode); loop(); updateTrackButtons(); startTracking();
 }
-function close() { cancelAnimationFrame(raf); stopCamera(); $('#presence').hidden = true; octx.clearRect(0, 0, overlay.width, overlay.height); App.avatarPresence.clearMirror(); App.avatarPresence.setRhythm(null); pStatus(''); }
+function close() { if (App.motionStyle) App.motionStyle.save(); cancelAnimationFrame(raf); stopCamera(); $('#presence').hidden = true; octx.clearRect(0, 0, overlay.width, overlay.height); App.avatarPresence.clearMirror(); App.avatarPresence.setRhythm(null); pStatus(''); }
 
 // ---- gesti delle mani + imitazione dei movimenti (modalità Presenza) ----
 const proc = window.Motion ? new Motion.Processor() : null;
@@ -78,7 +78,11 @@ function track(now) {
   if (!r) return;
   const av = App.avatarPresence;
   if (r.gesture) { const [kind, badge] = Motion.REACTIONS[r.gesture] || []; if (kind) av.react(kind, badge); }
-  if (mirrorOn()) { if (r.mirror) av.setMirror(r.mirror); av.setRhythm(r.rhythm ? r.rhythm.period : null, r.rhythm ? r.rhythm.strength : 0); }
+  if (mirrorOn()) {
+    if (r.mirror) av.setMirror(r.mirror); av.setRhythm(r.rhythm ? r.rhythm.period : null, r.rhythm ? r.rhythm.strength : 0);
+    // impara lo stile dell'utente (solo su questo telefono, per profilo) e lo passa agli avatar ogni ~2 s
+    if (App.motionStyle && r.mirror) { App.motionStyle.update(r.mirror, r.rhythm, handsOn() ? r.gesture : undefined, now); if (now - (track.lastStyle || 0) > 2000) { track.lastStyle = now; App.applyStyle(); } }
+  }
 }
 $('#live-hands').addEventListener('click', () => { App.ls.set('handGestures', !handsOn()); updateTrackButtons(); startTracking(); });
 $('#live-mirror').addEventListener('click', () => { App.ls.set('mirrorMoves', !mirrorOn()); updateTrackButtons(); if (!mirrorOn()) { App.avatarPresence.clearMirror(); App.avatarPresence.setRhythm(null); } startTracking(); });

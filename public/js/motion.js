@@ -102,10 +102,47 @@
       return (this.out = best > 0.35 ? { period: lag * step, strength: Math.min(1, best) } : null);
     }
   }
-  // ---------- elaborazione di un fotogramma (con limitazione per iPhone) ----------
+  // ---------- stile di movimento dell'utente (solo sul telefono, per profilo) ----------
+  // Medie mobili di: energia del movimento, ampiezza dei movimenti della testa, tempo dei gesti (periodo del ritmo),
+  // frequenza dei gesti delle mani. Salvate in localStorage tramite lo storage del profilo (App.ls): mai inviate al server.
+  const STYLE_DEF = { v: 1, energy: 0.22, headAmp: 0.22, tempo: 1300, gestPerMin: 1.5, n: 0, tempoN: 0, updatedAt: 0 };
+  class Style {
+    constructor(store) { // store: { get(k, def), set(k, v) }
+      this.store = store; this.lastSave = 0; this.lastGest = 0; this.sessionStart = 0; this.sessionGest = 0;
+      let p = null; try { p = store && store.get('motionStyle', null); } catch { p = null; }
+      this.p = { ...STYLE_DEF, ...(p && p.v === 1 ? p : {}) };
+    }
+    // m: valori del Processor (tilt/yaw/pitch/energy -1..1), rhythm: { period, strength } | null, gesture: nome | null (undefined = mani non tracciate)
+    update(m, rhythm, gesture, now) {
+      if (!m) return this.p;
+      const P = this.p; P.n++;
+      // apprendimento veloce all'inizio, poi lento (memoria di molte sessioni)
+      const a = Math.max(0.004, 1 / (P.n + 10));
+      const head = Math.min(1, Math.max(Math.abs(m.tilt || 0), Math.abs(m.yaw || 0), Math.abs(m.pitch || 0)));
+      P.energy += (clamp(m.energy || 0, 0, 1) - P.energy) * a;
+      P.headAmp += (head - P.headAmp) * a;
+      if (rhythm && rhythm.period && rhythm.strength > 0.4) { P.tempoN++; P.tempo += (clamp(rhythm.period, 330, 2400) - P.tempo) * Math.max(0.02, 1 / (P.tempoN + 3)); }
+      if (!this.sessionStart) this.sessionStart = now;
+      if (gesture) this.sessionGest++;
+      const mins = (now - this.sessionStart) / 60000;
+      if (mins > 0.5 && gesture !== undefined) P.gestPerMin += (Math.min(20, this.sessionGest / mins) - P.gestPerMin) * 0.01; // solo con le mani tracciate
+      P.updatedAt = Date.now();
+      if (now - this.lastSave > 5000) this.save(now);
+      return P;
+    }
+    save(now) { this.lastSave = now || 0; try { this.store && this.store.set('motionStyle', this.p); } catch { /* memoria piena: pazienza */ } }
+    reset() { this.p = { ...STYLE_DEF }; this.sessionStart = 0; this.sessionGest = 0; this.save(0); }
+    // profilo normalizzato per l'avatar: quanto è "vivace" (0..1), ampiezza testa, tempo (ms), quanto è affidabile (0..1)
+    profile() {
+      const P = this.p, conf = Math.min(1, P.n / 600);
+      const mix = (v, d) => d + (v - d) * conf;
+      return { energy: mix(P.energy, STYLE_DEF.energy), headAmp: mix(P.headAmp, STYLE_DEF.headAmp), tempo: mix(P.tempo, STYLE_DEF.tempo), gestPerMin: mix(P.gestPerMin, STYLE_DEF.gestPerMin), confidence: conf, samples: P.n };
+    }
+  }
   const clamp = (v, a = -1, b = 1) => Math.max(a, Math.min(b, v));
+  // ---------- elaborazione di un fotogramma (limite ~14 fps su iPhone) ----------
   class Processor {
-    constructor() { this.frame = 0; this.lastT = 0; this.g = new Gestures(); this.r = new Rhythm(); this.prev = null; this.base = null; this.minGap = isIOS() ? 70 : 45; this.hands = null; this.pose = null; }
+    constructor() { this.frame = 0; this.lastT = 0; this.g = new Gestures(); this.r = new Rhythm(); this.prev = null; this.base = null; this.minGap = isIOS() ? 1000 / 14 : 45; this.hands = null; this.pose = null; }
     // opts: { mirrorX, face, hands, pose }
     process(video, now, opts) {
       if (now - this.lastT < this.minGap || !video.videoWidth) return null;
@@ -152,6 +189,6 @@
     }
   }
 
-  window.Motion = { ensure, imageFace, Processor, classify, hasWebGL2, isIOS, isStandalone, delegate: st.delegate, NAMES,
+  window.Motion = { ensure, imageFace, Processor, Style, STYLE_DEF, classify, hasWebGL2, isIOS, isStandalone, delegate: st.delegate, NAMES,
     REACTIONS: { wave: ['wave', '👋'], open: ['smile', '✋'], thumbs: ['nod', '👍'], peace: ['smile', '✌️'], ok: ['nod', '👌'], point: ['tilt', '👉'] } };
 })();

@@ -246,14 +246,51 @@ const getSettings = (u) => ({ autoSave: false, allowExport: false, adultMode: fa
 // Modalità adulti: per utente, attivabile solo dopo il consenso vocale. In chat condivisa vale solo se attiva per ENTRAMBI.
 const adultOn = (u) => isActivated(u) && getSettings(u).adultMode === true;
 const adultChat = () => Object.keys(USERS).every(adultOn);
+// Comodino con cassetto nella scena (facoltativo, per utente, OFF di default). L'iniziativa del cassetto è possibile
+// SOLO se la modalità adulti è attiva per entrambi E entrambi hanno attivato il comodino.
+const drawerOn = () => adultChat() && Object.keys(USERS).every((u) => getSettings(u).drawerScene === true);
 app.get('/api/settings', auth, (req, res) => res.json(getSettings(req.user)));
 app.put('/api/settings', auth, (req, res) => {
   if (req.body.adultMode === true && !isActivated(req.user)) return res.status(403).json({ error: 'La modalità adulti si attiva solo dopo il consenso vocale.' });
   const s = { autoSave: req.body.autoSave === true, allowExport: req.body.allowExport === true, adultMode: req.body.adultMode === true,
     videoModel: /^[\w.\-]{0,60}$/.test(req.body.videoModel || '') ? String(req.body.videoModel || '') : '',
-    videoDuration: num(req.body.videoDuration, 1, 15, 6) };
+    videoDuration: num(req.body.videoDuration, 1, 15, 6), drawerScene: req.body.drawerScene === true };
   writeJSON(settingsFile(req.user), s); res.json(s);
 });
+// ---------- parola chiave per attivare la modalità adulti (per profilo, facoltativa) ----------
+// Salvata solo come hash bcrypt (users/<u>/adult-keyword.json). Il confronto avviene sul server, prima di qualunque chiamata all'IA:
+// il messaggio con la parola chiave non viene salvato in chat né inviato a xAI. Poi serve la conferma "sì" (token valido 2 minuti).
+const kwFile = (u) => path.join(userDir(u), 'adult-keyword.json');
+const normKw = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
+const kwTokens = new Map(); // token -> { user, exp }
+async function keywordMatch(u, text) {
+  const rec = readJSON(kwFile(u), null); const t = normKw(text);
+  if (!rec || !rec.hash || !t || t.length > 80) return null;
+  if (!(await bcrypt.compare(t, rec.hash))) return null;
+  const token = crypto.randomBytes(12).toString('hex'); kwTokens.set(token, { user: u, exp: Date.now() + 120e3 });
+  return token;
+}
+app.get('/api/adult-keyword', auth, (req, res) => { const r = readJSON(kwFile(req.user), null); res.json({ set: !!(r && r.hash), updatedAt: r ? r.updatedAt : null }); });
+app.put('/api/adult-keyword', auth, (req, res) => {
+  const t = normKw(req.body.keyword);
+  if (!t) { fs.rmSync(kwFile(req.user), { force: true }); return res.json({ set: false }); }
+  if (t.length < 4 || t.length > 60) return res.status(400).json({ error: 'La parola chiave deve avere da 4 a 60 caratteri.' });
+  writeJSON(kwFile(req.user), { hash: bcrypt.hashSync(t, 10), updatedAt: new Date().toISOString() }); res.json({ set: true });
+});
+// Controllo della sola parola chiave (es. dettatura vocale fuori dalla chat). Risponde solo sì/no + token.
+app.post('/api/adult-keyword/check', auth, async (req, res) => { const token = await keywordMatch(req.user, req.body.text); res.json(token ? { match: true, token } : { match: false }); });
+app.post('/api/adult-keyword/confirm', auth, (req, res) => {
+  const tk = kwTokens.get(String(req.body.token || '')); kwTokens.delete(String(req.body.token || ''));
+  if (!tk || tk.user !== req.user || tk.exp < Date.now()) return res.status(400).json({ error: 'Conferma scaduta: ripeti la parola chiave.' });
+  const yes = /^(si|s|yes|certo|ok|confermo)\b/.test(normKw(req.body.answer));
+  if (!yes) return res.json({ ok: true, adultMode: getSettings(req.user).adultMode === true, changed: false });
+  if (!isActivated(req.user)) return res.status(403).json({ error: 'La modalità adulti si attiva solo dopo il consenso vocale.' });
+  const s = { ...getSettings(req.user), adultMode: true }; writeJSON(settingsFile(req.user), s);
+  console.log(`Modalità adulti attivata con parola chiave da ${req.user}`);
+  res.json({ ok: true, adultMode: true, changed: true, adultChat: adultChat() });
+});
+setInterval(() => { const now = Date.now(); for (const [k, v] of kwTokens) if (v.exp < now) kwTokens.delete(k); }, 300e3).unref();
+
 // Contenuti generati NON salvati: restano solo in memoria (RAM del server) per la sessione, max 12 ore.
 const pending = new Map(); // id -> { user, buf, jpg, kind, prompt, at }
 function addPending(user, kind, gen, prompt) {
@@ -286,7 +323,8 @@ app.put('/api/rules', auth, (req, res) => {
 const getMem = () => readJSON(MEM_FILE(), []);
 const cleanFact = (t) => String(t || '').replace(/\s+/g, ' ').trim().slice(0, 300);
 const AUTHOR_OK = (v) => (USERS[v] || v === 'auto' ? v : null);
-const memView = (list) => list.map((m) => ({ ...m, byName: m.by && USERS[m.by] ? USERS[m.by].name : m.by === 'auto' ? 'automatico' : '' }));
+const memView = (list) => { const names = new Map((readJSON(CHARS_FILE(), []) || []).map((c) => [c.id, c.name]));
+  return list.map((m) => ({ ...m, byName: m.source === 'base' ? `base · ${names.get(m.charId) || 'personaggio'}` : m.by && USERS[m.by] ? USERS[m.by].name : m.by === 'auto' ? 'automatico' : '' })); };
 app.get('/api/memory', auth, (req, res) => { res.setHeader('X-Version', fileRev(MEM_FILE())); res.json(memView(getMem())); });
 // Sostituisce l'intera lista (modifica/cancella dalla schermata Account)
 app.put('/api/memory', auth, async (req, res) => {
@@ -297,7 +335,7 @@ app.put('/api/memory', auth, async (req, res) => {
     return req.body.slice(0, 300).map((f) => {
       const prev = byId.get(f.id) || {};
       const text = cleanFact(f.text);
-      return { id: ID_RE.test(f.id) ? f.id : newId(), text, source: f.source === 'auto' ? 'auto' : 'manuale',
+      return { id: ID_RE.test(f.id) ? f.id : newId(), text, source: ['auto', 'base'].includes(prev.source || f.source) ? (prev.source || f.source) : 'manuale', ...(prev.charId || f.charId ? { charId: prev.charId || f.charId } : {}),
         by: AUTHOR_OK(prev.by || f.by) || req.user, createdAt: prev.createdAt || f.createdAt || now,
         ...(prev.text && prev.text !== text ? { editedBy: req.user, editedAt: now } : prev.editedBy ? { editedBy: prev.editedBy, editedAt: prev.editedAt } : {}) };
     }).filter((f) => f.text);
@@ -337,7 +375,7 @@ app.put('/api/notes', auth, (req, res) => {
 app.post('/api/memory/extract', auth, requireActivated, requireKey, async (req, res) => {
   const id = String(req.body.characterId || '');
   if (!ID_RE.test(id)) return res.status(400).json({ error: 'ID non valido' });
-  const recent = readChat(id).messages.slice(-12);
+  const recent = readChat(id).messages.filter((m) => drawerOn() || m.initiative !== 'drawer').slice(-12);
   if (!recent.length) return res.json({ added: [] });
   const mem = getMem();
   const prompt = `Analizza la conversazione (condivisa tra Nico e Luisa) e individua NUOVE informazioni durature su Nico, su Luisa o sulla coppia: preferenze, gusti, argomenti ricorrenti, cose da ricordare. Indica sempre a chi si riferisce il fatto (es. "Luisa ama…", "Nico preferisce…").
@@ -510,6 +548,8 @@ function cleanChar(u, b, prev = {}) {
     autoChanges: cleanAuto(b.autoChanges || prev.autoChanges, prev.autoChanges || {}),
     personality: String(b.personality || '').slice(0, 8000), style: String(b.style || '').slice(0, 2000),
     state: b.resetState ? defaultState() : (prev.state || defaultState()), // stato evolutivo: lo aggiorna solo il server
+    drawer: prev.drawer || null, // stato del cassetto del comodino: lo aggiorna solo il server
+    memorySeededAt: prev.memorySeededAt || null,
   };
 }
 function defaultState() { return { mood: 'serena', relationship: 'all\'inizio, curiosa di conoscerti', traits: [], grudges: [], notes: '', updatedAt: null }; }
@@ -558,13 +598,61 @@ async function patchChar(id, fn) {
   return out;
 }
 
-app.get('/api/characters', auth, (req, res) => { const list = getChars(req.user); res.setHeader('X-Version', fileRev(CHARS_FILE())); res.json(list); });
+// ---------- memoria BASE del personaggio (contesto di partenza, modificabile/cancellabile) ----------
+// Generata SOLO dai campi dell'editor del personaggio + valori predefiniti italiani. Nessun dato personale preso altrove.
+// Elementi con source 'base' e charId; creati una volta per personaggio (flag memorySeededAt) se ha meno di 5 ricordi.
+const BASE_MIN = 5;
+function baseFacts(ch) {
+  const a = ch.appearance || {}, l = ch.look || {};
+  const lady = a.gender === 'uomo' ? 'un uomo' : a.gender === 'persona non binaria' ? 'una persona' : 'una donna';
+  const pers = String(ch.personality || '').replace(/\s+/g, ' ').trim();
+  const style = String(ch.style || '').replace(/\s+/g, ' ').trim();
+  return [
+    `Gli utenti sono due: Nico (Nicola) e Luisa, una coppia, entrambi adulti. Sono le uniche persone reali con cui ${ch.name} parla.`,
+    `${ch.name} riconosce chi scrive dal prefisso del messaggio ("Nico:" o "Luisa:"), si rivolge a quella persona per nome e saluta per nome chi è appena arrivato in chat.`,
+    `${ch.name} è ${lady} adulta di fantasia di ${num(a.age, 25, 80, 30)} anni (sempre 25+), compagna di conversazione di Nico e Luisa nella loro chat di coppia condivisa.`,
+    pers ? `Carattere di ${ch.name}: ${pers.slice(0, 220)}` : `Carattere di ${ch.name}: solare, ironica, curiosa e complice; ascolta molto e fa domande.`,
+    style ? `Modo di parlare di ${ch.name}: ${style.slice(0, 200)}` : `Modo di parlare di ${ch.name}: tono caldo e informale in italiano, frasi brevi, qualche emoji.`,
+    `Storia (inventata) di ${ch.name}: è cresciuta in una cittadina italiana di mare, ama viaggiare e oggi vive in città; i suoi ricordi sono tutti di fantasia.`,
+    `Gusti di ${ch.name}: buona cucina italiana, musica, film, passeggiate al tramonto e lunghe chiacchierate con Nico e Luisa.`,
+    a.build && l.hairColor ? `Aspetto di ${ch.name}: corporatura ${a.build}, capelli ${l.length || ''} ${l.hairColor} (${l.hairStyle || 'naturali'}), trucco ${l.makeup || 'naturale'}, stile ${l.outfit || 'casual'}.`.replace(/\s+/g, ' ') : null,
+    `Relazione: ${ch.name} tratta Nico e Luisa con complicità, rispetto e affetto, li coinvolge entrambi e non li mette mai uno contro l'altra.`,
+  ].filter(Boolean).map(cleanFact);
+}
+// force = true: rigenera (sostituisce i vecchi elementi base di quel personaggio)
+async function seedBaseMemory(ch, force = false) {
+  if (!ch || (!force && ch.memorySeededAt)) return { added: [] };
+  let added = [];
+  await mutateJSON(MEM_FILE(), [], (list) => {
+    const mineCount = list.filter((m) => m.charId === ch.id).length;
+    if (!force && mineCount >= BASE_MIN) return undefined;
+    const keep = force ? list.filter((m) => !(m.charId === ch.id && m.source === 'base')) : list;
+    const known = new Set(keep.map((m) => m.text.toLowerCase()));
+    added = baseFacts(ch).filter((t) => !known.has(t.toLowerCase())).map((text) => ({ id: newId(), text, source: 'base', charId: ch.id, by: 'auto', createdAt: new Date().toISOString() }));
+    return [...keep, ...added].slice(-300);
+  });
+  await patchChar(ch.id, (c) => { c.memorySeededAt = new Date().toISOString(); }).catch(() => {});
+  return { added };
+}
+app.post('/api/characters/:id/memory-base', auth, async (req, res) => {
+  const ch = getChars(req.user).find((c) => c.id === req.params.id);
+  if (!ch) return res.status(404).json({ error: 'Personaggio non trovato' });
+  const r = await seedBaseMemory(ch, true);
+  res.json({ added: memView(r.added) });
+});
+
+app.get('/api/characters', auth, (req, res) => {
+  const on = drawerOn();
+  const list = getChars(req.user).map((c) => (on ? c : { ...c, drawer: null })); // cassetto invisibile se la modalità adulti non è attiva per entrambi
+  res.setHeader('X-Version', fileRev(CHARS_FILE())); res.json(list);
+});
 app.get('/api/characters/options', auth, (req, res) => res.json(OPT));
 app.post('/api/characters', auth, async (req, res) => {
   try {
     getChars(req.user);
     const c = { id: newId(), ...cleanChar(req.user, req.body), lookHistory: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), createdBy: req.user, updatedBy: req.user };
     await mutateJSON(CHARS_FILE(), [], (list) => [...list, c]);
+    await seedBaseMemory(c);
     res.json(c);
   } catch (e) { res.status(400).json({ error: e.message }); }
 });
@@ -726,7 +814,7 @@ app.post('/api/characters/:id/evolve', auth, requireActivated, requireKey, async
   const ch = getChars(req.user).find((c) => c.id === req.params.id);
   if (!ch) return res.status(404).json({ error: 'Personaggio non trovato' });
   const st = ch.state || defaultState();
-  const recent = readChat(ch.id).messages.slice(-14);
+  const recent = readChat(ch.id).messages.filter((m) => drawerOn() || m.initiative !== 'drawer').slice(-14);
   if (!recent.length) return res.json({ state: st });
   const prompt = `Sei il "motore emotivo" del personaggio ${ch.name}, che parla in una chat condivisa con Nico e Luisa (una coppia). Personalità di base: ${ch.personality.slice(0, 1500)}
 Stato attuale (JSON): ${JSON.stringify({ mood: st.mood, relationship: st.relationship, traits: st.traits, grudges: st.grudges, notes: st.notes })}
@@ -799,7 +887,8 @@ app.get('/api/chats/:id', auth, (req, res) => {
   const last = c.messages.length ? c.messages[c.messages.length - 1].n : 0;
   const since = Number(req.query.since);
   const incremental = req.query.since !== undefined && Number.isFinite(since) && req.query.epoch === c.epoch && since <= last;
-  const list = incremental ? c.messages.filter((m) => m.n > since) : c.messages;
+  const hideDrawer = !drawerOn(); // con la modalità adulti spenta il cassetto non viene mai mostrato né citato
+  const list = (incremental ? c.messages.filter((m) => m.n > since) : c.messages).filter((m) => !(hideDrawer && m.initiative === 'drawer'));
   const t = typing.get(id);
   res.setHeader('Cache-Control', 'no-store');
   res.json({ epoch: c.epoch, last, reset: !incremental, messages: list.map((m) => pubMsg(m, ch)),
@@ -829,12 +918,14 @@ function buildSystem(user, ch) {
     `PERSONAGGIO: ${ch.name}.`,
     ch.personality && `Personalità: ${ch.personality}`,
     ch.style && `Stile: ${ch.style}`,
-    `CHAT DI COPPIA CONDIVISA: in questa conversazione ci sono due persone reali, Nico e Luisa (una coppia), che vedono gli stessi messaggi. Ogni loro messaggio inizia con il nome di chi scrive ("Nico:" o "Luisa:"). Rivolgiti alla persona giusta, ricorda chi ha detto cosa e, quando ha senso, coinvolgi entrambi. Non iniziare le tue risposte con il tuo nome.`,
+    `CHAT DI COPPIA CONDIVISA: gli utenti sono Nico (Nicola) e Luisa, una coppia, entrambi adulti. Sono due persone reali che vedono gli stessi messaggi. Ogni loro messaggio inizia con il nome di chi scrive ("Nico:" o "Luisa:"): riconosci da lì chi ti sta scrivendo, rivolgiti a quella persona chiamandola per nome e, quando qualcuno arriva o ti scrive per la prima volta dopo un po', salutalo per nome. Ricorda chi ha detto cosa e, quando ha senso, coinvolgi entrambi. Non iniziare le tue risposte con il tuo nome e non scrivere tu il prefisso "Nico:"/"Luisa:".`,
     `Ora ti sta scrivendo ${USERS[user].name}.`,
     ...Object.keys(USERS).map((u) => rulesOf(u) && `LE REGOLE / IL GIOCO DI ${USERS[u].name.toUpperCase()}:\n${rulesOf(u)}`),
-    mem.length && `MEMORIA CONDIVISA (cosa sai di Nico, di Luisa e della coppia):\n${mem.map((m) => '- ' + m.text).join('\n')}`,
+    mem.filter((m) => !m.charId).length && `MEMORIA CONDIVISA (cosa sai di Nico, di Luisa e della coppia):\n${mem.filter((m) => !m.charId).map((m) => '- ' + m.text).join('\n')}`,
+    mem.filter((m) => m.charId === ch.id).length && `LA TUA MEMORIA DI BASE (chi sei, modificabile dagli utenti):\n${mem.filter((m) => m.charId === ch.id).map((m) => '- ' + m.text).join('\n')}`,
     notes.toAI && notes.text.trim() && `NOTE PERSONALI DI ${USERS[user].name.toUpperCase()} (riservate, non citarle all'altra persona):\n${notes.text.trim()}`,
     stateText(ch),
+    drawerOn() && ch.drawer && ch.drawer.openUntil && Date.parse(ch.drawer.openUntil) > Date.now() && 'SCENA: poco fa, di tua iniziativa, hai aperto il cassetto del comodino dove tieni i tuoi "giocattoli". Puoi farvi riferimento in modo allusivo, senza descrizioni grafiche.',
     adultChat() ? 'MODALITÀ ADULTI ATTIVA (scelta da entrambi gli utenti, che hanno registrato il consenso vocale): sono ammessi linguaggio esplicito e gioco di ruolo sessuale esplicito tra Nico, Luisa e il personaggio, che è una donna adulta inventata (25+). Resta sempre tutto entro le regole di base qui sotto.'
       : 'Modalità adulti NON attiva: niente contenuti sessuali espliciti; se richiesti, ricorda con gentilezza che va attivata in Account da entrambi.',
     BASE_RULE, // sempre ultima, non sovrascrivibile
@@ -854,6 +945,10 @@ app.post('/api/chats/:id', auth, requireActivated, (req, res, next) => (req.body
   const text = String(req.body.message || '').trim().slice(0, 8000);
   if (!text) return res.status(400).json({ error: 'Messaggio vuoto' });
 
+  // parola chiave della modalità adulti: confrontata qui sul server (hash), MAI salvata in chat né inviata a xAI
+  const kw = await keywordMatch(req.user, text);
+  if (kw) return res.json({ keyword: true, token: kw, question: 'Vuoi attivare la modalità adulti? Rispondi sì o no', activated: isActivated(req.user) });
+  if (!ch.memorySeededAt) await seedBaseMemory(ch).catch(() => {});
   const mine = await appendMsg(id, { role: 'user', author: req.user, content: text, extra: req.body.noAI === true ? { noAI: true } : {} });
   if (req.body.noAI === true) return res.json({ message: pubMsg(mine, ch) });
   if (typing.has(id) && Date.now() - typing.get(id).at < 120e3) {
@@ -861,7 +956,7 @@ app.post('/api/chats/:id', auth, requireActivated, (req, res, next) => (req.body
     return res.status(409).json({ error: `${ch.name} sta già rispondendo: il tuo messaggio è in chat, riprova tra poco per la sua risposta.`, message: pubMsg(mine, ch) });
   }
 
-  const history = readChat(id).messages.slice(-40);
+  const history = readChat(id).messages.filter((m) => drawerOn() || m.initiative !== 'drawer').slice(-40);
   const messages = [{ role: 'system', content: buildSystem(req.user, ch) },
     ...history.map((m) => (m.role === 'user' ? { role: 'user', content: `${authorLabel(m)}: ${m.content}` } : { role: 'assistant', content: m.content }))];
   const replyId = newId();
@@ -910,7 +1005,58 @@ app.post('/api/chats/:id', auth, requireActivated, (req, res, next) => (req.body
 // Polling leggero: versioni di personaggi e memoria condivisi (il client ricarica solo ciò che è cambiato).
 app.get('/api/sync', auth, (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
-  res.json({ chars: fileRev(CHARS_FILE()), memory: fileRev(MEM_FILE()) });
+  res.json({ chars: fileRev(CHARS_FILE()), memory: fileRev(MEM_FILE()), adultChat: adultChat(), drawer: drawerOn() });
+});
+
+// ---------- iniziativa del personaggio: il cassetto del comodino ----------
+// Rara e di SUA iniziativa: il client la "propone" ogni tanto, ma è il server a decidere (probabilità, umore annoiato,
+// chat ferma da un po', massimo una volta ogni N ore per personaggio). Mai forzabile dagli utenti. Solo testo allusivo.
+const INITIATIVE_PROB = num(process.env.INITIATIVE_PROB, 0, 1, 0.15);
+const INITIATIVE_MIN_HOURS = num(process.env.INITIATIVE_MIN_HOURS, 0, 720, 6);
+const INITIATIVE_IDLE_SEC = num(process.env.INITIATIVE_IDLE_SEC, 0, 86400, 120);
+const DRAWER_OPEN_MIN = 10; // il cassetto resta aperto nella scena per 10 minuti
+const BORED_RE = /annoi|noia|bored|stuf|apati/i;
+const initiativeBusy = new Set();
+app.post('/api/chats/:id/initiative', auth, requireActivated, requireKey, async (req, res) => {
+  const id = req.params.id;
+  if (!ID_RE.test(id)) return res.status(400).json({ error: 'ID non valido' });
+  if (!drawerOn()) return res.json({ skipped: 'non attiva' });
+  const ch = getChars(req.user).find((c) => c.id === id);
+  if (!ch) return res.status(404).json({ error: 'Personaggio non trovato' });
+  if (!BORED_RE.test((ch.state || {}).mood || '')) return res.json({ skipped: 'non si annoia' });
+  const msgs = readChat(id).messages; const lastMsg = msgs[msgs.length - 1];
+  if (lastMsg && Date.now() - Date.parse(lastMsg.at) < INITIATIVE_IDLE_SEC * 1000) return res.json({ skipped: 'chat attiva' });
+  if (typing.has(id) || initiativeBusy.has(id)) return res.json({ skipped: 'occupata' });
+  // prenotazione atomica + tiro di dado lato server (rate limit persistente sul personaggio)
+  let claimed = false, prevLast = null;
+  await patchChar(id, (c) => {
+    const d = c.drawer || {};
+    if (d.lastAt && Date.now() - Date.parse(d.lastAt) < INITIATIVE_MIN_HOURS * 3600e3) return false;
+    if (Math.random() >= INITIATIVE_PROB) return false;
+    prevLast = d.lastAt || null; c.drawer = { ...d, lastAt: new Date().toISOString() }; claimed = true;
+  }).catch(() => {});
+  if (!claimed) return res.json({ skipped: 'non ora' });
+  initiativeBusy.add(id);
+  try {
+    const prompt = `[Nota di regia, non scritta da Nico o Luisa] La chat è ferma da un po' e tu ti stai annoiando. Di tua iniziativa vai al comodino accanto al letto, apri il cassetto e ci ritrovi i tuoi "giocattoli". Scrivi UN breve messaggio (1-3 frasi, nel tuo stile, in italiano) rivolto a Nico e Luisa per commentarlo in modo malizioso e allusivo, senza descrizioni grafiche esplicite e senza elencare oggetti. Non citare questa nota.`;
+    const r = await fetch(`${AI_BASE_URL}/chat/completions`, {
+      method: 'POST', headers: aiHeaders(req.aiKey),
+      body: JSON.stringify({ model: CHAT_MODEL, max_tokens: 160, messages: [{ role: 'system', content: buildSystem(req.user, ch) },
+        ...msgs.slice(-12).map((m) => (m.role === 'user' ? { role: 'user', content: `${authorLabel(m)}: ${m.content}` } : { role: 'assistant', content: m.content })),
+        { role: 'user', content: prompt }] }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw Object.assign(new Error(aiErrorMsg(r.status, j)), { status: 502 });
+    const text = String(j.choices?.[0]?.message?.content || '').trim().slice(0, 1000);
+    if (!text) throw Object.assign(new Error('Risposta vuota'), { status: 502 });
+    const saved = await appendMsg(id, { role: 'assistant', author: ch.id, content: text, extra: { initiative: 'drawer' } });
+    const openUntil = new Date(Date.now() + DRAWER_OPEN_MIN * 60e3).toISOString();
+    await patchChar(id, (c) => { c.drawer = { ...(c.drawer || {}), openedAt: saved.at, openUntil }; });
+    res.json({ message: pubMsg(saved, ch), openUntil });
+  } catch (e) {
+    await patchChar(id, (c) => { c.drawer = { ...(c.drawer || {}), lastAt: prevLast }; }).catch(() => {}); // il turno non è stato usato
+    res.status(e.status || 502).json({ error: e.message || 'Servizio AI non raggiungibile' });
+  } finally { initiativeBusy.delete(id); }
 });
 
 // ---------- immagini ----------
@@ -1127,7 +1273,7 @@ app.post('/api/wipe', loginLimiter, auth, async (req, res) => {
   for (const f of ['sessions.json', 'lockout.json', ...(req.body.wipePins === true ? ['pins.json'] : [])]) fs.rmSync(path.join(DATA_DIR, f), { force: true });
   for (const k of Object.keys(sessions)) delete sessions[k];
   for (const k of Object.keys(lock)) delete lock[k];
-  pending.clear(); videoJobs.clear(); typing.clear(); autoBusy.clear();
+  pending.clear(); videoJobs.clear(); typing.clear(); autoBusy.clear(); initiativeBusy.clear();
   fs.mkdirSync(FEED_DIR, { recursive: true });
   writeJSON(MIGRATION_MARK(), { at: new Date().toISOString(), note: 'archivio azzerato con Cancella tutto: niente migrazione dai vecchi file' });
   console.log(`Cancella tutto eseguito da ${req.user} il ${new Date().toISOString()}${req.body.wipePins === true ? ' (PIN inclusi)' : ''}`);
@@ -1225,6 +1371,8 @@ function migrateToShared() {
   console.log(`Archivio condiviso: migrazione completata (personaggi ${report.characters}, chat ${report.chats}, messaggi ${report.messages}, ricordi ${report.memory}, avatar ${report.avatars}).`);
 }
 try { migrateToShared(); } catch (e) { console.error('Migrazione archivio condiviso NON riuscita (i vecchi file restano intatti):', e.message); }
+// memoria base per i personaggi che non l'hanno ancora (una volta per personaggio)
+(async () => { for (const c of readJSON(CHARS_FILE(), []) || []) if (!c.memorySeededAt) await seedBaseMemory(c).catch((e) => console.error('Memoria base non creata:', e.message)); })();
 
 app.listen(PORT, () => {
   console.log(`App privata avviata su http://localhost:${PORT}`);

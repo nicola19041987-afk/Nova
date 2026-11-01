@@ -83,6 +83,20 @@ Nico e Luisa usano **un unico archivio**: stessi personaggi, stesse chat, stessa
   `memory.json`, `avatars/`) vengono uniti nell'archivio condiviso (stesso id in entrambi → vince il più recente; messaggi etichettati con
   l'autore originale; l'Aurora iniziale mai usata non viene duplicata). I vecchi file **non vengono cancellati**. Il resoconto è in `data/shared/migration.json`.
 - **Cancella tutto** cancella anche chat, personaggi e memoria condivisi.
+- **Memoria base del personaggio**: per ogni personaggio con meno di 5 ricordi l'app crea una volta sola (flag `memorySeededAt`) un contesto di
+  partenza dai campi dell'editor, con valori predefiniti italiani: chi sono gli utenti (Nico/Nicola e Luisa, coppia, entrambi adulti), come
+  riconoscere chi scrive dal prefisso "Nico:"/"Luisa:" e salutarlo per nome, età (25+), carattere, modo di parlare, storia e gusti inventati,
+  aspetto, relazione con la coppia. Gli elementi sono marcati **base** in Account (modificabili/cancellabili); nell'editor del personaggio
+  **🧠 Rigenera memoria base** li ricrea dai campi attuali. Nessun dato personale preso altrove.
+- **Parola chiave per la modalità adulti** (Account, per profilo, vuota = spenta): se la scrivi o la detti in chat, l'avatar chiede a voce
+  "Vuoi attivare la modalità adulti? Rispondi sì o no"; con "sì" si attiva solo per il tuo profilo e solo se il consenso vocale è registrato.
+  La parola chiave è salvata come hash bcrypt, confrontata sul server e non viene mai salvata in chat né inviata all'IA.
+- **Comodino con cassetto** (Account, per profilo, spento di default): un comodino disegnato nella scena dell'avatar (solo canvas). Se la modalità
+  adulti è attiva per **entrambi** e anche il comodino è attivo per entrambi, quando il personaggio è **annoiato** e la chat è ferma può, di rado e di sua
+  iniziativa, girarsi verso il comodino, aprire il cassetto e commentare in chat (solo testo allusivo, icone astratte ✨💗). È il server a decidere:
+  probabilità 15% a ogni proposta, chat ferma da almeno 2 minuti, massimo una volta ogni 6 ore per personaggio (`INITIATIVE_PROB`,
+  `INITIATIVE_IDLE_SEC`, `INITIATIVE_MIN_HOURS` nel `.env`). Con la modalità adulti spenta il cassetto resta chiuso, i suoi messaggi non vengono
+  mostrati né passati all'IA e non viene mai citato.
 
 ## Come modificare
 | Cosa | Dove |
@@ -110,7 +124,13 @@ Tutto in `data/` sul server (escluso da git e dallo zip): `pins.json`, `sessions
 
 ## Gesti e imitazione con la fotocamera (sul telefono)
 In **📷 Presenza**: **✋ Gesti** fa reagire l'avatar alle tue mani (👋 saluto → saluta, ✋ mano aperta / ✌️ → sorride, 👍 / 👌 → annuisce,
-👉 → inclina la testa); **🪞 Imita i miei movimenti** copia inclinazione e cenni della testa, braccia alzate e il ritmo con cui ti muovi.
+👉 → inclina la testa); **🪞 Imita i miei movimenti** riprende inclinazione e cenni della testa, braccia alzate e il ritmo con cui ti muovi,
+in modo naturale e non come una copia: con 300–800 ms di ritardo (variabile), solo in parte (circa 35–65% dell'ampiezza) e con movimenti
+morbidi (molle smorzate). L'avatar impara il tuo stile (medie di energia, ampiezza dei movimenti della testa, tempo dei gesti, frequenza dei gesti
+delle mani), salvato **solo su questo telefono e per profilo** (`motionStyle`, mai inviato al server; Account → "Dimentica il mio stile di
+movimento"), e lo usa anche a fotocamera spenta per il comportamento a riposo (oscillazione, sguardi altrove, piccoli gesti). In più
+microespressioni: sopracciglia che si alzano, saccadi dello sguardo, sorrisi accennati, ammiccamenti di durata variabile (a volte doppi o a metà).
+Il tracciamento è limitato a ~14 fotogrammi al secondo su iPhone.
 Usa MediaPipe Tasks Vision (Face/Hand/Pose Landmarker, modelli float16 inclusi in `public/vendor/mediapipe/`), con GPU (WebGL2) e ripiego su CPU.
 I file `wasm` vengono copiati da `node_modules` a ogni `npm install` (`scripts/setup-vendor.js`, nessun download): sono esclusi da git
 perché pesano ~27 MB. Nessun fotogramma lascia il telefono.

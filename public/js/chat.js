@@ -32,8 +32,9 @@ App.chat = {
     const d = document.createElement('div');
     d.className = `msg ${m.role === 'user' ? (mine ? 'user' : 'user other') : 'assistant'}`;
     if (m.id) d.dataset.id = m.id;
+    if (m.local) d.classList.add('local');
     const who = document.createElement('span'); who.className = 'who';
-    who.textContent = `${this.label(m)}${m.noAI ? ' · solo messaggio' : ''}${m.at ? ' · ' + new Date(m.at).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }) : ''}`;
+    who.textContent = `${m.initiative === 'drawer' ? '🗄️ ' : ''}${this.label(m)}${m.noAI ? ' · solo messaggio' : ''}${m.local ? ' · solo su questo telefono' : ''}${m.at ? ' · ' + new Date(m.at).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }) : ''}`;
     const body = document.createElement('span'); body.className = 'body'; body.textContent = m.content;
     d.append(who, body);
     const pin = document.createElement('button'); pin.className = 'pin'; pin.type = 'button'; pin.textContent = '📌'; pin.title = 'Ricorda questo';
@@ -63,6 +64,7 @@ App.chat = {
         added++;
         // risposta del personaggio arrivata col polling (es. chiesta dall'altro profilo): l'avatar "la dice" e reagisce
         if (!full && !r.reset && m.role === 'assistant') { App.avatarConv.talkText(m.content.slice(0, 400)); App.avatarConv.emote(m.content); }
+        if (!full && !r.reset && m.initiative === 'drawer') App.avatarConv.openDrawer(true);
       }
       this.setTyping(this.busy ? null : r.typing && r.typing.by !== App.me.user ? r.typing : null);
       if (added && (stick || r.reset)) this.scroll();
@@ -72,13 +74,17 @@ App.chat = {
   // noAI = true: "solo messaggio" all'altra persona, l'IA non risponde (non serve la chiave).
   async send(text, noAI = false) {
     text = (text || '').trim(); if (!text || !App.current || this.busy) return;
+    if (this.pendingAdult) return this.answerAdult(text); // risposta sì/no alla domanda di conferma (resta sul telefono)
+    if (App.kwSet && text.length <= 80) { // parola chiave: confronto sul server (hash), mai in chat né all'IA
+      try { const k = await App.api('/api/adult-keyword/check', { method: 'POST', body: { text } }); if (k.match) return this.askAdult(k.token); } catch { /* prosegui */ }
+    }
     if (!noAI && !App.key()) return App.toast('🔑 Inserisci la chiave xAI in Account (oppure usa 💬 per scrivere solo all\'altra persona)');
     this.busy = true; const ch = App.current;
     const meName = App.me.name;
     const local = this.addMsg({ role: 'user', author: App.me.user, authorName: meName, content: text, noAI, at: new Date().toISOString() });
     this.scroll();
     if (noAI) {
-      try { const r = await App.api(`/api/chats/${ch.id}`, { method: 'POST', body: { message: text, noAI: true } }); this.claim(local, r.message.id); }
+      try { const r = await App.api(`/api/chats/${ch.id}`, { method: 'POST', body: { message: text, noAI: true } }); if (r.keyword) { local.remove(); this.busy = false; return this.askAdult(r.token); } this.claim(local, r.message.id); }
       catch (e) { local.querySelector('.body').textContent += `\n⚠️ ${e.message}`; }
       this.busy = false; this.poll(); return;
     }
@@ -92,6 +98,10 @@ App.chat = {
         if (j.message) this.claim(local, j.message.id); // il tuo messaggio è comunque salvato nella chat condivisa
         if (r.status === 403) App.showActivation();
         throw new Error(j.error || `Errore ${r.status}`);
+      }
+      if ((r.headers.get('Content-Type') || '').includes('application/json')) { // parola chiave riconosciuta dal server
+        const j = await r.json(); local.remove(); bubble.remove(); this.busy = false;
+        if (j.keyword) return this.askAdult(j.token);
       }
       this.claim(local, r.headers.get('X-Msg-Id')); this.claim(bubble, r.headers.get('X-Reply-Id'));
       const reader = r.body.getReader(); const dec = new TextDecoder();
@@ -109,6 +119,38 @@ App.chat = {
     if (reply) App.avatarConv.emote(reply);
     if (reply && App.voice) App.voice.speak(reply);
     if (reply) this.afterReply(ch);
+  },
+  // ---- modalità adulti con parola chiave: domanda a voce e conferma sì/no (solo su questo telefono) ----
+  askAdult(token) {
+    const q = App.me.activated ? 'Vuoi attivare la modalità adulti? Rispondi sì o no' : 'Prima serve il consenso vocale: la modalità adulti non si può attivare.';
+    this.addMsg({ role: 'assistant', authorName: (App.current && App.current.name) || 'Avatar', content: q, local: true }); this.scroll();
+    if (App.voice && App.voice.sayNow) App.voice.sayNow(q);
+    if (!App.me.activated) return;
+    this.pendingAdult = { token, until: Date.now() + 115e3 };
+  },
+  async answerAdult(text) {
+    const p = this.pendingAdult; this.pendingAdult = null;
+    this.addMsg({ role: 'user', author: App.me.user, authorName: App.me.name, content: text, local: true });
+    if (!p || Date.now() > p.until) { this.addMsg({ role: 'assistant', authorName: App.current.name, content: 'Tempo scaduto: ripeti la parola chiave.', local: true }); return; }
+    try {
+      const r = await App.api('/api/adult-keyword/confirm', { method: 'POST', body: { token: p.token, answer: text } });
+      const msg = r.changed ? `Modalità adulti attivata per ${App.me.name}.${r.adultChat ? '' : ' Nella chat condivisa vale quando la attiva anche l\'altra persona.'}` : 'Va bene, la modalità adulti resta com\'era.';
+      this.addMsg({ role: 'assistant', authorName: App.current.name, content: msg, local: true });
+      if (App.voice && App.voice.sayNow) App.voice.sayNow(msg);
+      if (r.changed) { App.settings.adultMode = true; App.applyAdult(); App.account.load(); }
+    } catch (e) { this.addMsg({ role: 'assistant', authorName: App.current.name, content: '⚠️ ' + e.message, local: true }); }
+    this.scroll();
+  },
+  // ---- iniziativa del cassetto: il client la propone di rado, decide il server ----
+  async maybeInitiative() {
+    const ch = App.current;
+    if (!ch || !this.visible() || this.busy || this.pendingAdult || !App._ver.drawer || !App.key()) return;
+    if (!/annoi|noia|bored|stuf|apati/i.test((ch.state && ch.state.mood) || '')) return;
+    if (Math.random() > 0.5) return;
+    try {
+      const r = await App.api(`/api/chats/${ch.id}/initiative`, { method: 'POST', body: {}, ai: true });
+      if (r.message && App.current === ch) { this.addMsg(r.message); this.last = Math.max(this.last, r.message.n); this.scroll(); App.avatarConv.openDrawer(true); App.avatarConv.talkText(r.message.content); }
+    } catch { /* silenzioso */ }
   },
   claim(el, id) { if (el && id) { el.dataset.id = id; this.ids.add(id); } },
   // Ogni 3 messaggi: estrai ricordi (se attivo) e aggiorna lo stato emotivo del personaggio
@@ -137,10 +179,13 @@ App.sync = async function () {
   App._syncing = true;
   try {
     const v = await App.api('/api/sync');
-    if (App._ver.chars && v.chars !== App._ver.chars) {
+    const drawerChanged = App._ver.chars && v.drawer !== App._ver.drawer; // modalità adulti/comodino cambiati: cassetto e suoi messaggi compaiono o spariscono
+    if (drawerChanged && App.current) App.chat.poll(true);
+    if (App._ver.chars && (v.chars !== App._ver.chars || drawerChanged)) {
       const list = await App.api('/api/characters');
       const old = new Map(App.chars.map((c) => [c.id, c]));
       App.chars = list;
+      if (App.current) { const cur = list.find((c) => c.id === App.current.id); if (cur) App.current = cur; } // sempre l'oggetto aggiornato (anche stato interno: umore, cassetto)
       for (const c of list) {
         const prev = old.get(c.id);
         if (prev && prev.updatedAt === c.updatedAt) continue;
@@ -155,10 +200,18 @@ App.sync = async function () {
       if (!App.current) App.chat.renderList(); else App.chat.renderList();
     }
     if (App._ver.memory && v.memory !== App._ver.memory) await App.account.loadMemory();
-    App._ver = v;
+    App._ver = v; App.applyScene();
   } catch { /* riprova */ } finally { App._syncing = false; }
 };
 setInterval(() => App.sync(), 7000);
+setInterval(() => App.chat.maybeInitiative(), 60000);
+// Scena: comodino visibile se l'ho attivato; cassetto aperto solo se la modalità adulti è attiva per entrambi e lei l'ha aperto da poco
+App.applyScene = function () {
+  const ch = App.current; const on = !!(App.settings && App.settings.drawerScene);
+  const open = !!(App._ver.drawer && ch && ch.drawer && ch.drawer.openUntil && Date.parse(ch.drawer.openUntil) > Date.now());
+  [App.avatarConv, App.avatarPresence].forEach((a) => a && a.setScene({ nightstand: on, drawerOpen: open && on }));
+};
+setInterval(() => App.applyScene(), 5000);
 
 $('#char-list').addEventListener('click', (e) => {
   const li = e.target.closest('li[data-id]'); if (!li) return;

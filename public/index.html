@@ -170,6 +170,11 @@
           <label class="switch"><input type="checkbox" id="set-export"> Consenti esportazione/condivisione</label>
           <label class="switch"><input type="checkbox" id="set-adult"> Modalità adulti (18+)</label>
           <p class="muted small" id="adult-info">Disattivata.</p>
+          <label>Parola chiave per attivarla a voce o per iscritto (facoltativa)
+            <input id="kw-input" type="password" autocomplete="off" placeholder="vuoto = funzione spenta"></label>
+          <button id="kw-save" class="block">Salva parola chiave</button>
+          <p class="muted small" id="kw-status">Salvata solo come impronta cifrata sul server; non viene mai inviata all'IA. Quando la dici o la scrivi in chat, l'avatar ti chiede conferma.</p>
+          <label class="switch"><input type="checkbox" id="set-drawer"> Comodino nella scena (iniziative del personaggio, solo con modalità adulti di entrambi)</label>
           <p class="muted small">Con l'esportazione attiva compaiono solo i pulsanti manuali "Scarica" e "Condividi" (menu di condivisione del telefono). Nessuna pubblicazione automatica, nessun collegamento a piattaforme esterne.</p>
         </div>
 
@@ -194,6 +199,8 @@
           <label class="switch"><input type="checkbox" id="set-gestures"> Gesti animati (mezzo busto / figura intera)</label>
           <label class="switch"><input type="checkbox" id="set-learn-gestures"> Reagisci ai gesti delle mie mani (fotocamera, in Presenza)</label>
           <label class="switch"><input type="checkbox" id="set-mirror-moves"> Imita i miei movimenti (testa, braccia, ritmo)</label>
+          <p class="muted small" id="motion-style-info">L'avatar impara piano piano il tuo stile (energia, ampiezza dei movimenti della testa, ritmo dei gesti) e lo usa con ritardo e ampiezza ridotta, anche a fotocamera spenta. Resta solo su questo telefono.</p>
+          <button id="motion-style-reset" type="button">Dimentica il mio stile di movimento</button>
           <p class="muted small" id="learn-gestures-info">Disattivato di default. Riconoscimento sul telefono (MediaPipe locale): nessun video viene caricato. Gesti: 👋 saluto, ✋ mano aperta, 👍 pollice, 👌 OK, ✌️ pace, 👉 indicare.</p>
         </div>
 
@@ -349,6 +356,7 @@
         <p class="muted small">Umore, relazione, tratti e rancori cambiano dopo le conversazioni. Può discutere, offendersi e tenere il broncio.</p>
         <div id="state-info" class="state"></div>
         <button type="button" id="state-reset" class="link">Azzera lo stato emotivo</button>
+        <button type="button" id="mem-base-btn" class="link">🧠 Rigenera memoria base</button>
       </details>
 
       <details><summary>🪪 Documenti per gioco</summary>
