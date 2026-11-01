@@ -1,0 +1,394 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#2a0f2e">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Privata">
+  <meta name="robots" content="noindex, nofollow">
+  <title>App Privata</title>
+  <link rel="manifest" href="/manifest.json">
+  <link rel="icon" href="/icons/icon-192.png">
+  <link rel="apple-touch-icon" href="/icons/icon-180.png">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <!-- LOGIN -->
+  <section id="view-login" class="view center" hidden>
+    <div class="card narrow">
+      <div class="logo">💜</div>
+      <h1>App Privata</h1>
+      <p class="muted">Accesso riservato a Nico e Luisa</p>
+      <div id="profile-pick" class="profiles"></div>
+      <form id="pin-form" hidden autocomplete="off">
+        <p id="pin-title"></p>
+        <input id="pin-input" type="password" inputmode="numeric" pattern="\d{4}" maxlength="4" placeholder="••••" autocomplete="one-time-code" required>
+        <input id="pin-confirm" type="password" inputmode="numeric" pattern="\d{4}" maxlength="4" placeholder="Ripeti PIN" hidden>
+        <input id="setup-code" type="password" placeholder="Codice di configurazione" hidden>
+        <button class="primary block" type="submit" id="pin-submit">Entra</button>
+        <button type="button" class="link" id="pin-back">Cambia profilo</button>
+      </form>
+      <p class="error" id="login-error"></p>
+    </div>
+  </section>
+
+  <!-- ATTIVAZIONE: consenso vocale (una sola volta) -->
+  <section id="view-activate" class="view center" hidden>
+    <div class="card narrow">
+      <h1>Attiva il tuo account</h1>
+      <p>Prima del primo utilizzo serve il tuo <b>consenso vocale</b>. Lo registri una volta sola: poi l'app è sempre attiva.</p>
+      <p class="muted">Leggi ad alta voce questa frase:</p>
+      <blockquote id="consent-phrase">…</blockquote>
+      <button id="rec-btn" class="primary">🎙️ Registra consenso vocale</button>
+      <p id="rec-status" class="muted"></p>
+      <audio id="rec-preview" controls hidden></audio>
+      <div class="row" id="rec-actions" hidden>
+        <button id="rec-redo">Rifai</button>
+        <button id="rec-save" class="primary">Conferma e attiva</button>
+      </div>
+      <p class="error" id="rec-error"></p>
+      <button class="link" data-action="logout">Esci</button>
+    </div>
+  </section>
+
+  <!-- APP -->
+  <section id="view-app" class="view" hidden>
+    <header class="topbar">
+      <button id="back-btn" class="icon" hidden aria-label="Indietro">‹</button>
+      <h2 id="title">Chat</h2>
+      <span id="who" class="muted small"></span>
+    </header>
+
+    <main>
+      <!-- elenco personaggi -->
+      <div id="tab-chat" class="tab">
+        <div id="key-warning" class="notice" hidden>🔑 Inserisci la tua chiave xAI in <b>Account</b> per usare chat e immagini su questo dispositivo.</div>
+        <ul id="char-list" class="list"></ul>
+        <button id="new-char" class="primary block">＋ Nuovo personaggio</button>
+      </div>
+
+      <!-- conversazione -->
+      <div id="tab-conv" class="tab conv" hidden>
+        <div class="stage" id="stage"><canvas id="avatar-canvas" width="300" height="300"></canvas></div>
+        <div class="voicebar">
+          <button type="button" id="mic-btn" title="Ascolto continuo">🎙️ <span>Voce: off</span></button>
+          <button type="button" id="tts-btn" title="Leggi le risposte ad alta voce">🔇 <span>Lettura: off</span></button>
+          <label class="switch small"><input type="checkbox" id="auto-send" checked> Invio automatico</label>
+          <button type="button" id="presence-btn" class="cam-only" hidden title="Presenza: lei nella stanza">📷 Presenza</button>
+          <button type="button" id="clear-chat" title="Cancella conversazione">🗑️</button>
+        </div>
+        <p id="voice-status" class="muted small" hidden></p>
+        <div id="messages" class="messages"></div>
+        <form id="chat-form" class="composer">
+          <textarea id="chat-input" rows="1" placeholder="Scrivi un messaggio…" required></textarea>
+          <button class="primary" type="submit" aria-label="Invia">➤</button>
+        </form>
+      </div>
+
+      <!-- immagini -->
+      <div id="tab-images" class="tab" hidden>
+        <form id="img-form" class="card">
+          <label>Descrivi l'immagine
+            <textarea id="img-prompt" rows="3" required placeholder="Es. tramonto romantico su una terrazza a Positano, stile fotografico"></textarea>
+          </label>
+          <button class="primary block" type="submit">✨ Genera immagine</button>
+          <p id="img-status" class="muted"></p>
+        </form>
+        <details class="card" id="video-card"><summary>🎬 Video</summary>
+          <label>Descrivi il video <textarea id="vid-prompt" rows="2" placeholder="Es. Aurora che sorride e saluta su una terrazza al tramonto"></textarea></label>
+          <div class="grid2">
+            <label>Formato <select id="vid-aspect"><option value="9:16">Verticale 9:16</option><option value="1:1">Quadrato</option><option value="16:9">Orizzontale 16:9</option></select></label>
+            <label>Durata (s) <input type="number" id="vid-duration" min="1" max="15" value="6"></label>
+          </div>
+          <label class="switch"><input type="checkbox" id="vid-from-avatar"> Parti dall'avatar del personaggio attuale</label>
+          <button type="button" id="vid-go" class="primary block">🎬 Genera video</button>
+          <p id="vid-status" class="muted small"></p>
+          <div id="videos" class="videos"></div>
+        </details>
+
+        <details class="card"><summary>🔄 Scambio volto / reinquadratura</summary>
+          <p class="muted small">Solo volti di Nicola, Luisa o volti generati dall'IA. Mai terze persone reali.</p>
+          <label>Immagine di partenza <select id="fs-target"></select></label>
+          <input type="file" id="fs-target-file" accept="image/*" hidden>
+          <label>Volto da usare <select id="fs-face"></select></label>
+          <input type="file" id="fs-face-file" accept="image/*" hidden>
+          <div class="row cam-only" hidden><button type="button" id="fs-cam">📷 Scatta il volto con la fotocamera</button></div>
+          <label>Istruzioni (opzionale) <input id="fs-instr" placeholder="Es. inquadratura a mezzo busto, sfondo spiaggia"></label>
+          <label class="switch consent-check"><input type="checkbox" id="fs-consent"><span>Confermo che questa immagine ritrae me stesso/a o il mio partner con il suo consenso, oppure un volto inventato o generato dall'IA, e non una terza persona reale</span></label>
+          <button type="button" id="fs-go" class="primary block">🔄 Applica con l'IA</button>
+          <p id="fs-status" class="muted small"></p>
+        </details>
+
+        <details class="card"><summary>✂️ Ritaglia e inquadra (sul telefono, senza IA)</summary>
+          <input type="file" id="crop-file" accept="image/*">
+          <div class="row cam-only" hidden><button type="button" id="crop-cam">📷 Usa la fotocamera</button></div>
+          <canvas id="crop-canvas" width="600" height="600" hidden></canvas>
+          <div id="crop-tools" hidden>
+            <label>Zoom <input type="range" id="crop-zoom" min="100" max="400" value="100"></label>
+            <label>Formato <select id="crop-aspect"><option value="1">Quadrato</option><option value="0.8">Ritratto 4:5</option><option value="0.5625">Storia 9:16</option></select></label>
+            <p class="muted small">Trascina l'immagine per inquadrarla.</p>
+            <label class="switch consent-check"><input type="checkbox" id="crop-consent"><span>Confermo che questa immagine ritrae me stesso/a o il mio partner con il suo consenso, oppure un volto inventato o generato dall'IA, e non una terza persona reale</span></label>
+            <button type="button" id="crop-save" class="primary block">💾 Salva nella galleria</button>
+          </div>
+        </details>
+
+        <video id="cam-video" playsinline muted hidden></video>
+        <div id="gallery" class="gallery"></div>
+      </div>
+
+      <!-- diario: bacheca privata di coppia -->
+      <div id="tab-feed" class="tab" hidden>
+        <p class="muted small">Il vostro diario privato: lo vedete solo tu e il tuo partner. Pubblica da Immagini o dai personaggi (📔).</p>
+        <div id="feed" class="feed"></div>
+      </div>
+
+      <!-- account -->
+      <div id="tab-account" class="tab" hidden>
+        <div class="card">
+          <h3>🔑 Chiave API xAI</h3>
+          <p class="muted small">Estensione del tuo account Grok. La chiave resta <b>solo su questo dispositivo</b>; il server la inoltra a xAI senza salvarla.</p>
+          <div class="row">
+            <input type="password" id="key-input" placeholder="xai-…" autocomplete="off" spellcheck="false">
+            <button id="key-toggle" type="button">👁️</button>
+          </div>
+          <div class="row">
+            <button id="key-save" class="primary">Salva</button>
+            <button id="key-clear">Rimuovi</button>
+          </div>
+          <p id="key-status" class="muted small"></p>
+        </div>
+
+        <div class="card">
+          <h3>🔒 Privacy dei contenuti generati</h3>
+          <p class="muted small">Di default tutto resta privato: le immagini e gli avatar generati restano solo in memoria per questa sessione finché non li salvi tu.</p>
+          <label class="switch"><input type="checkbox" id="set-autosave"> Salva automaticamente i contenuti generati</label>
+          <label class="switch"><input type="checkbox" id="set-export"> Consenti esportazione/condivisione</label>
+          <p class="muted small">Con l'esportazione attiva compaiono solo i pulsanti manuali "Scarica" e "Condividi" (menu di condivisione del telefono). Nessuna pubblicazione automatica, nessun collegamento a piattaforme esterne.</p>
+        </div>
+
+        <div class="card">
+          <h3>📷🎙️ Fotocamera e microfono</h3>
+          <p class="muted small">Spenti di default. Il permesso viene chiesto solo quando li usi. Tutto resta sul telefono, a meno che tu non invii un'immagine all'IA.</p>
+          <label class="switch"><input type="checkbox" id="set-mic"> Usa il microfono (comandi vocali in chat)</label>
+          <label class="switch"><input type="checkbox" id="set-cam"> Usa la fotocamera (scatti per ritaglio e scambio volto)</label>
+          <p class="muted small">Il consenso vocale di attivazione usa il microfono una sola volta, a parte.</p>
+        </div>
+
+        <div class="card">
+          <h3>🎬 Video</h3>
+          <label>Modello video (vuoto = predefinito del server) <input id="set-video-model" placeholder="grok-imagine-video-1.5-lite"></label>
+          <label>Durata predefinita (secondi) <input type="number" id="set-video-duration" min="1" max="15"></label>
+          <button id="set-video-save" class="block">Salva</button>
+          <p class="muted small" id="video-info"></p>
+        </div>
+
+        <div class="card">
+          <h3>🧍 Avatar</h3>
+          <label class="switch"><input type="checkbox" id="set-gestures"> Gesti animati (mezzo busto / figura intera)</label>
+          <label class="switch"><input type="checkbox" id="set-learn-gestures"> Impara i gesti con la fotocamera</label>
+          <p class="muted small" id="learn-gestures-info">Disattivato di default. Nessun video viene caricato.</p>
+        </div>
+
+        <div class="card">
+          <h3>📜 Le mie regole</h3>
+          <p class="muted small">Regole o "gioco" applicati a tutte le tue conversazioni, insieme al personaggio e alla memoria. Le regole di sicurezza di base restano sempre attive.</p>
+          <textarea id="rules-input" rows="6" placeholder="Es. Chiamami sempre 'tesoro'. Ogni sera proponimi una sfida diversa…"></textarea>
+          <button id="rules-save" class="primary block">Salva regole</button>
+          <p id="rules-status" class="muted small"></p>
+        </div>
+
+        <div class="card">
+          <h3>🧠 Memoria</h3>
+          <p class="muted small">Quello che l'app ha imparato su di te. Privata, visibile solo a te.</p>
+          <label class="switch"><input type="checkbox" id="mem-auto"> Impara automaticamente dalle chat</label>
+          <ul id="mem-list" class="list mem"></ul>
+          <div class="row">
+            <input id="mem-new" placeholder="Aggiungi un ricordo…">
+            <button id="mem-add" class="primary">＋</button>
+          </div>
+          <button id="mem-clear" class="danger block">Cancella tutta la memoria</button>
+        </div>
+
+        <div class="card">
+          <h3>🎙️ Storico account</h3>
+          <div id="consent-info" class="muted"></div>
+        </div>
+
+        <div class="card danger-zone">
+          <h3>🧨 Cancella tutto</h3>
+          <p class="muted small">Elimina in un colpo solo TUTTI i dati dell'app di entrambi i profili: chat, personaggi, aspetto, guardaroba e storico look, stato emotivo, memoria, regole, Diario (post, commenti, mi piace), immagini e video, audio del consenso. Svuota anche i dati salvati su questo telefono (chiave xAI inclusa) e ti disconnette. Non si può annullare.</p>
+          <label class="switch"><input type="checkbox" id="wipe-pins"> Cancella anche i PIN (al prossimo accesso andranno ricreati, con il codice di configurazione se impostato)</label>
+          <button id="wipe-btn" class="danger block">Cancella tutto</button>
+        </div>
+
+        <button class="block" data-action="logout">Esci</button>
+        <p class="muted small center-text">Regole di base sempre attive: nessun contenuto con minori, senza consenso o illegale.</p>
+      </div>
+    </main>
+
+    <nav class="tabbar">
+      <button data-tab="chat" class="active">💬<span>Chat</span></button>
+      <button data-tab="feed">📔<span>Diario</span></button>
+      <button data-tab="images">🖼️<span>Immagini</span></button>
+      <button data-tab="account">👤<span>Account</span></button>
+    </nav>
+  </section>
+
+  <!-- editor personaggio -->
+  <dialog id="char-dialog">
+    <form id="char-form" method="dialog">
+      <h3 id="char-dialog-title">Personaggio</h3>
+      <div class="stage"><canvas id="editor-canvas" width="300" height="300"></canvas></div>
+      <p id="avatar-status" class="muted small center-text"></p>
+
+      <details open><summary>Base</summary>
+        <label>Nome <input name="name" required maxlength="60"></label>
+        <label>Personalità / istruzioni <textarea name="personality" rows="4" placeholder="Chi è, come si comporta, cosa le/gli piace…"></textarea></label>
+        <label>Stile <textarea name="style" rows="2" placeholder="Tono, lunghezza delle risposte, emoji…"></textarea></label>
+      </details>
+
+      <details><summary>Avatar animato</summary>
+        <label>Emoji <input name="avatarEmoji" maxlength="8" placeholder="🌙"></label>
+        <label>…oppure carica un ritratto <input type="file" id="avatar-file" accept="image/*"></label>
+        <label class="switch consent-check" id="avatar-consent-wrap" hidden>
+          <input type="checkbox" id="avatar-consent">
+          <span>Confermo che questa immagine ritrae me stesso/a o il mio partner con il suo consenso, oppure un volto inventato o generato dall'IA, e non una terza persona reale</span>
+        </label>
+        <p class="muted small">…oppure genera un volto inventato con l'IA dalle sezioni <b>Aspetto</b> e <b>Identità</b> (pulsante ✨ Rigenera).</p>
+        <div id="landmark-wrap" hidden>
+          <p class="muted small">Trascina i segni su <b>occhi</b> (👁) e <b>bocca</b> (👄) per animare il viso.</p>
+          <div class="landmark-editor"><canvas id="landmark-canvas" width="320" height="320"></canvas></div>
+          <button type="button" id="avatar-remove" class="link">Rimuovi immagine (torna all'emoji)</button>
+        </div>
+      </details>
+
+      <details><summary>Aspetto: corpo e colori</summary>
+        <p class="muted small">Corpo e inquadratura: si applicano con ✨ Rigenera. Colori: subito, dal vivo. Sempre adulti (25+), stile realistico.</p>
+        <div class="grid2">
+          <label>Genere <select data-ap="gender"></select></label>
+          <label>Età <span data-out="age"></span><input type="range" data-ap="age" min="25" max="80" step="1"></label>
+          <label>Corporatura <select data-ap="build"></select></label>
+          <label>Forme <select data-ap="shape"></select></label>
+          <label>Proporzioni <select data-ap="proportions"></select></label>
+          <label>Altezza <span data-out="height"></span><input type="range" data-ap="height" min="150" max="200" step="1"></label>
+          <label>Inquadratura <select data-ap="framing"></select></label>
+        </div>
+        <h4>Colori (istantanei)</h4>
+        <div class="grid2">
+          <label>Tonalità <input type="range" data-col="hue" min="-180" max="180"></label>
+          <label>Saturazione <input type="range" data-col="saturation" min="0" max="200"></label>
+          <label>Luminosità <input type="range" data-col="brightness" min="50" max="150"></label>
+          <label>Sfondo <input type="color" data-col="background"></label>
+          <label>Alone <input type="color" data-col="glow"></label>
+        </div>
+      </details>
+
+      <details><summary>Identità base</summary>
+        <p class="muted small">Descrizione fissa del volto, riusata in ogni rigenerazione perché resti riconoscibile.</p>
+        <textarea data-id="core" rows="3" placeholder="Es. viso ovale, occhi verdi a mandorla, lentiggini leggere, capelli castano ramati, piccolo neo sopra il labbro"></textarea>
+        <p class="muted small" id="identity-info"></p>
+        <label class="switch"><input type="checkbox" data-id="locked"> Identità bloccata (non modificabile per sbaglio)</label>
+        <label>Note extra per la prossima rigenerazione <input id="regen-extra" placeholder="Es. sorriso leggero, luce dorata"></label>
+        <button type="button" id="regen-btn" class="primary block">✨ Rigenera avatar</button>
+        <button type="button" id="post-avatar" class="block">📔 Pubblica il look attuale nel Diario</button>
+      </details>
+
+      <details><summary>💇 Parrucchiere</summary>
+        <p class="muted small">Proposte rapide:</p>
+        <div class="chips" id="hair-presets"></div>
+        <div class="grid2">
+          <label>Taglio <select data-look="cut"></select></label>
+          <label>Lunghezza <select data-look="length"></select></label>
+          <label>Colore <select data-look="hairColor"></select></label>
+          <label>Piega / acconciatura <select data-look="hairStyle"></select></label>
+        </div>
+        <button type="button" id="hair-apply" class="primary block">✂️ Applica nuova acconciatura</button>
+      </details>
+
+      <details><summary>Guardaroba</summary>
+        <div class="grid2">
+          <label>Trucco <select data-look="makeup"></select></label>
+        </div>
+        <p class="muted small">Outfit rapido (rigenera subito):</p>
+        <div class="chips" id="outfit-chips"></div>
+        <label>Dettagli look <input data-look="custom" placeholder="Es. orecchini d'oro, giacca di pelle"></label>
+        <div class="row"><button type="button" id="look-apply" class="primary">Applica look</button><button type="button" id="look-save">💾 Salva nel guardaroba</button></div>
+        <p class="muted small">Look salvati:</p>
+        <div class="chips" id="wardrobe-list"></div>
+      </details>
+
+      <details><summary>Cambi automatici</summary>
+        <label class="switch"><input type="checkbox" data-auto="enabled"> Piccoli cambi automatici (capelli, trucco, outfit)</label>
+        <label>Ogni quanti giorni <input type="number" data-auto="everyDays" min="1" max="30"></label>
+        <label class="switch"><input type="checkbox" data-auto="bodyDrift"> Consenti minime variazioni del corpo</label>
+        <div class="grid2">
+          <label>Corporatura minima <select data-auto="buildMin"></select></label>
+          <label>Corporatura massima <select data-auto="buildMax"></select></label>
+        </div>
+        <p class="muted small" id="auto-info"></p>
+      </details>
+
+      <details><summary>Personalità in evoluzione</summary>
+        <p class="muted small">Umore, relazione, tratti e rancori cambiano dopo le conversazioni. Può discutere, offendersi e tenere il broncio.</p>
+        <div id="state-info" class="state"></div>
+        <button type="button" id="state-reset" class="link">Azzera lo stato emotivo</button>
+      </details>
+
+      <details><summary>🪪 Documenti per gioco</summary>
+        <p class="muted small">Documenti inventati e scherzosi con dati di fantasia, con filigrana "FAC-SIMILE – NON VALIDO". Non riproducono documenti reali.</p>
+        <div class="row"><button type="button" data-doc="id">Carta d'identità</button><button type="button" data-doc="health">Tessera sanitaria</button><button type="button" data-doc="wallet">Portafoglio</button></div>
+        <canvas id="doc-canvas" width="900" height="560" hidden></canvas>
+        <div class="row" id="doc-actions" hidden><button type="button" id="doc-download">⬇️ Scarica</button><button type="button" id="doc-share">📤 Condividi</button></div>
+      </details>
+
+      <details><summary>Storico look</summary>
+        <div id="look-history" class="history"></div>
+      </details>
+
+      <div class="row sticky-actions">
+        <button type="button" id="char-delete" class="danger">Elimina</button>
+        <button type="button" id="char-cancel">Chiudi</button>
+        <button type="submit" class="primary">Salva</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Presenza: fotocamera dal vivo + avatar animato sovrapposto; scambio volto dal vivo (sul dispositivo) -->
+  <div id="presence" class="presence" hidden>
+    <video id="live-video" playsinline muted autoplay></video>
+    <canvas id="live-overlay"></canvas>
+    <canvas id="presence-avatar" width="400" height="400"></canvas>
+    <div class="presence-top">
+      <button type="button" id="live-close">✕</button>
+      <button type="button" id="live-flip">🔄 Fotocamera</button>
+      <button type="button" id="live-mode">🧍 Presenza</button>
+      <button type="button" id="live-shot">📸</button>
+    </div>
+    <div class="presence-panel" id="faceswap-panel" hidden>
+      <label>Volto da applicare <select id="live-face"></select></label>
+      <input type="file" id="live-face-file" accept="image/*" hidden>
+      <label class="switch consent-check"><input type="checkbox" id="live-consent"><span>Confermo che questa immagine ritrae me stesso/a o il mio partner con il suo consenso, oppure un volto inventato o generato dall'IA, e non una terza persona reale</span></label>
+      <label>Opacità <input type="range" id="live-opacity" min="30" max="100" value="85"></label>
+      <p class="muted small" id="live-status">Tutto avviene sul telefono: nessun video viene inviato.</p>
+    </div>
+    <form id="presence-chat" class="composer presence-composer"><input id="presence-input" placeholder="Parlale…"><button class="primary">➤</button></form>
+  </div>
+
+  <div id="toast" class="toast" hidden></div>
+  <script src="/avatar.js"></script>
+  <script src="/js/core.js"></script>
+  <script src="/js/auth.js"></script>
+  <script src="/js/account.js"></script>
+  <script src="/js/chat.js"></script>
+  <script src="/js/voice.js"></script>
+  <script src="/js/editor.js"></script>
+  <script src="/js/docs.js"></script>
+  <script src="/js/media.js"></script>
+  <script src="/js/feed.js"></script>
+  <script src="/js/live.js" type="module"></script>
+  <script src="/js/main.js"></script>
+</body>
+</html>
