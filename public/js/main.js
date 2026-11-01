@@ -60,3 +60,22 @@ $$('.tabbar button').forEach((b) => b.addEventListener('click', () => {
 
 if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
 App.boot();
+
+// v7.1: cornice dell'avatar FISSA e verticale (9:16, come lo schermo del telefono), la più grande possibile nello spazio del palco.
+// Nessuna trasformazione animata sul riquadro: solo dimensione e posizione calcolate a ogni ridimensionamento.
+App.fitFrame = function () {
+  const st = document.getElementById('stage'), c = document.getElementById('avatar-canvas'); if (!st || !c) return;
+  const cs = getComputedStyle(st);
+  const W = st.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight), H = st.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+  if (W < 10 || H < 10) return;
+  let h = H, w = h * 9 / 16; if (w > W) { w = W; h = w * 16 / 9; }
+  w = Math.floor(w); h = Math.floor(h);
+  Object.assign(c.style, { width: w + 'px', height: h + 'px', left: Math.round(parseFloat(cs.paddingLeft) + (W - w) / 2) + 'px', top: Math.round(parseFloat(cs.paddingTop) + (H - h) / 2) + 'px', transform: 'none', aspectRatio: 'auto', maxWidth: 'none' });
+};
+(function () {
+  const st = document.getElementById('stage'); if (!st) return;
+  if (window.ResizeObserver) new ResizeObserver(() => App.fitFrame()).observe(st);
+  addEventListener('resize', () => App.fitFrame()); addEventListener('orientationchange', () => setTimeout(App.fitFrame, 250));
+  document.addEventListener('fullscreenchange', () => setTimeout(App.fitFrame, 50));
+  App.fitFrame();
+})();

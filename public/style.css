@@ -82,8 +82,9 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
 .stage{display:flex;justify-content:center;padding:4px 0}
 main:has(> #tab-conv:not([hidden])){padding-top:6px;padding-left:max(8px,env(safe-area-inset-left));padding-right:max(8px,env(safe-area-inset-right))}
 .conv{height:calc(100vh - 128px - env(safe-area-inset-top) - env(safe-area-inset-bottom));height:calc(100dvh - 128px - env(safe-area-inset-top) - env(safe-area-inset-bottom))}
-#stage{position:relative;flex:1 1 auto;min-height:220px;display:flex;padding:0 0 6px}
-#avatar-canvas{flex:1;width:100%;height:100%;min-height:0;border-radius:18px;background:#2b1530;box-shadow:0 0 0 2px var(--line);display:block;touch-action:manipulation}
+#stage{position:relative;flex:1 1 0;min-height:220px;display:flex;padding:0 0 6px}
+/* v7.1: cornice FISSA verticale 9:16 (stile schermo del telefono), alta quanto lo spazio disponibile; dimensioni calcolate da App.fitFrame */
+#avatar-canvas{position:absolute;left:50%;top:0;transform:translateX(-50%);height:calc(100% - 6px);aspect-ratio:9/16;max-width:100%;min-height:0;border-radius:18px;background:#2b1530;box-shadow:0 0 0 2px var(--line);display:block;touch-action:manipulation}
 .conv .messages{flex:0 0 max(88px,16vh);flex-basis:max(88px,16dvh);min-height:0}
 .conv .voicebar{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;padding-bottom:4px}
 .conv .voicebar::-webkit-scrollbar{display:none}
@@ -101,7 +102,7 @@ main:has(> #tab-conv:not([hidden])){padding-top:6px;padding-left:max(8px,env(saf
 /* Schermo intero: Fullscreen API dove c'è, altrimenti (iPhone Safari/PWA) sovrapposizione CSS che riempie lo schermo con le aree sicure */
 #stage.fs,#stage:fullscreen{position:fixed;inset:0;z-index:60;width:100vw;height:100vh;width:100dvw;height:100dvh;margin:0;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);background:#000;min-height:0}
 #stage:-webkit-full-screen{position:fixed;inset:0;z-index:60;width:100%;height:100%;padding:0;background:#000}
-#stage.fs #avatar-canvas,#stage:fullscreen #avatar-canvas{border-radius:0;box-shadow:none}
+#stage.fs #avatar-canvas,#stage:fullscreen #avatar-canvas{border-radius:10px;box-shadow:none}
 #stage.fs .stage-tools,#stage:fullscreen .stage-tools{top:calc(env(safe-area-inset-top) + 10px);right:calc(env(safe-area-inset-right) + 10px)}
 body.avatar-fs-on{overflow:hidden}
 body.avatar-fs-on .tabbar,body.avatar-fs-on .topbar{visibility:hidden}
@@ -111,15 +112,14 @@ body.avatar-fs-on .tabbar,body.avatar-fs-on .topbar{visibility:hidden}
   .topbar{padding-top:calc(env(safe-area-inset-top) + 4px);padding-bottom:4px}
   .tabbar button{padding:4px 0}
   .tabbar button span{display:none}
-  .conv{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);grid-template-rows:auto auto 1fr auto auto;column-gap:10px;height:calc(100vh - 100px - env(safe-area-inset-bottom));height:calc(100dvh - 100px - env(safe-area-inset-bottom))}
-  #stage{grid-column:1;grid-row:1 / 6;min-height:0;padding:0}
+  .conv{display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-rows:auto auto 1fr auto auto;column-gap:10px;height:calc(100vh - 100px - env(safe-area-inset-bottom));height:calc(100dvh - 100px - env(safe-area-inset-bottom))}
+  #stage{grid-column:1;grid-row:1 / 6;min-height:0;padding:0;width:calc((100vh - 100px - env(safe-area-inset-bottom)) * 0.5625);width:calc((100dvh - 100px - env(safe-area-inset-bottom)) * 0.5625)}
   .conv .voicebar{grid-column:2;grid-row:1}
   .conv #voice-status{grid-column:2;grid-row:2}
   .conv .messages{grid-column:2;grid-row:3;flex:none;min-height:0}
   .conv #typing{grid-column:2;grid-row:4}
   .conv .composer{grid-column:2;grid-row:5}
-  .conv.compact{grid-template-columns:minmax(0,.6fr) minmax(0,1fr)}
-  .conv.compact #stage{flex:none}
+  .conv.compact #stage{flex:none;width:calc((100vh - 100px - env(safe-area-inset-bottom)) * 0.34);width:calc((100dvh - 100px - env(safe-area-inset-bottom)) * 0.34)}
 }
 details{border:1px solid var(--line);border-radius:10px;padding:6px 12px;margin:8px 0}
 details summary{cursor:pointer;font-weight:600;padding:6px 0}
@@ -173,8 +173,8 @@ details.card summary{font-weight:600}
 .presence{position:fixed;inset:0;z-index:30;background:#000;display:flex;flex-direction:column}
 .presence video,.presence #live-overlay{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
 .presence video.mirror,.presence #live-overlay.mirror{transform:scaleX(-1)}
-#presence-avatar{position:absolute;left:0;right:0;margin:0 auto;bottom:calc(70px + env(safe-area-inset-bottom));width:100vw;height:62vh;height:62dvh;max-width:900px;background:transparent!important}
-@media (orientation:landscape) and (max-height:600px){#presence-avatar{height:calc(100dvh - 140px);width:60vw;bottom:calc(64px + env(safe-area-inset-bottom))}}
+#presence-avatar{position:absolute;left:0;right:0;margin:0 auto;bottom:calc(70px + env(safe-area-inset-bottom));height:calc(100vh - 130px);height:calc(100dvh - 130px - env(safe-area-inset-top) - env(safe-area-inset-bottom));aspect-ratio:9/16;width:auto;max-width:100vw;background:transparent!important}
+@media (orientation:landscape) and (max-height:600px){#presence-avatar{height:calc(100dvh - 140px);width:auto;bottom:calc(64px + env(safe-area-inset-bottom))}}
 .presence-top{position:absolute;top:calc(env(safe-area-inset-top) + 10px);left:10px;right:10px;display:flex;gap:6px;flex-wrap:wrap}
 .presence-top button{background:#000a;border:0;color:#fff;padding:8px 12px;border-radius:20px}
 .presence-panel{position:absolute;left:10px;right:10px;top:calc(env(safe-area-inset-top) + 60px);background:#000b;border-radius:12px;padding:8px 12px;font-size:.9em}

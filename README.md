@@ -152,6 +152,13 @@ Tutto in `data/` sul server (escluso da git e dallo zip): `pins.json`, `sessions
 - **Azioni per adulti** («si spoglia», «scena intima con sex toy», personaggio inventato adulto 25+): esistono solo con la modalità adulti attiva per **entrambi** (come la chat per adulti) e **solo per personaggi con il volto generato dall'IA**, mai partendo da una foto caricata (anche un avatar IA rigenerato da una foto resta escluso: il consenso foto registrato non si cancella). Si preparano solo con «Prepara azioni…», non partono mai da sole a modalità spenta; se l'altra persona spegne la modalità spariscono subito (file negati dal server, nessuna cache nel browser). Rifiuti di moderazione: «Contenuto rifiutato dal servizio AI» e resta l'avatar normale. Regola di base sempre in testa al prompt.
 - Le clip e le pose stanno in `data/shared/actions/`: «Cancella tutto» le elimina e **non** vengono copiate nei backup automatici.
 
+## Cornice dell'avatar (v7.1)
+
+- **Cornice verticale fissa 9:16** (come lo schermo del telefono), alta quanto lo spazio disponibile: in chat, a schermo intero, in modalità compatta e in Presenza; in orizzontale resta una cornice verticale a tutta altezza a sinistra, con la chat a destra.
+- **Niente oscillazione**: il riquadro e la foto non si spostano più (nessuna rotazione, traslazione o deriva laterale). Restano solo animazioni interne leggere: respiro (deformazione verticale minima del busto), labiale, ammiccamenti, sguardo, sopracciglia, sorrisi. Disattivati i "gesti" che ruotavano pezzi di braccio della foto (creavano giunture).
+- **Mai ritagliata**: ogni foto è disegnata intera (contain) con il suo formato, la più grande possibile; lo spazio avanzato è riempito da una copia sfocata e statica della stessa foto, con bordi sfumati (niente rettangolo netto). Al cambio foto c'è una dissolvenza (niente salti di dimensione).
+- Le azioni v7 (clip e pose) e le protezioni dei dati v6.1 sono invariate.
+
 ## Gesti e imitazione con la fotocamera (sul telefono)
 In **📷 Presenza**: **✋ Gesti** fa reagire l'avatar alle tue mani (👋 saluto → saluta, ✋ mano aperta / ✌️ → sorride, 👍 / 👌 → annuisce,
 👉 → inclina la testa); **🪞 Imita i miei movimenti** riprende inclinazione e cenni della testa, braccia alzate e il ritmo con cui ti muovi,
