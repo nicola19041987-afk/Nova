@@ -1,7 +1,7 @@
 /* live.js — fotocamera dal vivo (anteriore/posteriore), modalità "Presenza" (avatar animato sovrapposto alla stanza)
  * e scambio volto dal vivo APPROSSIMATO, tutto sul dispositivo con MediaPipe Face Landmarker (file locali in /vendor).
  * Nessun fotogramma viene inviato al server o a terzi. Volti ammessi: solo Nico, Luisa o volti generati dall'IA. */
-const V = '/vendor/mediapipe';
+// Tracciamento (viso, mani, corpo) in public/js/motion.js (window.Motion): GPU con ripiego su CPU, tutto locale.
 const FACE_OVAL = [10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365, 379, 378, 400, 377, 152, 148, 176, 149, 150, 136, 172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109];
 const ANCHORS = [33, 263, 152]; // angolo occhio sx, angolo occhio dx, mento
 
@@ -11,16 +11,30 @@ const video = $('#live-video'), overlay = $('#live-overlay'), octx = overlay.get
 App.avatarPresence = new TalkingAvatar($('#presence-avatar'));
 App.avatarPresence.transparent = true;
 
+const pStatus = (t) => { const el = $('#presence-status'); if (el) { el.textContent = t || ''; el.hidden = !t; } };
 async function startCamera() {
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { App.toast('Fotocamera non disponibile: serve HTTPS e un browser recente'); return false; }
+  const ios = window.Motion && Motion.isIOS(), standalone = window.Motion && Motion.isStandalone();
+  if (!window.isSecureContext) { App.toast('Fotocamera bloccata: l\'app deve essere aperta in HTTPS'); return false; }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    App.toast(ios && standalone ? 'Questa versione di iOS non permette la fotocamera nell\'app installata: apri Nova in Safari' : 'Fotocamera non disponibile: serve un browser recente', 6000); return false;
+  }
   stopCamera();
   try {
-    // chiamata dentro il gesto dell'utente (necessario su iOS Safari)
-    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: facing }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
-    video.srcObject = stream; video.setAttribute('playsinline', ''); video.muted = true; await video.play();
+    // chiamata subito dopo il tocco dell'utente (necessario su iOS Safari); video muto e inline
+    video.setAttribute('playsinline', ''); video.setAttribute('webkit-playsinline', ''); video.muted = true; video.autoplay = true;
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: facing }, width: { ideal: 960 }, height: { ideal: 540 } }, audio: false });
+    video.srcObject = stream; await video.play();
     const mirror = facing === 'user'; video.classList.toggle('mirror', mirror); overlay.classList.toggle('mirror', mirror);
     return true;
-  } catch (e) { App.toast(e.name === 'NotAllowedError' ? 'Permesso fotocamera negato' : 'Impossibile avviare la fotocamera'); return false; }
+  } catch (e) {
+    const msg = e.name === 'NotAllowedError'
+      ? (ios && standalone ? 'Permesso fotocamera negato. Nell\'app installata sulla Home, iOS lo chiede di nuovo a ogni apertura: tocca Consenti, oppure controlla Impostazioni > Safari > Fotocamera (o apri Nova in Safari).'
+        : ios ? 'Permesso fotocamera negato: Impostazioni > Safari > Fotocamera > Consenti, poi ricarica.' : 'Permesso fotocamera negato')
+      : e.name === 'NotReadableError' ? 'La fotocamera è usata da un\'altra app: chiudila e riprova'
+      : e.name === 'OverconstrainedError' ? 'Questa fotocamera non è disponibile su questo dispositivo'
+      : 'Impossibile avviare la fotocamera (' + (e.name || 'errore') + ')';
+    App.toast(msg, 7000); return false;
+  }
 }
 function stopCamera() { if (stream) stream.getTracks().forEach((t) => t.stop()); stream = null; video.srcObject = null; }
 
@@ -30,9 +44,44 @@ async function open() {
   if (!(await startCamera())) { close(); return; }
   if (App.current) App.avatarPresence.setCharacter(App.previews[App.current.id] ? { ...App.current, avatar: App.previews[App.current.id].dataUrl } : App.current);
   App.avatarPresence.gesturesOn = App.ls.get('gestures', true);
-  setMode(mode); loop();
+  App.avatarPresence.sensual = !!(App.me && App.me.adult);
+  setMode(mode); loop(); updateTrackButtons(); startTracking();
 }
-function close() { cancelAnimationFrame(raf); stopCamera(); $('#presence').hidden = true; octx.clearRect(0, 0, overlay.width, overlay.height); }
+function close() { cancelAnimationFrame(raf); stopCamera(); $('#presence').hidden = true; octx.clearRect(0, 0, overlay.width, overlay.height); App.avatarPresence.clearMirror(); App.avatarPresence.setRhythm(null); pStatus(''); }
+
+// ---- gesti delle mani + imitazione dei movimenti (modalità Presenza) ----
+const proc = window.Motion ? new Motion.Processor() : null;
+const handsOn = () => App.ls.get('handGestures', false);
+const mirrorOn = () => App.ls.get('mirrorMoves', false);
+function updateTrackButtons() {
+  $('#live-hands').classList.toggle('on', handsOn()); $('#live-hands').textContent = handsOn() ? '✋ Gesti: on' : '✋ Gesti: off';
+  $('#live-mirror').classList.toggle('on', mirrorOn()); $('#live-mirror').textContent = mirrorOn() ? '🪞 Imita i miei movimenti: on' : '🪞 Imita i miei movimenti';
+}
+let trackMsg = '';
+async function startTracking() {
+  if (!proc) { pStatus('Tracciamento non disponibile: script motion.js non caricato'); return; }
+  const want = [...(handsOn() ? ['hands'] : []), ...(mirrorOn() ? ['face', 'pose'] : [])];
+  if (!want.length) { pStatus(''); return; }
+  pStatus('Carico il tracciamento sul telefono…');
+  const okParts = [], bad = [];
+  for (const k of want) {
+    try { await Motion.ensure(k); okParts.push(`${Motion.NAMES[k]} (${Motion.delegate[k]})`); }
+    catch (e) { if (k === 'pose') console.warn(e); else bad.push(e.message); } // il corpo è facoltativo
+  }
+  const cpu = okParts.some((p) => p.includes('CPU')) ? ' · GPU non disponibile: uso la CPU (più lento)' : '';
+  trackMsg = bad.length ? '⚠️ ' + bad.join(' ') : `Attivo: ${okParts.join(', ')}${cpu}. Tutto sul telefono, nessun video inviato.`;
+  pStatus(trackMsg); setTimeout(() => { if (!bad.length) pStatus(''); }, 5000);
+}
+function track(now) {
+  if (!proc || mode !== 'presence' || (!handsOn() && !mirrorOn())) return;
+  const r = proc.process(video, now, { mirrorX: facing === 'user', hands: handsOn(), face: mirrorOn(), pose: mirrorOn() });
+  if (!r) return;
+  const av = App.avatarPresence;
+  if (r.gesture) { const [kind, badge] = Motion.REACTIONS[r.gesture] || []; if (kind) av.react(kind, badge); }
+  if (mirrorOn()) { if (r.mirror) av.setMirror(r.mirror); av.setRhythm(r.rhythm ? r.rhythm.period : null, r.rhythm ? r.rhythm.strength : 0); }
+}
+$('#live-hands').addEventListener('click', () => { App.ls.set('handGestures', !handsOn()); updateTrackButtons(); startTracking(); });
+$('#live-mirror').addEventListener('click', () => { App.ls.set('mirrorMoves', !mirrorOn()); updateTrackButtons(); if (!mirrorOn()) { App.avatarPresence.clearMirror(); App.avatarPresence.setRhythm(null); } startTracking(); });
 function setMode(m) {
   mode = m;
   $('#live-mode').textContent = mode === 'presence' ? '🎭 Volto dal vivo' : '🧍 Presenza';
@@ -43,18 +92,15 @@ function setMode(m) {
 
 // ---- MediaPipe (locale) ----
 async function ensureLandmarker() {
-  if (videoLm) return true;
+  if (videoLm && imageLm) return true;
   try {
     $('#live-status').textContent = 'Carico il riconoscimento del viso (sul telefono)…';
-    const { FaceLandmarker, FilesetResolver } = await import(`${V}/vision_bundle.mjs`);
-    const files = await FilesetResolver.forVisionTasks(`${V}/wasm`);
-    const opts = (runningMode) => ({ baseOptions: { modelAssetPath: `${V}/face_landmarker.task`, delegate: 'GPU' }, runningMode, numFaces: 1 });
-    videoLm = await FaceLandmarker.createFromOptions(files, opts('VIDEO'));
-    imageLm = await FaceLandmarker.createFromOptions(files, opts('IMAGE'));
-    $('#live-status').textContent = 'Pronto. Tutto avviene sul telefono: nessun video viene inviato.';
+    videoLm = await Motion.ensure('face');      // runningMode VIDEO (fotogrammi della fotocamera)
+    imageLm = await Motion.imageFace();          // runningMode IMAGE (foto del volto da applicare)
+    $('#live-status').textContent = `Pronto (${Motion.delegate.face === 'GPU' ? 'GPU' : 'CPU: GPU non disponibile'}). Tutto avviene sul telefono: nessun video viene inviato.`;
     return true;
   } catch (e) {
-    console.warn(e); $('#live-status').textContent = 'Riconoscimento del viso non disponibile su questo dispositivo/browser.'; return false;
+    $('#live-status').textContent = '⚠️ ' + (e.message || 'Riconoscimento del viso non disponibile su questo dispositivo/browser.'); return false;
   }
 }
 function fillFaces() {
@@ -106,11 +152,11 @@ function loop() {
   raf = requestAnimationFrame(loop);
   if (!video.videoWidth) return;
   if (overlay.width !== video.videoWidth) { overlay.width = video.videoWidth; overlay.height = video.videoHeight; }
-  if (mode !== 'face') return;
+  if (mode !== 'face') { track(performance.now()); return; }
   octx.clearRect(0, 0, overlay.width, overlay.height);
   if (!videoLm || !src || video.currentTime === lastT) return;
   lastT = video.currentTime;
-  const r = videoLm.detectForVideo(video, performance.now());
+  const r = videoLm.detectForVideo(video, Math.round(performance.now()));
   const lm = r.faceLandmarks && r.faceLandmarks[0]; if (lm) drawFace(lm);
 }
 

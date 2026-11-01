@@ -1,21 +1,24 @@
-// Copia in public/vendor/mediapipe i file di MediaPipe Face Landmarker (per lo scambio volto dal vivo, tutto sul dispositivo).
-// Eseguito automaticamente dopo "npm install". Il modello face_landmarker.task è già incluso; se manca prova a scaricarlo.
+// Prepara public/vendor/mediapipe per il tracciamento sul dispositivo (viso, mani, corpo) — eseguito dopo "npm install".
+// Tutto viene copiato da node_modules/@mediapipe/tasks-vision: nessun download da internet, nessuna CDN a runtime.
+// I modelli .task (face_landmarker, hand_landmarker, pose_landmarker_lite) sono inclusi nel repository.
 const fs = require('fs');
 const path = require('path');
-const https = require('https');
 const dest = path.join(__dirname, '..', 'public', 'vendor', 'mediapipe');
+const src = path.join(__dirname, '..', 'node_modules', '@mediapipe', 'tasks-vision');
 fs.mkdirSync(path.join(dest, 'wasm'), { recursive: true });
-let src;
-src = path.join(__dirname, '..', 'node_modules', '@mediapipe', 'tasks-vision');
-if (!fs.existsSync(path.join(src, 'vision_bundle.mjs'))) { console.warn('@mediapipe/tasks-vision non installato: scambio volto dal vivo non disponibile.'); process.exit(0); }
-fs.copyFileSync(path.join(src, 'vision_bundle.mjs'), path.join(dest, 'vision_bundle.mjs'));
-for (const f of ['vision_wasm_internal.js', 'vision_wasm_internal.wasm', 'vision_wasm_nosimd_internal.js', 'vision_wasm_nosimd_internal.wasm']) {
-  fs.copyFileSync(path.join(src, 'wasm', f), path.join(dest, 'wasm', f));
+if (!fs.existsSync(path.join(src, 'vision_bundle.mjs'))) {
+  console.warn('[mediapipe] @mediapipe/tasks-vision non installato: tracciamento e volto dal vivo non disponibili.');
+  process.exit(0);
 }
-const model = path.join(dest, 'face_landmarker.task');
-if (fs.existsSync(model)) { console.log('MediaPipe pronto in public/vendor/mediapipe'); process.exit(0); }
-const url = 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task';
-https.get(url, (r) => {
-  if (r.statusCode !== 200) { console.warn('Modello non scaricato (HTTP ' + r.statusCode + ')'); return; }
-  r.pipe(fs.createWriteStream(model)).on('finish', () => console.log('Modello face_landmarker scaricato.'));
-}).on('error', (e) => console.warn('Modello non scaricato:', e.message));
+let ok = true;
+const copy = (from, to) => {
+  try { fs.copyFileSync(from, to); } catch (e) { ok = false; console.warn('[mediapipe] copia non riuscita:', path.basename(from), e.message); }
+};
+copy(path.join(src, 'vision_bundle.mjs'), path.join(dest, 'vision_bundle.mjs'));
+for (const f of ['vision_wasm_internal.js', 'vision_wasm_internal.wasm', 'vision_wasm_nosimd_internal.js', 'vision_wasm_nosimd_internal.wasm']) {
+  copy(path.join(src, 'wasm', f), path.join(dest, 'wasm', f));
+}
+for (const m of ['face_landmarker.task', 'hand_landmarker.task', 'pose_landmarker_lite.task']) {
+  if (!fs.existsSync(path.join(dest, m))) { ok = m === 'pose_landmarker_lite.task' ? ok : false; console.warn(`[mediapipe] modello mancante: public/vendor/mediapipe/${m} (va incluso nel repository)`); }
+}
+console.log(ok ? '[mediapipe] pronto in public/vendor/mediapipe (wasm copiati da node_modules)' : '[mediapipe] preparato con avvisi (vedi sopra)');

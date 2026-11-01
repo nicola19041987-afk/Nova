@@ -11,7 +11,7 @@ App.account = {
     $('#set-video-model').value = App.settings.videoModel || ''; $('#set-video-duration').value = App.settings.videoDuration || 6;
     $('#video-info').textContent = App.me.videoEnabled ? `Modello predefinito del server: ${App.me.videoModel}` : 'Video non configurato sul server (VIDEO_PATH vuoto).';
     $('#set-mic').checked = App.ls.get('micOn', false); $('#set-cam').checked = App.ls.get('camOn', false);
-    $('#set-gestures').checked = App.ls.get('gestures', true); $('#set-learn-gestures').checked = false;
+    $('#set-gestures').checked = App.ls.get('gestures', true); $('#set-learn-gestures').checked = App.ls.get('handGestures', false); $('#set-mirror-moves').checked = App.ls.get('mirrorMoves', false);
     App.applyDevicePrefs();
     // regole: server + copia locale
     let rules = await App.api('/api/rules');
@@ -21,6 +21,12 @@ App.account = {
     // memoria
     await this.loadMemory();
     $('#mem-auto').checked = App.ls.get('memAuto', true);
+    // note personali (solo mie)
+    const notes = await App.api('/api/notes');
+    $('#notes-input').value = notes.text || ''; $('#notes-ai').checked = !!notes.toAI;
+    // modalità adulti (per utente, solo dopo il consenso vocale)
+    $('#set-adult').checked = !!App.settings.adultMode; $('#set-adult').disabled = !App.me.activated;
+    $('#adult-info').textContent = App.me.activated ? (App.settings.adultMode ? 'Attiva per te. Nella chat condivisa vale solo se l\'avete attivata entrambi.' : 'Disattivata.') : 'Disponibile solo dopo il consenso vocale.';
     this.renderConsent();
   },
   renderConsent() {
@@ -30,16 +36,12 @@ App.account = {
          <blockquote>${esc(c.phrase)}</blockquote><audio controls src="/api/consent/audio" preload="none"></audio>`
       : '<p>Account non ancora attivato.</p>';
   },
-  async loadMemory() {
-    let mem = await App.api('/api/memory');
-    const local = App.ls.get('memory', []);
-    if (!mem.length && local.length) mem = await App.api('/api/memory', { method: 'PUT', body: local }); // ripristino dal dispositivo
-    this.setMemory(mem);
-  },
-  setMemory(mem) { App.memory = mem; App.ls.set('memory', mem); this.renderMemory(); },
+  // Memoria CONDIVISA: niente ripristino dalla copia del dispositivo (resusciterebbe ricordi cancellati dall'altro profilo).
+  async loadMemory() { this.setMemory(await App.api('/api/memory')); },
+  setMemory(mem) { App.memory = mem; App.ls.del('memory'); this.renderMemory(); },
   renderMemory() {
     const ul = $('#mem-list');
-    ul.innerHTML = App.memory.length ? App.memory.map((m) => `<li data-id="${m.id}"><span class="grow">${esc(m.text)} ${m.source === 'auto' ? '<span class="badge">auto</span>' : ''}</span>
+    ul.innerHTML = App.memory.length ? App.memory.map((m) => `<li data-id="${m.id}"><span class="grow">${esc(m.text)} ${m.source === 'auto' ? '<span class="badge">auto</span>' : m.byName ? `<span class="badge">${esc(m.byName)}</span>` : ''}</span>
       <button data-mem-edit>✏️</button><button data-mem-del>🗑️</button></li>`).join('') : '<li class="muted">Ancora nessun ricordo.</li>';
   },
   async saveMemory(list) { this.setMemory(await App.api('/api/memory', { method: 'PUT', body: list })); },
@@ -66,7 +68,7 @@ $('#key-save').addEventListener('click', () => {
 $('#key-clear').addEventListener('click', () => { App.ls.del('key'); $('#key-input').value = ''; App.account.load(); });
 
 async function saveSettings() {
-  App.settings = await App.api('/api/settings', { method: 'PUT', body: { ...App.settings, autoSave: $('#set-autosave').checked, allowExport: $('#set-export').checked, videoModel: $('#set-video-model').value.trim(), videoDuration: Number($('#set-video-duration').value) } });
+  App.settings = await App.api('/api/settings', { method: 'PUT', body: { ...App.settings, adultMode: $('#set-adult').checked, autoSave: $('#set-autosave').checked, allowExport: $('#set-export').checked, videoModel: $('#set-video-model').value.trim(), videoDuration: Number($('#set-video-duration').value) } });
   App.ls.set('settings', App.settings); App.media && App.media.renderAll(); App.feed && App.feed.render();
 }
 $('#set-autosave').addEventListener('change', saveSettings);
@@ -75,11 +77,12 @@ $('#set-video-save').addEventListener('click', async () => { await saveSettings(
 $('#set-mic').addEventListener('change', (e) => { App.ls.set('micOn', e.target.checked); if (!e.target.checked && App.voice) App.voice.stop(); App.applyDevicePrefs(); });
 $('#set-cam').addEventListener('change', (e) => { App.ls.set('camOn', e.target.checked); if (!e.target.checked && App.media) App.media.stopCamera(); App.applyDevicePrefs(); });
 $('#set-gestures').addEventListener('change', (e) => { App.ls.set('gestures', e.target.checked); App.applyDevicePrefs(); });
+// Gesti delle mani / imitazione: MediaPipe locale (public/js/motion.js), attivi nella modalità Presenza. Servono anche "Usa la fotocamera".
 $('#set-learn-gestures').addEventListener('change', (e) => {
-  // Nessuna libreria di hand-tracking locale è inclusa: non usiamo servizi esterni, quindi restiamo sull'approssimazione dal ritmo della voce.
-  e.target.checked = false;
-  $('#learn-gestures-info').textContent = 'Non disponibile: servirebbe una libreria di tracciamento mani completamente locale, non inclusa. I gesti sono approssimati dal ritmo e dall\'intensità della voce. Nessun video viene caricato.';
+  App.ls.set('handGestures', e.target.checked);
+  $('#learn-gestures-info').textContent = e.target.checked ? (App.ls.get('camOn', false) ? 'Attivo: apri una chat e tocca 📷 Presenza. Tutto sul telefono, nessun video inviato.' : 'Attiva anche "Usa la fotocamera" qui sopra, poi apri 📷 Presenza in chat.') : 'Disattivato.';
 });
+$('#set-mirror-moves').addEventListener('change', (e) => { App.ls.set('mirrorMoves', e.target.checked); });
 
 $('#rules-save').addEventListener('click', async () => {
   const r = await App.api('/api/rules', { method: 'PUT', body: { text: $('#rules-input').value } });
@@ -89,16 +92,17 @@ $('#rules-save').addEventListener('click', async () => {
 $('#mem-auto').addEventListener('change', (e) => App.ls.set('memAuto', e.target.checked));
 $('#mem-add').addEventListener('click', async () => { await App.account.remember($('#mem-new').value); $('#mem-new').value = ''; });
 $('#mem-clear').addEventListener('click', async () => {
-  if (!confirm('Cancellare tutta la memoria? Non si può annullare.')) return;
+  if (!confirm('Cancellare tutta la memoria condivisa (per Nico e Luisa)? Non si può annullare.')) return;
   await App.api('/api/memory', { method: 'DELETE' }); App.account.setMemory([]);
 });
 $('#mem-list').addEventListener('click', async (e) => {
   const li = e.target.closest('li[data-id]'); if (!li) return;
   const id = li.dataset.id; const m = App.memory.find((x) => x.id === id);
-  if (e.target.closest('[data-mem-del]')) await App.account.saveMemory(App.memory.filter((x) => x.id !== id));
+  if (e.target.closest('[data-mem-del]')) { await App.api(`/api/memory/${id}`, { method: 'DELETE' }); await App.account.loadMemory(); }
   if (e.target.closest('[data-mem-edit]')) {
     const t = prompt('Modifica ricordo', m.text); if (t === null) return;
-    await App.account.saveMemory(App.memory.map((x) => (x.id === id ? { ...x, text: t } : x)).filter((x) => x.text.trim()));
+    if (t.trim()) await App.api(`/api/memory/${id}`, { method: 'PATCH', body: { text: t } }); else await App.api(`/api/memory/${id}`, { method: 'DELETE' });
+    await App.account.loadMemory();
   }
 });
 
@@ -121,3 +125,13 @@ App.wipeDevice = async function () {
   try { for (const r of await navigator.serviceWorker.getRegistrations()) await r.unregister(); } catch {}
   App.previews = {}; App.me = null;
 };
+
+$('#notes-save').addEventListener('click', async () => {
+  const n = await App.api('/api/notes', { method: 'PUT', body: { text: $('#notes-input').value, toAI: $('#notes-ai').checked } });
+  $('#notes-status').textContent = `Salvate il ${fmtDate(n.updatedAt)}`;
+});
+$('#set-adult').addEventListener('change', async (e) => {
+  if (e.target.checked && !confirm('Attivare la modalità adulti (18+)? Contenuti espliciti solo tra adulti consenzienti e con personaggi inventati adulti (25+). Puoi disattivarla quando vuoi.')) { e.target.checked = false; return; }
+  try { await saveSettings(); App.applyAdult && App.applyAdult(); App.account.load(); }
+  catch (err) { e.target.checked = false; App.toast(err.message); }
+});

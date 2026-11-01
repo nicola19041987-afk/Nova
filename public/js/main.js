@@ -13,7 +13,15 @@ App.boot = async function () {
   await App.account.load();
   App.chat.renderList();
   App.media.load().catch(() => {}); App.feed.load().catch(() => {});
+  App.applyAdult();
+  $('#tab-conv').classList.toggle('compact', !!App.ls.get('avatarCompact', false));
+  App.sync();
   App.autoChanges();
+};
+// Modalità adulti (per utente): solo effetti locali sull'avatar (espressioni/movimenti più sensuali, canvas).
+App.applyAdult = function () {
+  App.me.adult = !!(App.me.activated && App.settings.adultMode);
+  [App.avatarConv, App.avatarEditor, App.avatarPresence].forEach((a) => { if (a) a.sensual = App.me.adult; });
 };
 
 // Cambi automatici: al primo avvio del giorno (o secondo la frequenza scelta), piccole variazioni plausibili

@@ -37,8 +37,40 @@
       this.nextBlink = performance.now() + 1500; this.blinkStart = 0;
       this.lidColor = ['#c99', '#c99'];
       this.transparent = false; this.framing = 'ritratto'; this.gesturesOn = true; this.gesture = 0; this.emph = 0;
+      // Reazioni ai gesti delle mani, imitazione dei movimenti, ritmo, modalità sensuale (tutto locale, solo canvas)
+      this.reaction = null; this.badges = [];
+      this.mir = { tilt: 0, pitch: 0, yaw: 0, lift: [0, 0], energy: 0, active: false, at: 0 }; // valori grezzi dai landmark
+      this.m = { tilt: 0, pitch: 0, yaw: 0, lift: [0, 0], energy: 0 }; // valori smorzati usati nel disegno
+      this.swayPeriod = 6500; this.rhythm = null; // { period, strength }
+      this.sensual = false;
       this.loop = this.loop.bind(this);
-      requestAnimationFrame(this.loop);
+      this._frame = 0; this.simUntil = 0;
+      this.resize();
+      if (window.ResizeObserver) new ResizeObserver(() => this.resize()).observe(canvas);
+      requestAnimationFrame(this.loop); // parte subito, anche senza fotocamera
+    }
+    // Canvas nitido su retina: la risoluzione interna segue la dimensione a schermo x devicePixelRatio (max 3x, max 1400 px).
+    // Tutto il disegno usa S = this.c.width, quindi scala da solo.
+    resize() {
+      const css = this.c.clientWidth || 0; if (!css) return;
+      const px = Math.round(Math.min(1400, css * Math.min(3, window.devicePixelRatio || 1)));
+      if (Math.abs(px - this.c.width) > 2) { this.c.width = px; this.c.height = px; }
+    }
+    // Labiale "simulato" dal testo (risposte scritte quando la lettura vocale è spenta, o arrivate dall'altro profilo)
+    talkText(text, rate = 1.15) {
+      if (!text || (this.speaking && !this.simUntil)) return; // se sta già parlando con la voce vera, non sovrapporre
+      const now = performance.now(); let t = Math.max(now, this.kf.length ? this.kf[this.kf.length - 1].t : now);
+      for (const w of String(text).split(/\s+/).slice(0, 80)) { const k = wordKeyframes(w, t, rate); this.kf.push(...k); t = (k.length ? k[k.length - 1].t : t) + 60 / rate; if (/[!?]$/.test(w)) this.emph = now; }
+      this.speaking = true; this.simUntil = t + 100;
+    }
+    // Piccola reazione emotiva in base al testo della risposta
+    emote(text) {
+      const t = String(text || '');
+      if (/😂|🤣|😄|😁|ahah|haha|😊|☺️|🥰/i.test(t)) this.react('smile');
+      else if (/😘|💋|❤️|😍|💕/.test(t)) this.react('smile', '💕');
+      else if (/😢|😞|😔|uff|offes/i.test(t)) this.react('tilt');
+      else if (/\?\s*$/.test(t.trim())) this.react('tilt');
+      else if (/!/.test(t)) this.react('nod');
     }
     setCharacter(ch) {
       if (!ch) return;
@@ -55,6 +87,19 @@
         im.src = src;
       } else { this.img = null; this.emoji = src || '🙂'; }
     }
+    // ---- reazioni (gesti della mano riconosciuti dalla fotocamera) ----
+    // kind: 'wave' (saluta), 'smile' (sorride), 'nod' (annuisce), 'tilt' (inclina la testa), 'shake'
+    react(kind, badge) {
+      const dur = { wave: 1800, smile: 2200, nod: 1200, tilt: 1600, shake: 1100 }[kind] || 1500;
+      this.reaction = { kind, start: performance.now(), dur };
+      if (badge) this.badges.push({ t: performance.now(), e: badge, x: 0.18 + Math.random() * 0.1 });
+      if (this.badges.length > 4) this.badges.shift();
+    }
+    // ---- imitazione: valori normalizzati (-1..1) da volto/mani/corpo dell'utente ----
+    setMirror(v) { Object.assign(this.mir, v, { active: true, at: performance.now() }); }
+    clearMirror() { this.mir.active = false; }
+    // ---- ritmo: periodo (ms) stimato dai movimenti dell'utente; l'oscillazione a riposo si sincronizza ----
+    setRhythm(period, strength) { this.rhythm = period ? { period: Math.min(2400, Math.max(330, period)), strength: Math.min(1, strength || 0.5) } : null; }
     setLandmarks(lm) { this.lm = JSON.parse(JSON.stringify(lm)); this.sampleLids(); }
     setColors(c) { this.colors = { ...this.colors, ...c }; if (!this.transparent) this.c.style.background = this.colors.background; }
 
@@ -124,39 +169,80 @@
     // ---- disegno ----
     loop(now) {
       requestAnimationFrame(this.loop);
-      if (!this.c.isConnected || this.c.offsetParent === null) return; // non visibile: risparmia batteria
+      // non visibile: risparmia batteria (getClientRects funziona anche dentro contenitori position:fixed su iOS)
+      if (!this.c.isConnected || this.c.getClientRects().length === 0) return;
+      if (++this._frame % 30 === 0) this.resize();
+      if (this.simUntil && now > this.simUntil) { this.simUntil = 0; this.speaking = false; }
       const ctx = this.ctx, S = this.c.width;
       this.mouth += (this.target(now) - this.mouth) * 0.4;
-      const breath = Math.sin(now / 4000 * Math.PI * 2);
-      const sway = Math.sin(now / 6500 * Math.PI * 2) * 0.018 + Math.sin(now / 2300) * 0.006;
-      const talkNod = this.mouth * 0.012;
-      // battito di ciglia
-      if (now > this.nextBlink) { this.blinkStart = now; this.nextBlink = now + 2500 + Math.random() * 4000; }
-      const bt = (now - this.blinkStart) / 160; const blink = bt < 1 ? Math.sin(bt * Math.PI) : 0;
+      const dt = Math.min(100, now - (this._last || now)); this._last = now;
+      // ritmo: se l'utente si muove a tempo, l'oscillazione segue il suo periodo (fase continua, niente scatti)
+      const sens = this.sensual;
+      const targetPeriod = this.rhythm ? this.rhythm.period * 2 : sens ? 8000 : 6500;
+      this.swayPeriod += (targetPeriod - this.swayPeriod) * 0.02;
+      this._ph = ((this._ph || 0) + dt / this.swayPeriod) % 1;
+      const rAmp = this.rhythm ? 0.028 + this.rhythm.strength * 0.02 : sens ? 0.034 : 0.028;
+      const breath = Math.sin(now / (sens ? 5200 : 4000) * Math.PI * 2) * (sens ? 1.4 : 1);
+      let sway = Math.sin(this._ph * Math.PI * 2) * rAmp + Math.sin(now / 2300) * 0.009;
+      let bob = this.rhythm ? Math.abs(Math.sin(this._ph * Math.PI * 2)) * this.rhythm.strength * S * 0.008 : 0;
+      const talkNod = this.mouth * 0.02 + (this.speaking ? Math.sin(now / 330) * 0.008 : 0);
+      // imitazione dei movimenti (smorzata; si spegne da sola se i dati non arrivano da 1,5 s)
+      const mirOn = this.mir.active && now - this.mir.at < 1500;
+      const k = 0.18, M = this.m, R = this.mir;
+      M.tilt += ((mirOn ? R.tilt : 0) - M.tilt) * k; M.pitch += ((mirOn ? R.pitch : 0) - M.pitch) * k; M.yaw += ((mirOn ? R.yaw : 0) - M.yaw) * k;
+      M.lift[0] += ((mirOn ? R.lift[0] : 0) - M.lift[0]) * k; M.lift[1] += ((mirOn ? R.lift[1] : 0) - M.lift[1]) * k;
+      M.energy += ((mirOn ? R.energy : 0) - M.energy) * 0.08;
+      sway += M.tilt * 0.12;
+      bob += M.pitch * S * 0.02 + breath * S * 0.004;
+      const shiftX = M.yaw * S * 0.025;
+      // reazione in corso
+      let rx = 0, ry = 0, rRot = 0, smile = sens ? 0.25 : 0, wave = 0;
+      const re = this.reaction;
+      if (re) {
+        const p = (now - re.start) / re.dur;
+        if (p >= 1) this.reaction = null;
+        else {
+          const env = Math.sin(Math.min(1, p) * Math.PI);
+          if (re.kind === 'nod') ry = Math.sin(p * Math.PI * 4) * S * 0.014 * env;
+          if (re.kind === 'shake') rx = Math.sin(p * Math.PI * 6) * S * 0.012 * env;
+          if (re.kind === 'tilt') rRot = 0.07 * env;
+          if (re.kind === 'smile' || re.kind === 'wave') smile = Math.max(smile, env);
+          if (re.kind === 'wave') { wave = env; rRot = Math.sin(p * Math.PI * 6) * 0.03 * env; }
+        }
+      }
+      // battito di ciglia (in modalità sensuale: più lento, palpebre un po' abbassate)
+      if (now > this.nextBlink) { this.blinkStart = now; this.nextBlink = now + (sens ? 3500 : 2500) + Math.random() * 4000; }
+      const bt = (now - this.blinkStart) / (sens ? 320 : 160); let blink = bt < 1 ? Math.sin(bt * Math.PI) : 0;
+      if (sens) blink = Math.max(blink, 0.22 + Math.sin(now / 3000) * 0.06);
+      if (smile > 0.3) blink = Math.max(blink, smile * 0.25); // occhi che "sorridono"
 
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, S, S);
       if (!this.transparent) { ctx.fillStyle = this.colors.background; ctx.fillRect(0, 0, S, S); }
       const col = this.colors;
       ctx.filter = `hue-rotate(${col.hue}deg) saturate(${col.saturation}%) brightness(${col.brightness}%)`;
-      ctx.translate(S / 2, S * 0.62);
-      ctx.rotate(sway + talkNod);
-      const sc = 1.03 + breath * 0.008;
-      ctx.scale(sc, sc + breath * 0.006);
+      ctx.translate(S / 2 + shiftX + rx, S * 0.62 + bob + ry);
+      ctx.rotate(sway + talkNod + rRot);
+      const sc = 1.04 + breath * 0.014;
+      ctx.scale(sc, sc + breath * 0.01);
       ctx.translate(-S / 2, -S * 0.62);
 
       if (this.img) {
         drawCover(ctx, this.img, S);
         // Gesti (mezzo busto / figura intera): braccia che si muovono col ritmo e l'intensità del parlato.
         // Approssimazione 2.5D: le zone laterali (braccia) ruotano attorno alle spalle.
-        const tgt = this.speaking ? 0.35 + this.mouth * 0.7 + (now - this.emph < 700 ? 0.6 : 0) : 0;
+        const tgt = (this.speaking ? 0.35 + this.mouth * 0.7 + (now - this.emph < 700 ? 0.6 : 0) : 0) + M.energy * 0.6 + wave * 0.8;
         this.gesture += (tgt - this.gesture) * 0.06;
-        if (this.gesturesOn && this.framing !== 'ritratto' && this.gesture > 0.02) {
+        const lifted = M.lift[0] > 0.05 || M.lift[1] > 0.05;
+        if (this.gesturesOn && this.framing !== 'ritratto' && (this.gesture > 0.02 || lifted)) {
           const sh = this.framing === 'figura intera' ? 0.24 : 0.42; // altezza spalle
           const mx = this.lm.mouth.x;
           [-1, 1].forEach((side) => {
             const px = (mx + side * (this.framing === 'figura intera' ? 0.09 : 0.2)) * S, py = sh * S;
-            const ang = side * this.gesture * 0.07 * Math.sin(now / 260 + (side > 0 ? 0 : 1.3));
+            // braccio alzato dall'utente (specchio: la mano destra dell'utente muove il lato destro dello schermo) + saluto
+            const lift = side < 0 ? M.lift[0] : M.lift[1];
+            const waveSide = wave && side > 0 ? Math.sin(now / 120) * 0.08 * wave - 0.12 * wave : 0;
+            const ang = side * this.gesture * 0.07 * Math.sin(now / 260 + (side > 0 ? 0 : 1.3)) - side * lift * 0.16 + waveSide;
             const rx = side < 0 ? 0 : px, rw = side < 0 ? px : S - px;
             ctx.save(); ctx.beginPath(); ctx.rect(rx, py, rw, S - py); ctx.clip();
             ctx.translate(px, py); ctx.rotate(ang); ctx.translate(-px, -py - this.gesture * S * 0.006);
@@ -164,6 +250,13 @@
           });
         }
         const m = this.lm.mouth, open = Math.max(0, this.mouth);
+        if (smile > 0.05 && open < 0.2) {
+          // sorriso approssimato: la zona della bocca si allarga e sale di poco
+          const w = S * 0.2, h = S * 0.09;
+          ctx.save(); ctx.beginPath(); ctx.ellipse(m.x * S, m.y * S, w / 2, h / 2, 0, 0, Math.PI * 2); ctx.clip();
+          ctx.translate(m.x * S, m.y * S); ctx.scale(1 + smile * 0.07, 1 - smile * 0.02); ctx.translate(-m.x * S, -m.y * S - smile * S * 0.004);
+          drawCover(ctx, this.img, S, { sx: m.x * S - w / 2, sy: m.y * S - h / 2, sw: w, sh: h }); ctx.restore();
+        }
         if (open > 0.03) {
           // mascella: la parte sotto la bocca scende un poco
           const jw = S * 0.34, jh = S * 0.26, jx = m.x * S - jw / 2, jy = m.y * S;
@@ -187,6 +280,13 @@
         ctx.fillText(this.emoji, 0, S * 0.03); ctx.restore();
       }
       ctx.filter = 'none';
+      // piccole icone che salgono (risposta ai gesti: 👋 👍 ✌️ 👌 …)
+      if (this.badges.length) {
+        ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        this.badges = this.badges.filter((b) => now - b.t < 1800);
+        for (const b of this.badges) { const p = (now - b.t) / 1800; ctx.globalAlpha = 1 - p; ctx.font = `${S * 0.12}px system-ui, "Apple Color Emoji", sans-serif`; ctx.fillText(b.e, b.x * S, S * (0.82 - p * 0.35)); }
+        ctx.globalAlpha = 1;
+      }
       if (this.transparent && this.img) { // modalità Presenza: bordi sfumati per fondersi con la stanza
         ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalCompositeOperation = 'destination-in';
         const g = ctx.createRadialGradient(S / 2, S / 2, S * 0.3, S / 2, S / 2, S * 0.5);
@@ -195,7 +295,8 @@
       }
       const stage = this.c.parentElement;
       if (stage) { stage.classList.toggle('speaking', this.speaking); stage.style.setProperty('--glow', col.glow); }
-      this.c.style.boxShadow = this.speaking ? `0 0 0 3px ${col.glow}, 0 0 22px ${col.glow}88` : '';
+      const pulse = sens ? Math.round(14 + Math.sin(now / 1400) * 8) : 0;
+      this.c.style.boxShadow = this.speaking ? `0 0 0 3px ${col.glow}, 0 0 22px ${col.glow}88` : sens ? `0 0 ${pulse}px ${col.glow}66` : '';
     }
   }
 

@@ -43,13 +43,6 @@ Scegli una strada:
   per un indirizzo fisso serve un tunnel con nome su un tuo dominio.
 Online imposta sempre `COOKIE_SECURE=true` e un `SETUP_CODE`.
 
-## Pubblicazione su Render
-Sul piano **Starter**:
-- **Build Command**: `npm install`
-- **Start Command**: `npm start`
-- **Variabili d'ambiente**: `COOKIE_SECURE=true` e `SETUP_CODE` (segreto scelto dal proprietario; non va nel repository)
-- **Disco persistente** montato su `/opt/render/project/src/data` (i file in `data/` restano tra un riavvio e l'altro)
-
 ## Installarla sul telefono
 - **iPhone (Safari)**: apri l'indirizzo HTTPS → **Condividi** → **Aggiungi alla schermata Home**.
 - **Android (Chrome)**: apri l'indirizzo → menu ⋮ → **Installa app** (o "Aggiungi a schermata Home").
@@ -68,6 +61,29 @@ Sul piano **Starter**:
 - **Privacy**: di default i contenuti generati restano solo in memoria finché non premi 💾; esportazione/condivisione disattivata (quando la attivi: solo "Scarica" e il menu di condivisione del telefono, manuali). Fotocamera e microfono spenti di default.
 - **Cancella tutto** (Account): cancella con conferma, parola CANCELLA e PIN tutti i dati di entrambi i profili sul server e i dati locali del telefono, poi ti disconnette. I PIN restano, salvo la casella "Cancella anche i PIN".
 
+## Archivio condiviso
+Nico e Luisa usano **un unico archivio**: stessi personaggi, stesse chat, stessa memoria.
+- **Chat di coppia**: per ogni personaggio c'è **un solo thread** (`data/shared/chats/<id>.json`) in cui scrivete entrambi. Ogni messaggio
+  registra autore (`nicola` / `luisa` / id del personaggio) e ora, e l'app mostra chi l'ha scritto (Nico / Luisa / nome del personaggio).
+  Il personaggio vede la stessa conversazione: nel prompt ogni messaggio inizia con `Nico:` o `Luisa:` e sa chi gli sta scrivendo.
+- **➤** invia e fa rispondere il personaggio (con la chiave xAI del telefono di chi scrive). **💬 Solo messaggio** invia solo all'altra
+  persona: l'IA non risponde e non serve la chiave.
+- **Aggiornamento automatico**: con la chat aperta l'app chiede i messaggi nuovi ogni ~3 secondi (in pausa se l'app è in background) e mostra
+  "… sta scrivendo a Nico/Luisa" mentre il personaggio risponde all'altro. Personaggi (aspetto, capelli, guardaroba, info, stato emotivo,
+  avatar e storico) e memoria vengono ricontrollati ogni ~7 secondi: se Luisa modifica un personaggio, sul telefono di Nico si aggiornano
+  elenco, avatar ed editor (se lo stai modificando anche tu, ti avvisa invece di sovrascrivere le tue modifiche).
+- **Memoria condivisa** (`data/shared/memory.json`): la vedete e modificate entrambi ed è quella che usa il personaggio. Le **note personali**
+  (Account) restano solo tue e vanno all'IA solo se lo scegli, e solo quando scrivi tu. Restano personali: PIN, consenso vocale, chiave xAI
+  (sul telefono), impostazioni privacy, "Le mie regole" (che però il personaggio vede entrambe, perché parla con tutti e due), galleria immagini/video.
+- **Modalità adulti (18+)**: interruttore per ciascuno in Account, spento di default e attivabile solo dopo il consenso vocale. Nella chat
+  condivisa vale solo se l'avete attivata **entrambi**; per le immagini vale quella di chi genera. Le regole di sicurezza fisse restano sempre attive.
+- **Scritture sicure**: ogni file condiviso si modifica uno alla volta (coda per file) rileggendo sempre l'ultima versione, e si salva in modo
+  atomico (file temporaneo + rinomina): due messaggi inviati insieme non si perdono. I cambi automatici del look avvengono una sola volta per il personaggio condiviso.
+- **Migrazione automatica**: al primo avvio di questa versione i vecchi dati per profilo (`data/users/<profilo>/chats`, `characters.json`,
+  `memory.json`, `avatars/`) vengono uniti nell'archivio condiviso (stesso id in entrambi → vince il più recente; messaggi etichettati con
+  l'autore originale; l'Aurora iniziale mai usata non viene duplicata). I vecchi file **non vengono cancellati**. Il resoconto è in `data/shared/migration.json`.
+- **Cancella tutto** cancella anche chat, personaggi e memoria condivisi.
+
 ## Come modificare
 | Cosa | Dove |
 |---|---|
@@ -80,6 +96,8 @@ Sul piano **Starter**:
 | Avatar animato (labiale, ciglia, gesti) | `public/avatar.js` |
 | Documenti per gioco | `public/js/docs.js` |
 | Fotocamera, Presenza, volto dal vivo | `public/js/live.js` |
+| Tracciamento locale (viso, mani, corpo), gesti, ritmo | `public/js/motion.js` (+ modelli in `public/vendor/mediapipe/`) |
+| Chat condivisa e sincronizzazione | `public/js/chat.js`; server: sezione `chat CONDIVISA` in `server.js` |
 | Voce (dettatura e lettura) | `public/js/voice.js` |
 | Grafica | `public/style.css`; icone: `npm run icons` (`scripts/make-icons.js`) |
 | Frase del consenso vocale | `server.js` → `CONSENT_PHRASE` |
@@ -87,8 +105,15 @@ Il server è un solo file diviso in sezioni commentate (`// ---------- ... -----
 Dopo modifiche al frontend aumenta il numero di versione `CACHE` in `public/sw.js`.
 
 ## Dati
-Tutto in `data/` sul server (escluso da git e dallo zip): `pins.json`, `sessions.json`, `users/<profilo>/…` (chat, personaggi, memoria, regole,
-impostazioni, consenso audio, immagini, avatar, video), `shared/` (Diario). Fai un backup di questa cartella.
+Tutto in `data/` sul server (escluso da git e dallo zip): `pins.json`, `sessions.json`, `shared/` (personaggi, chat, memoria, avatar, Diario),
+`users/<profilo>/…` (consenso audio, impostazioni, regole, note personali, immagini, video; più i vecchi file prima della migrazione). Fai un backup di questa cartella.
+
+## Gesti e imitazione con la fotocamera (sul telefono)
+In **📷 Presenza**: **✋ Gesti** fa reagire l'avatar alle tue mani (👋 saluto → saluta, ✋ mano aperta / ✌️ → sorride, 👍 / 👌 → annuisce,
+👉 → inclina la testa); **🪞 Imita i miei movimenti** copia inclinazione e cenni della testa, braccia alzate e il ritmo con cui ti muovi.
+Usa MediaPipe Tasks Vision (Face/Hand/Pose Landmarker, modelli float16 inclusi in `public/vendor/mediapipe/`), con GPU (WebGL2) e ripiego su CPU.
+I file `wasm` vengono copiati da `node_modules` a ogni `npm install` (`scripts/setup-vendor.js`, nessun download): sono esclusi da git
+perché pesano ~27 MB. Nessun fotogramma lascia il telefono.
 
 ## Estensione facoltativa NON inclusa: scambio volto di alta qualità
 Uno scambio volto realistico in tempo reale (InsightFace / ReActor) non gira nel browser di un telefono. Si potrebbe aggiungere
@@ -99,7 +124,8 @@ Non è installato né configurato.
 ## Limiti onesti (approssimato / non testato)
 - **Non testato con la vera API xAI** (nessuna chiave usata): chat, memoria automatica, evoluzione della personalità, immagini, modifiche immagine, video e didascalie sono scritti secondo la documentazione xAI ma non provati end-to-end. Il formato multi-immagine di `/images/edits` (campo `images`) e `response_format` sono ipotesi ragionevoli.
 - **Labiale** approssimato (eventi `boundary` + stima delle sillabe); su iOS gli eventi spesso mancano e si usa una simulazione a tempo. L'analisi audio reale (AnalyserNode) è pronta ma usata solo se si riproduce un audio.
-- **Gesti** approssimati: le zone delle braccia ruotano attorno alle spalle in base al ritmo della voce. "Impara i gesti con la fotocamera" non è disponibile (nessuna libreria locale di tracciamento mani inclusa).
+- **Gesti dell'avatar** approssimati (2.5D): le zone delle braccia ruotano attorno alle spalle. Riconoscimento dei gesti delle mani e imitazione
+  funzionano con MediaPipe sul telefono, ma la resa e la velocità su iPhone vanno provate dal vivo (su iPhone l'elaborazione è limitata a ~14 fotogrammi al secondo).
 - **Volto dal vivo**: sovrapposizione 2D (trasformazione su 3 punti + maschera ovale sfumata), non un vero face swap; non testato su iPhone/Android reali (provato solo in Chrome desktop con fotocamera finta). Su iPhone, in modalità app dalla Home, la fotocamera può comportarsi in modo diverso: se non parte, aprila da Safari.
 - **Riconoscimento vocale**: su Chrome usa il servizio online del produttore del browser (non funziona offline); su iOS/Safari il supporto è parziale.
 - **Identità stabile**: dipende dal modello; con immagine di riferimento è migliore, ma la somiglianza non è garantita al 100%.

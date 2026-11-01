@@ -19,6 +19,8 @@
   const dlg = $('#char-dialog'), form = $('#char-form');
   let E = null; // copia di lavoro del personaggio
   let lmEditor = null;
+  let dirty = false; // modifiche nel modulo non ancora salvate (per non sovrascriverle con gli aggiornamenti dell'altro utente)
+  const whoName = (u) => (u === 'luisa' ? 'Luisa' : u === 'nicola' ? 'Nico' : 'l\'altro profilo');
 
   function defaults() {
     return { id: null, name: '', avatar: '💫', avatarSource: 'emoji', personality: '', style: '', landmarks: clone(LM_DEFAULT.ritratto),
@@ -83,7 +85,7 @@
     const i = App.chars.findIndex((c) => c.id === ch.id);
     if (i < 0) App.chars.push(ch); else App.chars[i] = ch;
     if (App.current && App.current.id === ch.id) App.current = ch;
-    E = { ...clone(ch), pendingId: null }; delete App.previews[ch.id];
+    E = { ...clone(ch), pendingId: null }; delete App.previews[ch.id]; dirty = false;
     App.chat.renderList(); toForm(); refreshAvatar();
   }
   async function save(extra) {
@@ -129,13 +131,27 @@
       const pv = ch && App.previews[ch.id];
       if (pv) Object.assign(E, { avatar: pv.dataUrl, avatarSource: 'ai', pendingId: pv.pending, appearance: pv.appearance || E.appearance, look: pv.look || E.look });
       $('#avatar-consent').checked = false; $('#avatar-status').textContent = pv ? '👀 C\'è un nuovo look non salvato: premi Salva per tenerlo.' : '';
-      $('#regen-extra').value = '';
+      $('#regen-extra').value = ''; dirty = false;
       toForm(); refreshAvatar(); dlg.showModal();
     },
     current: () => E,
+    // Il personaggio è stato modificato sull'altro dispositivo (archivio condiviso): aggiorna l'editor se aperto.
+    remoteUpdate(ch) {
+      if (!dlg.open || !E || E.id !== ch.id || ch.updatedAt === E.updatedAt) return;
+      if (ch.updatedBy === App.me.user && !dirty) { E = { ...clone(ch), pendingId: E.pendingId }; toForm(); refreshAvatar(); return; }
+      if (!dirty && !E.pendingId) {
+        E = { ...clone(ch), pendingId: null }; toForm(); refreshAvatar();
+        $('#avatar-status').textContent = `🔄 Aggiornato ora da ${whoName(ch.updatedBy)}.`;
+      } else {
+        $('#avatar-status').textContent = `⚠️ ${whoName(ch.updatedBy)} ha appena modificato ${ch.name}. Se salvi, le tue modifiche sostituiranno le sue; chiudi e riapri per vedere le sue.`;
+      }
+    },
+    removed(id) { if (dlg.open && E && E.id === id) { dlg.close(); App.toast('Il personaggio è stato eliminato dall\'altro profilo'); } },
   };
 
   // ---- eventi ----
+  form.addEventListener('input', () => { dirty = true; });
+  form.addEventListener('change', () => { dirty = true; });
   form.addEventListener('submit', async (e) => { e.preventDefault(); try { await save(); App.toast('💾 Salvato'); } catch {} });
   $('#char-cancel').addEventListener('click', () => dlg.close());
   $('#char-delete').addEventListener('click', async () => {

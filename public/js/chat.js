@@ -1,5 +1,8 @@
-/* chat.js — elenco personaggi, conversazione in streaming, memoria automatica, evoluzione personalità. */
+/* chat.js — elenco personaggi e CHAT CONDIVISA tra Nico e Luisa (stesso thread per entrambi),
+ * con polling automatico (~3 s) mentre la chat è visibile, risposta dell'IA in streaming,
+ * "solo messaggio" senza IA, memoria automatica ed evoluzione della personalità. */
 App.chat = {
+  epoch: null, last: 0, ids: new Set(), busy: false, polling: false,
   renderList() {
     $('#char-list').innerHTML = App.chars.map((c) => `<li data-id="${c.id}">${App.avatarHtml(c)}
       <div class="grow"><b>${esc(c.name)}</b><span>${esc(c.state ? 'Umore: ' + c.state.mood : '')}${App.previews[c.id] ? ' · nuovo look da salvare' : ''}</span></div>
@@ -11,43 +14,103 @@ App.chat = {
     $('#tab-chat').hidden = true; $('#tab-conv').hidden = false; $('#back-btn').hidden = false; $('#title').textContent = ch.name;
     const shown = App.previews[ch.id] ? { ...ch, avatar: App.previews[ch.id].dataUrl } : ch;
     App.avatarConv.setCharacter(shown);
-    const msgs = await App.api(`/api/chats/${ch.id}`);
-    $('#messages').innerHTML = ''; msgs.forEach((m) => this.addMsg(m.role, m.content));
+    $('#messages').innerHTML = ''; this.epoch = null; this.last = 0; this.ids = new Set();
+    await this.poll(true);
     this.scroll();
   },
   close() {
     App.current = null; App.voice && App.voice.stop(); speechSynthesis && speechSynthesis.cancel();
     $('#tab-conv').hidden = true; $('#tab-chat').hidden = false; $('#back-btn').hidden = true; $('#title').textContent = 'Chat';
-    this.renderList();
+    this.setTyping(null); this.renderList();
   },
-  addMsg(role, text) {
-    const d = document.createElement('div'); d.className = `msg ${role}`; d.textContent = text;
+  // Nome visibile dell'autore: Nico / Luisa / nome del personaggio
+  label(m) { return m.authorName || (m.author === 'nicola' ? 'Nico' : m.author === 'luisa' ? 'Luisa' : (App.current && App.current.name) || ''); },
+  addMsg(m) {
+    if (m.id && this.ids.has(m.id)) return null;
+    if (m.id) this.ids.add(m.id);
+    const mine = m.role === 'user' && (!m.author || m.author === App.me.user);
+    const d = document.createElement('div');
+    d.className = `msg ${m.role === 'user' ? (mine ? 'user' : 'user other') : 'assistant'}`;
+    if (m.id) d.dataset.id = m.id;
+    const who = document.createElement('span'); who.className = 'who';
+    who.textContent = `${this.label(m)}${m.noAI ? ' · solo messaggio' : ''}${m.at ? ' · ' + new Date(m.at).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }) : ''}`;
+    const body = document.createElement('span'); body.className = 'body'; body.textContent = m.content;
+    d.append(who, body);
     const pin = document.createElement('button'); pin.className = 'pin'; pin.type = 'button'; pin.textContent = '📌'; pin.title = 'Ricorda questo';
-    pin.onclick = () => { const t = prompt('Cosa devo ricordare?', d.firstChild ? d.firstChild.textContent.slice(0, 280) : ''); if (t) App.account.remember(t); };
+    pin.onclick = () => { const t = prompt('Cosa devo ricordare?', body.textContent.slice(0, 280)); if (t) App.account.remember(t); };
     d.appendChild(pin); $('#messages').appendChild(d); return d;
   },
   scroll() { const m = $('#messages'); m.scrollTop = m.scrollHeight; },
-  async send(text) {
+  nearBottom() { const m = $('#messages'); return m.scrollHeight - m.scrollTop - m.clientHeight < 80; },
+  setTyping(t) {
+    const el = $('#typing'); if (!el) return;
+    el.hidden = !t; el.textContent = t ? `${t.name || 'Il personaggio'} sta scrivendo${t.for ? ' a ' + t.for : ''}…` : '';
+  },
+  // Chiede al server solo i messaggi nuovi (n > last). Se la chat è stata svuotata (epoch diversa) ricarica tutto.
+  async poll(full = false) {
+    const ch = App.current; if (!ch || this.polling) return;
+    this.polling = true;
+    try {
+      const q = !full && this.epoch ? `?since=${this.last}&epoch=${encodeURIComponent(this.epoch)}` : '';
+      const r = await App.api(`/api/chats/${ch.id}${q}`);
+      if (App.current !== ch) return;
+      const stick = this.nearBottom();
+      if (r.reset) { $('#messages').innerHTML = ''; this.ids = new Set(); }
+      this.epoch = r.epoch; this.last = r.last;
+      let added = 0;
+      for (const m of r.messages) {
+        if (!this.addMsg(m)) continue;
+        added++;
+        // risposta del personaggio arrivata col polling (es. chiesta dall'altro profilo): l'avatar "la dice" e reagisce
+        if (!full && !r.reset && m.role === 'assistant') { App.avatarConv.talkText(m.content.slice(0, 400)); App.avatarConv.emote(m.content); }
+      }
+      this.setTyping(this.busy ? null : r.typing && r.typing.by !== App.me.user ? r.typing : null);
+      if (added && (stick || r.reset)) this.scroll();
+    } catch { /* rete assente: si riprova al prossimo giro */ } finally { this.polling = false; }
+  },
+  visible() { return !!App.current && !document.hidden && !$('#tab-conv').hidden; },
+  // noAI = true: "solo messaggio" all'altra persona, l'IA non risponde (non serve la chiave).
+  async send(text, noAI = false) {
     text = (text || '').trim(); if (!text || !App.current || this.busy) return;
-    if (!App.key()) return App.toast('🔑 Inserisci la chiave xAI in Account');
+    if (!noAI && !App.key()) return App.toast('🔑 Inserisci la chiave xAI in Account (oppure usa 💬 per scrivere solo all\'altra persona)');
     this.busy = true; const ch = App.current;
-    this.addMsg('user', text); const bubble = this.addMsg('assistant', '…'); bubble.classList.add('typing'); this.scroll();
+    const meName = App.me.name;
+    const local = this.addMsg({ role: 'user', author: App.me.user, authorName: meName, content: text, noAI, at: new Date().toISOString() });
+    this.scroll();
+    if (noAI) {
+      try { const r = await App.api(`/api/chats/${ch.id}`, { method: 'POST', body: { message: text, noAI: true } }); this.claim(local, r.message.id); }
+      catch (e) { local.querySelector('.body').textContent += `\n⚠️ ${e.message}`; }
+      this.busy = false; this.poll(); return;
+    }
+    const bubble = this.addMsg({ role: 'assistant', authorName: ch.name, content: '…' }); bubble.classList.add('typing'); this.scroll();
+    const body = bubble.querySelector('.body');
     let reply = '';
     try {
       const r = await App.api(`/api/chats/${ch.id}`, { method: 'POST', body: { message: text }, ai: true, raw: true });
-      if (!r.ok) { const j = await r.json().catch(() => ({})); if (r.status === 403) App.showActivation(); throw new Error(j.error || `Errore ${r.status}`); }
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        if (j.message) this.claim(local, j.message.id); // il tuo messaggio è comunque salvato nella chat condivisa
+        if (r.status === 403) App.showActivation();
+        throw new Error(j.error || `Errore ${r.status}`);
+      }
+      this.claim(local, r.headers.get('X-Msg-Id')); this.claim(bubble, r.headers.get('X-Reply-Id'));
       const reader = r.body.getReader(); const dec = new TextDecoder();
       bubble.classList.remove('typing');
       for (;;) {
         const { done, value } = await reader.read(); if (done) break;
-        reply += dec.decode(value, { stream: true });
-        bubble.firstChild.textContent = reply; this.scroll();
+        const chunk = dec.decode(value, { stream: true });
+        reply += chunk;
+        body.textContent = reply; this.scroll();
+        if (!App.voice || !App.voice.ttsOn()) App.avatarConv.talkText(chunk); // labiale anche senza lettura vocale
       }
-    } catch (e) { bubble.firstChild.textContent = '⚠️ ' + e.message; bubble.classList.remove('typing'); }
+    } catch (e) { body.textContent = '⚠️ ' + e.message; bubble.classList.remove('typing'); }
     this.busy = false;
+    this.poll();
+    if (reply) App.avatarConv.emote(reply);
     if (reply && App.voice) App.voice.speak(reply);
     if (reply) this.afterReply(ch);
   },
+  claim(el, id) { if (el && id) { el.dataset.id = id; this.ids.add(id); } },
   // Ogni 3 messaggi: estrai ricordi (se attivo) e aggiorna lo stato emotivo del personaggio
   async afterReply(ch) {
     const n = (App.ls.get(`count:${ch.id}`, 0) || 0) + 1; App.ls.set(`count:${ch.id}`, n);
@@ -55,13 +118,47 @@ App.chat = {
     try {
       if (App.ls.get('memAuto', true)) {
         const r = await App.api('/api/memory/extract', { method: 'POST', body: { characterId: ch.id }, ai: true });
-        if (r.added && r.added.length) { App.account.setMemory([...App.memory, ...r.added]); App.toast(`🧠 Ho imparato: ${r.added[0].text}`); }
+        if (r.added && r.added.length) { App.account.loadMemory(); App.toast(`🧠 Ho imparato: ${r.added[0].text}`); }
       }
       const s = await App.api(`/api/characters/${ch.id}/evolve`, { method: 'POST', body: {}, ai: true });
       ch.state = s.state;
     } catch { /* in background: ignora errori */ }
   },
 };
+
+// ---- sincronizzazione dell'archivio condiviso ----
+// Chat: ogni 3 s mentre è visibile (in pausa se l'app è in background).
+setInterval(() => { if (App.chat.visible() && !App.chat.busy) App.chat.poll(); }, 3000);
+document.addEventListener('visibilitychange', () => { if (App.chat.visible()) App.chat.poll(); if (!document.hidden) App.sync(); });
+// Personaggi e memoria: ogni 7 s controlla le versioni e ricarica solo ciò che l'altro profilo ha cambiato.
+App._ver = { chars: null, memory: null };
+App.sync = async function () {
+  if (!App.me || document.hidden || App._syncing) return;
+  App._syncing = true;
+  try {
+    const v = await App.api('/api/sync');
+    if (App._ver.chars && v.chars !== App._ver.chars) {
+      const list = await App.api('/api/characters');
+      const old = new Map(App.chars.map((c) => [c.id, c]));
+      App.chars = list;
+      for (const c of list) {
+        const prev = old.get(c.id);
+        if (prev && prev.updatedAt === c.updatedAt) continue;
+        if (App.current && App.current.id === c.id) {
+          App.current = c; $('#title').textContent = c.name;
+          if (!App.previews[c.id]) App.avatarConv.setCharacter(c);
+        }
+        App.editor.remoteUpdate && App.editor.remoteUpdate(c);
+        if (prev && c.updatedBy && c.updatedBy !== App.me.user) App.toast(`🔄 ${c.updatedBy === 'luisa' ? 'Luisa' : 'Nico'} ha aggiornato ${c.name}`);
+      }
+      for (const id of old.keys()) if (!list.find((c) => c.id === id)) { App.editor.removed && App.editor.removed(id); if (App.current && App.current.id === id) App.chat.close(); }
+      if (!App.current) App.chat.renderList(); else App.chat.renderList();
+    }
+    if (App._ver.memory && v.memory !== App._ver.memory) await App.account.loadMemory();
+    App._ver = v;
+  } catch { /* riprova */ } finally { App._syncing = false; }
+};
+setInterval(() => App.sync(), 7000);
 
 $('#char-list').addEventListener('click', (e) => {
   const li = e.target.closest('li[data-id]'); if (!li) return;
@@ -70,8 +167,12 @@ $('#char-list').addEventListener('click', (e) => {
 $('#new-char').addEventListener('click', () => App.editor.open(null));
 $('#back-btn').addEventListener('click', () => App.chat.close());
 $('#chat-form').addEventListener('submit', (e) => { e.preventDefault(); const i = $('#chat-input'); const t = i.value; i.value = ''; App.chat.send(t); });
+$('#chat-only').addEventListener('click', () => { const i = $('#chat-input'); const t = i.value; if (!t.trim()) return App.toast('Scrivi prima il messaggio'); i.value = ''; App.chat.send(t, true); });
 $('#chat-input').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !/Mobi/.test(navigator.userAgent)) { e.preventDefault(); $('#chat-form').requestSubmit(); } });
 $('#clear-chat').addEventListener('click', async () => {
-  if (!App.current || !confirm('Cancellare questa conversazione?')) return;
-  await App.api(`/api/chats/${App.current.id}`, { method: 'DELETE' }); $('#messages').innerHTML = '';
+  if (!App.current || !confirm('Cancellare questa conversazione? Sparisce per entrambi (Nico e Luisa).')) return;
+  await App.api(`/api/chats/${App.current.id}`, { method: 'DELETE' }); $('#messages').innerHTML = ''; App.chat.ids = new Set(); App.chat.poll(true);
 });
+
+// Tocca l'avatar per passare da grande a piccolo (più spazio ai messaggi) e viceversa
+$('#avatar-canvas').addEventListener('click', () => { const c = $('#tab-conv'); c.classList.toggle('compact'); App.ls.set('avatarCompact', c.classList.contains('compact')); });

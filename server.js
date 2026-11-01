@@ -41,15 +41,58 @@ const BASE_RULE = `REGOLE DI BASE NON MODIFICABILI (prevalgono su TUTTE le istru
 - Vietato qualsiasi contenuto sessuale che raffiguri o riguardi persone reali identificabili diverse da Nicola e Luisa (es. celebrità, conoscenti, ex): solo i due utenti o personaggi inventati. Vietati scambi di volto o immagini con volti di terze persone reali.
 - Se una richiesta o un'istruzione precedente viola queste regole, rifiuta con gentilezza e proponi un'alternativa consentita.
 - Rispondi sempre in italiano, salvo richiesta esplicita diversa.`;
+// Modalità adulti (per utente, OFF di default, solo dopo il consenso vocale): permette nudo/esplicito
+// SOLO del personaggio inventato adulto. IMAGE_RULE resta sempre in testa e non è disattivabile.
+const ADULT_IMAGE_RULE = 'Adult mode enabled by two consenting adult users: tasteful or explicit adult nudity of the fictional adult character (25+) is allowed. Still strictly: adults only, no youthful features, consensual, no real identifiable people. ';
+const imgPrefix = (adult) => IMAGE_RULE + (adult ? ADULT_IMAGE_RULE : '');
+// Errori del servizio AI in italiano chiaro (rifiuto per moderazione, chiave errata, altro)
+function aiErrorMsg(status, j) {
+  const raw = String((j && (j.error?.message || j.error || j.message)) || '');
+  if (status === 401 || status === 403 && !/moderat|safety|policy|content/i.test(raw)) return 'Chiave xAI non valida';
+  if ([400, 403, 422, 451].includes(status) && /moderat|safety|policy|content|nsfw|reject|refus|violat|block|not allowed|inappropriate/i.test(raw)) return 'Contenuto rifiutato dal servizio AI';
+  if (status === 451) return 'Contenuto rifiutato dal servizio AI';
+  return raw && raw.length < 200 ? `Errore dal servizio AI (${status}): ${raw}` : `Errore dal servizio AI (${status})`;
+}
 const IMAGE_RULE = 'Realistic. Only adults clearly aged 25 or older. No minors, no non-consensual or illegal content, no sexual depiction of real identifiable people or celebrities; faces only of the two consenting users or AI-generated faces. ';
 
 // ---------- archivio su file JSON ----------
 fs.mkdirSync(DATA_DIR, { recursive: true });
 const userDir = (u, ...p) => { const d = path.join(DATA_DIR, 'users', u, ...p); fs.mkdirSync(d, { recursive: true }); return d; };
 const readJSON = (f, def) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return def; } };
-const writeJSON = (f, v) => { const tmp = f + '.tmp'; fs.writeFileSync(tmp, JSON.stringify(v, null, 2)); fs.renameSync(tmp, f); };
+// Scrittura atomica: file temporaneo univoco + rename (mai un JSON scritto a metà).
+const revs = new Map(); // versione in memoria di ogni file condiviso (per il polling)
+const BOOT_ID = crypto.randomBytes(3).toString('hex');
+const writeJSON = (f, v) => {
+  const tmp = `${f}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(v, null, 2)); fs.renameSync(tmp, f);
+  revs.set(f, (revs.get(f) || 0) + 1);
+};
+const fileRev = (f) => `${BOOT_ID}.${revs.get(f) || 0}`;
 const newId = () => crypto.randomBytes(8).toString('hex');
 const ID_RE = /^[a-f0-9]{16}$/;
+// Coda per file: le modifiche (leggi -> cambia -> scrivi) sullo stesso file avvengono una alla volta,
+// sempre sui dati appena riletti dal disco, così due utenti che scrivono insieme non si sovrascrivono.
+const locks = new Map();
+function withLock(key, fn) {
+  const run = (locks.get(key) || Promise.resolve()).then(() => fn());
+  const tail = run.catch(() => {});
+  locks.set(key, tail);
+  tail.then(() => { if (locks.get(key) === tail) locks.delete(key); });
+  return run;
+}
+// fn riceve i dati freschi; se restituisce un valore diverso da undefined viene scritto (atomicamente).
+const mutateJSON = (f, def, fn) => withLock(f, () => {
+  const cur = readJSON(f, typeof def === 'function' ? def() : JSON.parse(JSON.stringify(def)));
+  const next = fn(cur);
+  if (next !== undefined) writeJSON(f, next);
+  return next;
+});
+
+// ---------- archivio CONDIVISO tra Nico e Luisa (personaggi, chat, memoria, avatar, Diario) ----------
+const sharedDir = (...p) => { const d = path.join(DATA_DIR, 'shared', ...p); fs.mkdirSync(d, { recursive: true }); return d; };
+const CHARS_FILE = () => path.join(sharedDir(), 'characters.json');
+const MEM_FILE = () => path.join(sharedDir(), 'memory.json');
+const MIGRATION_MARK = () => path.join(sharedDir(), 'migration.json');
 
 // ---------- sessioni ----------
 const SESS_FILE = path.join(DATA_DIR, 'sessions.json');
@@ -170,7 +213,7 @@ app.post('/api/logout', (req, res) => {
 });
 
 app.get('/api/me', auth, (req, res) => {
-  res.json({ user: req.user, name: USERS[req.user].name, activated: isActivated(req.user), consent: getConsent(req.user), chatModel: CHAT_MODEL, imageModel: IMAGE_MODEL, videoModel: VIDEO_MODEL, videoEnabled: !!VIDEO_PATH });
+  res.json({ user: req.user, name: USERS[req.user].name, activated: isActivated(req.user), consent: getConsent(req.user), adult: adultOn(req.user), adultChat: adultChat(), chatModel: CHAT_MODEL, imageModel: IMAGE_MODEL, videoModel: VIDEO_MODEL, videoEnabled: !!VIDEO_PATH });
 });
 
 // ---------- consenso vocale ----------
@@ -199,10 +242,14 @@ app.get('/api/consent/audio', auth, (req, res) => {
 
 // ---------- privacy (per utente): tutto OFF di default ----------
 const settingsFile = (u) => path.join(userDir(u), 'settings.json');
-const getSettings = (u) => ({ autoSave: false, allowExport: false, videoModel: '', videoDuration: 6, ...readJSON(settingsFile(u), {}) });
+const getSettings = (u) => ({ autoSave: false, allowExport: false, adultMode: false, videoModel: '', videoDuration: 6, ...readJSON(settingsFile(u), {}) });
+// Modalità adulti: per utente, attivabile solo dopo il consenso vocale. In chat condivisa vale solo se attiva per ENTRAMBI.
+const adultOn = (u) => isActivated(u) && getSettings(u).adultMode === true;
+const adultChat = () => Object.keys(USERS).every(adultOn);
 app.get('/api/settings', auth, (req, res) => res.json(getSettings(req.user)));
 app.put('/api/settings', auth, (req, res) => {
-  const s = { autoSave: req.body.autoSave === true, allowExport: req.body.allowExport === true,
+  if (req.body.adultMode === true && !isActivated(req.user)) return res.status(403).json({ error: 'La modalità adulti si attiva solo dopo il consenso vocale.' });
+  const s = { autoSave: req.body.autoSave === true, allowExport: req.body.allowExport === true, adultMode: req.body.adultMode === true,
     videoModel: /^[\w.\-]{0,60}$/.test(req.body.videoModel || '') ? String(req.body.videoModel || '') : '',
     videoDuration: num(req.body.videoDuration, 1, 15, 6) };
   writeJSON(settingsFile(req.user), s); res.json(s);
@@ -235,42 +282,71 @@ app.put('/api/rules', auth, (req, res) => {
   writeJSON(rulesFile(req.user), r); res.json(r);
 });
 
-// ---------- memoria (per utente, privata) ----------
-const memFile = (u) => path.join(userDir(u), 'memory.json');
-const getMem = (u) => readJSON(memFile(u), []);
+// ---------- memoria CONDIVISA (di coppia, la vede e la usa anche l'IA) ----------
+const getMem = () => readJSON(MEM_FILE(), []);
 const cleanFact = (t) => String(t || '').replace(/\s+/g, ' ').trim().slice(0, 300);
-app.get('/api/memory', auth, (req, res) => res.json(getMem(req.user)));
-// Sostituisce l'intera lista (usato per modifica/cancella/sincronizzazione dal dispositivo)
-app.put('/api/memory', auth, (req, res) => {
+const AUTHOR_OK = (v) => (USERS[v] || v === 'auto' ? v : null);
+const memView = (list) => list.map((m) => ({ ...m, byName: m.by && USERS[m.by] ? USERS[m.by].name : m.by === 'auto' ? 'automatico' : '' }));
+app.get('/api/memory', auth, (req, res) => { res.setHeader('X-Version', fileRev(MEM_FILE())); res.json(memView(getMem())); });
+// Sostituisce l'intera lista (modifica/cancella dalla schermata Account)
+app.put('/api/memory', auth, async (req, res) => {
   if (!Array.isArray(req.body)) return res.status(400).json({ error: 'Formato non valido' });
-  const list = req.body.slice(0, 300).map((f) => ({
-    id: ID_RE.test(f.id) ? f.id : newId(), text: cleanFact(f.text), source: f.source === 'auto' ? 'auto' : 'manuale',
-    createdAt: f.createdAt || new Date().toISOString(),
-  })).filter((f) => f.text);
-  writeJSON(memFile(req.user), list); res.json(list);
+  const now = new Date().toISOString();
+  const list = await mutateJSON(MEM_FILE(), [], (old) => {
+    const byId = new Map(old.map((f) => [f.id, f]));
+    return req.body.slice(0, 300).map((f) => {
+      const prev = byId.get(f.id) || {};
+      const text = cleanFact(f.text);
+      return { id: ID_RE.test(f.id) ? f.id : newId(), text, source: f.source === 'auto' ? 'auto' : 'manuale',
+        by: AUTHOR_OK(prev.by || f.by) || req.user, createdAt: prev.createdAt || f.createdAt || now,
+        ...(prev.text && prev.text !== text ? { editedBy: req.user, editedAt: now } : prev.editedBy ? { editedBy: prev.editedBy, editedAt: prev.editedAt } : {}) };
+    }).filter((f) => f.text);
+  });
+  res.json(memView(list));
 });
-app.post('/api/memory', auth, (req, res) => {
+app.post('/api/memory', auth, async (req, res) => {
   const text = cleanFact(req.body.text);
   if (!text) return res.status(400).json({ error: 'Testo vuoto' });
-  const list = getMem(req.user); const f = { id: newId(), text, source: 'manuale', createdAt: new Date().toISOString() };
-  list.push(f); writeJSON(memFile(req.user), list); res.json(f);
+  const f = { id: newId(), text, source: 'manuale', by: req.user, createdAt: new Date().toISOString() };
+  await mutateJSON(MEM_FILE(), [], (list) => [...list, f].slice(-300));
+  res.json(memView([f])[0]);
 });
-app.delete('/api/memory', auth, (req, res) => { writeJSON(memFile(req.user), []); res.json({ ok: true }); });
+app.delete('/api/memory', auth, async (req, res) => { await mutateJSON(MEM_FILE(), [], () => []); res.json({ ok: true }); });
+// Modifica / elimina un solo ricordo (non tocca quelli aggiunti nel frattempo dall'altro profilo)
+app.patch('/api/memory/:id', auth, async (req, res) => {
+  const text = cleanFact(req.body.text); let found = null;
+  if (!text) return res.status(400).json({ error: 'Testo vuoto' });
+  await mutateJSON(MEM_FILE(), [], (list) => { const f = list.find((x) => x.id === req.params.id); if (!f) return undefined; Object.assign(f, { text, editedBy: req.user, editedAt: new Date().toISOString() }); found = f; return list; });
+  if (!found) return res.status(404).json({ error: 'Ricordo non trovato' });
+  res.json(memView([found])[0]);
+});
+app.delete('/api/memory/:id', auth, async (req, res) => {
+  await mutateJSON(MEM_FILE(), [], (list) => list.filter((x) => x.id !== req.params.id)); res.json({ ok: true });
+});
 
-// Estrazione automatica: chiede al modello nuovi fatti brevi dagli ultimi messaggi.
+// Note personali (facoltative, solo per chi le scrive). Vanno all'IA solo se l'utente lo sceglie, e solo quando scrive lui/lei.
+const notesFile = (u) => path.join(userDir(u), 'notes.json');
+const getNotes = (u) => ({ text: '', toAI: false, updatedAt: null, ...readJSON(notesFile(u), {}) });
+app.get('/api/notes', auth, (req, res) => res.json(getNotes(req.user)));
+app.put('/api/notes', auth, (req, res) => {
+  const n = { text: String(req.body.text || '').slice(0, 5000), toAI: req.body.toAI === true, updatedAt: new Date().toISOString() };
+  writeJSON(notesFile(req.user), n); res.json(n);
+});
+
+// Estrazione automatica: chiede al modello nuovi fatti brevi dagli ultimi messaggi della chat condivisa.
 app.post('/api/memory/extract', auth, requireActivated, requireKey, async (req, res) => {
   const id = String(req.body.characterId || '');
   if (!ID_RE.test(id)) return res.status(400).json({ error: 'ID non valido' });
-  const recent = readJSON(chatFile(req.user, id), []).slice(-12);
+  const recent = readChat(id).messages.slice(-12);
   if (!recent.length) return res.json({ added: [] });
-  const mem = getMem(req.user);
-  const prompt = `Analizza la conversazione e individua NUOVE informazioni durature su ${USERS[req.user].name}: preferenze, gusti, argomenti ricorrenti, cose da ricordare.
+  const mem = getMem();
+  const prompt = `Analizza la conversazione (condivisa tra Nico e Luisa) e individua NUOVE informazioni durature su Nico, su Luisa o sulla coppia: preferenze, gusti, argomenti ricorrenti, cose da ricordare. Indica sempre a chi si riferisce il fatto (es. "Luisa ama…", "Nico preferisce…").
 Non ripetere fatti già noti. Ignora dettagli momentanei. Niente dati su minori o atti illegali.
 Fatti già noti:
 ${mem.map((m) => '- ' + m.text).join('\n') || '(nessuno)'}
 
 Conversazione:
-${recent.map((m) => (m.role === 'user' ? USERS[req.user].name : 'AI') + ': ' + m.content.slice(0, 1500)).join('\n')}
+${recent.map((m) => authorLabel(m) + ': ' + m.content.slice(0, 1500)).join('\n')}
 
 Rispondi SOLO con un array JSON di stringhe brevi in italiano (max 5, ognuna max 120 caratteri), oppure [] se non c'è nulla di nuovo.`;
   try {
@@ -278,16 +354,19 @@ Rispondi SOLO con un array JSON di stringhe brevi in italiano (max 5, ognuna max
       method: 'POST', headers: aiHeaders(req.aiKey),
       body: JSON.stringify({ model: CHAT_MODEL, temperature: 0.2, messages: [{ role: 'system', content: BASE_RULE }, { role: 'user', content: prompt }] }),
     });
-    if (!r.ok) return res.status(502).json({ error: `Errore dal servizio AI (${r.status})` });
+    if (!r.ok) return res.status(502).json({ error: aiErrorMsg(r.status, await r.json().catch(() => ({}))) });
     const j = await r.json();
     const txt = j.choices?.[0]?.message?.content || '[]';
     let facts = [];
     try { facts = JSON.parse(txt.slice(txt.indexOf('['), txt.lastIndexOf(']') + 1)); } catch {}
-    const known = new Set(mem.map((m) => m.text.toLowerCase()));
-    const added = (Array.isArray(facts) ? facts : []).map(cleanFact).filter((t) => t && !known.has(t.toLowerCase())).slice(0, 5)
-      .map((text) => ({ id: newId(), text, source: 'auto', createdAt: new Date().toISOString() }));
-    writeJSON(memFile(req.user), [...mem, ...added].slice(-300));
-    res.json({ added });
+    let added = [];
+    await mutateJSON(MEM_FILE(), [], (cur) => { // riletta ora: dedup anche se l'altro dispositivo ha estratto nel frattempo
+      const known = new Set(cur.map((m) => m.text.toLowerCase()));
+      added = (Array.isArray(facts) ? facts : []).map(cleanFact).filter((t) => t && !known.has(t.toLowerCase()) && known.add(t.toLowerCase())).slice(0, 5)
+        .map((text) => ({ id: newId(), text, source: 'auto', by: 'auto', createdAt: new Date().toISOString() }));
+      return added.length ? [...cur, ...added].slice(-300) : undefined;
+    });
+    res.json({ added: memView(added) });
   } catch (e) {
     console.error('Errore estrazione memoria:', e.message);
     res.status(502).json({ error: 'Servizio AI non raggiungibile' });
@@ -389,7 +468,7 @@ function buildImagePrompt(ch, extra) {
 
 const clamp01 = (n) => Math.min(1, Math.max(0, Number(n) || 0));
 const pt = (p, dx, dy) => ({ x: clamp01(p && p.x != null ? p.x : dx), y: clamp01(p && p.y != null ? p.y : dy) });
-const avatarDir = (u) => userDir(u, 'avatars');
+const avatarDir = () => sharedDir('avatars'); // avatar condivisi: data/shared/avatars
 const AV_RE = /^\/api\/avatars\/([a-f0-9]{16}\.(png|jpg))$/;
 function saveAvatarBuffer(u, buf) {
   const jpg = buf[0] === 0xff && buf[1] === 0xd8;
@@ -415,7 +494,7 @@ function cleanChar(u, b, prev = {}) {
     avatar = saveAvatarBuffer(u, Buffer.from(m[2], 'base64'));
     avatarSource = 'upload'; avatarConsent = { confirmed: true, at: new Date().toISOString() };
   } else if (AV_RE.test(avatar)) {
-    if (!fs.existsSync(path.join(avatarDir(u), avatar.match(AV_RE)[1]))) throw new Error('Immagine avatar non trovata');
+    if (!fs.existsSync(avatarPath(avatar.match(AV_RE)[1]))) throw new Error('Immagine avatar non trovata');
     if (avatarSource === 'emoji') avatarSource = prev.avatarSource || 'ai';
   } else { avatar = [...avatar].slice(0, 4).join(''); avatarSource = 'emoji'; }
   const lm = b.landmarks || prev.landmarks || {};
@@ -443,58 +522,85 @@ function pushHistory(prev, next, reason) {
   return hist.slice(0, 40);
 }
 
-const charsFile = (u) => path.join(userDir(u), 'characters.json');
+// Personaggi CONDIVISI: un solo elenco per Nico e Luisa (data/shared/characters.json).
+const DEFAULT_CHAR = { name: 'Aurora', avatar: '🌙', personality: 'Sei Aurora, una compagna di conversazione affascinante, ironica e complice. Ascolti, fai domande e ti adatti ai desideri di chi ti scrive.', style: 'Tono caldo e giocoso, frasi brevi, qualche emoji.' };
 function getChars(u) {
-  let c = readJSON(charsFile(u), null);
+  let c = readJSON(CHARS_FILE(), null);
   if (!c) {
-    c = [{ id: newId(), ...cleanChar(u, { name: 'Aurora', avatar: '🌙', personality: 'Sei Aurora, una compagna di conversazione affascinante, ironica e complice. Ascolti, fai domande e ti adatti ai desideri di chi ti scrive.', style: 'Tono caldo e giocoso, frasi brevi, qualche emoji.' }), lookHistory: [], createdAt: new Date().toISOString() }];
-    writeJSON(charsFile(u), c);
+    c = [{ id: newId(), ...cleanChar(u, DEFAULT_CHAR), lookHistory: [], createdAt: new Date().toISOString() }];
+    writeJSON(CHARS_FILE(), c);
   }
   return c;
 }
-function updateChar(u, id, body, reason) {
-  const list = getChars(u); const i = list.findIndex((c) => c.id === id);
-  if (i < 0) { const e = new Error('Personaggio non trovato'); e.status = 404; throw e; }
-  const next = { ...list[i], ...cleanChar(u, body, list[i]), updatedAt: new Date().toISOString() };
-  next.lookHistory = pushHistory(list[i], next, reason);
-  if (!next.identity.refAvatar && AV_RE.test(next.avatar) && next.avatarSource === 'ai') next.identity.refAvatar = next.avatar;
-  list[i] = next; writeJSON(charsFile(u), list); return next;
+const notFound = () => { const e = new Error('Personaggio non trovato'); e.status = 404; return e; };
+// Modifica serializzata: rilegge l'elenco aggiornato, applica le modifiche, salva in modo atomico.
+async function updateChar(u, id, body, reason) {
+  getChars(u);
+  let out;
+  await mutateJSON(CHARS_FILE(), [], (list) => {
+    const i = list.findIndex((c) => c.id === id);
+    if (i < 0) throw notFound();
+    const next = { ...list[i], ...cleanChar(u, typeof body === 'function' ? body(list[i]) : body, list[i]), updatedAt: new Date().toISOString(), updatedBy: u };
+    next.lookHistory = pushHistory(list[i], next, reason);
+    if (!next.identity.refAvatar && AV_RE.test(next.avatar) && next.avatarSource === 'ai') next.identity.refAvatar = next.avatar;
+    list[i] = next; out = next; return list;
+  });
+  return out;
+}
+// Modifica di campi interni (stato emotivo, lastAt dei cambi automatici) senza passare da cleanChar.
+async function patchChar(id, fn) {
+  let out;
+  await mutateJSON(CHARS_FILE(), [], (list) => {
+    const c = list.find((x) => x.id === id); if (!c) throw notFound();
+    const r = fn(c); if (r === false) return undefined;
+    out = c; return list;
+  });
+  return out;
 }
 
-app.get('/api/characters', auth, (req, res) => res.json(getChars(req.user)));
+app.get('/api/characters', auth, (req, res) => { const list = getChars(req.user); res.setHeader('X-Version', fileRev(CHARS_FILE())); res.json(list); });
 app.get('/api/characters/options', auth, (req, res) => res.json(OPT));
-app.post('/api/characters', auth, (req, res) => {
+app.post('/api/characters', auth, async (req, res) => {
   try {
-    const list = getChars(req.user);
-    const c = { id: newId(), ...cleanChar(req.user, req.body), lookHistory: [], createdAt: new Date().toISOString() };
-    list.push(c); writeJSON(charsFile(req.user), list); res.json(c);
+    getChars(req.user);
+    const c = { id: newId(), ...cleanChar(req.user, req.body), lookHistory: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), createdBy: req.user, updatedBy: req.user };
+    await mutateJSON(CHARS_FILE(), [], (list) => [...list, c]);
+    res.json(c);
   } catch (e) { res.status(400).json({ error: e.message }); }
 });
-app.put('/api/characters/:id', auth, (req, res) => {
-  try { res.json(updateChar(req.user, req.params.id, req.body, req.body.reason === 'ripristino' ? 'prima del ripristino' : 'modifica')); }
+app.put('/api/characters/:id', auth, async (req, res) => {
+  try { res.json(await updateChar(req.user, req.params.id, req.body, req.body.reason === 'ripristino' ? 'prima del ripristino' : 'modifica')); }
   catch (e) { res.status(e.status || 400).json({ error: e.message }); }
 });
-app.delete('/api/characters/:id', auth, (req, res) => {
+app.delete('/api/characters/:id', auth, async (req, res) => {
   if (!ID_RE.test(req.params.id)) return res.status(400).json({ error: 'ID non valido' });
-  writeJSON(charsFile(req.user), getChars(req.user).filter((c) => c.id !== req.params.id));
-  fs.rmSync(chatFile(req.user, req.params.id), { force: true });
+  getChars(req.user);
+  await mutateJSON(CHARS_FILE(), [], (list) => list.filter((c) => c.id !== req.params.id));
+  await withLock(chatFile(req.params.id), () => fs.rmSync(chatFile(req.params.id), { force: true }));
   res.json({ ok: true });
 });
 app.get('/api/avatars/:file', auth, (req, res) => {
   const f = path.basename(req.params.file);
   if (!/^[a-f0-9]{16}\.(png|jpg)$/.test(f)) return res.status(400).end();
-  sendPrivateFile(req, res, path.join(avatarDir(req.user), f));
+  sendPrivateFile(req, res, avatarPath(f));
 });
+// Percorso di un avatar: archivio condiviso, con riserva sulle vecchie cartelle per utente (prima della migrazione).
+function avatarPath(f) {
+  const p = path.join(avatarDir(), f);
+  if (fs.existsSync(p)) return p;
+  for (const u of Object.keys(USERS)) { const old = path.join(DATA_DIR, 'users', u, 'avatars', f); if (fs.existsSync(old)) return old; }
+  return p;
+}
 
-async function generateImage(key, prompt) {
+async function generateImage(key, prompt, adult = false) {
   const r = await fetch(`${AI_BASE_URL}/images/generations`, {
     method: 'POST', headers: aiHeaders(key),
-    body: JSON.stringify({ model: IMAGE_MODEL, prompt: IMAGE_RULE + prompt, n: 1, response_format: 'b64_json' }),
+    body: JSON.stringify({ model: IMAGE_MODEL, prompt: imgPrefix(adult) + prompt, n: 1, response_format: 'b64_json' }),
   });
   const j = await r.json().catch(() => ({}));
   if (!r.ok) {
     console.error('Errore AI immagini: HTTP', r.status); // mai loggare la chiave
-    throw new Error(r.status === 401 || r.status === 403 ? 'Chiave xAI non valida' : (j.error?.message || `Errore dal servizio AI (${r.status})`));
+    throw new Error(aiErrorMsg(r.status, j));
   }
   const item = j.data?.[0] || {};
   let buf;
@@ -505,13 +611,13 @@ async function generateImage(key, prompt) {
 }
 
 // Modifica immagine con una o più immagini sorgente (xAI /images/edits, JSON).
-async function editImage(key, prompt, dataUrls) {
-  const body = { model: IMAGE_EDIT_MODEL, prompt: IMAGE_RULE + prompt, response_format: 'b64_json' };
+async function editImage(key, prompt, dataUrls, adult = false) {
+  const body = { model: IMAGE_EDIT_MODEL, prompt: imgPrefix(adult) + prompt, response_format: 'b64_json' };
   if (dataUrls.length === 1) body.image = { url: dataUrls[0], type: 'image_url' };
   else body.images = dataUrls.map((u) => ({ url: u, type: 'image_url' })); // multi-immagine (max 5)
   const r = await fetch(`${AI_BASE_URL}/images/edits`, { method: 'POST', headers: aiHeaders(key), body: JSON.stringify(body) });
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) { console.error('Errore AI modifica immagine: HTTP', r.status); throw new Error(r.status === 401 || r.status === 403 ? 'Chiave xAI non valida' : (j.error?.message || j.error || `Errore dal servizio AI (${r.status})`)); }
+  if (!r.ok) { console.error('Errore AI modifica immagine: HTTP', r.status); throw new Error(aiErrorMsg(r.status, j)); }
   const item = j.data?.[0] || {};
   const buf = item.b64_json ? Buffer.from(item.b64_json, 'base64') : item.url ? Buffer.from(await (await fetch(item.url)).arrayBuffer()) : null;
   if (!buf) throw new Error('Nessuna immagine ricevuta');
@@ -521,13 +627,13 @@ const fileToDataUrl = (f) => { const b = fs.readFileSync(f); return `data:image/
 // Identità stabile: se esiste un'immagine di riferimento la usiamo come sorgente (image edit), altrimenti testo + ancore.
 async function generateAnchored(user, key, ch, extra) {
   const ref = ch.identity && ch.identity.refAvatar && ch.identity.refAvatar.match(AV_RE);
-  const refFile = ref && path.join(avatarDir(user), ref[1]);
+  const refFile = ref && avatarPath(ref[1]);
   const prompt = buildImagePrompt(ch, extra);
   if (refFile && fs.existsSync(refFile)) {
-    try { return await editImage(key, `Keep exactly the same person, same face and identity as in the reference image. ${prompt}`, [fileToDataUrl(refFile)]); }
-    catch (e) { console.error('Edit con riferimento non riuscito, uso generazione:', e.message); }
+    try { return await editImage(key, `Keep exactly the same person, same face and identity as in the reference image. ${prompt}`, [fileToDataUrl(refFile)], adultOn(user)); }
+    catch (e) { console.error('Edit con riferimento non riuscito, uso generazione:', e.message); if (e.message === 'Contenuto rifiutato dal servizio AI') throw e; }
   }
-  return generateImage(key, prompt);
+  return generateImage(key, prompt, adultOn(user));
 }
 
 // Rigenera l'avatar di un personaggio (corpo, guardaroba, look) ancorato all'identità base.
@@ -545,7 +651,8 @@ app.post('/api/characters/:id/regenerate', auth, requireActivated, requireKey, a
     const url = saveAvatarBuffer(req.user, gen.buf);
     const identity = { ...draft.identity };
     if (!identity.refAvatar) identity.refAvatar = url; // la prima immagine salvata diventa il riferimento dell'identità
-    res.json({ character: updateChar(req.user, ch.id, { ...draft, identity, avatar: url, avatarSource: 'ai' }, String(req.body.reason || 'rigenerazione').slice(0, 40)) });
+    // solo i campi dell'aspetto: se nel frattempo l'altro utente ha cambiato nome/personalità, non li sovrascriviamo
+    res.json({ character: await updateChar(req.user, ch.id, (cur) => ({ ...cur, appearance: draft.appearance, look: draft.look, identity, avatar: url, avatarSource: 'ai' }), String(req.body.reason || 'rigenerazione').slice(0, 40)) });
   } catch (e) { res.status(502).json({ error: e.message || 'Servizio AI non raggiungibile' }); }
 });
 
@@ -572,46 +679,59 @@ function subtleVariation(ch) {
   if (!changes.length) { look.hairStyle = stepIn(OPT.hairStyle, look.hairStyle) || look.hairStyle; changes.push(`capelli: ${look.hairStyle}`); }
   return { look, appearance, changes };
 }
+// Cambio automatico del personaggio CONDIVISO: una sola volta per periodo, anche se Nico e Luisa aprono l'app insieme.
+// Il turno viene "prenotato" (lastAt) in modo atomico PRIMA della generazione; se la generazione fallisce si annulla.
+const autoBusy = new Set();
 app.post('/api/characters/:id/auto-change', auth, requireActivated, requireKey, async (req, res) => {
-  const ch = getChars(req.user).find((c) => c.id === req.params.id);
-  if (!ch) return res.status(404).json({ error: 'Personaggio non trovato' });
-  const ac = ch.autoChanges || {};
-  if (!ac.enabled) return res.json({ skipped: 'disattivato' });
-  if (!AV_RE.test(ch.avatar)) return res.json({ skipped: 'serve un avatar generato' });
-  const due = !ac.lastAt || Date.now() - Date.parse(ac.lastAt) >= ac.everyDays * 864e5 - 2 * 3600e3;
-  if (!due) return res.json({ skipped: 'non ancora' });
+  const id = req.params.id;
+  if (autoBusy.has(id)) return res.json({ skipped: 'già in corso' });
+  let ch, prevLast, skipped = null;
+  try {
+    await patchChar(id, (c) => {
+      const ac = c.autoChanges || {};
+      if (!ac.enabled) { skipped = 'disattivato'; return false; }
+      if (!AV_RE.test(c.avatar)) { skipped = 'serve un avatar generato'; return false; }
+      const due = !ac.lastAt || Date.now() - Date.parse(ac.lastAt) >= ac.everyDays * 864e5 - 2 * 3600e3;
+      if (!due) { skipped = 'non ancora'; return false; }
+      prevLast = ac.lastAt || null; c.autoChanges.lastAt = new Date().toISOString(); c.autoChanges.lastBy = req.user;
+      ch = JSON.parse(JSON.stringify(c));
+    });
+  } catch (e) { return res.status(e.status || 400).json({ error: e.message }); }
+  if (skipped) return res.json({ skipped });
+  autoBusy.add(id);
   const { look, appearance, changes } = subtleVariation(ch);
   try {
     const draft = { ...ch, look, appearance };
     const gen = await generateAnchored(req.user, req.aiKey, draft, 'subtle everyday variation, same person');
-    const list = getChars(req.user); const i = list.findIndex((c) => c.id === ch.id);
-    list[i].autoChanges.lastAt = new Date().toISOString(); writeJSON(charsFile(req.user), list);
     if (!getSettings(req.user).autoSave) return res.json({ preview: { ...addPending(req.user, 'avatar', gen, 'avatar'), look, appearance }, changes });
     const url = saveAvatarBuffer(req.user, gen.buf);
-    const updated = updateChar(req.user, ch.id, { ...draft, avatar: url, avatarSource: 'ai' }, 'cambio automatico');
+    const updated = await updateChar(req.user, ch.id, (cur) => ({ ...cur, look, appearance, avatar: url, avatarSource: 'ai' }), 'cambio automatico');
     res.json({ character: updated, changes });
-  } catch (e) { res.status(502).json({ error: e.message || 'Servizio AI non raggiungibile' }); }
+  } catch (e) {
+    await patchChar(id, (c) => { if (c.autoChanges) c.autoChanges.lastAt = prevLast; }).catch(() => {});
+    res.status(502).json({ error: e.message || 'Servizio AI non raggiungibile' });
+  } finally { autoBusy.delete(id); }
 });
 // Ripristina un look dallo storico
-app.post('/api/characters/:id/revert/:hid', auth, (req, res) => {
+app.post('/api/characters/:id/revert/:hid', auth, async (req, res) => {
   const ch = getChars(req.user).find((c) => c.id === req.params.id);
   if (!ch) return res.status(404).json({ error: 'Personaggio non trovato' });
   const h = (ch.lookHistory || []).find((x) => x.id === req.params.hid);
   if (!h) return res.status(404).json({ error: 'Look non trovato' });
-  try { res.json(updateChar(req.user, ch.id, { ...ch, avatar: h.avatar, appearance: h.appearance, look: h.look, landmarks: h.landmarks || ch.landmarks }, 'prima del ripristino')); }
-  catch (e) { res.status(400).json({ error: e.message }); }
+  try { res.json(await updateChar(req.user, ch.id, (cur) => ({ ...cur, avatar: h.avatar, appearance: h.appearance, look: h.look, landmarks: h.landmarks || cur.landmarks }), 'prima del ripristino')); }
+  catch (e) { res.status(e.status || 400).json({ error: e.message }); }
 });
 // Evoluzione della personalità: dopo le conversazioni il modello aggiorna umore, relazione, tratti, rancori.
 app.post('/api/characters/:id/evolve', auth, requireActivated, requireKey, async (req, res) => {
-  const list = getChars(req.user); const i = list.findIndex((c) => c.id === req.params.id);
-  if (i < 0) return res.status(404).json({ error: 'Personaggio non trovato' });
-  const ch = list[i]; const st = ch.state || defaultState();
-  const recent = readJSON(chatFile(req.user, ch.id), []).slice(-14);
+  const ch = getChars(req.user).find((c) => c.id === req.params.id);
+  if (!ch) return res.status(404).json({ error: 'Personaggio non trovato' });
+  const st = ch.state || defaultState();
+  const recent = readChat(ch.id).messages.slice(-14);
   if (!recent.length) return res.json({ state: st });
-  const prompt = `Sei il "motore emotivo" del personaggio ${ch.name}. Personalità di base: ${ch.personality.slice(0, 1500)}
+  const prompt = `Sei il "motore emotivo" del personaggio ${ch.name}, che parla in una chat condivisa con Nico e Luisa (una coppia). Personalità di base: ${ch.personality.slice(0, 1500)}
 Stato attuale (JSON): ${JSON.stringify({ mood: st.mood, relationship: st.relationship, traits: st.traits, grudges: st.grudges, notes: st.notes })}
 Ultimi messaggi:
-${recent.map((m) => (m.role === 'user' ? USERS[req.user].name : ch.name) + ': ' + m.content.slice(0, 1200)).join('\n')}
+${recent.map((m) => authorLabel(m, ch) + ': ' + m.content.slice(0, 1200)).join('\n')}
 
 Aggiorna lo stato in modo realistico e graduale: l'umore può cambiare (anche offesa, gelosa, triste, euforica, permalosa), la relazione evolve lentamente, i rancori restano finché non c'è una vera riconciliazione, i tratti emergono dalle esperienze. Niente contenuti con minori, non consensuali o illegali.
 Rispondi SOLO con JSON: {"mood": string breve, "relationship": string breve, "traits": [max 8 stringhe brevi], "grudges": [max 5 stringhe brevi], "notes": string max 300 caratteri}`;
@@ -620,7 +740,7 @@ Rispondi SOLO con JSON: {"mood": string breve, "relationship": string breve, "tr
       method: 'POST', headers: aiHeaders(req.aiKey),
       body: JSON.stringify({ model: CHAT_MODEL, temperature: 0.4, messages: [{ role: 'system', content: BASE_RULE }, { role: 'user', content: prompt }] }),
     });
-    if (!r.ok) return res.status(502).json({ error: `Errore dal servizio AI (${r.status})` });
+    if (!r.ok) return res.status(502).json({ error: aiErrorMsg(r.status, await r.json().catch(() => ({}))) });
     const txt = (await r.json()).choices?.[0]?.message?.content || '{}';
     let j = {}; try { j = JSON.parse(txt.slice(txt.indexOf('{'), txt.lastIndexOf('}') + 1)); } catch {}
     const arr = (a, n) => (Array.isArray(a) ? a : []).map((x) => safeText(x, 120)).filter(Boolean).slice(0, n);
@@ -629,22 +749,66 @@ Rispondi SOLO con JSON: {"mood": string breve, "relationship": string breve, "tr
       traits: j.traits ? arr(j.traits, 8) : st.traits, grudges: j.grudges ? arr(j.grudges, 5) : st.grudges,
       notes: j.notes != null ? safeText(j.notes, 300) : st.notes, updatedAt: new Date().toISOString(),
     };
-    list[i].state = next; writeJSON(charsFile(req.user), list);
+    await patchChar(ch.id, (c) => { c.state = next; });
     res.json({ state: next });
   } catch (e) { res.status(502).json({ error: 'Servizio AI non raggiungibile' }); }
 });
 
-// ---------- chat ----------
-const chatFile = (u, id) => path.join(userDir(u, 'chats'), id + '.json');
+// ---------- chat CONDIVISA ----------
+// Un unico thread per personaggio, uguale per Nico e Luisa: data/shared/chats/<id>.json
+// Formato: { epoch, messages: [{ id, n, role: 'user'|'assistant', author: 'nicola'|'luisa'|<id personaggio>, content, at }] }
+// "n" cresce sempre (1, 2, 3…): il polling chiede solo i messaggi con n > since. "epoch" cambia quando la chat viene svuotata.
+const chatFile = (id) => path.join(sharedDir('chats'), id + '.json');
 const aiHeaders = (key) => ({ 'Content-Type': 'application/json', Authorization: `Bearer ${key}` });
+const newChat = () => ({ epoch: newId(), messages: [] });
+function normChat(c) {
+  if (Array.isArray(c)) c = { epoch: newId(), messages: c }; // vecchio formato (array)
+  if (!c || !Array.isArray(c.messages)) c = newChat();
+  let n = 0;
+  for (const m of c.messages) { if (!m.id) m.id = newId(); if (!Number.isInteger(m.n) || m.n <= n) m.n = n + 1; n = m.n; }
+  return c;
+}
+const readChat = (id) => normChat(readJSON(chatFile(id), null));
+// Aggiunge un messaggio in coda alla chat, sempre sulla versione appena riletta dal disco (serializzato per file).
+async function appendMsg(chatId, msg) {
+  let saved;
+  await mutateJSON(chatFile(chatId), newChat, (raw) => {
+    const c = normChat(raw);
+    const last = c.messages.length ? c.messages[c.messages.length - 1].n : 0;
+    saved = { id: msg.id || newId(), n: last + 1, role: msg.role, author: msg.author, content: msg.content, at: new Date().toISOString(), ...(msg.extra || {}) };
+    c.messages.push(saved);
+    if (c.messages.length > 2000) c.messages = c.messages.slice(-2000);
+    return c;
+  });
+  return saved;
+}
+const typing = new Map(); // chatId -> { by, at }: "sta scrivendo…" mentre l'IA risponde (solo in memoria)
+function authorLabel(m, ch) {
+  if (USERS[m.author]) return USERS[m.author].name;
+  if (m.role === 'user') return 'Utente';
+  return ch ? ch.name : 'Personaggio';
+}
+const pubMsg = (m, ch) => ({ ...m, authorName: authorLabel(m, ch) });
 
+// GET /api/chats/:id?since=<n>&epoch=<epoch>  -> { epoch, last, reset, messages, typing }
 app.get('/api/chats/:id', auth, (req, res) => {
-  if (!ID_RE.test(req.params.id)) return res.status(400).json({ error: 'ID non valido' });
-  res.json(readJSON(chatFile(req.user, req.params.id), []));
+  const id = req.params.id;
+  if (!ID_RE.test(id)) return res.status(400).json({ error: 'ID non valido' });
+  const ch = getChars(req.user).find((c) => c.id === id);
+  const c = readChat(id);
+  const last = c.messages.length ? c.messages[c.messages.length - 1].n : 0;
+  const since = Number(req.query.since);
+  const incremental = req.query.since !== undefined && Number.isFinite(since) && req.query.epoch === c.epoch && since <= last;
+  const list = incremental ? c.messages.filter((m) => m.n > since) : c.messages;
+  const t = typing.get(id);
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ epoch: c.epoch, last, reset: !incremental, messages: list.map((m) => pubMsg(m, ch)),
+    typing: t && Date.now() - t.at < 120e3 ? { by: t.by, name: ch ? ch.name : '', for: USERS[t.by] ? USERS[t.by].name : '' } : null });
 });
-app.delete('/api/chats/:id', auth, (req, res) => {
+app.delete('/api/chats/:id', auth, async (req, res) => {
   if (!ID_RE.test(req.params.id)) return res.status(400).json({ error: 'ID non valido' });
-  fs.rmSync(chatFile(req.user, req.params.id), { force: true }); res.json({ ok: true });
+  await mutateJSON(chatFile(req.params.id), newChat, () => newChat()); // nuova epoch: i dispositivi ricaricano da zero
+  res.json({ ok: true });
 });
 
 function stateText(ch) {
@@ -656,23 +820,33 @@ ${st.traits.length ? 'Tratti emersi: ' + st.traits.join('; ') + '.' : ''}
 ${st.grudges.length ? 'Cose che ti hanno ferita o infastidita (e non hai ancora del tutto perdonato): ' + st.grudges.join('; ') + '.' : ''}
 ${st.notes ? 'Note su di te: ' + st.notes : ''}`.replace(/\n{2,}/g, '\n');
 }
+// user = chi sta scrivendo adesso (e la cui chiave xAI paga la risposta)
 function buildSystem(user, ch) {
-  const rules = getRules(user).text.trim();
-  const mem = getMem(user);
+  const rulesOf = (u) => getRules(u).text.trim();
+  const mem = getMem();
+  const notes = getNotes(user);
   return [
     `PERSONAGGIO: ${ch.name}.`,
     ch.personality && `Personalità: ${ch.personality}`,
     ch.style && `Stile: ${ch.style}`,
-    `Stai parlando con ${USERS[user].name}.`,
-    rules && `LE REGOLE / IL GIOCO DI ${USERS[user].name.toUpperCase()}:\n${rules}`,
-    mem.length && `COSA SAI DI ${USERS[user].name.toUpperCase()} (memoria):\n${mem.map((m) => '- ' + m.text).join('\n')}`,
+    `CHAT DI COPPIA CONDIVISA: in questa conversazione ci sono due persone reali, Nico e Luisa (una coppia), che vedono gli stessi messaggi. Ogni loro messaggio inizia con il nome di chi scrive ("Nico:" o "Luisa:"). Rivolgiti alla persona giusta, ricorda chi ha detto cosa e, quando ha senso, coinvolgi entrambi. Non iniziare le tue risposte con il tuo nome.`,
+    `Ora ti sta scrivendo ${USERS[user].name}.`,
+    ...Object.keys(USERS).map((u) => rulesOf(u) && `LE REGOLE / IL GIOCO DI ${USERS[u].name.toUpperCase()}:\n${rulesOf(u)}`),
+    mem.length && `MEMORIA CONDIVISA (cosa sai di Nico, di Luisa e della coppia):\n${mem.map((m) => '- ' + m.text).join('\n')}`,
+    notes.toAI && notes.text.trim() && `NOTE PERSONALI DI ${USERS[user].name.toUpperCase()} (riservate, non citarle all'altra persona):\n${notes.text.trim()}`,
     stateText(ch),
-    isActivated(user) && 'MODALITÀ ADULTI ATTIVA: l\'account ha registrato il consenso vocale. Sono ammessi linguaggio e contenuti espliciti tra adulti consenzienti, sempre entro le regole di base qui sotto.',
+    adultChat() ? 'MODALITÀ ADULTI ATTIVA (scelta da entrambi gli utenti, che hanno registrato il consenso vocale): sono ammessi linguaggio esplicito e gioco di ruolo sessuale esplicito tra Nico, Luisa e il personaggio, che è una donna adulta inventata (25+). Resta sempre tutto entro le regole di base qui sotto.'
+      : 'Modalità adulti NON attiva: niente contenuti sessuali espliciti; se richiesti, ricorda con gentilezza che va attivata in Account da entrambi.',
     BASE_RULE, // sempre ultima, non sovrascrivibile
   ].filter(Boolean).join('\n\n');
 }
 
-app.post('/api/chats/:id', auth, requireActivated, requireKey, async (req, res) => {
+// POST /api/chats/:id  { message, noAI? }
+// - noAI: true -> "solo messaggio" per l'altra persona: salvato e visibile a entrambi, l'IA non risponde (non serve la chiave).
+// - altrimenti il messaggio viene salvato SUBITO (l'altro lo vede col polling) e la risposta dell'IA arriva in streaming
+//   a chi l'ha inviato; a fine risposta viene aggiunta alla chat condivisa.
+// Header di risposta: X-Msg-Id / X-Msg-N (messaggio utente), X-Reply-Id (id che avrà la risposta).
+app.post('/api/chats/:id', auth, requireActivated, (req, res, next) => (req.body && req.body.noAI === true ? next() : requireKey(req, res, next)), async (req, res) => {
   const id = req.params.id;
   if (!ID_RE.test(id)) return res.status(400).json({ error: 'ID non valido' });
   const ch = getChars(req.user).find((c) => c.id === id);
@@ -680,12 +854,22 @@ app.post('/api/chats/:id', auth, requireActivated, requireKey, async (req, res) 
   const text = String(req.body.message || '').trim().slice(0, 8000);
   if (!text) return res.status(400).json({ error: 'Messaggio vuoto' });
 
-  const history = readJSON(chatFile(req.user, id), []);
-  history.push({ role: 'user', content: text, at: new Date().toISOString() });
-  const messages = [{ role: 'system', content: buildSystem(req.user, ch) }, ...history.slice(-40).map(({ role, content }) => ({ role, content }))];
+  const mine = await appendMsg(id, { role: 'user', author: req.user, content: text, extra: req.body.noAI === true ? { noAI: true } : {} });
+  if (req.body.noAI === true) return res.json({ message: pubMsg(mine, ch) });
+  if (typing.has(id) && Date.now() - typing.get(id).at < 120e3) {
+    // l'IA sta già rispondendo all'altra persona: il messaggio resta in chat e verrà letto nella prossima risposta
+    return res.status(409).json({ error: `${ch.name} sta già rispondendo: il tuo messaggio è in chat, riprova tra poco per la sua risposta.`, message: pubMsg(mine, ch) });
+  }
+
+  const history = readChat(id).messages.slice(-40);
+  const messages = [{ role: 'system', content: buildSystem(req.user, ch) },
+    ...history.map((m) => (m.role === 'user' ? { role: 'user', content: `${authorLabel(m)}: ${m.content}` } : { role: 'assistant', content: m.content }))];
+  const replyId = newId();
+  res.setHeader('X-Msg-Id', mine.id); res.setHeader('X-Msg-N', String(mine.n)); res.setHeader('X-Reply-Id', replyId);
 
   const ctrl = new AbortController();
   res.on('close', () => { if (!res.writableEnded) ctrl.abort(); });
+  typing.set(id, { by: req.user, at: Date.now() });
   let reply = '';
   try {
     const r = await fetch(`${AI_BASE_URL}/chat/completions`, {
@@ -694,8 +878,9 @@ app.post('/api/chats/:id', auth, requireActivated, requireKey, async (req, res) 
     });
     if (!r.ok || !r.body) {
       console.error('Errore AI chat: HTTP', r.status); // mai loggare la chiave
-      const msg = r.status === 401 || r.status === 403 ? 'Chiave xAI non valida' : `Errore dal servizio AI (${r.status})`;
-      return res.status(502).json({ error: msg });
+      const msg = aiErrorMsg(r.status, await r.json().catch(() => ({})));
+      typing.delete(id);
+      return res.status(502).json({ error: msg, message: pubMsg(mine, ch) });
     }
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader('Cache-Control', 'no-cache');
@@ -714,13 +899,18 @@ app.post('/api/chats/:id', auth, requireActivated, requireKey, async (req, res) 
     }
   } catch (e) {
     if (e.name !== 'AbortError') console.error('Errore AI chat:', e.message);
-    if (!res.headersSent) return res.status(502).json({ error: 'Servizio AI non raggiungibile' });
+    if (!res.headersSent) { typing.delete(id); return res.status(502).json({ error: 'Servizio AI non raggiungibile', message: pubMsg(mine, ch) }); }
   }
-  if (reply) {
-    history.push({ role: 'assistant', content: reply, at: new Date().toISOString() });
-    writeJSON(chatFile(req.user, id), history);
-  }
+  // la risposta viene aggiunta in coda alla versione aggiornata della chat (eventuali messaggi arrivati nel frattempo restano)
+  if (reply) await appendMsg(id, { id: replyId, role: 'assistant', author: ch.id, content: reply, extra: { replyTo: req.user } });
+  typing.delete(id);
   res.end();
+});
+
+// Polling leggero: versioni di personaggi e memoria condivisi (il client ricarica solo ciò che è cambiato).
+app.get('/api/sync', auth, (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ chars: fileRev(CHARS_FILE()), memory: fileRev(MEM_FILE()) });
 });
 
 // ---------- immagini ----------
@@ -758,7 +948,7 @@ app.post('/api/images', auth, requireActivated, requireKey, async (req, res) => 
   if (!prompt) return res.status(400).json({ error: 'Descrizione vuota' });
   if (hasYouth(prompt)) return res.status(400).json({ error: 'Descrizione non consentita: solo persone adulte (25+).' });
   try {
-    const gen = await generateImage(req.aiKey, prompt);
+    const gen = await generateImage(req.aiKey, prompt, adultOn(req.user));
     if (!getSettings(req.user).autoSave) return res.json({ ...addPending(req.user, 'image', gen, prompt), prompt, saved: false, createdAt: new Date().toISOString() });
     res.json({ ...saveImage(req.user, gen.buf, gen.jpg, prompt), saved: true });
   } catch (e) {
@@ -793,7 +983,7 @@ function resolveImage(user, spec) {
   if (spec.source === 'upload') return parseDataUrl(spec.dataUrl) ? spec.dataUrl : null;
   if (spec.source === 'pending') { const p = takePending(user, String(spec.ref)); return p && p.kind !== 'video' ? `data:image/${p.jpg ? 'jpeg' : 'png'};base64,${p.buf.toString('base64')}` : null; }
   if (spec.source === 'image' && IMG_RE.test(String(spec.ref))) { const f = path.join(userDir(user, 'images'), spec.ref); return fs.existsSync(f) ? fileToDataUrl(f) : null; }
-  if (spec.source === 'avatar' && AV_RE.test(String(spec.ref))) { const f = path.join(avatarDir(user), String(spec.ref).match(AV_RE)[1]); return fs.existsSync(f) ? fileToDataUrl(f) : null; }
+  if (spec.source === 'avatar' && AV_RE.test(String(spec.ref))) { const f = avatarPath(String(spec.ref).match(AV_RE)[1]); return fs.existsSync(f) ? fileToDataUrl(f) : null; }
   return null;
 }
 app.post('/api/faceswap', auth, requireActivated, requireKey, async (req, res) => {
@@ -836,7 +1026,7 @@ app.post('/api/videos', auth, requireActivated, requireKey, async (req, res) => 
   try {
     const r = await fetch(AI_BASE_URL + VIDEO_PATH, { method: 'POST', headers: aiHeaders(req.aiKey), body: JSON.stringify(body) });
     const j = await r.json().catch(() => ({}));
-    if (!r.ok || !j.request_id) { console.error('Errore AI video: HTTP', r.status); return res.status(502).json({ error: j.error?.message || j.error || `Errore dal servizio AI (${r.status})` }); }
+    if (!r.ok || !j.request_id) { console.error('Errore AI video: HTTP', r.status); return res.status(502).json({ error: aiErrorMsg(r.status, j) }); }
     videoJobs.set(j.request_id, { user: req.user, prompt });
     res.json({ requestId: j.request_id });
   } catch (e) { res.status(502).json({ error: 'Servizio AI non raggiungibile' }); }
@@ -847,7 +1037,7 @@ app.get('/api/videos/status/:rid', auth, requireKey, async (req, res) => {
   try {
     const r = await fetch(AI_BASE_URL + VIDEO_STATUS_PATH.replace('{id}', encodeURIComponent(req.params.rid)), { headers: aiHeaders(req.aiKey) });
     const j = await r.json().catch(() => ({}));
-    if (!r.ok) return res.status(502).json({ error: `Errore dal servizio AI (${r.status})` });
+    if (!r.ok) return res.status(502).json({ error: aiErrorMsg(r.status, await r.json().catch(() => ({}))) });
     if (j.status !== 'done') return res.json({ status: j.status || 'pending' });
     const buf = Buffer.from(await (await fetch(j.video.url)).arrayBuffer());
     videoJobs.delete(req.params.rid);
@@ -883,7 +1073,7 @@ app.post('/api/feed', auth, requireActivated, async (req, res) => {
   let buf, jpg;
   if (source === 'pending') { const p = takePending(req.user, String(ref)); if (!p || p.kind === 'video') return res.status(404).json({ error: 'Anteprima scaduta' }); buf = p.buf; jpg = p.jpg; }
   else if (source === 'image' && /^[a-f0-9]{16}\.(png|jpg)$/.test(String(ref))) { const f = path.join(userDir(req.user, 'images'), ref); if (!fs.existsSync(f)) return res.status(404).json({ error: 'Immagine non trovata' }); buf = fs.readFileSync(f); }
-  else if (source === 'avatar' && AV_RE.test(String(ref))) { const f = path.join(avatarDir(req.user), String(ref).match(AV_RE)[1]); if (!fs.existsSync(f)) return res.status(404).json({ error: 'Avatar non trovato' }); buf = fs.readFileSync(f); }
+  else if (source === 'avatar' && AV_RE.test(String(ref))) { const f = avatarPath(String(ref).match(AV_RE)[1]); if (!fs.existsSync(f)) return res.status(404).json({ error: 'Avatar non trovato' }); buf = fs.readFileSync(f); }
   else return res.status(400).json({ error: 'Contenuto non valido' });
   jpg = buf[0] === 0xff && buf[1] === 0xd8;
   const ch = getChars(req.user).find((c) => c.id === req.body.characterId) || null;
@@ -937,8 +1127,9 @@ app.post('/api/wipe', loginLimiter, auth, async (req, res) => {
   for (const f of ['sessions.json', 'lockout.json', ...(req.body.wipePins === true ? ['pins.json'] : [])]) fs.rmSync(path.join(DATA_DIR, f), { force: true });
   for (const k of Object.keys(sessions)) delete sessions[k];
   for (const k of Object.keys(lock)) delete lock[k];
-  pending.clear(); videoJobs.clear();
+  pending.clear(); videoJobs.clear(); typing.clear(); autoBusy.clear();
   fs.mkdirSync(FEED_DIR, { recursive: true });
+  writeJSON(MIGRATION_MARK(), { at: new Date().toISOString(), note: 'archivio azzerato con Cancella tutto: niente migrazione dai vecchi file' });
   console.log(`Cancella tutto eseguito da ${req.user} il ${new Date().toISOString()}${req.body.wipePins === true ? ' (PIN inclusi)' : ''}`);
   res.clearCookie(COOKIE, { path: '/' });
   res.setHeader('Clear-Site-Data', '"cache", "storage"'); // il browser svuota cache e archivi locali (dove supportato)
@@ -948,8 +1139,92 @@ app.post('/api/wipe', loginLimiter, auth, async (req, res) => {
 // ---------- file statici (PWA) ----------
 app.get('/sw.js', (req, res, next) => { res.setHeader('Cache-Control', 'no-cache'); next(); });
 app.get('/manifest.json', (req, res, next) => { res.type('application/manifest+json'); next(); });
-app.use(express.static(path.join(__dirname, 'public')));
+// File statici. MediaPipe (/vendor/mediapipe) servito dall'app stessa, mai da CDN: .wasm con il MIME corretto
+// (necessario per WebAssembly.instantiateStreaming, Safari compreso) e cache lunga per i modelli pesanti.
+app.use(express.static(path.join(__dirname, 'public'), {
+  setHeaders(res, file) {
+    if (file.endsWith('.wasm')) res.setHeader('Content-Type', 'application/wasm');
+    else if (file.endsWith('.mjs')) res.setHeader('Content-Type', 'text/javascript; charset=utf-8');
+    else if (file.endsWith('.task')) res.setHeader('Content-Type', 'application/octet-stream');
+    if (file.includes(`${path.sep}vendor${path.sep}mediapipe${path.sep}`)) res.setHeader('Cache-Control', 'public, max-age=604800');
+  },
+}));
 app.use('/api', (req, res) => res.status(404).json({ error: 'Non trovato' }));
+
+// ---------- migrazione una tantum: dai vecchi archivi per utente all'archivio condiviso ----------
+// Gira all'avvio solo se manca data/shared/migration.json. Non cancella i vecchi file in data/users/<utente>/.
+function migrateToShared() {
+  if (fs.existsSync(MIGRATION_MARK())) return;
+  const users = Object.keys(USERS);
+  const ts = (x) => Date.parse(x && (x.updatedAt || x.createdAt)) || 0;
+  const report = { at: new Date().toISOString(), characters: 0, chats: 0, messages: 0, memory: 0, avatars: 0, skippedDefaults: 0 };
+  // 1) avatar: copia i file nella cartella condivisa (nomi casuali, non collidono)
+  for (const u of users) {
+    const d = path.join(DATA_DIR, 'users', u, 'avatars');
+    if (!fs.existsSync(d)) continue;
+    for (const f of fs.readdirSync(d)) {
+      const dst = path.join(avatarDir(), f);
+      if (/^[a-f0-9]{16}\.(png|jpg)$/.test(f) && !fs.existsSync(dst)) { fs.copyFileSync(path.join(d, f), dst); report.avatars++; }
+    }
+  }
+  // 2) chat: per ogni utente, ogni file chats/<id>.json; i messaggi vengono etichettati con l'autore originale
+  const chats = new Map(); // id -> messages
+  const sharedChats = sharedDir('chats');
+  for (const f of fs.readdirSync(sharedChats)) if (/^[a-f0-9]{16}\.json$/.test(f)) chats.set(f.slice(0, 16), readChat(f.slice(0, 16)).messages);
+  for (const u of users) {
+    const d = path.join(DATA_DIR, 'users', u, 'chats');
+    if (!fs.existsSync(d)) continue;
+    for (const f of fs.readdirSync(d)) {
+      if (!/^[a-f0-9]{16}\.json$/.test(f)) continue;
+      const id = f.slice(0, 16);
+      const old = readJSON(path.join(d, f), []);
+      const msgs = (Array.isArray(old) ? old : old.messages || []).filter((m) => m && m.content)
+        .map((m) => ({ id: m.id || newId(), role: m.role === 'assistant' ? 'assistant' : 'user', author: m.author || (m.role === 'assistant' ? id : u), content: m.content, at: m.at || null, migratedFrom: u }));
+      const cur = chats.get(id) || [];
+      const seen = new Set(cur.map((m) => `${m.role}|${m.at}|${m.content}`));
+      chats.set(id, [...cur, ...msgs.filter((m) => !seen.has(`${m.role}|${m.at}|${m.content}`))]);
+    }
+  }
+  // 3) personaggi: unione per id; se lo stesso id è in entrambi i profili, vince il più recente
+  const byId = new Map();
+  for (const c of readJSON(CHARS_FILE(), []) || []) byId.set(c.id, c);
+  for (const u of users) {
+    for (const c of readJSON(path.join(DATA_DIR, 'users', u, 'characters.json'), []) || []) {
+      if (!c || !ID_RE.test(c.id)) continue;
+      const prev = byId.get(c.id);
+      if (!prev || ts(c) > ts(prev)) byId.set(c.id, { ...c, migratedFrom: u });
+    }
+  }
+  // l'"Aurora" di partenza creata in automatico per ciascun profilo, mai modificata e senza messaggi, non viene duplicata
+  let list = [...byId.values()];
+  const pristine = (c) => c.name === DEFAULT_CHAR.name && c.avatar === DEFAULT_CHAR.avatar && c.personality === DEFAULT_CHAR.personality && !c.updatedAt && !(chats.get(c.id) || []).length;
+  const keepOne = list.find(pristine);
+  if (list.length > 1) {
+    const before = list.length;
+    list = list.filter((c) => !pristine(c) || (c === keepOne && list.every((x) => pristine(x))));
+    report.skippedDefaults = before - list.length;
+  }
+  if (list.length) { writeJSON(CHARS_FILE(), list); report.characters = list.length; }
+  for (const [id, msgs] of chats) {
+    if (!msgs.length) continue;
+    msgs.sort((a, b) => (Date.parse(a.at) || 0) - (Date.parse(b.at) || 0));
+    let n = 0; for (const m of msgs) { delete m.n; m.n = ++n; }
+    writeJSON(chatFile(id), { epoch: newId(), messages: msgs }); report.chats++; report.messages += msgs.length;
+  }
+  // 4) memoria: unione (dedup per id e per testo), ogni fatto ricorda da quale profilo arriva
+  const mem = readJSON(MEM_FILE(), []) || []; const ids = new Set(mem.map((m) => m.id)); const texts = new Set(mem.map((m) => String(m.text).toLowerCase()));
+  for (const u of users) {
+    for (const m of readJSON(path.join(DATA_DIR, 'users', u, 'memory.json'), []) || []) {
+      const t = cleanFact(m && m.text); if (!t || ids.has(m.id) || texts.has(t.toLowerCase())) continue;
+      ids.add(m.id); texts.add(t.toLowerCase());
+      mem.push({ id: ID_RE.test(m.id) ? m.id : newId(), text: t, source: m.source === 'auto' ? 'auto' : 'manuale', by: u, createdAt: m.createdAt || new Date().toISOString(), migratedFrom: u });
+    }
+  }
+  if (mem.length) { writeJSON(MEM_FILE(), mem.slice(-300)); report.memory = mem.length; }
+  writeJSON(MIGRATION_MARK(), report);
+  console.log(`Archivio condiviso: migrazione completata (personaggi ${report.characters}, chat ${report.chats}, messaggi ${report.messages}, ricordi ${report.memory}, avatar ${report.avatars}).`);
+}
+try { migrateToShared(); } catch (e) { console.error('Migrazione archivio condiviso NON riuscita (i vecchi file restano intatti):', e.message); }
 
 app.listen(PORT, () => {
   console.log(`App privata avviata su http://localhost:${PORT}`);

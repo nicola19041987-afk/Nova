@@ -37,6 +37,7 @@
       if (!rec) build();
       on = true; setBtn(); status('🎙️ In ascolto…'); try { rec.start(); } catch {}
     },
+    ttsOn: () => ttsOn,
     stop() { on = false; setBtn(); status(''); if (rec) try { rec.stop(); } catch {} },
     speak(text) {
       if (!ttsOn || !window.speechSynthesis) return;

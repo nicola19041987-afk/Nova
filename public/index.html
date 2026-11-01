@@ -82,9 +82,11 @@
         </div>
         <p id="voice-status" class="muted small" hidden></p>
         <div id="messages" class="messages"></div>
+        <p id="typing" class="typing-line muted small" hidden></p>
         <form id="chat-form" class="composer">
-          <textarea id="chat-input" rows="1" placeholder="Scrivi un messaggio…" required></textarea>
-          <button class="primary" type="submit" aria-label="Invia">➤</button>
+          <textarea id="chat-input" rows="1" placeholder="Scrivi nella chat di coppia…" required></textarea>
+          <button type="button" id="chat-only" title="Solo messaggio: lo vede l'altra persona, l'IA non risponde" aria-label="Solo messaggio">💬</button>
+          <button class="primary" type="submit" aria-label="Invia (risponde il personaggio)">➤</button>
         </form>
       </div>
 
@@ -166,6 +168,8 @@
           <p class="muted small">Di default tutto resta privato: le immagini e gli avatar generati restano solo in memoria per questa sessione finché non li salvi tu.</p>
           <label class="switch"><input type="checkbox" id="set-autosave"> Salva automaticamente i contenuti generati</label>
           <label class="switch"><input type="checkbox" id="set-export"> Consenti esportazione/condivisione</label>
+          <label class="switch"><input type="checkbox" id="set-adult"> Modalità adulti (18+)</label>
+          <p class="muted small" id="adult-info">Disattivata.</p>
           <p class="muted small">Con l'esportazione attiva compaiono solo i pulsanti manuali "Scarica" e "Condividi" (menu di condivisione del telefono). Nessuna pubblicazione automatica, nessun collegamento a piattaforme esterne.</p>
         </div>
 
@@ -188,8 +192,9 @@
         <div class="card">
           <h3>🧍 Avatar</h3>
           <label class="switch"><input type="checkbox" id="set-gestures"> Gesti animati (mezzo busto / figura intera)</label>
-          <label class="switch"><input type="checkbox" id="set-learn-gestures"> Impara i gesti con la fotocamera</label>
-          <p class="muted small" id="learn-gestures-info">Disattivato di default. Nessun video viene caricato.</p>
+          <label class="switch"><input type="checkbox" id="set-learn-gestures"> Reagisci ai gesti delle mie mani (fotocamera, in Presenza)</label>
+          <label class="switch"><input type="checkbox" id="set-mirror-moves"> Imita i miei movimenti (testa, braccia, ritmo)</label>
+          <p class="muted small" id="learn-gestures-info">Disattivato di default. Riconoscimento sul telefono (MediaPipe locale): nessun video viene caricato. Gesti: 👋 saluto, ✋ mano aperta, 👍 pollice, 👌 OK, ✌️ pace, 👉 indicare.</p>
         </div>
 
         <div class="card">
@@ -202,7 +207,7 @@
 
         <div class="card">
           <h3>🧠 Memoria</h3>
-          <p class="muted small">Quello che l'app ha imparato su di te. Privata, visibile solo a te.</p>
+          <p class="muted small">Memoria condivisa di coppia: la vedete e modificate entrambi, e la usa il personaggio con tutti e due.</p>
           <label class="switch"><input type="checkbox" id="mem-auto"> Impara automaticamente dalle chat</label>
           <ul id="mem-list" class="list mem"></ul>
           <div class="row">
@@ -210,6 +215,15 @@
             <button id="mem-add" class="primary">＋</button>
           </div>
           <button id="mem-clear" class="danger block">Cancella tutta la memoria</button>
+        </div>
+
+        <div class="card">
+          <h3>🔒 Le mie note personali</h3>
+          <p class="muted small">Facoltative e visibili solo a te. Non vanno all'IA, a meno che tu lo scelga qui sotto (e solo quando scrivi tu).</p>
+          <textarea id="notes-input" rows="4" placeholder="Appunti tuoi…"></textarea>
+          <label class="switch"><input type="checkbox" id="notes-ai"> Usale anche con l'IA quando scrivo io</label>
+          <button id="notes-save" class="primary block">Salva note</button>
+          <p id="notes-status" class="muted small"></p>
         </div>
 
         <div class="card">
@@ -366,7 +380,10 @@
       <button type="button" id="live-flip">🔄 Fotocamera</button>
       <button type="button" id="live-mode">🧍 Presenza</button>
       <button type="button" id="live-shot">📸</button>
+      <button type="button" id="live-hands">✋ Gesti: off</button>
+      <button type="button" id="live-mirror">🪞 Imita i miei movimenti</button>
     </div>
+    <p id="presence-status" class="presence-status" hidden></p>
     <div class="presence-panel" id="faceswap-panel" hidden>
       <label>Volto da applicare <select id="live-face"></select></label>
       <input type="file" id="live-face-file" accept="image/*" hidden>
@@ -388,6 +405,7 @@
   <script src="/js/docs.js"></script>
   <script src="/js/media.js"></script>
   <script src="/js/feed.js"></script>
+  <script src="/js/motion.js"></script>
   <script src="/js/live.js" type="module"></script>
   <script src="/js/main.js"></script>
 </body>

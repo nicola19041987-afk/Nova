@@ -78,10 +78,13 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
 .consent-check input{margin-top:3px}
 .landmark-editor{display:flex;justify-content:center}
 #landmark-canvas{width:100%;max-width:320px;aspect-ratio:1;border-radius:10px;touch-action:none;background:#000}
-.stage{display:flex;justify-content:center;padding:4px 0}
-#avatar-canvas{width:150px;height:150px;border-radius:50%;background:#2b1530;box-shadow:0 0 0 2px var(--line)}
+.stage{display:flex;justify-content:center;padding:4px 0;flex:0 0 auto}
+/* Avatar GRANDE: circa metà schermo sul telefono (vh come riserva per Safari vecchi, dvh dove c'è). Tocca l'avatar per rimpicciolirlo. */
+#avatar-canvas{width:max(180px,min(calc(100vw - 28px),calc(100vh - 340px),560px));height:max(180px,min(calc(100vw - 28px),calc(100vh - 340px),560px));width:max(180px,min(calc(100vw - 28px),calc(100dvh - 340px),560px));height:max(180px,min(calc(100vw - 28px),calc(100dvh - 340px),560px));max-width:none;border-radius:22px;background:#2b1530;box-shadow:0 0 0 2px var(--line);display:block;touch-action:manipulation}
+.conv.compact #avatar-canvas{width:min(40vw,22vh);height:min(40vw,22vh);border-radius:50%}
+.conv .messages{min-height:90px}
 .stage.speaking #avatar-canvas{box-shadow:0 0 0 3px var(--accent),0 0 22px #d14b8f66}
-@media(min-height:800px){#avatar-canvas{width:190px;height:190px}}
+@media(orientation:landscape) and (max-height:500px){#avatar-canvas{width:40vh;height:40vh}}
 details{border:1px solid var(--line);border-radius:10px;padding:6px 12px;margin:8px 0}
 details summary{cursor:pointer;font-weight:600;padding:6px 0}
 h4{margin:10px 0 0;font-size:.95em}
@@ -98,7 +101,7 @@ input[type=color]{height:40px;padding:2px}
 .history img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px;display:block}
 .history button{padding:3px 8px;font-size:.9em;margin-top:3px}
 .sticky-actions{position:sticky;bottom:-16px;background:var(--card);padding:10px 0;margin-bottom:-6px}
-#editor-canvas{width:130px;height:130px;border-radius:50%;background:#2b1530}
+#editor-canvas{width:min(72vw,300px);height:min(72vw,300px);border-radius:18px;background:#2b1530;display:block}
 .feed{display:flex;flex-direction:column;gap:16px}
 .post{background:var(--card);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
 .post header{display:flex;align-items:center;gap:10px;padding:10px 12px}
@@ -134,10 +137,18 @@ details.card summary{font-weight:600}
 .presence{position:fixed;inset:0;z-index:30;background:#000;display:flex;flex-direction:column}
 .presence video,.presence #live-overlay{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
 .presence video.mirror,.presence #live-overlay.mirror{transform:scaleX(-1)}
-#presence-avatar{position:absolute;right:4%;bottom:calc(90px + env(safe-area-inset-bottom));width:min(62vw,360px);height:min(62vw,360px);background:transparent!important}
+#presence-avatar{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(70px + env(safe-area-inset-bottom));width:min(96vw,58vh,680px);height:min(96vw,58vh,680px);width:min(96vw,60dvh,680px);height:min(96vw,60dvh,680px);background:transparent!important}
 .presence-top{position:absolute;top:calc(env(safe-area-inset-top) + 10px);left:10px;right:10px;display:flex;gap:6px;flex-wrap:wrap}
 .presence-top button{background:#000a;border:0;color:#fff;padding:8px 12px;border-radius:20px}
 .presence-panel{position:absolute;left:10px;right:10px;top:calc(env(safe-area-inset-top) + 60px);background:#000b;border-radius:12px;padding:8px 12px;font-size:.9em}
 .presence-composer{position:absolute;left:10px;right:10px;bottom:calc(10px + env(safe-area-inset-bottom))}
 .presence-composer input{margin:0;background:#000a}
 .danger-zone{border-color:var(--danger)}
+
+/* chat condivisa */
+.msg .who{display:block;font-size:11px;opacity:.75;margin-bottom:3px;font-weight:600}
+.msg.user.other{margin-left:0;margin-right:auto;background:linear-gradient(135deg,#3b5bdb,#5f3dc4);border-bottom-right-radius:16px;border-bottom-left-radius:4px}
+.typing-line{margin:2px 8px;font-style:italic}
+#chat-only{flex:0 0 auto}
+.presence-status{position:absolute;left:10px;right:10px;top:calc(env(safe-area-inset-top) + 104px);background:#000b;color:#fff;border-radius:12px;padding:6px 10px;font-size:.85em;margin:0}
+.presence-top button.on{background:#d14b8fcc}
