@@ -72,7 +72,21 @@
 
       <!-- conversazione -->
       <div id="tab-conv" class="tab conv" hidden>
-        <div class="stage" id="stage"><canvas id="avatar-canvas" width="300" height="300"></canvas></div>
+        <div class="stage" id="stage">
+          <canvas id="avatar-canvas" width="300" height="300"></canvas>
+          <div class="stage-tools">
+            <button type="button" id="scene-btn" title="Scena cinematografica" aria-label="Scena">🎬</button>
+            <button type="button" id="fs-btn" title="Schermo intero" aria-label="Schermo intero">⛶</button>
+          </div>
+          <div id="scene-menu" class="scene-menu" hidden>
+            <button type="button" data-room="">Nessuna scena</button>
+            <button type="button" data-room="salotto">🛋️ Divano / salotto</button>
+            <button type="button" data-room="camera">🛏️ Camera da letto</button>
+            <button type="button" data-room="terrazza">🌇 Terrazza</button>
+            <button type="button" id="scene-gen">✨ Genera figura intera con l'IA</button>
+            <p id="scene-info"></p>
+          </div>
+        </div>
         <div class="voicebar">
           <button type="button" id="mic-btn" title="Ascolto continuo">🎙️ <span>Voce: off</span></button>
           <button type="button" id="tts-btn" title="Leggi le risposte ad alta voce">🔇 <span>Lettura: off</span></button>
@@ -174,7 +188,6 @@
             <input id="kw-input" type="password" autocomplete="off" placeholder="vuoto = funzione spenta"></label>
           <button id="kw-save" class="block">Salva parola chiave</button>
           <p class="muted small" id="kw-status">Salvata solo come impronta cifrata sul server; non viene mai inviata all'IA. Quando la dici o la scrivi in chat, l'avatar ti chiede conferma.</p>
-          <label class="switch"><input type="checkbox" id="set-drawer"> Comodino nella scena (iniziative del personaggio, solo con modalità adulti di entrambi)</label>
           <p class="muted small">Con l'esportazione attiva compaiono solo i pulsanti manuali "Scarica" e "Condividi" (menu di condivisione del telefono). Nessuna pubblicazione automatica, nessun collegamento a piattaforme esterne.</p>
         </div>
 
@@ -414,6 +427,7 @@
   <script src="/js/media.js"></script>
   <script src="/js/feed.js"></script>
   <script src="/js/motion.js"></script>
+  <script src="/js/stage.js"></script>
   <script src="/js/live.js" type="module"></script>
   <script src="/js/main.js"></script>
 </body>

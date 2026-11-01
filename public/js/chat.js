@@ -14,11 +14,13 @@ App.chat = {
     $('#tab-chat').hidden = true; $('#tab-conv').hidden = false; $('#back-btn').hidden = false; $('#title').textContent = ch.name;
     const shown = App.previews[ch.id] ? { ...ch, avatar: App.previews[ch.id].dataUrl } : ch;
     App.avatarConv.setCharacter(shown);
+    App.scene && App.scene.apply();
     $('#messages').innerHTML = ''; this.epoch = null; this.last = 0; this.ids = new Set();
     await this.poll(true);
     this.scroll();
   },
   close() {
+    App.stageFs && App.stageFs.exit(); $('#scene-menu').hidden = true;
     App.current = null; App.voice && App.voice.stop(); speechSynthesis && speechSynthesis.cancel();
     $('#tab-conv').hidden = true; $('#tab-chat').hidden = false; $('#back-btn').hidden = true; $('#title').textContent = 'Chat';
     this.setTyping(null); this.renderList();
@@ -34,7 +36,7 @@ App.chat = {
     if (m.id) d.dataset.id = m.id;
     if (m.local) d.classList.add('local');
     const who = document.createElement('span'); who.className = 'who';
-    who.textContent = `${m.initiative === 'drawer' ? '🗄️ ' : ''}${this.label(m)}${m.noAI ? ' · solo messaggio' : ''}${m.local ? ' · solo su questo telefono' : ''}${m.at ? ' · ' + new Date(m.at).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }) : ''}`;
+    who.textContent = `${this.label(m)}${m.noAI ? ' · solo messaggio' : ''}${m.local ? ' · solo su questo telefono' : ''}${m.at ? ' · ' + new Date(m.at).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }) : ''}`;
     const body = document.createElement('span'); body.className = 'body'; body.textContent = m.content;
     d.append(who, body);
     const pin = document.createElement('button'); pin.className = 'pin'; pin.type = 'button'; pin.textContent = '📌'; pin.title = 'Ricorda questo';
@@ -64,7 +66,6 @@ App.chat = {
         added++;
         // risposta del personaggio arrivata col polling (es. chiesta dall'altro profilo): l'avatar "la dice" e reagisce
         if (!full && !r.reset && m.role === 'assistant') { App.avatarConv.talkText(m.content.slice(0, 400)); App.avatarConv.emote(m.content); }
-        if (!full && !r.reset && m.initiative === 'drawer') App.avatarConv.openDrawer(true);
       }
       this.setTyping(this.busy ? null : r.typing && r.typing.by !== App.me.user ? r.typing : null);
       if (added && (stick || r.reset)) this.scroll();
@@ -141,17 +142,6 @@ App.chat = {
     } catch (e) { this.addMsg({ role: 'assistant', authorName: App.current.name, content: '⚠️ ' + e.message, local: true }); }
     this.scroll();
   },
-  // ---- iniziativa del cassetto: il client la propone di rado, decide il server ----
-  async maybeInitiative() {
-    const ch = App.current;
-    if (!ch || !this.visible() || this.busy || this.pendingAdult || !App._ver.drawer || !App.key()) return;
-    if (!/annoi|noia|bored|stuf|apati/i.test((ch.state && ch.state.mood) || '')) return;
-    if (Math.random() > 0.5) return;
-    try {
-      const r = await App.api(`/api/chats/${ch.id}/initiative`, { method: 'POST', body: {}, ai: true });
-      if (r.message && App.current === ch) { this.addMsg(r.message); this.last = Math.max(this.last, r.message.n); this.scroll(); App.avatarConv.openDrawer(true); App.avatarConv.talkText(r.message.content); }
-    } catch { /* silenzioso */ }
-  },
   claim(el, id) { if (el && id) { el.dataset.id = id; this.ids.add(id); } },
   // Ogni 3 messaggi: estrai ricordi (se attivo) e aggiorna lo stato emotivo del personaggio
   async afterReply(ch) {
@@ -179,13 +169,11 @@ App.sync = async function () {
   App._syncing = true;
   try {
     const v = await App.api('/api/sync');
-    const drawerChanged = App._ver.chars && v.drawer !== App._ver.drawer; // modalità adulti/comodino cambiati: cassetto e suoi messaggi compaiono o spariscono
-    if (drawerChanged && App.current) App.chat.poll(true);
-    if (App._ver.chars && (v.chars !== App._ver.chars || drawerChanged)) {
+    if (App._ver.chars && v.chars !== App._ver.chars) {
       const list = await App.api('/api/characters');
       const old = new Map(App.chars.map((c) => [c.id, c]));
       App.chars = list;
-      if (App.current) { const cur = list.find((c) => c.id === App.current.id); if (cur) App.current = cur; } // sempre l'oggetto aggiornato (anche stato interno: umore, cassetto)
+      if (App.current) { const cur = list.find((c) => c.id === App.current.id); if (cur) App.current = cur; } // sempre l'oggetto aggiornato (anche stato interno, es. umore)
       for (const c of list) {
         const prev = old.get(c.id);
         if (prev && prev.updatedAt === c.updatedAt) continue;
@@ -198,20 +186,13 @@ App.sync = async function () {
       }
       for (const id of old.keys()) if (!list.find((c) => c.id === id)) { App.editor.removed && App.editor.removed(id); if (App.current && App.current.id === id) App.chat.close(); }
       if (!App.current) App.chat.renderList(); else App.chat.renderList();
+      if (App.current && App.scene) App.scene.apply();
     }
     if (App._ver.memory && v.memory !== App._ver.memory) await App.account.loadMemory();
-    App._ver = v; App.applyScene();
+    App._ver = v;
   } catch { /* riprova */ } finally { App._syncing = false; }
 };
 setInterval(() => App.sync(), 7000);
-setInterval(() => App.chat.maybeInitiative(), 60000);
-// Scena: comodino visibile se l'ho attivato; cassetto aperto solo se la modalità adulti è attiva per entrambi e lei l'ha aperto da poco
-App.applyScene = function () {
-  const ch = App.current; const on = !!(App.settings && App.settings.drawerScene);
-  const open = !!(App._ver.drawer && ch && ch.drawer && ch.drawer.openUntil && Date.parse(ch.drawer.openUntil) > Date.now());
-  [App.avatarConv, App.avatarPresence].forEach((a) => a && a.setScene({ nightstand: on, drawerOpen: open && on }));
-};
-setInterval(() => App.applyScene(), 5000);
 
 $('#char-list').addEventListener('click', (e) => {
   const li = e.target.closest('li[data-id]'); if (!li) return;
@@ -228,4 +209,4 @@ $('#clear-chat').addEventListener('click', async () => {
 });
 
 // Tocca l'avatar per passare da grande a piccolo (più spazio ai messaggi) e viceversa
-$('#avatar-canvas').addEventListener('click', () => { const c = $('#tab-conv'); c.classList.toggle('compact'); App.ls.set('avatarCompact', c.classList.contains('compact')); });
+$('#avatar-canvas').addEventListener('click', () => { if (App.stageFs && App.stageFs.isFs()) return; $('#scene-menu').hidden = true; const c = $('#tab-conv'); c.classList.toggle('compact'); App.ls.set('avatarCompact', c.classList.contains('compact')); });

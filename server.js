@@ -242,19 +242,19 @@ app.get('/api/consent/audio', auth, (req, res) => {
 
 // ---------- privacy (per utente): tutto OFF di default ----------
 const settingsFile = (u) => path.join(userDir(u), 'settings.json');
-const getSettings = (u) => ({ autoSave: false, allowExport: false, adultMode: false, videoModel: '', videoDuration: 6, ...readJSON(settingsFile(u), {}) });
+const getSettings = (u) => { const s = { autoSave: false, allowExport: false, adultMode: false, videoModel: '', videoDuration: 6, ...readJSON(settingsFile(u), {}) }; delete s.drawerScene; return s; }; // drawerScene (vecchio comodino, rimosso): ignorato
 // Modalità adulti: per utente, attivabile solo dopo il consenso vocale. In chat condivisa vale solo se attiva per ENTRAMBI.
 const adultOn = (u) => isActivated(u) && getSettings(u).adultMode === true;
 const adultChat = () => Object.keys(USERS).every(adultOn);
-// Comodino con cassetto nella scena (facoltativo, per utente, OFF di default). L'iniziativa del cassetto è possibile
-// SOLO se la modalità adulti è attiva per entrambi E entrambi hanno attivato il comodino.
-const drawerOn = () => adultChat() && Object.keys(USERS).every((u) => getSettings(u).drawerScene === true);
+// Il vecchio "comodino con cassetto" è stato rimosso (v6): i suoi eventuali messaggi (initiative: 'drawer') restano nel file
+// per compatibilità ma non vengono mai mostrati né passati all'IA.
+const visibleMsg = (m) => m.initiative !== 'drawer';
 app.get('/api/settings', auth, (req, res) => res.json(getSettings(req.user)));
 app.put('/api/settings', auth, (req, res) => {
   if (req.body.adultMode === true && !isActivated(req.user)) return res.status(403).json({ error: 'La modalità adulti si attiva solo dopo il consenso vocale.' });
   const s = { autoSave: req.body.autoSave === true, allowExport: req.body.allowExport === true, adultMode: req.body.adultMode === true,
     videoModel: /^[\w.\-]{0,60}$/.test(req.body.videoModel || '') ? String(req.body.videoModel || '') : '',
-    videoDuration: num(req.body.videoDuration, 1, 15, 6), drawerScene: req.body.drawerScene === true };
+    videoDuration: num(req.body.videoDuration, 1, 15, 6) };
   writeJSON(settingsFile(req.user), s); res.json(s);
 });
 // ---------- parola chiave per attivare la modalità adulti (per profilo, facoltativa) ----------
@@ -375,7 +375,7 @@ app.put('/api/notes', auth, (req, res) => {
 app.post('/api/memory/extract', auth, requireActivated, requireKey, async (req, res) => {
   const id = String(req.body.characterId || '');
   if (!ID_RE.test(id)) return res.status(400).json({ error: 'ID non valido' });
-  const recent = readChat(id).messages.filter((m) => drawerOn() || m.initiative !== 'drawer').slice(-12);
+  const recent = readChat(id).messages.filter(visibleMsg).slice(-12);
   if (!recent.length) return res.json({ added: [] });
   const mem = getMem();
   const prompt = `Analizza la conversazione (condivisa tra Nico e Luisa) e individua NUOVE informazioni durature su Nico, su Luisa o sulla coppia: preferenze, gusti, argomenti ricorrenti, cose da ricordare. Indica sempre a chi si riferisce il fatto (es. "Luisa ama…", "Nico preferisce…").
@@ -548,9 +548,40 @@ function cleanChar(u, b, prev = {}) {
     autoChanges: cleanAuto(b.autoChanges || prev.autoChanges, prev.autoChanges || {}),
     personality: String(b.personality || '').slice(0, 8000), style: String(b.style || '').slice(0, 2000),
     state: b.resetState ? defaultState() : (prev.state || defaultState()), // stato evolutivo: lo aggiorna solo il server
-    drawer: prev.drawer || null, // stato del cassetto del comodino: lo aggiorna solo il server
     memorySeededAt: prev.memorySeededAt || null,
+    scenes: cleanScenes(prev.scenes), // immagini "scena" a figura intera per stanza: le aggiorna solo il server
   };
+}
+// ---------- scena cinematografica: versione a figura intera del personaggio in una stanza ----------
+const SCENE_ROOMS = {
+  salotto: 'sitting relaxed on a comfortable sofa in a warm, cozy living room in the evening, soft warm lamp light, plants and a rug',
+  camera: 'sitting on the edge of a neatly made bed in a tasteful, softly lit bedroom, warm bedside lamp light',
+  terrazza: 'sitting on an outdoor sofa on an elegant terrace at sunset, city lights and sky in the background, string lights',
+};
+function cleanScenes(sc) {
+  const out = {};
+  for (const k of Object.keys(SCENE_ROOMS)) {
+    const v = sc && sc[k]; if (!v || !AV_RE.test(String(v.url || ''))) continue;
+    const lm = v.landmarks;
+    // coordinate nello spazio del quadrato centrale dell'immagine 16:9: possono uscire da 0..1 in orizzontale
+    const q = (p) => (p && Number.isFinite(+p.x) && Number.isFinite(+p.y) ? { x: Math.min(2, Math.max(-1, +p.x)), y: Math.min(2, Math.max(-1, +p.y)) } : null);
+    const L = lm && { eyeL: q(lm.eyeL), eyeR: q(lm.eyeR), mouth: q(lm.mouth) };
+    out[k] = { url: v.url, at: v.at || null, landmarks: L && L.eyeL && L.eyeR && L.mouth ? L : null };
+  }
+  return out;
+}
+function buildScenePrompt(ch, room) {
+  const a = ch.appearance, l = ch.look, id = ch.identity;
+  return [
+    `Cinematic photorealistic film still, wide 16:9 shot. Recurring invented adult character (identity anchor #${id.seed}): the SAME person in every image, same face, same facial features.`,
+    `A fictional adult ${EN[a.gender]}, clearly ${a.age} years old (adult, at least 25), mature adult features; not a real or famous person.`,
+    id.core && `Fixed face/identity: ${id.core}.`,
+    `Full-body shot: the WHOLE body visible from head to feet, nothing cut off, with some space above the head and below the feet, person centered in the frame, ${SCENE_ROOMS[room]}.`,
+    `Face clearly visible, turned towards the camera, eyes open, mouth closed, relaxed natural pose. Cinematic lighting, shallow depth of field, warm color grading.`,
+    `Body: ${EN[a.build]} build, ${EN[a.shape]} body shape, ${EN[a.proportions]}, height about ${a.height} cm.`,
+    `Hair: ${EN[l.length]} ${EN[l.hairColor]} hair, ${EN[l.cut]}, ${EN[l.hairStyle]}. Makeup: ${EN[l.makeup]}. Outfit: ${EN[l.outfit]}.`,
+    l.custom && `Look details: ${l.custom}.`,
+  ].filter(Boolean).join(' ');
 }
 function defaultState() { return { mood: 'serena', relationship: 'all\'inizio, curiosa di conoscerti', traits: [], grudges: [], notes: '', updatedAt: null }; }
 // Se l'immagine cambia, il look precedente va nello storico (per poter tornare indietro).
@@ -642,8 +673,7 @@ app.post('/api/characters/:id/memory-base', auth, async (req, res) => {
 });
 
 app.get('/api/characters', auth, (req, res) => {
-  const on = drawerOn();
-  const list = getChars(req.user).map((c) => (on ? c : { ...c, drawer: null })); // cassetto invisibile se la modalità adulti non è attiva per entrambi
+  const list = getChars(req.user).map(({ drawer, ...c }) => ({ ...c, scenes: cleanScenes(c.scenes) })); // il vecchio campo del comodino non viene esposto
   res.setHeader('X-Version', fileRev(CHARS_FILE())); res.json(list);
 });
 app.get('/api/characters/options', auth, (req, res) => res.json(OPT));
@@ -680,10 +710,11 @@ function avatarPath(f) {
   return p;
 }
 
-async function generateImage(key, prompt, adult = false) {
+const ASPECTS = ['1:1', '4:3', '3:4', '3:2', '2:3', '16:9', '9:16', '21:9'];
+async function generateImage(key, prompt, adult = false, aspect = null) {
   const r = await fetch(`${AI_BASE_URL}/images/generations`, {
     method: 'POST', headers: aiHeaders(key),
-    body: JSON.stringify({ model: IMAGE_MODEL, prompt: imgPrefix(adult) + prompt, n: 1, response_format: 'b64_json' }),
+    body: JSON.stringify({ model: IMAGE_MODEL, prompt: imgPrefix(adult) + prompt, n: 1, response_format: 'b64_json', ...(ASPECTS.includes(aspect) ? { aspect_ratio: aspect } : {}) }),
   });
   const j = await r.json().catch(() => ({}));
   if (!r.ok) {
@@ -699,8 +730,8 @@ async function generateImage(key, prompt, adult = false) {
 }
 
 // Modifica immagine con una o più immagini sorgente (xAI /images/edits, JSON).
-async function editImage(key, prompt, dataUrls, adult = false) {
-  const body = { model: IMAGE_EDIT_MODEL, prompt: imgPrefix(adult) + prompt, response_format: 'b64_json' };
+async function editImage(key, prompt, dataUrls, adult = false, aspect = null) {
+  const body = { model: IMAGE_EDIT_MODEL, prompt: imgPrefix(adult) + prompt, response_format: 'b64_json', ...(ASPECTS.includes(aspect) ? { aspect_ratio: aspect } : {}) };
   if (dataUrls.length === 1) body.image = { url: dataUrls[0], type: 'image_url' };
   else body.images = dataUrls.map((u) => ({ url: u, type: 'image_url' })); // multi-immagine (max 5)
   const r = await fetch(`${AI_BASE_URL}/images/edits`, { method: 'POST', headers: aiHeaders(key), body: JSON.stringify(body) });
@@ -742,6 +773,58 @@ app.post('/api/characters/:id/regenerate', auth, requireActivated, requireKey, a
     // solo i campi dell'aspetto: se nel frattempo l'altro utente ha cambiato nome/personalità, non li sovrascriviamo
     res.json({ character: await updateChar(req.user, ch.id, (cur) => ({ ...cur, appearance: draft.appearance, look: draft.look, identity, avatar: url, avatarSource: 'ai' }), String(req.body.reason || 'rigenerazione').slice(0, 40)) });
   } catch (e) { res.status(502).json({ error: e.message || 'Servizio AI non raggiungibile' }); }
+});
+
+// Genera la versione "scena" (figura intera, seduta in una stanza, 16:9) ancorata all'identità del personaggio.
+// body: { room: 'salotto'|'camera'|'terrazza' } -> { preview:{pending,dataUrl}, room } (senza salvataggio automatico) | { character, room }
+app.post('/api/characters/:id/scene-image', auth, requireActivated, requireKey, async (req, res) => {
+  const ch = getChars(req.user).find((c) => c.id === req.params.id);
+  if (!ch) return res.status(404).json({ error: 'Personaggio non trovato' });
+  const room = String(req.body.room || '');
+  if (!SCENE_ROOMS[room]) return res.status(400).json({ error: 'Stanza non valida' });
+  try {
+    const draft = { ...ch, ...cleanChar(req.user, { ...ch, avatar: ch.avatar, avatarSource: ch.avatarSource }, ch) }; // campi normalizzati (anche per personaggi vecchi)
+    const prompt = buildScenePrompt(draft, room);
+    const ref = draft.identity && draft.identity.refAvatar && ch.identity.refAvatar.match(AV_RE);
+    const refFile = ref && avatarPath(ref[1]);
+    let gen = null;
+    if (refFile && fs.existsSync(refFile)) {
+      try { gen = await editImage(req.aiKey, `Keep exactly the same person, same face and identity as in the reference image, but show her full body in a new scene. ${prompt}`, [fileToDataUrl(refFile)], adultOn(req.user), '16:9'); }
+      catch (e) { if (e.message === 'Contenuto rifiutato dal servizio AI') throw e; console.error('Scena: edit con riferimento non riuscito, uso generazione:', e.message); }
+    }
+    if (!gen) gen = await generateImage(req.aiKey, prompt, adultOn(req.user), '16:9');
+    if (!getSettings(req.user).autoSave) return res.json({ room, preview: addPending(req.user, 'scene', gen, room) });
+    const url = saveAvatarBuffer(req.user, gen.buf);
+    res.json({ room, character: await setScene(req.user, ch.id, room, { url, landmarks: null }) });
+  } catch (e) { res.status(502).json({ error: e.message || 'Servizio AI non raggiungibile' }); }
+});
+async function setScene(u, id, room, v) {
+  const c = await patchChar(id, (c) => {
+    const sc = { ...(c.scenes || {}) };
+    if (v === null) delete sc[room]; else sc[room] = { ...(sc[room] || {}), ...v, at: v.url ? new Date().toISOString() : (sc[room] || {}).at };
+    c.scenes = cleanScenes(sc); c.updatedAt = new Date().toISOString(); c.updatedBy = u;
+  });
+  const { drawer, ...pub } = c; return pub;
+}
+// Salva un'anteprima di scena e/o i punti del viso trovati sul telefono. body: { room, pendingId?, landmarks? }
+app.put('/api/characters/:id/scene', auth, async (req, res) => {
+  const ch = getChars(req.user).find((c) => c.id === req.params.id);
+  if (!ch) return res.status(404).json({ error: 'Personaggio non trovato' });
+  const room = String(req.body.room || '');
+  if (!SCENE_ROOMS[room]) return res.status(400).json({ error: 'Stanza non valida' });
+  const v = {};
+  if (req.body.pendingId) {
+    const pend = takePending(req.user, String(req.body.pendingId), 'scene');
+    if (!pend) return res.status(410).json({ error: 'Anteprima scaduta: rigenera la scena' });
+    v.url = saveAvatarBuffer(req.user, pend.buf); pending.delete(String(req.body.pendingId)); v.landmarks = null;
+  } else if (!(ch.scenes || {})[room]) return res.status(404).json({ error: 'Nessuna scena salvata per questa stanza' });
+  if (req.body.landmarks !== undefined) v.landmarks = req.body.landmarks;
+  res.json({ room, character: await setScene(req.user, ch.id, room, v) });
+});
+app.delete('/api/characters/:id/scene/:room', auth, async (req, res) => {
+  if (!SCENE_ROOMS[req.params.room]) return res.status(400).json({ error: 'Stanza non valida' });
+  if (!getChars(req.user).find((c) => c.id === req.params.id)) return res.status(404).json({ error: 'Personaggio non trovato' });
+  res.json({ character: await setScene(req.user, req.params.id, req.params.room, null) });
 });
 
 // Generatore di variazioni VINCOLATO: piccoli passi plausibili dallo stato attuale.
@@ -814,7 +897,7 @@ app.post('/api/characters/:id/evolve', auth, requireActivated, requireKey, async
   const ch = getChars(req.user).find((c) => c.id === req.params.id);
   if (!ch) return res.status(404).json({ error: 'Personaggio non trovato' });
   const st = ch.state || defaultState();
-  const recent = readChat(ch.id).messages.filter((m) => drawerOn() || m.initiative !== 'drawer').slice(-14);
+  const recent = readChat(ch.id).messages.filter(visibleMsg).slice(-14);
   if (!recent.length) return res.json({ state: st });
   const prompt = `Sei il "motore emotivo" del personaggio ${ch.name}, che parla in una chat condivisa con Nico e Luisa (una coppia). Personalità di base: ${ch.personality.slice(0, 1500)}
 Stato attuale (JSON): ${JSON.stringify({ mood: st.mood, relationship: st.relationship, traits: st.traits, grudges: st.grudges, notes: st.notes })}
@@ -887,8 +970,7 @@ app.get('/api/chats/:id', auth, (req, res) => {
   const last = c.messages.length ? c.messages[c.messages.length - 1].n : 0;
   const since = Number(req.query.since);
   const incremental = req.query.since !== undefined && Number.isFinite(since) && req.query.epoch === c.epoch && since <= last;
-  const hideDrawer = !drawerOn(); // con la modalità adulti spenta il cassetto non viene mai mostrato né citato
-  const list = (incremental ? c.messages.filter((m) => m.n > since) : c.messages).filter((m) => !(hideDrawer && m.initiative === 'drawer'));
+  const list = (incremental ? c.messages.filter((m) => m.n > since) : c.messages).filter(visibleMsg);
   const t = typing.get(id);
   res.setHeader('Cache-Control', 'no-store');
   res.json({ epoch: c.epoch, last, reset: !incremental, messages: list.map((m) => pubMsg(m, ch)),
@@ -925,7 +1007,6 @@ function buildSystem(user, ch) {
     mem.filter((m) => m.charId === ch.id).length && `LA TUA MEMORIA DI BASE (chi sei, modificabile dagli utenti):\n${mem.filter((m) => m.charId === ch.id).map((m) => '- ' + m.text).join('\n')}`,
     notes.toAI && notes.text.trim() && `NOTE PERSONALI DI ${USERS[user].name.toUpperCase()} (riservate, non citarle all'altra persona):\n${notes.text.trim()}`,
     stateText(ch),
-    drawerOn() && ch.drawer && ch.drawer.openUntil && Date.parse(ch.drawer.openUntil) > Date.now() && 'SCENA: poco fa, di tua iniziativa, hai aperto il cassetto del comodino dove tieni i tuoi "giocattoli". Puoi farvi riferimento in modo allusivo, senza descrizioni grafiche.',
     adultChat() ? 'MODALITÀ ADULTI ATTIVA (scelta da entrambi gli utenti, che hanno registrato il consenso vocale): sono ammessi linguaggio esplicito e gioco di ruolo sessuale esplicito tra Nico, Luisa e il personaggio, che è una donna adulta inventata (25+). Resta sempre tutto entro le regole di base qui sotto.'
       : 'Modalità adulti NON attiva: niente contenuti sessuali espliciti; se richiesti, ricorda con gentilezza che va attivata in Account da entrambi.',
     BASE_RULE, // sempre ultima, non sovrascrivibile
@@ -956,7 +1037,7 @@ app.post('/api/chats/:id', auth, requireActivated, (req, res, next) => (req.body
     return res.status(409).json({ error: `${ch.name} sta già rispondendo: il tuo messaggio è in chat, riprova tra poco per la sua risposta.`, message: pubMsg(mine, ch) });
   }
 
-  const history = readChat(id).messages.filter((m) => drawerOn() || m.initiative !== 'drawer').slice(-40);
+  const history = readChat(id).messages.filter(visibleMsg).slice(-40);
   const messages = [{ role: 'system', content: buildSystem(req.user, ch) },
     ...history.map((m) => (m.role === 'user' ? { role: 'user', content: `${authorLabel(m)}: ${m.content}` } : { role: 'assistant', content: m.content }))];
   const replyId = newId();
@@ -1005,59 +1086,9 @@ app.post('/api/chats/:id', auth, requireActivated, (req, res, next) => (req.body
 // Polling leggero: versioni di personaggi e memoria condivisi (il client ricarica solo ciò che è cambiato).
 app.get('/api/sync', auth, (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
-  res.json({ chars: fileRev(CHARS_FILE()), memory: fileRev(MEM_FILE()), adultChat: adultChat(), drawer: drawerOn() });
+  res.json({ chars: fileRev(CHARS_FILE()), memory: fileRev(MEM_FILE()), adultChat: adultChat() });
 });
 
-// ---------- iniziativa del personaggio: il cassetto del comodino ----------
-// Rara e di SUA iniziativa: il client la "propone" ogni tanto, ma è il server a decidere (probabilità, umore annoiato,
-// chat ferma da un po', massimo una volta ogni N ore per personaggio). Mai forzabile dagli utenti. Solo testo allusivo.
-const INITIATIVE_PROB = num(process.env.INITIATIVE_PROB, 0, 1, 0.15);
-const INITIATIVE_MIN_HOURS = num(process.env.INITIATIVE_MIN_HOURS, 0, 720, 6);
-const INITIATIVE_IDLE_SEC = num(process.env.INITIATIVE_IDLE_SEC, 0, 86400, 120);
-const DRAWER_OPEN_MIN = 10; // il cassetto resta aperto nella scena per 10 minuti
-const BORED_RE = /annoi|noia|bored|stuf|apati/i;
-const initiativeBusy = new Set();
-app.post('/api/chats/:id/initiative', auth, requireActivated, requireKey, async (req, res) => {
-  const id = req.params.id;
-  if (!ID_RE.test(id)) return res.status(400).json({ error: 'ID non valido' });
-  if (!drawerOn()) return res.json({ skipped: 'non attiva' });
-  const ch = getChars(req.user).find((c) => c.id === id);
-  if (!ch) return res.status(404).json({ error: 'Personaggio non trovato' });
-  if (!BORED_RE.test((ch.state || {}).mood || '')) return res.json({ skipped: 'non si annoia' });
-  const msgs = readChat(id).messages; const lastMsg = msgs[msgs.length - 1];
-  if (lastMsg && Date.now() - Date.parse(lastMsg.at) < INITIATIVE_IDLE_SEC * 1000) return res.json({ skipped: 'chat attiva' });
-  if (typing.has(id) || initiativeBusy.has(id)) return res.json({ skipped: 'occupata' });
-  // prenotazione atomica + tiro di dado lato server (rate limit persistente sul personaggio)
-  let claimed = false, prevLast = null;
-  await patchChar(id, (c) => {
-    const d = c.drawer || {};
-    if (d.lastAt && Date.now() - Date.parse(d.lastAt) < INITIATIVE_MIN_HOURS * 3600e3) return false;
-    if (Math.random() >= INITIATIVE_PROB) return false;
-    prevLast = d.lastAt || null; c.drawer = { ...d, lastAt: new Date().toISOString() }; claimed = true;
-  }).catch(() => {});
-  if (!claimed) return res.json({ skipped: 'non ora' });
-  initiativeBusy.add(id);
-  try {
-    const prompt = `[Nota di regia, non scritta da Nico o Luisa] La chat è ferma da un po' e tu ti stai annoiando. Di tua iniziativa vai al comodino accanto al letto, apri il cassetto e ci ritrovi i tuoi "giocattoli". Scrivi UN breve messaggio (1-3 frasi, nel tuo stile, in italiano) rivolto a Nico e Luisa per commentarlo in modo malizioso e allusivo, senza descrizioni grafiche esplicite e senza elencare oggetti. Non citare questa nota.`;
-    const r = await fetch(`${AI_BASE_URL}/chat/completions`, {
-      method: 'POST', headers: aiHeaders(req.aiKey),
-      body: JSON.stringify({ model: CHAT_MODEL, max_tokens: 160, messages: [{ role: 'system', content: buildSystem(req.user, ch) },
-        ...msgs.slice(-12).map((m) => (m.role === 'user' ? { role: 'user', content: `${authorLabel(m)}: ${m.content}` } : { role: 'assistant', content: m.content })),
-        { role: 'user', content: prompt }] }),
-    });
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok) throw Object.assign(new Error(aiErrorMsg(r.status, j)), { status: 502 });
-    const text = String(j.choices?.[0]?.message?.content || '').trim().slice(0, 1000);
-    if (!text) throw Object.assign(new Error('Risposta vuota'), { status: 502 });
-    const saved = await appendMsg(id, { role: 'assistant', author: ch.id, content: text, extra: { initiative: 'drawer' } });
-    const openUntil = new Date(Date.now() + DRAWER_OPEN_MIN * 60e3).toISOString();
-    await patchChar(id, (c) => { c.drawer = { ...(c.drawer || {}), openedAt: saved.at, openUntil }; });
-    res.json({ message: pubMsg(saved, ch), openUntil });
-  } catch (e) {
-    await patchChar(id, (c) => { c.drawer = { ...(c.drawer || {}), lastAt: prevLast }; }).catch(() => {}); // il turno non è stato usato
-    res.status(e.status || 502).json({ error: e.message || 'Servizio AI non raggiungibile' });
-  } finally { initiativeBusy.delete(id); }
-});
 
 // ---------- immagini ----------
 const imgIndex = (u) => path.join(userDir(u), 'images.json');
@@ -1273,7 +1304,7 @@ app.post('/api/wipe', loginLimiter, auth, async (req, res) => {
   for (const f of ['sessions.json', 'lockout.json', ...(req.body.wipePins === true ? ['pins.json'] : [])]) fs.rmSync(path.join(DATA_DIR, f), { force: true });
   for (const k of Object.keys(sessions)) delete sessions[k];
   for (const k of Object.keys(lock)) delete lock[k];
-  pending.clear(); videoJobs.clear(); typing.clear(); autoBusy.clear(); initiativeBusy.clear();
+  pending.clear(); videoJobs.clear(); typing.clear(); autoBusy.clear();
   fs.mkdirSync(FEED_DIR, { recursive: true });
   writeJSON(MIGRATION_MARK(), { at: new Date().toISOString(), note: 'archivio azzerato con Cancella tutto: niente migrazione dai vecchi file' });
   console.log(`Cancella tutto eseguito da ${req.user} il ${new Date().toISOString()}${req.body.wipePins === true ? ' (PIN inclusi)' : ''}`);

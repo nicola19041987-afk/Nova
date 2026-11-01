@@ -78,13 +78,49 @@ dialog::backdrop{background:rgba(0,0,0,.6)}
 .consent-check input{margin-top:3px}
 .landmark-editor{display:flex;justify-content:center}
 #landmark-canvas{width:100%;max-width:320px;aspect-ratio:1;border-radius:10px;touch-action:none;background:#000}
-.stage{display:flex;justify-content:center;padding:4px 0;flex:0 0 auto}
-/* Avatar GRANDE: circa metà schermo sul telefono (vh come riserva per Safari vecchi, dvh dove c'è). Tocca l'avatar per rimpicciolirlo. */
-#avatar-canvas{width:max(180px,min(calc(100vw - 28px),calc(100vh - 340px),560px));height:max(180px,min(calc(100vw - 28px),calc(100vh - 340px),560px));width:max(180px,min(calc(100vw - 28px),calc(100dvh - 340px),560px));height:max(180px,min(calc(100vw - 28px),calc(100dvh - 340px),560px));max-width:none;border-radius:22px;background:#2b1530;box-shadow:0 0 0 2px var(--line);display:block;touch-action:manipulation}
-.conv.compact #avatar-canvas{width:min(40vw,22vh);height:min(40vw,22vh);border-radius:50%}
-.conv .messages{min-height:90px}
-.stage.speaking #avatar-canvas{box-shadow:0 0 0 3px var(--accent),0 0 22px #d14b8f66}
-@media(orientation:landscape) and (max-height:500px){#avatar-canvas{width:40vh;height:40vh}}
+/* ---- Avatar GRANDE (v6): il riquadro prende tutto lo spazio libero; l'immagine è disegnata intera (contain) nel canvas ---- */
+.stage{display:flex;justify-content:center;padding:4px 0}
+main:has(> #tab-conv:not([hidden])){padding-top:6px;padding-left:max(8px,env(safe-area-inset-left));padding-right:max(8px,env(safe-area-inset-right))}
+.conv{height:calc(100vh - 128px - env(safe-area-inset-top) - env(safe-area-inset-bottom));height:calc(100dvh - 128px - env(safe-area-inset-top) - env(safe-area-inset-bottom))}
+#stage{position:relative;flex:1 1 auto;min-height:220px;display:flex;padding:0 0 6px}
+#avatar-canvas{flex:1;width:100%;height:100%;min-height:0;border-radius:18px;background:#2b1530;box-shadow:0 0 0 2px var(--line);display:block;touch-action:manipulation}
+.conv .messages{flex:0 0 max(88px,16vh);flex-basis:max(88px,16dvh);min-height:0}
+.conv .voicebar{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;padding-bottom:4px}
+.conv .voicebar::-webkit-scrollbar{display:none}
+.conv .voicebar button,.conv .voicebar .switch{white-space:nowrap;flex:0 0 auto}
+.conv.compact #stage{flex:0 0 26vh;flex-basis:26dvh;min-height:120px}
+.conv.compact .messages{flex:1 1 auto}
+#stage.speaking #avatar-canvas{box-shadow:0 0 0 3px var(--accent),0 0 22px #d14b8f66}
+.stage-tools{position:absolute;top:8px;right:8px;display:flex;gap:6px;z-index:2}
+.stage-tools button{width:40px;height:40px;padding:0;border-radius:50%;border:0;background:#000a;color:#fff;font-size:19px;line-height:40px;backdrop-filter:blur(6px)}
+.stage-tools button.on{background:#d14b8fcc}
+.scene-menu{position:absolute;top:54px;right:8px;z-index:3;background:#140a16f2;border:1px solid var(--line);border-radius:14px;padding:8px;display:flex;flex-direction:column;gap:6px;min-width:210px;max-width:calc(100% - 16px)}
+.scene-menu button{text-align:left;padding:8px 10px;font-size:.92em}
+.scene-menu button.on{background:linear-gradient(135deg,var(--accent),var(--accent2));border:0}
+.scene-menu p{margin:2px 4px;font-size:.78em;color:var(--muted)}
+/* Schermo intero: Fullscreen API dove c'è, altrimenti (iPhone Safari/PWA) sovrapposizione CSS che riempie lo schermo con le aree sicure */
+#stage.fs,#stage:fullscreen{position:fixed;inset:0;z-index:60;width:100vw;height:100vh;width:100dvw;height:100dvh;margin:0;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);background:#000;min-height:0}
+#stage:-webkit-full-screen{position:fixed;inset:0;z-index:60;width:100%;height:100%;padding:0;background:#000}
+#stage.fs #avatar-canvas,#stage:fullscreen #avatar-canvas{border-radius:0;box-shadow:none}
+#stage.fs .stage-tools,#stage:fullscreen .stage-tools{top:calc(env(safe-area-inset-top) + 10px);right:calc(env(safe-area-inset-right) + 10px)}
+body.avatar-fs-on{overflow:hidden}
+body.avatar-fs-on .tabbar,body.avatar-fs-on .topbar{visibility:hidden}
+/* Orizzontale sul telefono: avatar grande a sinistra, chat a destra */
+@media (orientation:landscape) and (max-height:600px){
+  main:has(> #tab-conv:not([hidden])){max-width:none;padding-bottom:calc(56px + env(safe-area-inset-bottom))}
+  .topbar{padding-top:calc(env(safe-area-inset-top) + 4px);padding-bottom:4px}
+  .tabbar button{padding:4px 0}
+  .tabbar button span{display:none}
+  .conv{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);grid-template-rows:auto auto 1fr auto auto;column-gap:10px;height:calc(100vh - 100px - env(safe-area-inset-bottom));height:calc(100dvh - 100px - env(safe-area-inset-bottom))}
+  #stage{grid-column:1;grid-row:1 / 6;min-height:0;padding:0}
+  .conv .voicebar{grid-column:2;grid-row:1}
+  .conv #voice-status{grid-column:2;grid-row:2}
+  .conv .messages{grid-column:2;grid-row:3;flex:none;min-height:0}
+  .conv #typing{grid-column:2;grid-row:4}
+  .conv .composer{grid-column:2;grid-row:5}
+  .conv.compact{grid-template-columns:minmax(0,.6fr) minmax(0,1fr)}
+  .conv.compact #stage{flex:none}
+}
 details{border:1px solid var(--line);border-radius:10px;padding:6px 12px;margin:8px 0}
 details summary{cursor:pointer;font-weight:600;padding:6px 0}
 h4{margin:10px 0 0;font-size:.95em}
@@ -101,7 +137,7 @@ input[type=color]{height:40px;padding:2px}
 .history img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px;display:block}
 .history button{padding:3px 8px;font-size:.9em;margin-top:3px}
 .sticky-actions{position:sticky;bottom:-16px;background:var(--card);padding:10px 0;margin-bottom:-6px}
-#editor-canvas{width:min(72vw,300px);height:min(72vw,300px);border-radius:18px;background:#2b1530;display:block}
+#editor-canvas{width:min(86vw,360px);height:min(100vw,420px);border-radius:18px;background:#2b1530;display:block}
 .feed{display:flex;flex-direction:column;gap:16px}
 .post{background:var(--card);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
 .post header{display:flex;align-items:center;gap:10px;padding:10px 12px}
@@ -137,7 +173,8 @@ details.card summary{font-weight:600}
 .presence{position:fixed;inset:0;z-index:30;background:#000;display:flex;flex-direction:column}
 .presence video,.presence #live-overlay{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
 .presence video.mirror,.presence #live-overlay.mirror{transform:scaleX(-1)}
-#presence-avatar{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(70px + env(safe-area-inset-bottom));width:min(96vw,58vh,680px);height:min(96vw,58vh,680px);width:min(96vw,60dvh,680px);height:min(96vw,60dvh,680px);background:transparent!important}
+#presence-avatar{position:absolute;left:0;right:0;margin:0 auto;bottom:calc(70px + env(safe-area-inset-bottom));width:100vw;height:62vh;height:62dvh;max-width:900px;background:transparent!important}
+@media (orientation:landscape) and (max-height:600px){#presence-avatar{height:calc(100dvh - 140px);width:60vw;bottom:calc(64px + env(safe-area-inset-bottom))}}
 .presence-top{position:absolute;top:calc(env(safe-area-inset-top) + 10px);left:10px;right:10px;display:flex;gap:6px;flex-wrap:wrap}
 .presence-top button{background:#000a;border:0;color:#fff;padding:8px 12px;border-radius:20px}
 .presence-panel{position:absolute;left:10px;right:10px;top:calc(env(safe-area-inset-top) + 60px);background:#000b;border-radius:12px;padding:8px 12px;font-size:.9em}

@@ -91,12 +91,22 @@ Nico e Luisa usano **un unico archivio**: stessi personaggi, stesse chat, stessa
 - **Parola chiave per la modalità adulti** (Account, per profilo, vuota = spenta): se la scrivi o la detti in chat, l'avatar chiede a voce
   "Vuoi attivare la modalità adulti? Rispondi sì o no"; con "sì" si attiva solo per il tuo profilo e solo se il consenso vocale è registrato.
   La parola chiave è salvata come hash bcrypt, confrontata sul server e non viene mai salvata in chat né inviata all'IA.
-- **Comodino con cassetto** (Account, per profilo, spento di default): un comodino disegnato nella scena dell'avatar (solo canvas). Se la modalità
-  adulti è attiva per **entrambi** e anche il comodino è attivo per entrambi, quando il personaggio è **annoiato** e la chat è ferma può, di rado e di sua
-  iniziativa, girarsi verso il comodino, aprire il cassetto e commentare in chat (solo testo allusivo, icone astratte ✨💗). È il server a decidere:
-  probabilità 15% a ogni proposta, chat ferma da almeno 2 minuti, massimo una volta ogni 6 ore per personaggio (`INITIATIVE_PROB`,
-  `INITIATIVE_IDLE_SEC`, `INITIATIVE_MIN_HOURS` nel `.env`). Con la modalità adulti spenta il cassetto resta chiuso, i suoi messaggi non vengono
-  mostrati né passati all'IA e non viene mai citato.
+- **Avatar grande e sempre intero (v6)**: il riquadro dell'avatar occupa tutto lo spazio libero della chat (in verticale circa metà
+  schermo o più; in orizzontale l'avatar sta a sinistra e la chat a destra). L'immagine è disegnata **intera** (contain, mai ritagliata),
+  con un piccolo margine calcolato per oscillazioni e movimenti, nitida su retina (devicePixelRatio, con un tetto di pixel per restare
+  fluida su iPhone). Vale anche in modalità compatta (tocca l'avatar) e in 📷 Presenza.
+- **Schermo intero** (pulsante ⛶ sull'avatar): usa la Fullscreen API dove esiste; su iPhone (Safari e app installata) apre una
+  sovrapposizione che riempie tutto lo schermo rispettando le aree sicure; si esce con ✕.
+- **🎬 Scena cinematografica** (pulsante sull'avatar, scelta salvata su questo telefono per personaggio): inquadratura larga con
+  lei a figura intera in una stanza: 🛋️ divano/salotto, 🛏️ camera da letto, 🌇 terrazza. Con **✨ Genera figura intera con l'IA**
+  l'app chiede a xAI (con la chiave del telefono) una versione 16:9 a figura intera, seduta nella stanza scelta, luce cinematografica,
+  adulta 25+, ancorata all'identità del personaggio; viene salvata come immagine "scena" del personaggio (condivisa), oppure resta
+  un'anteprima da confermare se il salvataggio automatico è spento. Il viso viene trovato **sul telefono** (MediaPipe locale) e
+  l'animazione continua sulla scena: respiro, piccola oscillazione della testa, ammiccamenti, labiale, microespressioni (scalati
+  alla dimensione del viso). Senza immagine generata si vede una stanza illustrata localmente (solo canvas, nessuna risorsa esterna)
+  con l'avatar attuale sfumato al centro.
+- Il vecchio **comodino con cassetto** è stato rimosso: l'impostazione `drawerScene`, lo stato e gli eventuali messaggi già salvati
+  vengono ignorati (mai mostrati né passati all'IA).
 
 ## Come modificare
 | Cosa | Dove |
