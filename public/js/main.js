@@ -71,6 +71,7 @@ App.fitFrame = function () {
   let h = H, w = h * 9 / 16; if (w > W) { w = W; h = w * 16 / 9; }
   w = Math.floor(w); h = Math.floor(h);
   Object.assign(c.style, { width: w + 'px', height: h + 'px', left: Math.round(parseFloat(cs.paddingLeft) + (W - w) / 2) + 'px', top: Math.round(parseFloat(cs.paddingTop) + (H - h) / 2) + 'px', transform: 'none', aspectRatio: 'auto', maxWidth: 'none' });
+  if (App.avatarConv && App.avatarConv.syncBackdrop) App.avatarConv.syncBackdrop(true);
 };
 (function () {
   const st = document.getElementById('stage'); if (!st) return;

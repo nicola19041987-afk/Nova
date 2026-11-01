@@ -126,7 +126,7 @@
     // ---- ritmo: periodo (ms) stimato dai movimenti dell'utente; l'oscillazione a riposo si sincronizza ----
     setRhythm(period, strength) { this.rhythm = period ? { period: Math.min(2400, Math.max(330, period)), strength: Math.min(1, strength || 0.5) } : null; }
     setLandmarks(lm) { this.lm = JSON.parse(JSON.stringify(lm)); this.sampleLids(); }
-    setColors(c) { this.colors = { ...this.colors, ...c }; if (!this.transparent) this.c.style.background = this.colors.background; }
+    setColors(c) { this.colors = { ...this.colors, ...c }; if (!this.transparent) { this.c.style.background = this.colors.background; this._bdKey = ''; } }
 
     // colore della palpebra: campiona la pelle sopra ciascun occhio
     sampleLids() {
@@ -284,14 +284,16 @@
 
       // ---- disegno: contenimento (contain) nel riquadro, mai ritagliato; scena cinematografica facoltativa ----
       const A = { now, S, rot: Math.max(-ROT_MAX, Math.min(ROT_MAX, sway + talkNod + rRot)), shiftX: Math.max(-SHIFT_MAX, Math.min(SHIFT_MAX, shiftX + rx)), bob: Math.max(-SHIFT_MAX, Math.min(SHIFT_MAX, bob + ry)), skew, breath, smile, blink, wave, mc, M, spring };
+      if (!this.transparent && (this._frame % 10 === 0 || !this.bd)) this.syncBackdrop();
       const CW = this.c.width, CH = this.c.height, col = this.colors;
       ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalCompositeOperation = 'source-over'; ctx.clearRect(0, 0, CW, CH);
       const scn = this.sceneOn();
       if (scn) this.paintScene(ctx, CW, CH, A, scn);
       else {
-        if (!this.transparent) { ctx.fillStyle = col.background; ctx.fillRect(0, 0, CW, CH); if (this.img) this.paintBackdrop(ctx, CW, CH); }
+        // con la foto: canvas trasparente intorno, sotto c'è lo sfondo sfocato CSS (syncBackdrop); senza foto (emoji): colore pieno
+        if (!this.transparent && !this.img) { ctx.fillStyle = col.background; ctx.fillRect(0, 0, CW, CH); }
         const r = this.paintAvatar(ctx, { x: 0, y: 0, w: CW, h: CH }, A, true);
-        if (this.img) { if (this.transparent) featherRect(ctx, r); else this.paintEdges(ctx, r, CW, CH); }
+        if (this.img) { if (this.transparent) featherRect(ctx, r); else this.featherEdges(ctx, r, CW, CH); }
       }
       // cambio foto: dissolvenza dall'ultima immagine (niente salti di dimensione)
       if (this._snap) {
@@ -321,34 +323,13 @@
       return { x0: -((nw - s) / 2) / k, y0: -((nh - s) / 2) / k, w: nw / k, h: nh / k };
     }
     // v7.1: avatar GRANDE e fermo. La foto è contenuta per intero (contain, mai ritagliata) e riempie il più possibile il riquadro;
-    // lo spazio avanzato è coperto da una copia sfocata e statica della stessa foto (vedi paintBackdrop/paintEdges).
+    // lo spazio avanzato è coperto da una copia sfocata e statica della stessa foto (v7.2: sfondo CSS sfocato, vedi syncBackdrop).
     // Il riquadro della foto NON si muove: il movimento è una deformazione interna (strisce orizzontali) che fa ondeggiare busto e testa.
     photoRect(box, E, alignBottom) {
       const pad = Math.min(box.w, box.h) * 0.006;
       const fit = Math.max(1e-6, Math.min((box.w - 2 * pad) / E.w, (box.h - 2 * pad) / E.h));
       const cx = box.x + box.w / 2, cy = alignBottom ? box.y + box.h - pad - (E.h * fit) / 2 : box.y + box.h / 2;
       return { fit, ox: cx - (E.x0 + E.w / 2) * fit, oy: cy - (E.y0 + E.h / 2) * fit };
-    }
-    // deformazione: spostamento orizzontale dx(y) e verticale dy(y) in unità S, per ogni riga dell'immagine
-    warpFor(E, A) {
-      const S = VS, lm = this.lm, Y1 = E.y0 + E.h;
-      const fy = ((lm.eyeL.y + lm.eyeR.y) / 2) * S, ed = Math.max(S * 0.04, Math.hypot(lm.eyeR.x - lm.eyeL.x, lm.eyeR.y - lm.eyeL.y) * S);
-      const chin = Math.min(Y1, (lm.mouth.y * S) + ed * 0.9), neck = Math.min(Y1, chin + ed * 1.1);
-      // v7.1 (richiesta di Nicola): nessuno spostamento laterale, né del riquadro né della figura: solo respiro e viso
-      const lim = E.w * WARP_MAX, lean = 0, turn = 0, tilt = 0;
-      const bobH = Math.max(-E.h * 0.008, Math.min(E.h * 0.008, A.bob * 0.35));
-      const breath = A.breath * E.h * 0.0035, shoulder = 0;
-      const tHead = Math.max(0.05, (Y1 - fy) / E.h);
-      const sst = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
-      return {
-        fy, neck, lim,
-        dx: (y) => {
-          const t = (Y1 - y) / E.h, body = sst(0, tHead, t), head = 1 - sst(chin, neck, y);
-          const v = lean * body + (turn + tilt * (fy - y) * 0.6) * head + shoulder * (1 - head) * sst(0, tHead, t) * 0.5;
-          return Math.max(-lim, Math.min(lim, v));
-        },
-        dy: (y) => { const t = (Y1 - y) / E.h, head = 1 - sst(chin, neck, y); return breath * Math.sin(Math.PI * Math.max(0, Math.min(1, t))) - breath * 0.3 * head + bobH * head * sst(E.y0, fy, y); },
-      };
     }
     paintAvatar(ctx, box, A, top, alignBottom) {
       const S = VS, img = this.img, E = this.extent(img), col = this.colors;
@@ -357,10 +338,8 @@
       ctx.setTransform(fit, 0, 0, fit, ox, oy);
       const plain = !+col.hue && +col.saturation === 100 && +col.brightness === 100; // filtro solo se serve (è costoso)
       ctx.filter = plain ? 'none' : `hue-rotate(${col.hue}deg) saturate(${col.saturation}%) brightness(${col.brightness}%)`;
-      const W = img ? this.warpFor(E, A) : null;
       if (top) {
-        let mx = 0; if (W) for (let i = 0; i <= 20; i++) mx = Math.max(mx, Math.abs(W.dx(E.y0 + (E.h * i) / 20)));
-        this._bounds = { x0: rect.x, y0: rect.y, x1: rect.x + rect.w, y1: rect.y + rect.h, cw: this.c.width, ch: this.c.height, static: true, warp: mx * fit, band: rect.w * EDGE_SIDE };
+        this._bounds = { x0: rect.x, y0: rect.y, x1: rect.x + rect.w, y1: rect.y + rect.h, cw: this.c.width, ch: this.c.height, static: true, warp: 0 };
       }
       const { mc, M, spring, now, wave } = A;
       const done = () => { ctx.filter = 'none'; const T = ctx.getTransform(); ctx.setTransform(1, 0, 0, 1, 0, 0); return { ...rect, T }; };
@@ -368,15 +347,12 @@
       if (act && act.a >= 0.999) { this.paintAction(ctx, E, A, act); return done(); }
       if (act) ctx.globalAlpha = 1 - act.a;
       if (img) {
-        // strisce orizzontali spostate di dx(y)/dy(y): la base resta ferma, busto e testa ondeggiano dentro la foto
-        const nw = img.naturalWidth, nh = img.naturalHeight, k = nw / E.w, N = WARP_STRIPS, hS = E.h / N;
+        // v7.2: foto disegnata in un colpo solo (niente strisce: su iPhone Safari lasciavano giunture orizzontali).
+        // Respiro: compressione verticale minima ancorata in basso (≤ 0,25%), sempre dentro il riquadro.
+        const Y1b = E.y0 + E.h, bs = 1 - 0.00125 * (1 + Math.max(-1, Math.min(1, A.breath)));
         ctx.save(); ctx.beginPath(); ctx.rect(E.x0, E.y0, E.w, E.h); ctx.clip();
-        for (let i = 0; i < N; i++) {
-          const y = E.y0 + i * hS, mid = y + hS / 2, dx = W.dx(mid), dy = W.dy(mid);
-          const sh = Math.min(nh, (hS + 0.8) * k), sy = Math.max(0, Math.min(nh - sh, (y - E.y0 - dy) * k));
-          ctx.drawImage(img, 0, sy, nw, sh, E.x0 + dx, y, E.w, hS + 0.8);
-        }
-        ctx.restore();
+        ctx.translate(0, Y1b); ctx.scale(1, bs); ctx.translate(0, -Y1b);
+        ctx.drawImage(img, E.x0, E.y0, E.w, E.h);
         // Gesti (mezzo busto / figura intera): braccia che si muovono col ritmo e l'intensità del parlato.
         const tgt = (this.speaking ? 0.35 + this.mouth * 0.7 + (now - this.emph < 700 ? 0.6 : 0) : 0) + M.energy * 0.6 + wave * 0.8;
         this.gesture = Math.max(0, spring(this.gesture, tgt, 'gesture', 9)); // gesti morbidi (molla smorzata)
@@ -386,7 +362,7 @@
           const mx = this.lm.mouth.x, X1 = E.x0 + E.w, Y1 = E.y0 + E.h;
           ctx.save(); ctx.beginPath(); ctx.rect(E.x0, E.y0, E.w, E.h); ctx.clip();
           [-1, 1].forEach((side) => {
-            const px = (mx + side * (this.framing === 'figura intera' ? 0.09 : 0.2)) * S, py = sh * S, odx = W.dx(py);
+            const px = (mx + side * (this.framing === 'figura intera' ? 0.09 : 0.2)) * S, py = sh * S, odx = 0;
             const lift = side < 0 ? M.lift[0] : M.lift[1];
             const waveSide = wave && side > 0 ? Math.sin(now / 120) * 0.08 * wave - 0.12 * wave : 0;
             const ang = side * this.gesture * 0.07 * Math.sin(now / 260 + (side > 0 ? 0 : 1.3)) - side * lift * 0.16 + waveSide;
@@ -397,8 +373,10 @@
           });
           ctx.restore();
         }
-        // viso (labiale, occhi, sopracciglia) segue la testa deformata
-        ctx.save(); ctx.translate(W.dx(W.fy), W.dy(W.fy)); this.paintFace(ctx, img, this.lm, A, 1, this.lidColor); ctx.restore();
+        // viso (labiale, occhi, sopracciglia): le "toppe" sono scalate sulla distanza reale fra gli occhi (v7.2: prima erano
+        // dimensionate per un primo piano, e su una figura intera la toppa delle sopracciglia diventava una striscia scura sulla fronte)
+        this.paintFace(ctx, img, this.lm, A, faceScale(this.lm), this.lidColor);
+        ctx.restore();
       } else {
         ctx.font = `${S * 0.6}px system-ui, "Apple Color Emoji", "Segoe UI Emoji", sans-serif`;
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -408,49 +386,38 @@
       if (act) { ctx.globalAlpha = act.a; this.paintAction(ctx, E, A, act); ctx.globalAlpha = 1; }
       return done();
     }
-    // sfondo: copia della foto a tutto riquadro, molto sfocata e un po' scura (statica, in cache per immagine e dimensione)
-    backdrop(CW, CH) {
-      const img = this.img; if (!img) return null;
-      const key = `${img._src}|${CW}x${CH}`;
-      if (this._bg && this._bg.key === key) return this._bg.c;
-      const nw = img.naturalWidth, nh = img.naturalHeight, ca = CW / CH;
-      const step = (w, h, src, sx, sy, sw, sh) => { const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(w)); c.height = Math.max(1, Math.round(h)); const x = c.getContext('2d'); x.imageSmoothingEnabled = true; x.imageSmoothingQuality = 'high'; x.drawImage(src, sx, sy, sw, sh, 0, 0, c.width, c.height); return c; };
-      // ritaglio "cover" della foto sul formato del riquadro, poi rimpicciolita e riallargata (sfocatura senza ctx.filter, che Safari non ha)
-      let sw = nw, sh = nw / ca; if (sh > nh) { sh = nh; sw = nh * ca; }
-      const tw = 18, th = Math.max(4, Math.round(tw / ca));
-      let c = step(tw, th, img, (nw - sw) / 2, (nh - sh) / 2, sw, sh);
-      c = step(tw * 3, th * 3, c, 0, 0, c.width, c.height);
-      c = step(tw * 9, th * 9, c, 0, 0, c.width, c.height);
-      const out = step(Math.min(CW, 480), Math.min(CW, 480) / ca, c, 0, 0, c.width, c.height);
-      const o = out.getContext('2d'); o.fillStyle = 'rgba(8,4,10,0.18)'; o.fillRect(0, 0, out.width, out.height);
-      this._bg = { key, c: out }; this._edge = null;
-      return out;
-    }
-    paintBackdrop(ctx, CW, CH) {
-      const bg = this.backdrop(CW, CH); if (!bg) return;
-      ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.filter = this.colorFilter(); ctx.drawImage(bg, 0, 0, CW, CH); ctx.filter = 'none'; ctx.restore();
-    }
-    // bordi della foto sfumati nello sfondo sfocato: nessun rettangolo netto visibile (statici, in cache)
-    paintEdges(ctx, r, CW, CH) {
-      const bg = this.backdrop(CW, CH); if (!bg) return;
-      const key = `${this._bg.key}|${Math.round(r.x)},${Math.round(r.y)},${Math.round(r.w)},${Math.round(r.h)}`;
-      if (!this._edge || this._edge.key !== key) {
-        const s = Math.min(1, 720 / Math.max(CW, CH)), w = Math.max(1, Math.round(CW * s)), h = Math.max(1, Math.round(CH * s));
-        const c = document.createElement('canvas'); c.width = w; c.height = h; const x = c.getContext('2d');
-        x.fillStyle = '#000'; x.fillRect(0, 0, w, h);
-        const R = { x: r.x * s, y: r.y * s, w: r.w * s, h: r.h * s };
-        x.clearRect(R.x, R.y, R.w, R.h);
-        const bx = R.w * EDGE_SIDE, by = Math.max(R.h * EDGE_TB, bx);
-        const band = (x0, y0, x1, y1, rx, ry, rw, rh) => { const g = x.createLinearGradient(x0, y0, x1, y1); g.addColorStop(0, 'rgba(0,0,0,1)'); g.addColorStop(0.3, 'rgba(0,0,0,0.8)'); g.addColorStop(1, 'rgba(0,0,0,0)'); x.fillStyle = g; x.fillRect(rx, ry, rw, rh); };
-        // un lato a filo del bordo del canvas non ha bisogno di sfumatura (lì finisce la cornice)
-        if (R.x > w * 0.02) band(R.x, 0, R.x + bx, 0, R.x, R.y, bx, R.h);
-        if (R.x + R.w < w * 0.98) band(R.x + R.w, 0, R.x + R.w - bx, 0, R.x + R.w - bx, R.y, bx, R.h);
-        if (R.y > h * 0.02) band(0, R.y, 0, R.y + by, R.x, R.y, R.w, by);
-        if (R.y + R.h < h * 0.98) band(0, R.y + R.h, 0, R.y + R.h - by, R.x, R.y + R.h - by, R.w, by);
-        x.globalCompositeOperation = 'source-in'; x.drawImage(bg, 0, 0, w, h);
-        this._edge = { key, c };
+    // v7.2: sfondo sfocato fatto dal BROWSER (CSS filter: blur su un elemento dietro al canvas), liscio anche su iPhone Safari.
+    // Prima era una sfocatura manuale nel canvas (rimpicciolisci/ingrandisci) che su iOS usciva a blocchi con bordi netti.
+    syncBackdrop(force) {
+      const c = this.c, par = c.parentElement; if (!par) return;
+      const show = !this.transparent && !!this.img && !this.sceneOn();
+      if (!this.bd) {
+        if (this.transparent) return;
+        if (getComputedStyle(par).position === 'static') par.style.position = 'relative';
+        const bd = document.createElement('div'); bd.className = 'av-backdrop'; bd.setAttribute('aria-hidden', 'true');
+        const inner = document.createElement('div'); bd.appendChild(inner); par.insertBefore(bd, c); this.bd = bd; this._bdKey = '';
       }
-      ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.filter = this.colorFilter(); ctx.drawImage(this._edge.c, 0, 0, CW, CH); ctx.filter = 'none'; ctx.restore();
+      const bd = this.bd, f = this.colorFilter();
+      const key = [show, this.img && this.img._src, c.offsetLeft, c.offsetTop, c.offsetWidth, c.offsetHeight, f, this.colors.background, getComputedStyle(c).borderRadius].join('|');
+      if (!force && key === this._bdKey) return; this._bdKey = key;
+      bd.hidden = !show;
+      c.style.background = show ? 'transparent' : this.colors.background;
+      if (!show) return;
+      Object.assign(bd.style, { left: c.offsetLeft + 'px', top: c.offsetTop + 'px', width: c.offsetWidth + 'px', height: c.offsetHeight + 'px', borderRadius: getComputedStyle(c).borderRadius, background: this.colors.background });
+      const inner = bd.firstChild;
+      inner.style.backgroundImage = `url("${this.img._src}")`;
+      inner.style.filter = `blur(${Math.round(Math.max(18, c.offsetWidth * 0.07))}px) brightness(0.55) saturate(1.1)${f === 'none' ? '' : ' ' + f}`;
+    }
+    // bordi della foto sfumati verso lo sfondo (trasparenza nel canvas, lo sfondo CSS si vede sotto); lati a filo del riquadro lasciati netti
+    featherEdges(ctx, r, CW, CH) {
+      ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalCompositeOperation = 'destination-out';
+      const bx = Math.max(6, r.w * EDGE_SIDE), by = Math.max(6, Math.max(r.h * EDGE_TB, bx));
+      const side = (x0, y0, x1, y1, rx, ry, rw, rh) => { const g = ctx.createLinearGradient(x0, y0, x1, y1); g.addColorStop(0, 'rgba(0,0,0,1)'); g.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = g; ctx.fillRect(rx, ry, rw, rh); };
+      if (r.x > CW * 0.02) side(r.x, 0, r.x + bx, 0, r.x - 1, r.y - 1, bx + 1, r.h + 2);
+      if (r.x + r.w < CW * 0.98) side(r.x + r.w, 0, r.x + r.w - bx, 0, r.x + r.w - bx, r.y - 1, bx + 1, r.h + 2);
+      if (r.y > CH * 0.02) side(0, r.y, 0, r.y + by, r.x - 1, r.y - 1, r.w + 2, by + 1);
+      if (r.y + r.h < CH * 0.98) side(0, r.y + r.h, 0, r.y + r.h - by, r.x - 1, r.y + r.h - by, r.w + 2, by + 1);
+      ctx.restore();
     }
     colorFilter() { const col = this.colors; return (!+col.hue && +col.saturation === 100 && +col.brightness === 100) ? 'none' : `hue-rotate(${col.hue}deg) saturate(${col.saturation}%) brightness(${col.brightness}%)`; }
     // ---- AZIONI (v7): clip video o posa, disegnate nel riquadro dell'avatar con gli stessi movimenti (niente ritagli) ----
@@ -515,7 +482,7 @@
       ctx.save(); ctx.beginPath(); ctx.rect(E.x0, E.y0, E.w, E.h); ctx.clip();
       ctx.translate(cx + px, cy); ctx.scale(k * zoom, k * zoom); ctx.translate(-(E2.x0 + E2.w / 2), -(E2.y0 + E2.h / 2));
       ctx.drawImage(im, E2.x0, E2.y0, E2.w, E2.h);
-      if (a.lm) this.paintFace(ctx, im, a.lm, A, 1, a.lids); // labiale, ammiccamenti, sguardo anche sulla posa
+      if (a.lm) this.paintFace(ctx, im, a.lm, A, faceScale(a.lm), a.lids); // labiale, ammiccamenti, sguardo anche sulla posa
       ctx.restore();
     }
     // Espressioni sul viso della foto (labiale, sorriso, sguardo, sopracciglia, palpebre). fs = scala del viso (1 = ritratto).
@@ -550,8 +517,12 @@
       });
       if (blink > 0.05) {
         [lm.eyeL, lm.eyeR].forEach((e, i) => {
-          ctx.fillStyle = lids[i];
-          ctx.beginPath(); ctx.ellipse(e.x * S, e.y * S - F * 0.026 * (1 - blink), F * 0.045, F * 0.026 * blink, 0, 0, Math.PI * 2); ctx.fill(); // la palpebra scende dall'alto
+          // la palpebra scende dall'alto; v7.2: bordo sfumato (gradiente) invece di un ovale pieno dal contorno netto
+          const rx = F * 0.045, ry = Math.max(F * 0.004, F * 0.026 * blink), cy = e.y * S - F * 0.026 * (1 - blink);
+          const m = /^rgb\((\d+),(\d+),(\d+)\)$/.exec(String(lids[i]).replace(/\s/g, ''));
+          ctx.save(); ctx.translate(e.x * S, cy); ctx.scale(1, ry / rx);
+          if (m) { const g = ctx.createRadialGradient(0, 0, 0, 0, 0, rx); g.addColorStop(0, `rgba(${m[1]},${m[2]},${m[3]},1)`); g.addColorStop(0.7, `rgba(${m[1]},${m[2]},${m[3]},0.9)`); g.addColorStop(1, `rgba(${m[1]},${m[2]},${m[3]},0)`); ctx.fillStyle = g; } else ctx.fillStyle = lids[i];
+          ctx.beginPath(); ctx.arc(0, 0, rx, 0, Math.PI * 2); ctx.fill(); ctx.restore();
         });
       }
     }
@@ -622,6 +593,8 @@
     }
   }
 
+  // scala del viso: 1 = primo piano (occhi distanti ~0,24 del quadrato centrale); figura intera ≈ 0,3–0,5
+  function faceScale(lm) { try { const ed = Math.hypot(lm.eyeR.x - lm.eyeL.x, lm.eyeR.y - lm.eyeL.y); return Math.max(0.12, Math.min(1.6, ed / 0.24)); } catch { return 1; } }
   const GESTURE_REGIONS = false; // v7.1: niente rotazione di pezzi di braccio sulla foto: solo respiro e viso
   const WARP_MAX = 0.03, WARP_STRIPS = 40, EDGE_SIDE = 0.07, EDGE_TB = 0.1; // v7.1: deformazione interna max (frazione della larghezza) e bande sfumate
   const VS = 1000; // unità virtuale dello spazio del viso (il canvas reale scala con una trasformazione)

@@ -159,6 +159,12 @@ Tutto in `data/` sul server (escluso da git e dallo zip): `pins.json`, `sessions
 - **Mai ritagliata**: ogni foto è disegnata intera (contain) con il suo formato, la più grande possibile; lo spazio avanzato è riempito da una copia sfocata e statica della stessa foto, con bordi sfumati (niente rettangolo netto). Al cambio foto c'è una dissolvenza (niente salti di dimensione).
 - Le azioni v7 (clip e pose) e le protezioni dei dati v6.1 sono invariate.
 
+### Correzioni v7.2 (iPhone Safari)
+- Sfondo sfocato fatto dal browser (CSS `filter: blur()` su un elemento dietro al canvas): liscio su iPhone, niente blocchi né copie ingrandite con bordi netti. Il canvas resta trasparente intorno alla foto e ne sfuma i bordi.
+- La foto è disegnata in un colpo solo (niente più strisce orizzontali → niente giunture).
+- Labiale/occhi/sopracciglia scalati sulla distanza reale fra gli occhi: su foto a figura intera non compare più la striscia scura sulla fronte; palpebre con bordo sfumato.
+- L'anteprima nell'editor «Modifica» usa la stessa cornice verticale 9:16 della chat.
+
 ## Gesti e imitazione con la fotocamera (sul telefono)
 In **📷 Presenza**: **✋ Gesti** fa reagire l'avatar alle tue mani (👋 saluto → saluta, ✋ mano aperta / ✌️ → sorride, 👍 / 👌 → annuisce,
 👉 → inclina la testa); **🪞 Imita i miei movimenti** riprende inclinazione e cenni della testa, braccia alzate e il ritmo con cui ti muovi,

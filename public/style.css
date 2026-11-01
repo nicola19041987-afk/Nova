@@ -137,7 +137,13 @@ input[type=color]{height:40px;padding:2px}
 .history img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px;display:block}
 .history button{padding:3px 8px;font-size:.9em;margin-top:3px}
 .sticky-actions{position:sticky;bottom:-16px;background:var(--card);padding:10px 0;margin-bottom:-6px}
-#editor-canvas{width:min(86vw,360px);height:min(100vw,420px);border-radius:18px;background:#2b1530;display:block}
+/* v7.2: anteprima dell'editor con la stessa cornice verticale 9:16 della chat */
+#editor-canvas{position:relative;z-index:1;height:min(62vh,620px);height:min(62dvh,620px);width:calc(min(62vh,620px) * 0.5625);width:calc(min(62dvh,620px) * 0.5625);max-width:86vw;border-radius:18px;background:#2b1530;display:block}
+/* v7.2: sfondo sfocato dietro la foto, fatto dal browser (liscio anche su iPhone Safari) */
+.av-backdrop{position:absolute;overflow:hidden;pointer-events:none;z-index:0;background:#2b1530;-webkit-transform:translateZ(0);transform:translateZ(0)}
+.av-backdrop>div{position:absolute;inset:-14%;background-size:cover;background-position:center;background-repeat:no-repeat}
+.av-backdrop[hidden]{display:none}
+#avatar-canvas{z-index:1}
 .feed{display:flex;flex-direction:column;gap:16px}
 .post{background:var(--card);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
 .post header{display:flex;align-items:center;gap:10px;padding:10px 12px}
@@ -204,3 +210,4 @@ details.card summary{font-weight:600}
 .act-log li.ok{color:#8fe3a8}
 #act-dialog label{display:flex;align-items:center;gap:8px;text-align:left}
 #act-dialog input[type=checkbox]{width:auto;flex:0 0 auto;margin:0;padding:0}
+@media (orientation:landscape) and (max-height:600px){#editor-canvas{height:calc(100vh - 150px);height:calc(100dvh - 150px);width:calc((100vh - 150px) * 0.5625);width:calc((100dvh - 150px) * 0.5625)}}
