@@ -251,10 +251,20 @@
           <div id="consent-info" class="muted"></div>
         </div>
 
+        <div class="card">
+          <h3>🛟 Recupero personaggi</h3>
+          <p class="muted small">L'app fa da sola copie di sicurezza (all'avvio, ogni ora se ci sono modifiche e prima di ogni eliminazione). Qui puoi rimettere nell'elenco i personaggi che non ci sono più, con la loro chat: quelli attuali non vengono toccati.</p>
+          <button id="recovery-scan" class="block">Cerca personaggi da recuperare</button>
+          <ul id="recovery-list" class="list"></ul>
+          <button id="recovery-go" class="primary block" hidden>Recupera i selezionati</button>
+          <p id="recovery-status" class="muted small"></p>
+        </div>
+
         <div class="card danger-zone">
           <h3>🧨 Cancella tutto</h3>
           <p class="muted small">Elimina in un colpo solo TUTTI i dati dell'app di entrambi i profili: chat, personaggi, aspetto, guardaroba e storico look, stato emotivo, memoria, regole, Diario (post, commenti, mi piace), immagini e video, audio del consenso. Svuota anche i dati salvati su questo telefono (chiave xAI inclusa) e ti disconnette. Non si può annullare.</p>
           <label class="switch"><input type="checkbox" id="wipe-pins"> Cancella anche i PIN (al prossimo accesso andranno ricreati, con il codice di configurazione se impostato)</label>
+          <label class="switch"><input type="checkbox" id="wipe-backups"> Elimina anche le copie di sicurezza (altrimenti restano sul server e si possono recuperare)</label>
           <button id="wipe-btn" class="danger block">Cancella tutto</button>
         </div>
 

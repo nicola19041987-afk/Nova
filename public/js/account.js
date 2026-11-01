@@ -116,10 +116,30 @@ $('#wipe-btn').addEventListener('click', async () => {
   const word = prompt('Per confermare scrivi: CANCELLA'); if (word !== 'CANCELLA') return App.toast('Annullato');
   const pin = prompt('Inserisci il tuo PIN'); if (!pin) return;
   try {
-    await App.api('/api/wipe', { method: 'POST', body: { confirm: word, pin, wipePins: pins } });
+    await App.api('/api/wipe', { method: 'POST', body: { confirm: word, pin, wipePins: pins, wipeBackups: $('#wipe-backups').checked } });
   } catch (e) { return App.toast(e.message); }
   await App.wipeDevice();
   alert('Tutti i dati sono stati cancellati.'); location.replace('/');
+});
+// Recupero personaggi (solo aggiuntivo: i personaggi presenti non vengono toccati)
+$('#recovery-scan').addEventListener('click', async () => {
+  $('#recovery-status').textContent = 'Ricerca…';
+  try {
+    const r = await App.api('/api/recovery');
+    $('#recovery-list').innerHTML = r.candidates.map((c) => `<li><label class="switch grow"><input type="checkbox" data-rec="${esc(c.id)}" checked> ${App.avatarHtml(c)} <b>${esc(c.name)}</b> <span class="muted small">${c.messages} messaggi · ${esc(c.source)}</span></label></li>`).join('');
+    $('#recovery-go').hidden = !r.candidates.length;
+    $('#recovery-status').textContent = r.candidates.length ? `${r.candidates.length} personaggi recuperabili · ${r.backups.length} copie di sicurezza` : `Nessun personaggio da recuperare · ${r.backups.length} copie di sicurezza`;
+  } catch (e) { $('#recovery-status').textContent = e.message; }
+});
+$('#recovery-go').addEventListener('click', async () => {
+  const ids = $$('#recovery-list [data-rec]').filter((x) => x.checked).map((x) => x.dataset.rec);
+  if (!ids.length) return App.toast('Seleziona almeno un personaggio');
+  try {
+    const r = await App.api('/api/recovery', { method: 'POST', body: { ids } });
+    await App.loadChars(); App.chat.renderList();
+    $('#recovery-list').innerHTML = ''; $('#recovery-go').hidden = true;
+    $('#recovery-status').textContent = r.restored.length ? `Recuperati: ${r.restored.map((x) => `${x.name} (${x.messages} messaggi)`).join(', ')}` : 'Nulla da recuperare';
+  } catch (e) { $('#recovery-status').textContent = e.message; }
 });
 App.wipeDevice = async function () {
   try { localStorage.clear(); sessionStorage.clear(); } catch {}

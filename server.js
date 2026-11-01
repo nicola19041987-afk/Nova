@@ -59,12 +59,28 @@ const IMAGE_RULE = 'Realistic. Only adults clearly aged 25 or older. No minors, 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 const userDir = (u, ...p) => { const d = path.join(DATA_DIR, 'users', u, ...p); fs.mkdirSync(d, { recursive: true }); return d; };
 const readJSON = (f, def) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return def; } };
+// Lettura "sicura" per le modifiche: file mancante -> valore di partenza; file presente ma illeggibile -> ERRORE
+// (mai sovrascrivere dati esistenti con un [] di ripiego). Il file rotto viene messo da parte e, se c'è,
+// si ripristina l'ultima copia valida dai backup automatici.
+const readJSONSafe = (f, def) => {
+  let txt;
+  try { txt = fs.readFileSync(f, 'utf8'); } catch (e) { if (e.code === 'ENOENT') return def; throw e; }
+  try { return JSON.parse(txt); } catch {
+    const fixed = restoreCorrupt(f, txt);
+    if (fixed !== undefined) return fixed;
+    const err = new Error(`Archivio ${path.basename(f)} illeggibile: modifica bloccata per non perdere dati`); err.status = 503; throw err;
+  }
+};
 // Scrittura atomica: file temporaneo univoco + rename (mai un JSON scritto a metà).
 const revs = new Map(); // versione in memoria di ogni file condiviso (per il polling)
 const BOOT_ID = crypto.randomBytes(3).toString('hex');
+const MIRRORED = /^(characters|memory)\.json$/;
 const writeJSON = (f, v) => {
   const tmp = `${f}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(v, null, 2)); fs.renameSync(tmp, f);
+  const txt = JSON.stringify(v, null, 2);
+  fs.writeFileSync(tmp, txt); fs.renameSync(tmp, f);
+  // copia speculare sempre aggiornata dei file principali (personaggi, memoria): primo ripiego se il file si rompe
+  if (MIRRORED.test(path.basename(f)) && path.basename(path.dirname(f)) === 'shared') { fs.writeFileSync(tmp, txt); fs.renameSync(tmp, f + '.bak'); }
   revs.set(f, (revs.get(f) || 0) + 1);
 };
 const fileRev = (f) => `${BOOT_ID}.${revs.get(f) || 0}`;
@@ -81,12 +97,26 @@ function withLock(key, fn) {
   return run;
 }
 // fn riceve i dati freschi; se restituisce un valore diverso da undefined viene scritto (atomicamente).
-const mutateJSON = (f, def, fn) => withLock(f, () => {
-  const cur = readJSON(f, typeof def === 'function' ? def() : JSON.parse(JSON.stringify(def)));
+// opts.removeId: unica eccezione alla protezione anti-svuotamento dell'elenco personaggi (eliminazione esplicita di quell'id).
+const mutateJSON = (f, def, fn, opts = {}) => withLock(f, () => {
+  const cur = readJSONSafe(f, typeof def === 'function' ? def() : JSON.parse(JSON.stringify(def)));
+  const before = Array.isArray(cur) ? cur.map((c) => c && c.id) : null;
   const next = fn(cur);
-  if (next !== undefined) writeJSON(f, next);
+  if (next === undefined) return next;
+  if (f === CHARS_FILE()) { guardChars(before, next, opts); maybeBackup('modifica'); }
+  writeJSON(f, next);
   return next;
 });
+// Protezione: l'elenco dei personaggi non può perdere elementi, salvo l'eliminazione esplicita di UN id.
+function guardChars(before, next, opts) {
+  if (!Array.isArray(next)) throw Object.assign(new Error('Scrittura personaggi non valida (bloccata)'), { status: 500 });
+  if (!before) return;
+  const ids = new Set(next.map((c) => c && c.id));
+  const lost = before.filter((id) => !ids.has(id));
+  if (!lost.length || (lost.length === 1 && opts.removeId && lost[0] === opts.removeId)) return;
+  console.error(`BLOCCATA scrittura di characters.json: avrebbe rimosso ${lost.length} personaggi (${lost.join(', ')}); prima ${before.length}, dopo ${next.length}`);
+  throw Object.assign(new Error('Modifica bloccata: avrebbe cancellato dei personaggi'), { status: 500 });
+}
 
 // ---------- archivio CONDIVISO tra Nico e Luisa (personaggi, chat, memoria, avatar, Diario) ----------
 const sharedDir = (...p) => { const d = path.join(DATA_DIR, 'shared', ...p); fs.mkdirSync(d, { recursive: true }); return d; };
@@ -596,7 +626,8 @@ function pushHistory(prev, next, reason) {
 // Personaggi CONDIVISI: un solo elenco per Nico e Luisa (data/shared/characters.json).
 const DEFAULT_CHAR = { name: 'Aurora', avatar: '🌙', personality: 'Sei Aurora, una compagna di conversazione affascinante, ironica e complice. Ascolti, fai domande e ti adatti ai desideri di chi ti scrive.', style: 'Tono caldo e giocoso, frasi brevi, qualche emoji.' };
 function getChars(u) {
-  let c = readJSON(CHARS_FILE(), null);
+  let c = readJSONSafe(CHARS_FILE(), null); // illeggibile -> errore (mai rimpiazzato da Aurora)
+  if (!Array.isArray(c) && c !== null) throw Object.assign(new Error('Archivio personaggi non valido'), { status: 503 });
   if (!c) {
     c = [{ id: newId(), ...cleanChar(u, DEFAULT_CHAR), lookHistory: [], createdAt: new Date().toISOString() }];
     writeJSON(CHARS_FILE(), c);
@@ -691,11 +722,18 @@ app.put('/api/characters/:id', auth, async (req, res) => {
   catch (e) { res.status(e.status || 400).json({ error: e.message }); }
 });
 app.delete('/api/characters/:id', auth, async (req, res) => {
-  if (!ID_RE.test(req.params.id)) return res.status(400).json({ error: 'ID non valido' });
-  getChars(req.user);
-  await mutateJSON(CHARS_FILE(), [], (list) => list.filter((c) => c.id !== req.params.id));
-  await withLock(chatFile(req.params.id), () => fs.rmSync(chatFile(req.params.id), { force: true }));
-  res.json({ ok: true });
+  try {
+    const id = req.params.id;
+    if (!ID_RE.test(id)) return res.status(400).json({ error: 'ID non valido' });
+    const ch = getChars(req.user).find((c) => c.id === id);
+    if (!ch) return res.status(404).json({ error: 'Personaggio non trovato' });
+    backupShared('prima-eliminazione'); // copia completa (personaggio + chat) prima di eliminare
+    await mutateJSON(CHARS_FILE(), [], (list) => list.filter((c) => c.id !== id), { removeId: id });
+    const msgs = readChat(id).messages.length;
+    await withLock(chatFile(id), () => fs.rmSync(chatFile(id), { force: true }));
+    audit(req.user, 'elimina-personaggio', { id, name: ch.name, messages: msgs });
+    res.json({ ok: true });
+  } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
 });
 app.get('/api/avatars/:file', auth, (req, res) => {
   const f = path.basename(req.params.file);
@@ -978,8 +1016,13 @@ app.get('/api/chats/:id', auth, (req, res) => {
 });
 app.delete('/api/chats/:id', auth, async (req, res) => {
   if (!ID_RE.test(req.params.id)) return res.status(400).json({ error: 'ID non valido' });
-  await mutateJSON(chatFile(req.params.id), newChat, () => newChat()); // nuova epoch: i dispositivi ricaricano da zero
-  res.json({ ok: true });
+  try {
+    const n = readChat(req.params.id).messages.length;
+    if (n) backupShared('prima-svuota-chat');
+    await mutateJSON(chatFile(req.params.id), newChat, () => newChat()); // nuova epoch: i dispositivi ricaricano da zero
+    audit(req.user, 'svuota-chat', { id: req.params.id, messages: n });
+    res.json({ ok: true });
+  } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
 });
 
 function stateText(ch) {
@@ -1300,7 +1343,12 @@ app.post('/api/wipe', loginLimiter, auth, async (req, res) => {
   if (req.body.confirm !== 'CANCELLA') return res.status(400).json({ error: 'Scrivi CANCELLA per confermare.' });
   const rec = getPins()[req.user];
   if (!rec || !(await bcrypt.compare(String(req.body.pin || ''), rec.hash))) return res.status(401).json({ error: 'PIN errato' });
+  // backup completo PRIMA di cancellare (in data/backups, fuori dalle cartelle azzerate), salvo richiesta esplicita
+  const dropBackups = req.body.wipeBackups === true;
+  if (!dropBackups) { const b = backupShared('prima-cancella-tutto', { force: true }); if (!b) return res.status(500).json({ error: 'Backup preliminare non riuscito: cancellazione annullata' }); }
+  audit(req.user, 'cancella-tutto', { pins: req.body.wipePins === true, backups: dropBackups ? 'eliminati' : 'conservati' });
   for (const d of ['users', 'shared']) fs.rmSync(path.join(DATA_DIR, d), { recursive: true, force: true });
+  if (dropBackups) fs.rmSync(BACKUP_DIR, { recursive: true, force: true });
   for (const f of ['sessions.json', 'lockout.json', ...(req.body.wipePins === true ? ['pins.json'] : [])]) fs.rmSync(path.join(DATA_DIR, f), { force: true });
   for (const k of Object.keys(sessions)) delete sessions[k];
   for (const k of Object.keys(lock)) delete lock[k];
@@ -1311,6 +1359,23 @@ app.post('/api/wipe', loginLimiter, auth, async (req, res) => {
   res.clearCookie(COOKIE, { path: '/' });
   res.setHeader('Clear-Site-Data', '"cache", "storage"'); // il browser svuota cache e archivi locali (dove supportato)
   res.json({ ok: true, pinsErased: req.body.wipePins === true });
+});
+
+// recupero personaggi (vedi recoverCharacters più sotto)
+app.get('/api/recovery', auth, (req, res) => {
+  try {
+    res.json({
+      candidates: recoveryCandidates().map((x) => ({ id: x.char.id, name: x.char.name, avatar: x.char.avatar, source: x.source, messages: x.messages.length, updatedAt: x.char.updatedAt || x.char.createdAt || null })),
+      backups: listBackups().slice(-30).reverse(),
+    });
+  } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
+});
+app.post('/api/recovery', auth, async (req, res) => {
+  try {
+    const ids = Array.isArray(req.body.ids) ? req.body.ids.filter((i) => ID_RE.test(i)) : null;
+    if (!ids || !ids.length) return res.status(400).json({ error: 'Scegli almeno un personaggio' });
+    res.json(await recoverCharacters(req.user, ids));
+  } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
 });
 
 // ---------- file statici (PWA) ----------
@@ -1327,6 +1392,188 @@ app.use(express.static(path.join(__dirname, 'public'), {
   },
 }));
 app.use('/api', (req, res) => res.status(404).json({ error: 'Non trovato' }));
+
+// ---------- protezione dati: backup automatici, registro eliminazioni, recupero personaggi ----------
+// data/backups/<data>-<motivo>/ contiene: shared/*.json + chats + feed.json (copie) e avatar/immagini del Diario
+// (hard link: nessuno spazio in più, restano anche se l'originale viene cancellato) + i vecchi file per utente
+// (characters/memory/chats/avatars) usati per il recupero. Si conservano gli ultimi BACKUP_KEEP (predefinito 20)
+// più gli ultimi 10 fatti prima di un'eliminazione/Cancella tutto/recupero.
+const BACKUP_DIR = path.join(DATA_DIR, 'backups');
+const BACKUP_KEEP = Math.max(5, Number(process.env.BACKUP_KEEP) || 20);
+const BACKUP_EVERY_MS = 10 * 60e3; // al massimo un backup "modifica" ogni 10 minuti
+const PROTECTED = /-(prima-eliminazione|prima-cancella-tutto|prima-recupero|prima-svuota-chat)$/;
+let lastBackupAt = 0, lastBackupSig = '';
+function linkOrCopy(src, dst) { try { fs.linkSync(src, dst); } catch { fs.copyFileSync(src, dst); } }
+function snapDir(src, dst, binary) { // binary: hard link; altrimenti copia (i JSON sono sempre riscritti con rename, ma copiamo comunque)
+  if (!fs.existsSync(src)) return 0; let n = 0;
+  for (const e of fs.readdirSync(src, { withFileTypes: true })) {
+    if (!e.isFile() || e.name.endsWith('.tmp')) continue;
+    fs.mkdirSync(dst, { recursive: true });
+    if (binary || !e.name.endsWith('.json')) linkOrCopy(path.join(src, e.name), path.join(dst, e.name)); else fs.copyFileSync(path.join(src, e.name), path.join(dst, e.name));
+    n++;
+  }
+  return n;
+}
+function dataSig() {
+  const parts = [];
+  for (const f of [CHARS_FILE(), MEM_FILE()]) { try { const st = fs.statSync(f); parts.push(st.size, st.mtimeMs); } catch { parts.push(0); } }
+  for (const d of [path.join(DATA_DIR, 'shared', 'chats'), path.join(DATA_DIR, 'shared', 'avatars')]) {
+    try { for (const f of fs.readdirSync(d)) { const st = fs.statSync(path.join(d, f)); parts.push(f, st.mtimeMs); } } catch {}
+  }
+  return crypto.createHash('sha1').update(parts.join('|')).digest('hex');
+}
+function backupShared(reason, { force = false } = {}) {
+  try {
+    const shared = path.join(DATA_DIR, 'shared');
+    const sig = dataSig();
+    if (!force && !PROTECTED.test('-' + reason) && sig === lastBackupSig) return null; // niente di nuovo
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    let dst = path.join(BACKUP_DIR, `${stamp}-${reason}`); if (fs.existsSync(dst)) dst += '-' + crypto.randomBytes(2).toString('hex');
+    fs.mkdirSync(dst, { recursive: true });
+    snapDir(shared, path.join(dst, 'shared'));
+    snapDir(path.join(shared, 'chats'), path.join(dst, 'shared', 'chats'));
+    snapDir(path.join(shared, 'avatars'), path.join(dst, 'shared', 'avatars'), true);
+    snapDir(path.join(shared, 'feed'), path.join(dst, 'shared', 'feed'), true);
+    for (const u of Object.keys(USERS)) {
+      const ud = path.join(DATA_DIR, 'users', u); if (!fs.existsSync(ud)) continue;
+      for (const f of ['characters.json', 'memory.json']) if (fs.existsSync(path.join(ud, f))) { fs.mkdirSync(path.join(dst, 'users', u), { recursive: true }); fs.copyFileSync(path.join(ud, f), path.join(dst, 'users', u, f)); }
+      snapDir(path.join(ud, 'chats'), path.join(dst, 'users', u, 'chats'));
+      snapDir(path.join(ud, 'avatars'), path.join(dst, 'users', u, 'avatars'), true);
+    }
+    const chars = readJSON(CHARS_FILE(), []) || [];
+    let avatars = []; try { avatars = fs.readdirSync(path.join(shared, 'avatars')); } catch {}
+    let chats = []; try { chats = fs.readdirSync(path.join(shared, 'chats')).filter((f) => f.endsWith('.json')); } catch {}
+    fs.writeFileSync(path.join(dst, 'manifest.json'), JSON.stringify({ at: new Date().toISOString(), reason, characters: Array.isArray(chars) ? chars.map((c) => ({ id: c.id, name: c.name, avatar: c.avatar })) : 'illeggibile', chats, avatars }, null, 2));
+    lastBackupAt = Date.now(); lastBackupSig = sig;
+    pruneBackups();
+    return dst;
+  } catch (e) { console.error('Backup non riuscito:', e.message); return null; }
+}
+function maybeBackup(reason) { if (Date.now() - lastBackupAt >= BACKUP_EVERY_MS) backupShared(reason); }
+function listBackups() {
+  try { return fs.readdirSync(BACKUP_DIR, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name).sort(); } catch { return []; }
+}
+function pruneBackups() {
+  const all = listBackups();
+  const prot = all.filter((n) => PROTECTED.test(n)), normal = all.filter((n) => !PROTECTED.test(n));
+  for (const n of [...normal.slice(0, Math.max(0, normal.length - BACKUP_KEEP)), ...prot.slice(0, Math.max(0, prot.length - 10))]) fs.rmSync(path.join(BACKUP_DIR, n), { recursive: true, force: true });
+}
+// File JSON illeggibile: lo mette da parte (mai sovrascritto) e ripristina l'ultima copia valida dai backup.
+function restoreCorrupt(f, txt) {
+  const rel = path.relative(DATA_DIR, f);
+  try { fs.mkdirSync(path.join(BACKUP_DIR, 'illeggibili'), { recursive: true }); fs.writeFileSync(path.join(BACKUP_DIR, 'illeggibili', `${rel.replace(/[\\/]/g, '_')}.${Date.now()}`), txt); } catch {}
+  for (const b of [null, ...listBackups().reverse()]) {
+    const cand = b ? path.join(BACKUP_DIR, b, rel) : f + '.bak';
+    try { const v = JSON.parse(fs.readFileSync(cand, 'utf8')); if (!Array.isArray(v) && /characters\.json$/.test(rel)) continue; writeJSON(f, v); console.error(`ATTENZIONE: ${rel} era illeggibile; ripristinato da ${b ? 'backup ' + b : 'copia speculare .bak'} (copia rotta conservata in backups/illeggibili).`); return v; } catch {}
+  }
+  console.error(`ATTENZIONE: ${rel} illeggibile e nessun backup valido: modifiche bloccate, file conservato.`);
+  return undefined;
+}
+// Registro delle operazioni distruttive (chi, cosa, quando): log del server + data/audit.json (ultimi 500)
+function audit(u, action, info = {}) {
+  const e = { at: new Date().toISOString(), user: u, action, ...info };
+  console.log(`[registro] ${action} da ${u}: ${JSON.stringify(info)}`);
+  try { const f = path.join(DATA_DIR, 'audit.json'); const l = readJSON(f, []); writeJSON(f, [...(Array.isArray(l) ? l : []), e].slice(-500)); } catch {}
+}
+
+// Recupero personaggi (SOLO AGGIUNTIVO): cerca personaggi non presenti nell'elenco attuale nei vecchi file per utente
+// e nei backup; non tocca né sovrascrive i personaggi presenti (stesso id = saltato) né le loro chat.
+const isPristine = (c, msgs) => c.name === DEFAULT_CHAR.name && c.avatar === DEFAULT_CHAR.avatar && c.personality === DEFAULT_CHAR.personality && !c.updatedAt && !msgs;
+function legacyChat(id) { // chat di un personaggio dai vecchi file per utente (stesso formato della migrazione)
+  const out = [], seen = new Set();
+  for (const u of Object.keys(USERS)) {
+    const old = readJSON(path.join(DATA_DIR, 'users', u, 'chats', id + '.json'), null); if (!old) continue;
+    for (const m of (Array.isArray(old) ? old : old.messages || [])) {
+      if (!m || !m.content) continue; const k = `${m.role}|${m.at}|${m.content}`; if (seen.has(k)) continue; seen.add(k);
+      out.push({ id: ID_RE.test(m.id) ? m.id : newId(), role: m.role === 'assistant' ? 'assistant' : 'user', author: m.author || (m.role === 'assistant' ? id : u), content: m.content, at: m.at || null, migratedFrom: m.migratedFrom || u });
+    }
+  }
+  out.sort((a, b) => (Date.parse(a.at) || 0) - (Date.parse(b.at) || 0)); out.forEach((m, i) => { m.n = i + 1; });
+  return out;
+}
+function recoveryCandidates() {
+  const present = new Set((readJSONSafe(CHARS_FILE(), []) || []).map((c) => c.id));
+  const ts = (x) => Date.parse(x && (x.updatedAt || x.createdAt)) || 0;
+  const found = new Map(); // id -> { char, source, chat: () => messages }
+  const offer = (c, source, chatFn, avatarDirs) => {
+    if (!c || !ID_RE.test(c.id) || present.has(c.id)) return;
+    const prev = found.get(c.id); if (prev && ts(prev.char) >= ts(c)) return;
+    found.set(c.id, { char: c, source, chat: chatFn, avatarDirs });
+  };
+  for (const u of Object.keys(USERS)) {
+    const list = readJSON(path.join(DATA_DIR, 'users', u, 'characters.json'), []);
+    for (const c of Array.isArray(list) ? list : []) offer(c, `vecchi file di ${USERS[u].name}`, () => legacyChat(c.id), [path.join(DATA_DIR, 'users', u, 'avatars')]);
+  }
+  for (const b of listBackups()) {
+    const list = readJSON(path.join(BACKUP_DIR, b, 'shared', 'characters.json'), []);
+    for (const c of Array.isArray(list) ? list : []) offer(c, `backup ${b}`, () => normChat(readJSON(path.join(BACKUP_DIR, b, 'shared', 'chats', c.id + '.json'), null)).messages, [path.join(BACKUP_DIR, b, 'shared', 'avatars')]);
+  }
+  return [...found.values()].map((x) => ({ ...x, messages: x.chat() })).filter((x) => !isPristine(x.char, x.messages.length));
+}
+const avatarFiles = (c) => {
+  const out = new Set(); const add = (a) => { const m = AV_RE.exec(String(a || '')); if (m) out.add(m[1]); };
+  add(c.avatar); add(c.identity && c.identity.refAvatar); (c.lookHistory || []).forEach((h) => add(h.avatar));
+  Object.values(c.scenes || {}).forEach((sc) => add(sc && sc.image)); return out;
+};
+async function recoverCharacters(u, ids = null, { orphans = false } = {}) {
+  const cands = recoveryCandidates().filter((x) => !ids || ids.includes(x.char.id));
+  const report = { at: new Date().toISOString(), by: u, restored: [], skipped: [] };
+  if (!cands.length) return report;
+  backupShared('prima-recupero', { force: true });
+  const cutoff = Math.min(Date.now(), ...(readJSON(CHARS_FILE(), []) || []).map((c) => Date.parse(c.createdAt) || Date.now()));
+  for (const x of cands) {
+    const c = JSON.parse(JSON.stringify(x.char)); delete c.drawer;
+    // avatar: copia nell'archivio condiviso quelli che mancano (dai vecchi file o dal backup)
+    for (const f of avatarFiles(c)) {
+      const dst = path.join(avatarDir(), f); if (fs.existsSync(dst)) continue;
+      const src = x.avatarDirs.map((d) => path.join(d, f)).find((p) => fs.existsSync(p)) || avatarPath(f);
+      if (fs.existsSync(src)) fs.copyFileSync(src, dst);
+    }
+    c.recoveredAt = report.at; c.recoveredFrom = x.source; c.lookHistory = Array.isArray(c.lookHistory) ? c.lookHistory : [];
+    let added = false;
+    await mutateJSON(CHARS_FILE(), [], (list) => { if (list.some((y) => y.id === c.id)) return undefined; added = true; return [...list, c]; });
+    if (!added) { report.skipped.push(c.id); continue; }
+    // chat: ricreata solo se non esiste già (mai sovrascritta)
+    let restoredMsgs = 0;
+    await mutateJSON(chatFile(c.id), newChat, (raw) => {
+      const cur = normChat(raw); if (cur.messages.length || !x.messages.length) return undefined;
+      restoredMsgs = x.messages.length; return { epoch: newId(), messages: x.messages };
+    });
+    report.restored.push({ id: c.id, name: c.name, source: x.source, messages: restoredMsgs });
+  }
+  // avatar "orfani" (file presenti ma non collegati ad alcun personaggio, creati prima dei personaggi attuali):
+  // aggiunti allo storico look del personaggio recuperato (se è uno solo), così si possono ripristinare dall'editor.
+  if (orphans && report.restored.length === 1) {
+    const all = readJSON(CHARS_FILE(), []) || []; const used = new Set(); all.forEach((c) => avatarFiles(c).forEach((f) => used.add(f)));
+    let files = []; try { files = fs.readdirSync(avatarDir()).filter((f) => /^[a-f0-9]{16}\.(png|jpg)$/.test(f) && !used.has(f)); } catch {}
+    files = files.map((f) => ({ f, t: fs.statSync(path.join(avatarDir(), f)).mtimeMs })).filter((o) => o.t < cutoff).sort((a, b) => b.t - a.t).slice(0, 30);
+    if (files.length) {
+      const id = report.restored[0].id;
+      await patchChar(id, (c) => {
+        c.lookHistory = [...files.map((o) => ({ id: newId(), at: new Date(o.t).toISOString(), avatar: `/api/avatars/${o.f}`, appearance: c.appearance, look: c.look, landmarks: c.landmarks, reason: 'recuperato' })), ...(c.lookHistory || [])].slice(0, 40);
+      });
+      report.restored[0].orphanAvatars = files.length;
+    }
+  }
+  if (report.restored.length) {
+    revs.set(CHARS_FILE(), (revs.get(CHARS_FILE()) || 0) + 1);
+    audit(u, 'recupero-personaggi', { restored: report.restored });
+  }
+  return report;
+}
+// Recupero automatico una tantum (v6.1): rimette i personaggi persi accanto a quelli attuali.
+function startupRecovery() {
+  const mark = path.join(sharedDir(), 'recovery-v61.json');
+  if (fs.existsSync(mark)) return Promise.resolve();
+  const wiped = /Cancella tutto/.test(JSON.stringify(readJSON(MIGRATION_MARK(), {}) || {}));
+  if (wiped) { writeJSON(mark, { at: new Date().toISOString(), note: 'archivio azzerato con Cancella tutto: nessun recupero' }); return Promise.resolve(); }
+  return recoverCharacters('sistema', null, { orphans: true }).then((r) => {
+    writeJSON(mark, r);
+    if (r.restored.length) console.log(`Recupero personaggi: ${r.restored.map((x) => `${x.name} (${x.id}, ${x.messages} messaggi${x.orphanAvatars ? `, ${x.orphanAvatars} avatar orfani nello storico look` : ''}) da ${x.source}`).join('; ')}`);
+    else console.log('Recupero personaggi: nulla da recuperare.');
+  }).catch((e) => console.error('Recupero personaggi non riuscito (nessun dato modificato):', e.message));
+}
+
 
 // ---------- migrazione una tantum: dai vecchi archivi per utente all'archivio condiviso ----------
 // Gira all'avvio solo se manca data/shared/migration.json. Non cancella i vecchi file in data/users/<utente>/.
@@ -1401,9 +1648,14 @@ function migrateToShared() {
   writeJSON(MIGRATION_MARK(), report);
   console.log(`Archivio condiviso: migrazione completata (personaggi ${report.characters}, chat ${report.chats}, messaggi ${report.messages}, ricordi ${report.memory}, avatar ${report.avatars}).`);
 }
+backupShared('avvio', { force: true }); // copia di sicurezza a ogni avvio, prima di qualsiasi modifica
 try { migrateToShared(); } catch (e) { console.error('Migrazione archivio condiviso NON riuscita (i vecchi file restano intatti):', e.message); }
-// memoria base per i personaggi che non l'hanno ancora (una volta per personaggio)
-(async () => { for (const c of readJSON(CHARS_FILE(), []) || []) if (!c.memorySeededAt) await seedBaseMemory(c).catch((e) => console.error('Memoria base non creata:', e.message)); })();
+// recupero una tantum dei personaggi persi, poi memoria base per i personaggi che non l'hanno ancora
+(async () => {
+  await startupRecovery();
+  for (const c of readJSON(CHARS_FILE(), []) || []) if (!c.memorySeededAt) await seedBaseMemory(c).catch((e) => console.error('Memoria base non creata:', e.message));
+})();
+setInterval(() => backupShared('orario'), 60 * 60e3).unref(); // ogni ora, solo se qualcosa è cambiato
 
 app.listen(PORT, () => {
   console.log(`App privata avviata su http://localhost:${PORT}`);

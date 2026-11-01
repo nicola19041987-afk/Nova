@@ -59,7 +59,7 @@ Online imposta sempre `COOKIE_SECURE=true` e un `SETUP_CODE`.
 - **Documenti per gioco** (carta d'identità, tessera sanitaria, portafoglio) inventati, con filigrana "FAC-SIMILE – NON VALIDO".
 - **Diario**: bacheca privata di coppia con didascalie scritte dal personaggio, mi piace e commenti solo tra voi due.
 - **Privacy**: di default i contenuti generati restano solo in memoria finché non premi 💾; esportazione/condivisione disattivata (quando la attivi: solo "Scarica" e il menu di condivisione del telefono, manuali). Fotocamera e microfono spenti di default.
-- **Cancella tutto** (Account): cancella con conferma, parola CANCELLA e PIN tutti i dati di entrambi i profili sul server e i dati locali del telefono, poi ti disconnette. I PIN restano, salvo la casella "Cancella anche i PIN".
+- **Cancella tutto** (Account): cancella con conferma, parola CANCELLA e PIN tutti i dati di entrambi i profili sul server e i dati locali del telefono, poi ti disconnette. I PIN restano, salvo la casella "Cancella anche i PIN". Prima fa un backup completo in `data/backups` (salvo "Elimina anche le copie di sicurezza").
 
 ## Archivio condiviso
 Nico e Luisa usano **un unico archivio**: stessi personaggi, stesse chat, stessa memoria.
@@ -131,6 +131,14 @@ Dopo modifiche al frontend aumenta il numero di versione `CACHE` in `public/sw.j
 ## Dati
 Tutto in `data/` sul server (escluso da git e dallo zip): `pins.json`, `sessions.json`, `shared/` (personaggi, chat, memoria, avatar, Diario),
 `users/<profilo>/…` (consenso audio, impostazioni, regole, note personali, immagini, video; più i vecchi file prima della migrazione). Fai un backup di questa cartella.
+
+### Protezione dei dati (v6.1)
+- **Copie di sicurezza automatiche** in `data/backups/<data>-<motivo>/`: all'avvio, ogni ora (se qualcosa è cambiato), al massimo ogni 10 minuti mentre si modificano i personaggi, e sempre prima di eliminare un personaggio, svuotare una chat, recuperare personaggi o fare "Cancella tutto". Contengono personaggi, chat, memoria, Diario, avatar (hard link: nessuno spazio in più) e i vecchi file per utente. Si tengono le ultime `BACKUP_KEEP` (predefinito 20) più le ultime 10 fatte prima di un'operazione distruttiva.
+- **Mai un elenco vuoto per errore**: se `characters.json` (o un altro archivio) è illeggibile, il file viene messo da parte in `data/backups/illeggibili/` e ripristinato dalla copia speculare `.bak` o dall'ultimo backup; se non c'è una copia valida la modifica viene bloccata (errore 503) e il file NON viene toccato. Una scrittura che toglierebbe personaggi dall'elenco viene bloccata, salvo l'eliminazione esplicita di quel singolo personaggio.
+- **Registro**: eliminazioni di personaggi, chat svuotate, recuperi e "Cancella tutto" finiscono nel log del server (`[registro] …`) e in `data/audit.json` (utente, id, nome, ora).
+- **Recupero personaggi** (Account → 🛟): elenca i personaggi che non sono più nell'elenco ma esistono nei vecchi file per utente o nei backup, e li rimette **accanto** a quelli attuali con la loro chat e i loro avatar (stesso id già presente = saltato; nulla viene sovrascritto). All'avvio della v6.1 il recupero viene fatto una volta in automatico (segno `data/shared/recovery-v61.json`); gli avatar rimasti senza personaggio vengono aggiunti allo storico look del personaggio recuperato.
+- **Cancella tutto** fa prima un backup completo (che resta in `data/backups`), a meno di spuntare "Elimina anche le copie di sicurezza".
+- Su Render il disco persistente deve essere montato esattamente sulla cartella dati (`DATA_DIR`): controlla che il percorso di mount e `DATA_DIR` coincidano.
 
 ## Gesti e imitazione con la fotocamera (sul telefono)
 In **📷 Presenza**: **✋ Gesti** fa reagire l'avatar alle tue mani (👋 saluto → saluta, ✋ mano aperta / ✌️ → sorride, 👍 / 👌 → annuisce,
