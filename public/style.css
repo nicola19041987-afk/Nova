@@ -190,3 +190,17 @@ details.card summary{font-weight:600}
 .presence-status{position:absolute;left:10px;right:10px;top:calc(env(safe-area-inset-top) + 104px);background:#000b;color:#fff;border-radius:12px;padding:6px 10px;font-size:.85em;margin:0}
 .presence-top button.on{background:#d14b8fcc}
 .msg.local{border-style:dashed;opacity:.9}
+
+/* v7: azioni dell'avatar */
+.act-list{display:flex;flex-wrap:wrap;gap:6px;max-width:260px}
+.act-list button{flex:0 0 auto;padding:6px 9px;font-size:.88em}
+.act-list button.stale{opacity:.55}
+#act-dialog{max-width:440px}
+#act-choices label,#act-adult-choices label{display:flex;align-items:center;gap:8px;padding:5px 0}
+#act-choices .st,#act-adult-choices .st{margin-left:auto;font-size:.8em;color:var(--muted)}
+#act-progress{width:100%;margin:8px 0}
+.act-log{list-style:none;padding:0;margin:6px 0;font-size:.85em;max-height:160px;overflow:auto}
+.act-log li.err{color:#ff8a8a}
+.act-log li.ok{color:#8fe3a8}
+#act-dialog label{display:flex;align-items:center;gap:8px;text-align:left}
+#act-dialog input[type=checkbox]{width:auto;flex:0 0 auto;margin:0;padding:0}

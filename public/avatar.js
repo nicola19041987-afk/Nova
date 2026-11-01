@@ -207,9 +207,9 @@
       this.swayPeriod += (targetPeriod - this.swayPeriod) * 0.02;
       this._ph = ((this._ph || 0) + dt / this.swayPeriod) % 1;
       const styleAmp = 0.75 + ST.headAmp * 0.9 + ST.energy * 0.35; // chi si muove di più → lei un po' più mobile
-      const rAmp = (this.rhythm ? 0.028 + this.rhythm.strength * 0.02 : sens ? 0.034 : 0.028) * (this.rhythm ? 1 : styleAmp);
+      const rAmp = (this.rhythm ? 0.034 + this.rhythm.strength * 0.022 : sens ? 0.05 : 0.042) * (this.rhythm ? 1 : styleAmp);
       const breath = Math.sin(now / (sens ? 5200 : 4000) * Math.PI * 2) * (sens ? 1.4 : 1);
-      let sway = Math.sin(this._ph * Math.PI * 2) * rAmp + Math.sin(now / 2300) * 0.009;
+      let sway = Math.sin(this._ph * Math.PI * 2) * rAmp + Math.sin(now / 2300) * 0.014 + Math.sin(now / 9100 + 2) * 0.01;
       let bob = this.rhythm ? Math.abs(Math.sin(this._ph * Math.PI * 2)) * this.rhythm.strength * S * 0.008 : 0;
       const talkNod = this.mouth * 0.02 + (this.speaking ? Math.sin(now / 330) * 0.008 : 0);
       // imitazione naturale: legge il campione di 300–800 ms fa (ritardo che varia), ne prende solo una parte (35–65%)
@@ -224,19 +224,21 @@
       const spring = (cur, tgt, key, K) => { const D = 2 * Math.sqrt(K) * 0.95; V[key] += ((tgt - cur) * K - V[key] * D) * sdt; return cur + V[key] * sdt; };
       // a riposo: ogni tanto lei guarda altrove (girata e inclinazione leggere, ampiezza secondo lo stile appreso)
       const mc = this.micro;
-      if (now > mc.nextLook) { mc.lookT = Math.random() < 0.45 ? 0 : (Math.random() * 2 - 1) * (0.25 + ST.headAmp); mc.nextLook = now + 2500 + Math.random() * 5000 * (1.2 - ST.energy); }
+      if (now > mc.nextLook) { mc.lookT = Math.random() < 0.35 ? 0 : (Math.random() * 2 - 1) * (0.5 + ST.headAmp); mc.nextLook = now + 2000 + Math.random() * 4000 * (1.2 - ST.energy); }
       mc.look += (mc.lookT - mc.look) * Math.min(1, dt / 600);
       const idle = R ? 0.25 : 1;
-      const tgtTilt = (R ? R.tilt * g : 0) + mc.look * 0.25 * idle, tgtYaw = (R ? R.yaw * g : 0) + mc.look * 0.6 * idle, tgtPitch = R ? R.pitch * g : 0;
+      const tgtTilt = (R ? R.tilt * g : 0) + mc.look * 0.35 * idle, tgtYaw = (R ? R.yaw * g : 0) + mc.look * 0.9 * idle, tgtPitch = R ? R.pitch * g : 0;
       M.tilt = spring(M.tilt, tgtTilt, 'tilt', 26); M.yaw = spring(M.yaw, tgtYaw, 'yaw', 22); M.pitch = spring(M.pitch, tgtPitch, 'pitch', 26);
       // piccole alzate di braccio a riposo, più frequenti per chi gesticola di più (solo mezzo busto / figura intera)
-      if (now > mc.nextIdleLift) { mc.idleLiftT = Math.random() * (0.15 + ST.energy * 0.35); mc.nextIdleLift = now + (mc.idleLiftT > 0.05 ? 1600 : 0) + 60000 / Math.max(1, ST.gestPerMin + 2) * (0.6 + Math.random()); setTimeout(() => { mc.idleLiftT = 0; }, 1400 + Math.random() * 900); }
+      if (now > mc.nextIdleLift) { mc.idleLiftT = Math.random() * (0.25 + ST.energy * 0.35); mc.nextIdleLift = now + (mc.idleLiftT > 0.05 ? 1600 : 0) + 60000 / Math.max(1, ST.gestPerMin + 4) * (0.6 + Math.random()); setTimeout(() => { mc.idleLiftT = 0; }, 1400 + Math.random() * 900); }
       M.lift[0] = Math.max(0, spring(M.lift[0], R ? R.lift[0] * (g + 0.1) : 0, 'l0', 18));
       M.lift[1] = Math.max(0, spring(M.lift[1], R ? R.lift[1] * (g + 0.1) : mc.idleLiftT * (R ? 0 : 1), 'l1', 18));
       M.energy += ((R ? R.energy * g : ST.energy * 0.12 * learned) - M.energy) * Math.min(1, dt / 500);
       sway += M.tilt * 0.12;
       bob += M.pitch * S * 0.02 + breath * S * 0.004;
-      const shiftX = M.yaw * S * 0.025;
+      const shiftX = M.yaw * S * 0.04 + Math.sin(now / 5200) * S * 0.012 * idle; // girata + spostamento del peso
+      // spalle: una sale mentre l'altra scende (lento), più marcato quando alza un braccio
+      const skew = Math.max(-SKEW_MAX, Math.min(SKEW_MAX, Math.sin(now / 3700 + 1) * 0.011 * idle + (M.lift[1] - M.lift[0]) * 0.01 + M.tilt * 0.004));
       // reazione in corso
       let rx = 0, ry = 0, rRot = 0, smile = sens ? 0.25 : 0, wave = 0;
       const re = this.reaction;
@@ -278,7 +280,7 @@
       if (squint > 0.3) blink = Math.max(blink, squint * 0.25); // occhi che "sorridono"
 
       // ---- disegno: contenimento (contain) nel riquadro, mai ritagliato; scena cinematografica facoltativa ----
-      const A = { now, S, rot: Math.max(-ROT_MAX, Math.min(ROT_MAX, sway + talkNod + rRot)), shiftX: Math.max(-SHIFT_MAX, Math.min(SHIFT_MAX, shiftX + rx)), bob: Math.max(-SHIFT_MAX, Math.min(SHIFT_MAX, bob + ry)), breath, smile, blink, wave, mc, M, spring };
+      const A = { now, S, rot: Math.max(-ROT_MAX, Math.min(ROT_MAX, sway + talkNod + rRot)), shiftX: Math.max(-SHIFT_MAX, Math.min(SHIFT_MAX, shiftX + rx)), bob: Math.max(-SHIFT_MAX, Math.min(SHIFT_MAX, bob + ry)), skew, breath, smile, blink, wave, mc, M, spring };
       const CW = this.c.width, CH = this.c.height, col = this.colors;
       ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalCompositeOperation = 'source-over'; ctx.clearRect(0, 0, CW, CH);
       const scn = this.sceneOn();
@@ -313,8 +315,8 @@
     paintAvatar(ctx, box, A, top, alignBottom) {
       const S = VS, img = this.img, E = this.extent(img), col = this.colors;
       // ingombro massimo durante il movimento: rotazione (limitata a ROT_MAX) + spostamenti + respiro
-      const th = ROT_MAX, pad = S * 0.045; // margine = spostamento max + scarto del perno + respiro
-      const bw = E.w * Math.cos(th) + E.h * Math.sin(th) + pad * 2, bh = E.w * Math.sin(th) + E.h * Math.cos(th) + pad * 2;
+      const th = ROT_MAX, pad = SHIFT_MAX + S * 0.022; // margine = spostamento max + scarto del perno + respiro
+      const bw = E.w * Math.cos(th) + E.h * Math.sin(th) + pad * 2, bh = E.w * Math.sin(th) + E.h * Math.cos(th) + E.w * SKEW_MAX * 1.1 + pad * 2;
       const fit = Math.min(box.w / bw, box.h / bh);
       const cx = box.x + box.w / 2, cy = alignBottom ? box.y + box.h - (bh * fit) / 2 : box.y + box.h / 2;
       const ox = cx - (E.x0 + E.w / 2) * fit, oy = cy - (E.y0 + E.h / 2) * fit;
@@ -322,13 +324,16 @@
       const plain = !+col.hue && +col.saturation === 100 && +col.brightness === 100; // filtro solo se serve (è costoso)
       ctx.filter = plain ? 'none' : `hue-rotate(${col.hue}deg) saturate(${col.saturation}%) brightness(${col.brightness}%)`;
       const pv = { x: S / 2, y: Math.min(E.y0 + E.h * 0.85, S * 0.62) }; // perno: collo/busto
-      ctx.translate(pv.x + A.shiftX, pv.y + A.bob); ctx.rotate(A.rot);
+      ctx.translate(pv.x + A.shiftX, pv.y + A.bob); ctx.rotate(A.rot); if (A.skew) ctx.transform(1, A.skew || 0, 0, 1, 0, 0);
       const sc = 1 + A.breath * 0.006; ctx.scale(sc, sc + A.breath * 0.004); ctx.translate(-pv.x, -pv.y);
       if (top) { // ingombro reale (per verifica): angoli dell'immagine trasformati
         const T = ctx.getTransform(); const pts = [[E.x0, E.y0], [E.x0 + E.w, E.y0], [E.x0, E.y0 + E.h], [E.x0 + E.w, E.y0 + E.h]].map(([x, y]) => [T.a * x + T.c * y + T.e, T.b * x + T.d * y + T.f]);
         this._bounds = { x0: Math.min(...pts.map((p) => p[0])), y0: Math.min(...pts.map((p) => p[1])), x1: Math.max(...pts.map((p) => p[0])), y1: Math.max(...pts.map((p) => p[1])), cw: this.c.width, ch: this.c.height };
       }
       const { mc, M, spring, now, smile, blink, wave } = A;
+      const act = top ? this.actionAlpha(now) : null; // azione in corso (clip o posa): dissolvenza incrociata
+      if (act && act.a >= 0.999) { this.paintAction(ctx, E, A, act); ctx.filter = 'none'; const T = ctx.getTransform(); ctx.setTransform(1, 0, 0, 1, 0, 0); return { x: ox + E.x0 * fit, y: oy + E.y0 * fit, w: E.w * fit, h: E.h * fit, T }; }
+      if (act) ctx.globalAlpha = 1 - act.a;
       if (img) {
         ctx.drawImage(img, E.x0, E.y0, E.w, E.h);
         // Gesti (mezzo busto / figura intera): braccia che si muovono col ritmo e l'intensità del parlato.
@@ -356,9 +361,75 @@
         ctx.save(); ctx.translate(S / 2, S / 2); ctx.scale(1 + this.mouth * 0.04, 1 - this.mouth * 0.06);
         ctx.translate(mc.gx * S * 0.004, -mc.brow * S * 0.006); ctx.fillText(this.emoji, 0, S * 0.03); ctx.restore();
       }
+      if (act) { ctx.globalAlpha = act.a; this.paintAction(ctx, E, A, act); ctx.globalAlpha = 1; }
       ctx.filter = 'none';
       const T = ctx.getTransform(); ctx.setTransform(1, 0, 0, 1, 0, 0);
       return { x: ox + E.x0 * fit, y: oy + E.y0 * fit, w: E.w * fit, h: E.h * fit, T };
+    }
+    // ---- AZIONI (v7): clip video o posa, disegnate nel riquadro dell'avatar con gli stessi movimenti (niente ritagli) ----
+    // spec: { kind: 'video', url } | { kind: 'pose', url, lm? }. Restituisce una Promise che si risolve a fine azione.
+    playAction(spec) {
+      this.stopAction(true);
+      return new Promise((resolve, reject) => {
+        const done = (ok) => { if (this.act && this.act.resolve === resolve) { this.act = null; } resolve(ok); };
+        const fail = (e) => { if (this.act && this.act.resolve === resolve) this.act = null; reject(e); };
+        if (spec.kind === 'video') {
+          const v = this._vid || (this._vid = document.createElement('video'));
+          v.muted = true; v.defaultMuted = true; v.playsInline = true; v.setAttribute('playsinline', ''); v.setAttribute('webkit-playsinline', ''); v.preload = 'auto'; v.loop = false;
+          const act = { kind: 'video', el: v, resolve, start: 0, fadeIn: 380, fadeOut: 520, endAt: 0, ready: false };
+          this.act = act;
+          const to = setTimeout(() => fail(new Error('Video non caricato')), 9000);
+          v.oncanplay = () => { if (this.act !== act || act.ready) return; act.ready = true; clearTimeout(to); act.start = performance.now(); v.play().catch((e) => fail(e)); };
+          v.onended = () => { if (this.act === act && !act.endAt) act.endAt = performance.now(); };
+          v.onerror = () => { clearTimeout(to); fail(new Error('Video non riproducibile')); };
+          act.finish = () => done(true);
+          v.src = spec.url; v.load();
+        } else {
+          const im = new Image();
+          const act = { kind: 'pose', img: im, lm: spec.lm || null, resolve, start: 0, dur: spec.dur || 3400, fadeIn: 520, fadeOut: 620, ready: false };
+          this.act = act;
+          im.onload = () => { if (this.act !== act) return; act.ready = true; act.start = performance.now(); if (act.lm) act.lids = lidsFor(im, act.lm); };
+          im.onerror = () => fail(new Error('Immagine non caricata'));
+          act.finish = () => done(true);
+          im.src = spec.url;
+        }
+      });
+    }
+    setActionLandmarks(lm) { if (this.act && this.act.kind === 'pose' && lm) { this.act.lm = lm; try { this.act.lids = lidsFor(this.act.img, lm); } catch {} } }
+    stopAction(silent) { const a = this.act; if (!a) return; if (a.el) { try { a.el.pause(); } catch {} } this.act = null; if (!silent) a.resolve(false); else a.resolve(false); }
+    actionBusy() { return !!this.act; }
+    // opacità dell'azione: entra, resta, esce (per i video l'uscita parte alla fine della clip)
+    actionAlpha(now) {
+      const a = this.act; if (!a || !a.ready || !a.start) return null;
+      const t = now - a.start; let al;
+      if (a.kind === 'video') {
+        const v = a.el, left = (v.duration && isFinite(v.duration)) ? (v.duration - v.currentTime) * 1000 : 9999;
+        if (!a.endAt && left < a.fadeOut) a.endAt = now + left - a.fadeOut;
+        if (t > 15000 && !a.endAt) a.endAt = now; // tetto di sicurezza
+        if (a.endAt) { const p = (now - a.endAt) / a.fadeOut; if (p >= 1) { a.finish(); return null; } al = Math.min(1, t / a.fadeIn) * (1 - Math.max(0, p)); }
+        else al = Math.min(1, t / a.fadeIn);
+      } else {
+        if (t >= a.dur) { a.finish(); return null; }
+        al = Math.min(1, t / a.fadeIn, (a.dur - t) / a.fadeOut);
+      }
+      return { a: ease(Math.max(0, Math.min(1, al))), t, act: a };
+    }
+    paintAction(ctx, E, A, st) {
+      const a = st.act;
+      if (a.kind === 'video') {
+        const v = a.el, vw = v.videoWidth, vh = v.videoHeight; if (!vw || !vh) return;
+        const k = Math.max(E.w / vw, E.h / vh), sw = E.w / k, sh = E.h / k; // riempie esattamente il riquadro dell'avatar (stesso formato)
+        ctx.drawImage(v, (vw - sw) / 2, (vh - sh) / 2, sw, sh, E.x0, E.y0, E.w, E.h);
+        return;
+      }
+      const im = a.img, E2 = this.extent(im);
+      const k = Math.min(E.w / E2.w, E.h / E2.h), zoom = 1 + 0.045 * Math.min(1, st.t / a.dur); // Ken Burns lento, dentro il riquadro
+      const cx = E.x0 + E.w / 2, cy = E.y0 + E.h / 2, px = Math.sin(st.t / 1300) * E.w * 0.004; // leggera parallasse
+      ctx.save(); ctx.beginPath(); ctx.rect(E.x0, E.y0, E.w, E.h); ctx.clip();
+      ctx.translate(cx + px, cy); ctx.scale(k * zoom, k * zoom); ctx.translate(-(E2.x0 + E2.w / 2), -(E2.y0 + E2.h / 2));
+      ctx.drawImage(im, E2.x0, E2.y0, E2.w, E2.h);
+      if (a.lm) this.paintFace(ctx, im, a.lm, A, 1, a.lids); // labiale, ammiccamenti, sguardo anche sulla posa
+      ctx.restore();
     }
     // Espressioni sul viso della foto (labiale, sorriso, sguardo, sopracciglia, palpebre). fs = scala del viso (1 = ritratto).
     paintFace(ctx, img, lm, A, fs, lids) {
@@ -465,7 +536,7 @@
   }
 
   const VS = 1000; // unità virtuale dello spazio del viso (il canvas reale scala con una trasformazione)
-  const ROT_MAX = 0.05; const SHIFT_MAX = 0.03 * 1000; // rotazione massima della testa/busto (radianti): l'ingombro è calcolato su questo valore
+  const ROT_MAX = 0.075; const SHIFT_MAX = 0.042 * 1000; const SKEW_MAX = 0.018; // v7: movimenti più ampi (spalle comprese), sempre dentro il riquadro // rotazione massima della testa/busto (radianti): l'ingombro è calcolato su questo valore
   // Bordi sfumati (Presenza e scena senza immagine): ellisse sull'area dell'immagine
   function feather(ctx, r, inner = 0.62) {
     ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalCompositeOperation = 'destination-in';

@@ -16,6 +16,7 @@
       return { eyeL: a, eyeR: b, mouth: avg([13, 14]) };
     } catch (e) { console.warn('Viso nella scena non trovato', e); return null; }
   }
+  App.findFace = findFace; // usato anche dalle pose delle azioni
   function adopt(ch) { // personaggio aggiornato dal server
     if (!ch) return; const i = App.chars.findIndex((c) => c.id === ch.id); if (i >= 0) App.chars[i] = ch;
     if (App.current && App.current.id === ch.id) App.current = ch;

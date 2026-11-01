@@ -20,6 +20,11 @@ const IMAGE_EDIT_MODEL = process.env.IMAGE_EDIT_MODEL || IMAGE_MODEL;
 const VIDEO_PATH = process.env.VIDEO_PATH === undefined ? '/videos/generations' : process.env.VIDEO_PATH;
 const VIDEO_STATUS_PATH = process.env.VIDEO_STATUS_PATH || '/videos/{id}';
 const VIDEO_MODEL = process.env.VIDEO_MODEL || 'grok-imagine-video-1.5-lite';
+// Azioni dell'avatar (v7): brevi clip da immagine a video; il modello completo permette di fissare anche l'ultimo
+// fotogramma uguale al primo (ritorno pulito all'avatar). Durata corta e 480p per spendere poco.
+const ACTION_VIDEO_MODEL = process.env.ACTION_VIDEO_MODEL || 'grok-imagine-video-1.5';
+const ACTION_SECONDS = Math.min(8, Math.max(2, Number(process.env.ACTION_SECONDS) || 5));
+const ACTION_RESOLUTION = process.env.ACTION_RESOLUTION || '480p';
 const COOKIE_SECURE = String(process.env.COOKIE_SECURE || 'false') === 'true';
 const SESSION_DAYS = Number(process.env.SESSION_DAYS || 30);
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
@@ -704,7 +709,7 @@ app.post('/api/characters/:id/memory-base', auth, async (req, res) => {
 });
 
 app.get('/api/characters', auth, (req, res) => {
-  const list = getChars(req.user).map(({ drawer, ...c }) => ({ ...c, scenes: cleanScenes(c.scenes) })); // il vecchio campo del comodino non viene esposto
+  const list = getChars(req.user).map(({ drawer, ...c }) => ({ ...c, scenes: cleanScenes(c.scenes), actions: visibleActions(c), adultActionsOk: aiFace(c) })); // il vecchio campo del comodino non viene esposto
   res.setHeader('X-Version', fileRev(CHARS_FILE())); res.json(list);
 });
 app.get('/api/characters/options', auth, (req, res) => res.json(OPT));
@@ -1050,6 +1055,7 @@ function buildSystem(user, ch) {
     mem.filter((m) => m.charId === ch.id).length && `LA TUA MEMORIA DI BASE (chi sei, modificabile dagli utenti):\n${mem.filter((m) => m.charId === ch.id).map((m) => '- ' + m.text).join('\n')}`,
     notes.toAI && notes.text.trim() && `NOTE PERSONALI DI ${USERS[user].name.toUpperCase()} (riservate, non citarle all'altra persona):\n${notes.text.trim()}`,
     stateText(ch),
+    actionsPrompt(ch),
     adultChat() ? 'MODALITÀ ADULTI ATTIVA (scelta da entrambi gli utenti, che hanno registrato il consenso vocale): sono ammessi linguaggio esplicito e gioco di ruolo sessuale esplicito tra Nico, Luisa e il personaggio, che è una donna adulta inventata (25+). Resta sempre tutto entro le regole di base qui sotto.'
       : 'Modalità adulti NON attiva: niente contenuti sessuali espliciti; se richiesti, ricorda con gentilezza che va attivata in Account da entrambi.',
     BASE_RULE, // sempre ultima, non sovrascrivibile
@@ -1121,7 +1127,10 @@ app.post('/api/chats/:id', auth, requireActivated, (req, res, next) => (req.body
     if (!res.headersSent) { typing.delete(id); return res.status(502).json({ error: 'Servizio AI non raggiungibile', message: pubMsg(mine, ch) }); }
   }
   // la risposta viene aggiunta in coda alla versione aggiornata della chat (eventuali messaggi arrivati nel frattempo restano)
-  if (reply) await appendMsg(id, { id: replyId, role: 'assistant', author: ch.id, content: reply, extra: { replyTo: req.user } });
+  if (reply) {
+    const t = takeActionTag(reply, ch); // [azione:xxx] -> tolto dal testo, salvato come campo del messaggio (lo vedono entrambi)
+    await appendMsg(id, { id: replyId, role: 'assistant', author: ch.id, content: t.text || reply, extra: { replyTo: req.user, ...(t.action ? { action: t.action } : {}) } });
+  }
   typing.delete(id);
   res.end();
 });
@@ -1337,6 +1346,171 @@ app.delete('/api/feed/:id', auth, (req, res) => {
   writeJSON(FEED_FILE, feed.filter((x) => x.id !== p.id)); res.json({ ok: true });
 });
 
+
+// ---------- AZIONI dell'avatar (v7): clip brevi (video xAI) o pose (immagini) preparate su richiesta ----------
+// Preparazione SOLO con il pulsante "Prepara azioni" (spende crediti xAI della chiave di chi la avvia).
+// Azioni adulti: solo con la modalità adulti attiva per ENTRAMBI e solo per personaggi con volto generato dall'IA
+// (mai da una foto caricata: niente immagini intime con il volto di una persona reale).
+const ACT_BASE = 'Same person, same face and identity, same hairstyle, same framing and background as the source image. Static camera, natural realistic motion, subtle and believable. ';
+const ACTIONS = {
+  capelli: { label: 'Si sistema i capelli', emoji: '💇‍♀️', motion: 'she gently runs her fingers through her hair and tidies it, then lowers her hand and looks back at the camera', pose: 'she is tidying her hair with one hand, smiling' },
+  stiracchia: { label: 'Si stiracchia', emoji: '🙆‍♀️', motion: 'she stretches her arms up lazily with a small yawn and a relaxed smile, then returns to the starting pose', pose: 'she is stretching her arms up lazily with a relaxed smile' },
+  caffe: { label: 'Beve un caffè', emoji: '☕', motion: 'she lifts a small cup of espresso, takes a sip, smiles, lowers the cup out of frame and returns to the starting pose', pose: 'she is sipping from a small cup of espresso, smiling' },
+  ride: { label: 'Ride', emoji: '😂', motion: 'she laughs naturally and warmly, shoulders shaking slightly, then calms down with a smile', pose: 'she is laughing warmly and naturally' },
+  saluta: { label: 'Saluta con la mano', emoji: '👋', motion: 'she smiles and waves her hand at the camera in greeting, then lowers the hand', pose: 'she is smiling and waving her hand at the camera' },
+  girata: { label: 'Si appoggia e si gira', emoji: '↪️', motion: 'she leans to one side and turns her head and shoulders away as if looking at something, then turns back to the camera', pose: 'she is leaning to one side, head and shoulders turned slightly away, looking at something' },
+  bacio: { label: 'Manda un bacio', emoji: '😘', motion: 'she blows a kiss to the camera with her hand and smiles', pose: 'she is blowing a kiss to the camera with her hand' },
+  spoglia: { adult: true, label: 'Si spoglia', emoji: '🔥', motion: 'the fictional adult woman (25+) slowly and playfully takes off her top, sensual and confident, looking at the camera', pose: 'the fictional adult woman (25+) is slowly taking off her top, sensual and confident' },
+  giochi: { adult: true, label: 'Scena intima con sex toy', emoji: '🔞', motion: 'solo intimate scene: the fictional adult woman (25+), alone, sensually uses an adult sex toy, tasteful cinematic lighting', pose: 'solo intimate scene: the fictional adult woman (25+), alone, sensually holding an adult sex toy, tasteful cinematic lighting' },
+};
+const ACT_DIR = () => sharedDir('actions');
+const ACT_FILE_RE = /^([a-f0-9]{16})-([a-z]+)-([a-f0-9]{8})\.(mp4|png|jpg)$/;
+// Volto generato dall'IA: avatar immagine creato dall'IA e MAI una foto caricata (avatarConsent resta per sempre se c'è stata una foto)
+const aiFace = (c) => !!c && c.avatarSource === 'ai' && !c.avatarConsent && AV_RE.test(String(c.avatar || ''));
+const actionAllowed = (c, aid) => !!ACTIONS[aid] && (!ACTIONS[aid].adult || (adultChat() && aiFace(c)));
+function visibleActions(c) {
+  const out = {};
+  for (const [aid, a] of Object.entries(c.actions || {})) {
+    if (!a || !actionAllowed(c, aid) || !ACT_FILE_RE.test(a.file || '') || !fs.existsSync(path.join(ACT_DIR(), a.file))) continue;
+    out[aid] = { kind: a.kind === 'pose' ? 'pose' : 'video', url: `/api/actions/file/${a.file}`, at: a.at, by: a.by, avatar: a.avatar, stale: a.avatar !== c.avatar };
+  }
+  return out;
+}
+function actionsPrompt(c) {
+  const ready = Object.entries(visibleActions(c)).filter(([, a]) => !a.stale).map(([aid]) => aid);
+  if (!ready.length) return null;
+  return `AZIONI VISIBILI: puoi compiere un gesto che Nico e Luisa vedono sull'avatar aggiungendo IN FONDO alla risposta un solo tag [azione:<nome>], solo quando è davvero naturale (non spesso). Azioni disponibili: ${ready.map((aid) => `${aid} (${ACTIONS[aid].label.toLowerCase()})`).join(', ')}.`;
+}
+function takeActionTag(text, c) {
+  let action = null;
+  const out = String(text).replace(/\s*\[azione:\s*([a-zà-ù]+)\s*\]/gi, (m, aid) => { aid = aid.toLowerCase(); if (!action && visibleActions(c)[aid]) action = aid; return ''; }).trim();
+  return { text: out, action };
+}
+// dimensioni di PNG/JPEG (per chiedere le pose con lo stesso formato dell'avatar)
+function imgSize(b) {
+  if (b[0] === 0x89 && b.length > 24) return { w: b.readUInt32BE(16), h: b.readUInt32BE(20) };
+  if (b[0] === 0xff && b[1] === 0xd8) {
+    for (let i = 2; i + 9 < b.length;) {
+      if (b[i] !== 0xff) { i++; continue; }
+      const m = b[i + 1], len = b.readUInt16BE(i + 2);
+      if (m >= 0xc0 && m <= 0xcf && ![0xc4, 0xc8, 0xcc].includes(m)) return { w: b.readUInt16BE(i + 7), h: b.readUInt16BE(i + 5) };
+      i += 2 + len;
+    }
+  }
+  return null;
+}
+function closestAspect(sz) {
+  if (!sz || !sz.w || !sz.h) return null; const r = sz.w / sz.h;
+  return ASPECTS.map((a) => { const [x, y] = a.split(':').map(Number); return { a, d: Math.abs(Math.log(r / (x / y))) }; }).sort((p, q) => p.d - q.d)[0].a;
+}
+const actionJobs = new Map(); // request_id -> { user, charId, aid, avatar, at }
+const actionBusy = new Set(); // charId:aid in preparazione
+const actionSpend = new Map(); // utente -> [timestamp] (al massimo ACTION_MAX_HOUR preparazioni l'ora)
+const ACTION_MAX_HOUR = Math.max(1, Number(process.env.ACTION_MAX_HOUR) || 24);
+async function saveAction(u, ch, aid, buf, kind, srcAvatar, ext) {
+  const file = `${ch.id}-${aid}-${crypto.randomBytes(4).toString('hex')}.${ext}`;
+  fs.writeFileSync(path.join(ACT_DIR(), file), buf);
+  let old = null;
+  await patchChar(ch.id, (c) => { c.actions = c.actions || {}; old = c.actions[aid] && c.actions[aid].file; c.actions[aid] = { file, kind, at: new Date().toISOString(), by: u, avatar: srcAvatar }; });
+  if (old && old !== file && ACT_FILE_RE.test(old)) fs.rmSync(path.join(ACT_DIR(), old), { force: true });
+  const fresh = getChars(u).find((c) => c.id === ch.id);
+  return visibleActions(fresh)[aid];
+}
+async function poseFallback(u, key, ch, aid, srcAvatar, buf) {
+  const A = ACTIONS[aid];
+  const dataUrl = `data:image/${buf[0] === 0xff ? 'jpeg' : 'png'};base64,${buf.toString('base64')}`;
+  const r = await editImage(key, `${ACT_BASE}Still photo of the moment: ${A.pose}.`, [dataUrl], !!A.adult, closestAspect(imgSize(buf)));
+  return saveAction(u, ch, aid, r.buf, 'pose', srcAvatar, r.jpg ? 'jpg' : 'png');
+}
+app.get('/api/actions', auth, (req, res) => {
+  const adult = adultChat();
+  res.json({ video: !!VIDEO_PATH, adult, seconds: ACTION_SECONDS,
+    catalog: Object.entries(ACTIONS).filter(([, a]) => !a.adult || adult).map(([id, a]) => ({ id, label: a.label, emoji: a.emoji, adult: !!a.adult })) });
+});
+// Avvia la preparazione di UN'azione. Risposta: { status:'pending', rid } (video, poi /status) oppure { status:'done', action } (posa).
+app.post('/api/characters/:id/actions/:aid', auth, requireActivated, requireKey, async (req, res) => {
+  const { aid } = req.params;
+  const ch = getChars(req.user).find((c) => c.id === req.params.id);
+  if (!ch) return res.status(404).json({ error: 'Personaggio non trovato' });
+  if (!ACTIONS[aid]) return res.status(400).json({ error: 'Azione sconosciuta' });
+  const A = ACTIONS[aid];
+  if (A.adult && !adultChat()) return res.status(403).json({ error: 'Azione disponibile solo con la modalità adulti attiva per entrambi.' });
+  if (A.adult && !aiFace(ch)) return res.status(403).json({ error: 'Le azioni per adulti si possono preparare solo per personaggi con il volto generato dall\'IA, mai da una foto caricata.' });
+  const m = AV_RE.exec(String(ch.avatar || ''));
+  if (!m || !fs.existsSync(avatarPath(m[1]))) return res.status(400).json({ error: 'Serve un avatar immagine (non emoji) per preparare le azioni.' });
+  const key = `${ch.id}:${aid}`;
+  if (actionBusy.has(key)) return res.status(409).json({ error: 'Questa azione è già in preparazione' });
+  const now = Date.now(), spent = (actionSpend.get(req.user) || []).filter((t) => now - t < 3600e3);
+  if (spent.length >= ACTION_MAX_HOUR) return res.status(429).json({ error: `Limite di ${ACTION_MAX_HOUR} preparazioni l'ora raggiunto: riprova più tardi.` });
+  spent.push(now); actionSpend.set(req.user, spent);
+  const buf = fs.readFileSync(avatarPath(m[1]));
+  const dataUrl = `data:image/${buf[0] === 0xff ? 'jpeg' : 'png'};base64,${buf.toString('base64')}`;
+  actionBusy.add(key);
+  try {
+    if (VIDEO_PATH && req.body.mode !== 'pose') {
+      const body = { model: ACTION_VIDEO_MODEL, prompt: imgPrefix(!!A.adult) + ACT_BASE + A.motion + (A.adult ? '' : ' It ends in exactly the same pose as the first frame.'), image: { url: dataUrl }, duration: ACTION_SECONDS, resolution: ACTION_RESOLUTION };
+      if (!A.adult) body.last_frame = { url: dataUrl }; // loop pulito: l'ultimo fotogramma torna l'avatar
+      let r = await fetch(AI_BASE_URL + VIDEO_PATH, { method: 'POST', headers: aiHeaders(req.aiKey), body: JSON.stringify(body) });
+      let j = await r.json().catch(() => ({}));
+      if (!r.ok && body.last_frame && r.status === 400 && /last_frame/i.test(JSON.stringify(j))) { // modello senza ultimo fotogramma fissato
+        delete body.last_frame; r = await fetch(AI_BASE_URL + VIDEO_PATH, { method: 'POST', headers: aiHeaders(req.aiKey), body: JSON.stringify(body) }); j = await r.json().catch(() => ({}));
+      }
+      if (r.ok && j.request_id) { actionJobs.set(j.request_id, { user: req.user, charId: ch.id, aid, avatar: ch.avatar, at: now }); return res.json({ status: 'pending', rid: j.request_id, kind: 'video' }); }
+      const msg = aiErrorMsg(r.status, j);
+      console.error(`Azione ${aid}: video non avviato (HTTP ${r.status})`);
+      if (msg === 'Contenuto rifiutato dal servizio AI' || r.status === 401) return res.status(r.status === 401 ? 400 : 422).json({ error: msg, refused: msg === 'Contenuto rifiutato dal servizio AI' }); // 400: mai 401 (farebbe uscire dall'app)
+      if (![404, 405, 501].includes(r.status)) return res.status(502).json({ error: msg });
+      // video non disponibile con questa chiave/servizio: ripiego sulle pose (immagini)
+    }
+    const action = await poseFallback(req.user, req.aiKey, ch, aid, ch.avatar, buf);
+    res.json({ status: 'done', kind: 'pose', action });
+  } catch (e) {
+    const refused = e.message === 'Contenuto rifiutato dal servizio AI';
+    res.status(refused ? 422 : 502).json({ error: e.message, refused });
+  } finally { actionBusy.delete(key); }
+});
+app.get('/api/characters/:id/actions/:aid/status/:rid', auth, requireKey, async (req, res) => {
+  const job = actionJobs.get(req.params.rid);
+  if (!job || job.user !== req.user || job.charId !== req.params.id || job.aid !== req.params.aid) return res.status(404).json({ error: 'Lavoro non trovato' });
+  try {
+    const r = await fetch(AI_BASE_URL + VIDEO_STATUS_PATH.replace('{id}', encodeURIComponent(req.params.rid)), { headers: aiHeaders(req.aiKey) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) { const msg = aiErrorMsg(r.status, j); if (r.status !== 429 && r.status < 500) actionJobs.delete(req.params.rid); return res.status(r.status === 429 || r.status >= 500 ? 502 : 422).json({ error: msg, refused: msg === 'Contenuto rifiutato dal servizio AI' }); }
+    if (j.status === 'failed' || j.status === 'expired') {
+      actionJobs.delete(req.params.rid);
+      const raw = JSON.stringify(j.error || j);
+      const refused = /moderat|safety|policy|content|nsfw|reject|refus|violat|block/i.test(raw);
+      return res.json({ status: 'failed', refused, error: refused ? 'Contenuto rifiutato dal servizio AI' : `Video non riuscito (${j.status})` });
+    }
+    if (j.status !== 'done' || !j.video || !j.video.url) return res.json({ status: j.status || 'pending' });
+    actionJobs.delete(req.params.rid);
+    const ch = getChars(req.user).find((c) => c.id === job.charId);
+    if (!ch) return res.status(404).json({ error: 'Personaggio non trovato' });
+    if (ACTIONS[job.aid].adult && !actionAllowed(ch, job.aid)) return res.status(403).json({ error: 'Modalità adulti non più attiva: clip scartata.' });
+    const buf = Buffer.from(await (await fetch(j.video.url)).arrayBuffer());
+    if (buf.length < 100) return res.json({ status: 'failed', error: 'Video vuoto' });
+    res.json({ status: 'done', kind: 'video', action: await saveAction(req.user, ch, job.aid, buf, 'video', job.avatar, 'mp4') });
+  } catch (e) { res.status(502).json({ error: 'Servizio AI non raggiungibile' }); }
+});
+app.delete('/api/characters/:id/actions/:aid', auth, async (req, res) => {
+  try {
+    let old = null;
+    await patchChar(req.params.id, (c) => { if (!c.actions || !c.actions[req.params.aid]) return false; old = c.actions[req.params.aid].file; delete c.actions[req.params.aid]; });
+    if (old && ACT_FILE_RE.test(old)) fs.rmSync(path.join(ACT_DIR(), old), { force: true });
+    res.json({ ok: true });
+  } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
+});
+app.get('/api/actions/file/:f', auth, (req, res) => {
+  const f = path.basename(req.params.f); const m = ACT_FILE_RE.exec(f);
+  if (!m || !ACTIONS[m[2]]) return res.status(400).end();
+  if (ACTIONS[m[2]].adult) { // mai mostrate a modalità adulti spenta o per volti da foto
+    const ch = getChars(req.user).find((c) => c.id === m[1]);
+    if (!ch || !actionAllowed(ch, m[2])) return res.status(403).json({ error: 'Non disponibile' });
+    res.setHeader('Cache-Control', 'no-store'); return res.sendFile(path.join(ACT_DIR(), f)); // nessuna copia in cache del browser
+  }
+  sendPrivateFile(req, res, path.join(ACT_DIR(), f));
+});
+
 // ---------- "Cancella tutto": azzera TUTTI i dati dell'app (entrambi i profili) ----------
 // Richiede: sessione valida + PIN di chi lo chiede + parola "CANCELLA". I PIN restano, salvo { wipePins: true }.
 app.post('/api/wipe', loginLimiter, auth, async (req, res) => {
@@ -1352,7 +1526,7 @@ app.post('/api/wipe', loginLimiter, auth, async (req, res) => {
   for (const f of ['sessions.json', 'lockout.json', ...(req.body.wipePins === true ? ['pins.json'] : [])]) fs.rmSync(path.join(DATA_DIR, f), { force: true });
   for (const k of Object.keys(sessions)) delete sessions[k];
   for (const k of Object.keys(lock)) delete lock[k];
-  pending.clear(); videoJobs.clear(); typing.clear(); autoBusy.clear();
+  pending.clear(); videoJobs.clear(); typing.clear(); autoBusy.clear(); actionJobs.clear(); actionBusy.clear();
   fs.mkdirSync(FEED_DIR, { recursive: true });
   writeJSON(MIGRATION_MARK(), { at: new Date().toISOString(), note: 'archivio azzerato con Cancella tutto: niente migrazione dai vecchi file' });
   console.log(`Cancella tutto eseguito da ${req.user} il ${new Date().toISOString()}${req.body.wipePins === true ? ' (PIN inclusi)' : ''}`);

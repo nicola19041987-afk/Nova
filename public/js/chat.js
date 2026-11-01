@@ -15,12 +15,13 @@ App.chat = {
     const shown = App.previews[ch.id] ? { ...ch, avatar: App.previews[ch.id].dataUrl } : ch;
     App.avatarConv.setCharacter(shown);
     App.scene && App.scene.apply();
+    App.avatarConv.stopAction(true); App.actions && App.actions.render();
     $('#messages').innerHTML = ''; this.epoch = null; this.last = 0; this.ids = new Set();
     await this.poll(true);
     this.scroll();
   },
   close() {
-    App.stageFs && App.stageFs.exit(); $('#scene-menu').hidden = true;
+    App.stageFs && App.stageFs.exit(); $('#scene-menu').hidden = true; $('#act-menu').hidden = true; App.avatarConv.stopAction(true);
     App.current = null; App.voice && App.voice.stop(); speechSynthesis && speechSynthesis.cancel();
     $('#tab-conv').hidden = true; $('#tab-chat').hidden = false; $('#back-btn').hidden = true; $('#title').textContent = 'Chat';
     this.setTyping(null); this.renderList();
@@ -37,7 +38,7 @@ App.chat = {
     if (m.local) d.classList.add('local');
     const who = document.createElement('span'); who.className = 'who';
     who.textContent = `${this.label(m)}${m.noAI ? ' · solo messaggio' : ''}${m.local ? ' · solo su questo telefono' : ''}${m.at ? ' · ' + new Date(m.at).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }) : ''}`;
-    const body = document.createElement('span'); body.className = 'body'; body.textContent = m.content;
+    const body = document.createElement('span'); body.className = 'body'; body.textContent = App.actions ? App.actions.strip(m.content) : m.content;
     d.append(who, body);
     const pin = document.createElement('button'); pin.className = 'pin'; pin.type = 'button'; pin.textContent = '📌'; pin.title = 'Ricorda questo';
     pin.onclick = () => { const t = prompt('Cosa devo ricordare?', body.textContent.slice(0, 280)); if (t) App.account.remember(t); };
@@ -65,7 +66,7 @@ App.chat = {
         if (!this.addMsg(m)) continue;
         added++;
         // risposta del personaggio arrivata col polling (es. chiesta dall'altro profilo): l'avatar "la dice" e reagisce
-        if (!full && !r.reset && m.role === 'assistant') { App.avatarConv.talkText(m.content.slice(0, 400)); App.avatarConv.emote(m.content); }
+        if (!full && !r.reset && m.role === 'assistant') { App.avatarConv.talkText(m.content.slice(0, 400)); App.avatarConv.emote(m.content); if (m.action && App.actions) App.actions.play(m.action, 'chat'); }
       }
       this.setTyping(this.busy ? null : r.typing && r.typing.by !== App.me.user ? r.typing : null);
       if (added && (stick || r.reset)) this.scroll();
@@ -111,14 +112,15 @@ App.chat = {
         const { done, value } = await reader.read(); if (done) break;
         const chunk = dec.decode(value, { stream: true });
         reply += chunk;
-        body.textContent = reply; this.scroll();
+        body.textContent = App.actions ? App.actions.strip(reply) : reply; this.scroll();
         if (!App.voice || !App.voice.ttsOn()) App.avatarConv.talkText(chunk); // labiale anche senza lettura vocale
       }
     } catch (e) { body.textContent = '⚠️ ' + e.message; bubble.classList.remove('typing'); }
     this.busy = false;
     this.poll();
     if (reply) App.avatarConv.emote(reply);
-    if (reply && App.voice) App.voice.speak(reply);
+    if (reply && App.actions) App.actions.fromReply(reply);
+    if (reply && App.voice) App.voice.speak(App.actions ? App.actions.strip(reply) : reply);
     if (reply) this.afterReply(ch);
   },
   // ---- modalità adulti con parola chiave: domanda a voce e conferma sì/no (solo su questo telefono) ----
@@ -169,7 +171,7 @@ App.sync = async function () {
   App._syncing = true;
   try {
     const v = await App.api('/api/sync');
-    if (App._ver.chars && v.chars !== App._ver.chars) {
+    if (App._ver.chars && (v.chars !== App._ver.chars || v.adultChat !== App._ver.adultChat)) { // anche quando cambia la modalità adulti (azioni visibili o no)
       const list = await App.api('/api/characters');
       const old = new Map(App.chars.map((c) => [c.id, c]));
       App.chars = list;
@@ -187,6 +189,7 @@ App.sync = async function () {
       for (const id of old.keys()) if (!list.find((c) => c.id === id)) { App.editor.removed && App.editor.removed(id); if (App.current && App.current.id === id) App.chat.close(); }
       if (!App.current) App.chat.renderList(); else App.chat.renderList();
       if (App.current && App.scene) App.scene.apply();
+      if (App.actions) App.actions.refresh();
     }
     if (App._ver.memory && v.memory !== App._ver.memory) await App.account.loadMemory();
     App._ver = v;

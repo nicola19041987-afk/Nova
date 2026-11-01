@@ -75,8 +75,15 @@
         <div class="stage" id="stage">
           <canvas id="avatar-canvas" width="300" height="300"></canvas>
           <div class="stage-tools">
+            <button type="button" id="act-btn" title="Azioni" aria-label="Azioni">🎭</button>
             <button type="button" id="scene-btn" title="Scena cinematografica" aria-label="Scena">🎬</button>
             <button type="button" id="fs-btn" title="Schermo intero" aria-label="Schermo intero">⛶</button>
+          </div>
+          <div id="act-menu" class="scene-menu" hidden>
+            <div id="act-list" class="act-list"></div>
+            <label class="switch small"><input type="checkbox" id="act-auto" checked> Azioni spontanee quando è inattiva</label>
+            <button type="button" id="act-prepare">✨ Prepara azioni…</button>
+            <p id="act-info"></p>
           </div>
           <div id="scene-menu" class="scene-menu" hidden>
             <button type="button" data-room="">Nessuna scena</button>
@@ -282,6 +289,26 @@
   </section>
 
   <!-- editor personaggio -->
+  <dialog id="act-dialog">
+    <form method="dialog" id="act-form">
+      <h3>🎭 Prepara azioni</h3>
+      <p class="muted small" id="act-cost">Ogni azione è una breve clip generata dall'IA a partire dall'avatar attuale, con la tua chiave xAI (consuma crediti). Viene preparata una volta sola, solo quando premi «Prepara», ed è condivisa con l'altro profilo.</p>
+      <div id="act-choices"></div>
+      <div id="act-adult" hidden>
+        <h4>🔞 Azioni per adulti</h4>
+        <p class="muted small" id="act-adult-note"></p>
+        <div id="act-adult-choices"></div>
+      </div>
+      <progress id="act-progress" max="1" value="0" hidden></progress>
+      <ul id="act-log" class="act-log"></ul>
+      <div class="row">
+        <button type="button" id="act-go" class="primary">Prepara</button>
+        <button type="button" id="act-stop" hidden>Interrompi</button>
+        <button type="button" id="act-close">Chiudi</button>
+      </div>
+    </form>
+  </dialog>
+
   <dialog id="char-dialog">
     <form id="char-form" method="dialog">
       <h3 id="char-dialog-title">Personaggio</h3>
@@ -438,6 +465,7 @@
   <script src="/js/feed.js"></script>
   <script src="/js/motion.js"></script>
   <script src="/js/stage.js"></script>
+  <script src="/js/actions.js"></script>
   <script src="/js/live.js" type="module"></script>
   <script src="/js/main.js"></script>
 </body>

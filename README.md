@@ -140,6 +140,18 @@ Tutto in `data/` sul server (escluso da git e dallo zip): `pins.json`, `sessions
 - **Cancella tutto** fa prima un backup completo (che resta in `data/backups`), a meno di spuntare "Elimina anche le copie di sicurezza".
 - Su Render il disco persistente deve essere montato esattamente sulla cartella dati (`DATA_DIR`): controlla che il percorso di mount e `DATA_DIR` coincidano.
 
+## Azioni dell'avatar (v7)
+- **Più movimento a riposo**: oscillazione, girate della testa, spostamento del peso e spalle (una sale mentre l'altra scende) più ampi; il margine del riquadro è calcolato sul movimento massimo, quindi l'avatar resta intero (verificato su 375×667, 390×844, 430×932 in verticale e orizzontale).
+- **🎭 Azioni** (pulsante sul riquadro): si sistema i capelli, si stiracchia, beve un caffè, ride, saluta con la mano, si appoggia e si gira, manda un bacio. Si preparano **solo** con «Prepara azioni…» (consumano crediti xAI della chiave di chi le prepara; avanzamento mostrato, interrompibile; al massimo `ACTION_MAX_HOUR` preparazioni l'ora per profilo).
+  - Con il video xAI (`/v1/videos/generations`, modello `ACTION_VIDEO_MODEL`, predefinito `grok-imagine-video-1.5`, 480p, `ACTION_SECONDS` = 5 s): clip da immagine a video a partire dall'avatar attuale, con l'ultimo fotogramma fissato uguale al primo, così torna esattamente all'avatar. Se il modello non accetta l'ultimo fotogramma, si riprova senza.
+  - Se il video non è disponibile (`VIDEO_PATH` vuoto o servizio che risponde 404/501): **pose** (immagini) create con la modifica immagine dal volto di riferimento, nello stesso formato dell'avatar, animate con dissolvenza, lento Ken Burns e labiale/ammiccamenti sul viso trovato sul telefono (MediaPipe).
+  - Riproduzione nel riquadro dell'avatar (disegnata nel canvas con gli stessi movimenti: niente ritagli), dissolvenza in entrata e ritorno all'avatar vivo. Non durante la scena cinematografica.
+  - **Spontanee**: a chat aperta, se è inattiva da almeno 45 s, al massimo una ogni 2,5 minuti e 8 l'ora (disattivabili dal menu 🎭, per telefono).
+  - **Dalla chat**: il personaggio può aggiungere `[azione:saluta]` (solo azioni pronte, elencate nel prompt di sistema). Il tag viene tolto dal testo salvato e l'azione parte su entrambi i telefoni.
+  - Le azioni preparate con un avatar precedente risultano «da rifare» e non vengono riprodotte.
+- **Azioni per adulti** («si spoglia», «scena intima con sex toy», personaggio inventato adulto 25+): esistono solo con la modalità adulti attiva per **entrambi** (come la chat per adulti) e **solo per personaggi con il volto generato dall'IA**, mai partendo da una foto caricata (anche un avatar IA rigenerato da una foto resta escluso: il consenso foto registrato non si cancella). Si preparano solo con «Prepara azioni…», non partono mai da sole a modalità spenta; se l'altra persona spegne la modalità spariscono subito (file negati dal server, nessuna cache nel browser). Rifiuti di moderazione: «Contenuto rifiutato dal servizio AI» e resta l'avatar normale. Regola di base sempre in testa al prompt.
+- Le clip e le pose stanno in `data/shared/actions/`: «Cancella tutto» le elimina e **non** vengono copiate nei backup automatici.
+
 ## Gesti e imitazione con la fotocamera (sul telefono)
 In **📷 Presenza**: **✋ Gesti** fa reagire l'avatar alle tue mani (👋 saluto → saluta, ✋ mano aperta / ✌️ → sorride, 👍 / 👌 → annuisce,
 👉 → inclina la testa); **🪞 Imita i miei movimenti** riprende inclinazione e cenni della testa, braccia alzate e il ritmo con cui ti muovi,

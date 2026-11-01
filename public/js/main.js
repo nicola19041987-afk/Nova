@@ -16,6 +16,7 @@ App.boot = async function () {
   App.applyAdult();
   App.motionStyle = window.Motion ? new Motion.Style(App.ls) : null; App.applyStyle();
   $('#tab-conv').classList.toggle('compact', !!App.ls.get('avatarCompact', false));
+  App.actions && App.actions.load();
   App.sync();
   App.autoChanges();
 };
