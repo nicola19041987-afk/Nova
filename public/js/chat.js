@@ -22,7 +22,7 @@ App.chat = {
   },
   close() {
     App.stageFs && App.stageFs.exit(); $('#scene-menu').hidden = true; $('#act-menu').hidden = true; App.avatarConv.stopAction(true);
-    App.current = null; App.voice && App.voice.stop(); speechSynthesis && speechSynthesis.cancel();
+    App.current = null; App.voice && App.voice.stop(); window.speechSynthesis && window.speechSynthesis.cancel();
     $('#tab-conv').hidden = true; $('#tab-chat').hidden = false; $('#back-btn').hidden = true; $('#title').textContent = 'Chat';
     this.setTyping(null); this.renderList();
   },

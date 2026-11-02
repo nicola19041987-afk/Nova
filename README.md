@@ -165,6 +165,13 @@ Tutto in `data/` sul server (escluso da git e dallo zip): `pins.json`, `sessions
 - Labiale/occhi/sopracciglia scalati sulla distanza reale fra gli occhi: su foto a figura intera non compare più la striscia scura sulla fronte; palpebre con bordo sfumato.
 - L'anteprima nell'editor «Modifica» usa la stessa cornice verticale 9:16 della chat.
 
+### Audio su iPhone (v7.3)
+- La voce dell'avatar è la sintesi vocale del telefono (speechSynthesis): nessun audio passa dal server.
+- iOS (Safari e app installata) scarta in silenzio la prima lettura se non parte dentro un tocco: le risposte arrivano dopo la rete, quindi restavano mute. Ora il primo tocco qualsiasi sblocca l'audio (contesto audio riattivato, buffer muto, sintesi "scaldata"). Se una lettura viene comunque bloccata compare **🔊 Tocca per attivare l'audio**: un tocco la ripete.
+- «Lettura» è accesa di default (chi l'ha spenta a mano resta spenta); accendendola si sente «Lettura attiva.». Sull'app installata le preferenze sono separate da quelle di Safari.
+- Le clip delle azioni suonano con il loro audio (se presente) solo con Lettura attiva e audio sbloccato; se iOS lo blocca, la clip parte muta.
+- Sul telefono: interruttore laterale (silenzioso) disattivato e volume alzato; su iPhone la sintesi vocale può restare muta in modalità silenziosa.
+
 ## Gesti e imitazione con la fotocamera (sul telefono)
 In **📷 Presenza**: **✋ Gesti** fa reagire l'avatar alle tue mani (👋 saluto → saluta, ✋ mano aperta / ✌️ → sorride, 👍 / 👌 → annuisce,
 👉 → inclina la testa); **🪞 Imita i miei movimenti** riprende inclinazione e cenni della testa, braccia alzate e il ritmo con cui ti muovi,

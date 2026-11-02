@@ -429,11 +429,12 @@
         const fail = (e) => { if (this.act && this.act.resolve === resolve) this.act = null; reject(e); };
         if (spec.kind === 'video') {
           const v = this._vid || (this._vid = document.createElement('video'));
-          v.muted = true; v.defaultMuted = true; v.playsInline = true; v.setAttribute('playsinline', ''); v.setAttribute('webkit-playsinline', ''); v.preload = 'auto'; v.loop = false;
+          const snd = !!(window.App && App.audio && App.audio.clipSound()); v.muted = !snd; v.defaultMuted = !snd; v.volume = 1; v.playsInline = true; // v7.3: audio della clip se la lettura è attiva e l'audio sbloccato
+           v.setAttribute('playsinline', ''); v.setAttribute('webkit-playsinline', ''); v.preload = 'auto'; v.loop = false;
           const act = { kind: 'video', el: v, resolve, start: 0, fadeIn: 380, fadeOut: 520, endAt: 0, ready: false };
           this.act = act;
           const to = setTimeout(() => fail(new Error('Video non caricato')), 9000);
-          v.oncanplay = () => { if (this.act !== act || act.ready) return; act.ready = true; clearTimeout(to); act.start = performance.now(); v.play().catch((e) => fail(e)); };
+          v.oncanplay = () => { if (this.act !== act || act.ready) return; act.ready = true; clearTimeout(to); act.start = performance.now(); v.play().catch((e) => { if (!v.muted) { v.muted = true; v.play().catch((e2) => fail(e2)); } else fail(e); }); }; // se l'audio è bloccato, riparte muta
           v.onended = () => { if (this.act === act && !act.endAt) act.endAt = performance.now(); };
           v.onerror = () => { clearTimeout(to); fail(new Error('Video non riproducibile')); };
           act.finish = () => done(true);
