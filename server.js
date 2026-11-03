@@ -286,10 +286,17 @@ const getSettings = (u) => { const s = { autoSave: false, allowExport: false, ad
 // Modalità adulti: per utente, attivabile solo dopo il consenso vocale. In chat condivisa vale solo se attiva per ENTRAMBI.
 const adultOn = (u) => isActivated(u) && getSettings(u).adultMode === true;
 const adultChat = () => Object.keys(USERS).every(adultOn);
+// v8.3.1: stato chiaro per l'interfaccia (chi l'ha attivata, chi deve ancora farlo e cosa gli manca). Le regole non cambiano.
+function adultStatus(me) {
+  const users = Object.keys(USERS).map((u) => ({ user: u, name: USERS[u].name, me: u === me, activated: isActivated(u), adultMode: getSettings(u).adultMode === true, on: adultOn(u) }));
+  const missing = users.filter((x) => !x.on).map((x) => ({ user: x.user, name: x.name, me: x.me, need: !x.activated ? 'consenso' : 'attivazione' }));
+  return { chat: adultChat(), users, missing };
+}
 // Il vecchio "comodino con cassetto" è stato rimosso (v6): i suoi eventuali messaggi (initiative: 'drawer') restano nel file
 // per compatibilità ma non vengono mai mostrati né passati all'IA.
 const visibleMsg = (m) => m.initiative !== 'drawer';
 app.get('/api/settings', auth, (req, res) => res.json(getSettings(req.user)));
+app.get('/api/adult-status', auth, (req, res) => { res.setHeader('Cache-Control', 'no-store'); res.json(adultStatus(req.user)); });
 app.put('/api/settings', auth, (req, res) => {
   if (req.body.adultMode === true && !isActivated(req.user)) return res.status(403).json({ error: 'La modalità adulti si attiva solo dopo il consenso vocale.' });
   const s = { autoSave: req.body.autoSave === true, allowExport: req.body.allowExport === true, adultMode: req.body.adultMode === true,
@@ -327,7 +334,7 @@ app.post('/api/adult-keyword/confirm', auth, (req, res) => {
   if (!isActivated(req.user)) return res.status(403).json({ error: 'La modalità adulti si attiva solo dopo il consenso vocale.' });
   const s = { ...getSettings(req.user), adultMode: true }; writeJSON(settingsFile(req.user), s);
   console.log(`Modalità adulti attivata con parola chiave da ${req.user}`);
-  res.json({ ok: true, adultMode: true, changed: true, adultChat: adultChat() });
+  res.json({ ok: true, adultMode: true, changed: true, adultChat: adultChat(), status: adultStatus(req.user) });
 });
 setInterval(() => { const now = Date.now(); for (const [k, v] of kwTokens) if (v.exp < now) kwTokens.delete(k); }, 300e3).unref();
 

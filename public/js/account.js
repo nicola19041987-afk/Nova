@@ -13,7 +13,15 @@ App.account = {
     $('#set-mic').checked = App.ls.get('micOn', false); $('#set-cam').checked = App.ls.get('camOn', false);
     $('#set-gestures').checked = App.ls.get('gestures', true); $('#set-learn-gestures').checked = App.ls.get('handGestures', false); $('#set-mirror-moves').checked = App.ls.get('mirrorMoves', false);
     App.applyDevicePrefs();
-    // regole: server + copia locale
+    // modalità adulti (per utente, solo dopo il consenso vocale). v8.3.1: subito dopo le impostazioni, così un errore
+    // nel caricare regole/memoria/note non lascia l'interruttore bloccato o con lo stato sbagliato
+    $('#set-adult').checked = !!App.settings.adultMode; $('#set-adult').disabled = !App.me.activated;
+    await App.account.adultStatus();
+    try {
+      const kw = await App.api('/api/adult-keyword'); App.kwSet = kw.set;
+      $('#kw-input').value = ''; $('#kw-input').placeholder = kw.set ? '•••••• (impostata: scrivi per cambiarla)' : 'vuoto = funzione spenta';
+    } catch { /* riprova al prossimo caricamento */ }
+    try { // regole: server + copia locale
     let rules = await App.api('/api/rules');
     const local = App.ls.get('rules', null);
     if (!rules.text && local && local.text) rules = await App.api('/api/rules', { method: 'PUT', body: { text: local.text } });
@@ -24,17 +32,21 @@ App.account = {
     // note personali (solo mie)
     const notes = await App.api('/api/notes');
     $('#notes-input').value = notes.text || ''; $('#notes-ai').checked = !!notes.toAI;
-    // modalità adulti (per utente, solo dopo il consenso vocale)
-    $('#set-adult').checked = !!App.settings.adultMode; $('#set-adult').disabled = !App.me.activated;
-    const kw = await App.api('/api/adult-keyword'); App.kwSet = kw.set;
-    $('#kw-input').value = ''; $('#kw-input').placeholder = kw.set ? '•••••• (impostata: scrivi per cambiarla)' : 'vuoto = funzione spenta';
-    $('#adult-info').textContent = App.me.activated ? (App.settings.adultMode ? 'Attiva per te. Nella chat condivisa vale solo se l\'avete attivata entrambi.' : 'Disattivata.') : 'Disponibile solo dopo il consenso vocale.';
+    } catch (e) { console.warn('Impostazioni: caricamento parziale', e.message); }
     this.renderConsent();
+  },
+  // v8.3.1: stato della modalità adulti di ENTRAMBI, con cosa manca e a chi (le regole non cambiano: servono tutti e due)
+  async adultStatus() {
+    let st = null; try { st = await App.api('/api/adult-status'); } catch { /* offline */ }
+    App.adultStatus = st; const el = $('#adult-info'); if (!el) return st;
+    if (!st) { el.textContent = App.settings.adultMode ? 'Attiva per te.' : 'Disattivata.'; return st; }
+    el.innerHTML = App.adultText(st, true); el.classList.toggle('ok', st.chat);
+    return st;
   },
   renderConsent() {
     const c = App.me.consent;
     $('#consent-info').innerHTML = c
-      ? `<p>✅ Account attivato il <b>${esc(fmtDate(c.activatedAt))}</b> con consenso vocale (modalità adulti attiva).</p>
+      ? `<p>✅ Account attivato il <b>${esc(fmtDate(c.activatedAt))}</b> con consenso vocale (modalità adulti disponibile: si attiva in «Modalità adulti (18+)»).</p>
          <blockquote>${esc(c.phrase)}</blockquote><audio controls src="/api/consent/audio" preload="none"></audio>`
       : '<p>Account non ancora attivato.</p>';
   },
@@ -155,7 +167,13 @@ $('#notes-save').addEventListener('click', async () => {
 });
 $('#set-adult').addEventListener('change', async (e) => {
   if (e.target.checked && !confirm('Attivare la modalità adulti (18+)? Contenuti espliciti solo tra adulti consenzienti e con personaggi inventati adulti (25+). Puoi disattivarla quando vuoi.')) { e.target.checked = false; return; }
-  try { await saveSettings(); App.applyAdult && App.applyAdult(); App.account.load(); }
+  try {
+    await saveSettings(); App.applyAdult && App.applyAdult();
+    const st = await App.account.adultStatus();
+    if (e.target.checked && st) App.toast(st.chat ? '🔓 Modalità adulti attiva per entrambi' : `✅ Attiva per te · manca il consenso di ${st.missing.filter((m) => !m.me).map((m) => m.name).join(' e ')} (vedi sotto)`, 6000);
+    App.sync && App.sync(); App.actions && App.actions.refresh();
+    App.account.load();
+  }
   catch (err) { e.target.checked = false; App.toast(err.message); }
 });
 
@@ -165,3 +183,19 @@ $('#kw-save').addEventListener('click', async () => {
   try { const r = await App.api('/api/adult-keyword', { method: 'PUT', body: { keyword: v } }); App.kwSet = r.set; $('#kw-input').value = ''; App.toast(r.set ? '🔑 Parola chiave salvata (cifrata)' : 'Parola chiave rimossa'); App.account.load(); }
   catch (e) { App.toast(e.message); }
 });
+
+// Testo chiaro: chi l'ha attivata, chi no e come fare (es. «Manca il consenso di Luisa»)
+App.adultText = function (st, html) {
+  const e = html ? esc : (t) => t;
+  const row = (u) => `${u.on ? '✅' : '⏳'} <b>${e(u.me ? u.name + ' (tu)' : u.name)}</b>: ${u.on ? 'attiva' : !u.activated ? 'manca il consenso vocale' : 'non ancora attivata'}`;
+  const other = st.missing.filter((m) => !m.me), meMiss = st.missing.find((m) => m.me);
+  let head;
+  if (st.chat) head = '🔓 Attiva per entrambi: nelle chat di coppia i contenuti per adulti sono sbloccati (sempre graduali e naturali, solo personaggi adulti 25+ con volto IA).';
+  else if (meMiss && meMiss.need === 'consenso') head = 'Prima serve il tuo consenso vocale (si registra una volta sola all\'accesso).';
+  else if (meMiss) head = `Attivala qui sopra.${other.length ? ` Poi serve anche ${other.map((m) => e(m.name)).join(' e ')}.` : ' L\'altra persona l\'ha già attivata: manchi solo tu.'}`;
+  else head = other.map((m) => m.need === 'consenso'
+    ? `⏳ Manca il consenso di ${e(m.name)}: deve accedere con il suo profilo, registrare una volta il consenso vocale e poi attivare «Modalità adulti (18+)» in ${App.SETTINGS_NAME || 'Impostazioni'}.`
+    : `⏳ Manca il consenso di ${e(m.name)}: deve accedere con il suo profilo → ${App.SETTINGS_NAME || 'Impostazioni'} → «Modalità adulti (18+)». Finché non la attiva anche ${e(m.name)}, le chat restano senza contenuti espliciti.`).join(' ');
+  if (!html) return head.replace(/<[^>]+>/g, '');
+  return `<span class="adult-head">${head}</span><span class="adult-rows">${st.users.map(row).join('<br>')}</span>`;
+};

@@ -185,7 +185,7 @@ App.chat = {
     if (!p || Date.now() > p.until) { this.addMsg({ role: 'assistant', authorName: App.current.name, content: 'Tempo scaduto: ripeti la parola chiave.', local: true }); return; }
     try {
       const r = await App.api('/api/adult-keyword/confirm', { method: 'POST', body: { token: p.token, answer: text } });
-      const msg = r.changed ? `Modalità adulti attivata per ${App.me.name}.${r.adultChat ? '' : ' Nella chat condivisa vale quando la attiva anche l\'altra persona.'}` : 'Va bene, la modalità adulti resta com\'era.';
+      const msg = r.changed ? `Modalità adulti attivata per ${App.me.name}.${r.adultChat ? ' Ora è attiva per entrambi.' : r.status ? ' ' + App.adultText(r.status, false) : ' Nella chat condivisa vale quando la attiva anche l\'altra persona.'}` : 'Va bene, la modalità adulti resta com\'era.';
       this.addMsg({ role: 'assistant', authorName: App.current.name, content: msg, local: true });
       if (App.voice && App.voice.sayNow) App.voice.sayNow(msg);
       if (r.changed) { App.settings.adultMode = true; App.applyAdult(); App.account.load(); }

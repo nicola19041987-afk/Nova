@@ -1,5 +1,6 @@
 /* core.js — stato condiviso, chiamate API, utilità. Tutti i moduli usano l'oggetto globale App. */
 window.App = {
+  SETTINGS_NAME: 'Account', // v8.3.1: nome della scheda impostazioni (in v8.4 diventa «Impostazioni»)
   me: null,          // { user, name, activated, consent, ... }
   chars: [],         // personaggi dell'utente
   opts: {},          // opzioni aspetto/look dal server

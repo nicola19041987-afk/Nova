@@ -172,6 +172,12 @@ Tutto in `data/` sul server (escluso da git e dallo zip): `pins.json`, `sessions
 - Le clip delle azioni suonano con il loro audio (se presente) solo con Lettura attiva e audio sbloccato; se iOS lo blocca, la clip parte muta.
 - Sul telefono: interruttore laterale (silenzioso) disattivato e volume alzato; su iPhone la sintesi vocale può restare muta in modalità silenziosa.
 
+## Novità v8.3.1 (correzione modalità adulti)
+
+- Impostazioni → «Modalità adulti (18+)» ora mostra lo stato di **entrambi** (✅ attiva / ⏳ non ancora / manca il consenso vocale) e dice esattamente cosa manca, per esempio «Manca il consenso di Luisa: deve accedere con il suo profilo → Account → Modalità adulti (18+)».
+- L'interruttore si carica subito, anche se regole, memoria o note non si caricano.
+- Regole invariate: nelle chat di coppia i contenuti per adulti valgono solo quando l'avete attivata tutti e due.
+
 ## Novità v8.3 (seduta al tavolo e gesti spontanei)
 
 - **Lei seduta al tavolo del soggiorno**: foto realistica generata dall'IA (stesso viso, inquadratura da videochiamata 9:16, il telefono appoggiato sul tavolo), creata **una volta sola** per personaggio con la chiave xAI del telefono. Avatar, messaggi e vecchie scene restano intatti; per le scene già esistenti viso, spalle e linea del tavolo vengono ritrovati sul telefono senza toccare i vecchi dati.

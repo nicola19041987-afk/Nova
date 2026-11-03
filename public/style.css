@@ -321,3 +321,7 @@ body.wa-conv #stage.speaking #avatar-canvas{box-shadow:0 0 0 3px var(--wa-green)
 @media (orientation:landscape) and (max-height:560px){
   .scene-menu{position:fixed;top:64px;left:calc(8px + min(34vw, 45vh));right:auto;max-width:300px;z-index:30}
 }
+/* v8.3.1: stato modalità adulti di entrambi */
+#adult-info .adult-head{display:block;margin-bottom:4px}
+#adult-info .adult-rows{display:block;line-height:1.6}
+#adult-info.ok .adult-head{color:#7be0a0}

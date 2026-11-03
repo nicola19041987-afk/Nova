@@ -72,6 +72,8 @@
       list.innerHTML = acts.length ? acts.map(([id, a]) => { const m = meta(id); return `<button type="button" data-act="${esc(id)}" class="${a.stale ? 'stale' : ''}" title="${a.stale ? 'Preparata con un avatar precedente: rifalla' : esc(m.label)}">${m.emoji} ${esc(m.label)}</button>`; }).join('') : '';
       const n = ready(ch).length;
       $('#act-info').textContent = !ch ? '' : !/^\/api\/avatars\//.test(ch.avatar || '') ? 'Serve un avatar immagine per le azioni.' : n ? `${n} azioni pronte${acts.length > n ? ` · ${acts.length - n} da rifare (avatar cambiato)` : ''}` : 'Nessuna azione pronta: usa «Prepara azioni».';
+      // v8.3.1: modalità adulti attiva solo per uno dei due -> spiega cosa manca (le azioni per adulti restano nascoste)
+      if (App.me && App.settings && App.settings.adultMode && !info.adult && App.adultStatus && !App.adultStatus.chat) $('#act-info').textContent += ' · 🔞 ' + App.adultText(App.adultStatus, false);
       $('#act-btn').classList.toggle('on', !!n);
       $('#act-auto').checked = App.ls.get('actAuto', true) !== false;
     },
