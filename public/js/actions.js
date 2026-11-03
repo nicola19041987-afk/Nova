@@ -103,7 +103,7 @@
     log(text, cls = '') { const li = document.createElement('li'); li.className = cls; li.textContent = text; $('#act-log').appendChild(li); li.scrollIntoView({ block: 'nearest' }); return li; },
     async prepare() {
       const ch = App.current; if (!ch || running) return;
-      if (!App.key()) return App.toast('🔑 Inserisci la chiave xAI in Account');
+      if (!App.key()) return App.toast('🔑 Inserisci la chiave xAI in Impostazioni');
       const ids = $$('#act-dialog [data-prep]').filter((x) => x.checked).map((x) => x.dataset.prep);
       if (!ids.length) return App.toast('Scegli almeno un\'azione');
       running = { stop: false }; const run = running;

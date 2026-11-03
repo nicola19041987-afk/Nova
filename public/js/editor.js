@@ -23,10 +23,11 @@
   const whoName = (u) => (u === 'luisa' ? 'Luisa' : u === 'nicola' ? 'Nico' : 'l\'altro profilo');
 
   function defaults() {
-    return { id: null, name: '', avatar: '💫', avatarSource: 'emoji', personality: '', style: '', landmarks: clone(LM_DEFAULT.ritratto),
+    const T = App.DEF_TEXTS || {}; // v8.4: testi di partenza (modificabili) coerenti con le regole di comportamento
+    return { id: null, name: '', avatar: '💫', avatarSource: 'emoji', personality: T.personality || '', style: T.style || '', voice: '', preset: null, landmarks: clone(LM_DEFAULT.ritratto),
       appearance: { gender: 'donna', age: 30, build: 'snella', shape: 'clessidra', proportions: 'equilibrate', height: 168, framing: 'ritratto', colors: { hue: 0, saturation: 100, brightness: 100, background: '#2b1530', glow: '#d14b8f' } },
       look: { cut: 'scalato', length: 'lunghi', hairColor: 'castano', hairStyle: 'mosse morbide', makeup: 'naturale', outfit: 'casual', custom: '' },
-      identity: { core: '', locked: false }, wardrobe: [], autoChanges: { enabled: false, everyDays: 1, bodyDrift: false, buildMin: 'esile', buildMax: 'robusta' }, lookHistory: [], state: null };
+      identity: { core: T.core || '', locked: false }, wardrobe: [], autoChanges: { enabled: false, everyDays: 1, bodyDrift: false, buildMin: 'esile', buildMax: 'robusta' }, lookHistory: [], state: null };
   }
   function fillSelects() {
     const o = App.opts;
@@ -68,6 +69,8 @@
   }
   function toForm() {
     form.name.value = E.name; form.personality.value = E.personality; form.style.value = E.style;
+    form.voice.value = E.voice || ''; if (form.voice.value !== (E.voice || '')) { const o = document.createElement('option'); o.value = o.textContent = E.voice; form.voice.appendChild(o); form.voice.value = E.voice; }
+    $('#fill-base').hidden = !E.id || !!(String(E.personality || '').trim() && String(E.style || '').trim() && String((E.identity && E.identity.core) || '').trim());
     form.avatarEmoji.value = E.avatarSource === 'emoji' ? E.avatar : '';
     $$('[data-ap]', form).forEach((el) => { el.value = E.appearance[el.dataset.ap]; });
     $$('[data-out]', form).forEach((el) => { el.textContent = E.appearance[el.dataset.out] + (el.dataset.out === 'height' ? ' cm' : ' anni'); });
@@ -89,7 +92,7 @@
     $('#doc-canvas').hidden = true; $('#doc-actions').hidden = true;
   }
   function fromForm() {
-    E.name = form.name.value.trim(); E.personality = form.personality.value; E.style = form.style.value;
+    E.name = form.name.value.trim(); E.personality = form.personality.value; E.style = form.style.value; E.voice = form.voice.value;
     if (E.avatarSource === 'emoji') E.avatar = form.avatarEmoji.value.trim() || '💫';
     $$('[data-ap]', form).forEach((el) => { E.appearance[el.dataset.ap] = el.type === 'range' ? Number(el.value) : el.value; });
     $$('[data-look]', form).forEach((el) => { E.look[el.dataset.look] = el.value; });
@@ -99,7 +102,7 @@
   }
   function body(extra = {}) {
     return { name: E.name, avatar: E.avatar, avatarSource: E.avatarSource, avatarConsent: $('#avatar-consent').checked, pendingId: E.pendingId,
-      personality: E.personality, style: E.style, landmarks: E.landmarks, appearance: E.appearance, look: E.look, identity: E.identity,
+      personality: E.personality, style: E.style, voice: E.voice || '', ...(E.preset ? { preset: E.preset } : {}), landmarks: E.landmarks, appearance: E.appearance, look: E.look, identity: E.identity,
       wardrobe: E.wardrobe, autoChanges: E.autoChanges, ...extra };
   }
   function store(ch) {
@@ -154,9 +157,22 @@
       if (pv) Object.assign(E, { avatar: pv.dataUrl, avatarSource: 'ai', pendingId: pv.pending, appearance: pv.appearance || E.appearance, look: pv.look || E.look });
       $('#avatar-consent').checked = false; $('#avatar-status').textContent = pv ? '👀 C\'è un nuovo look non salvato: premi Salva per tenerlo.' : '';
       $('#regen-extra').value = ''; dirty = false;
-      toForm(); refreshAvatar(); dlg.showModal();
+      $('#preset-hint').hidden = true;
+      toForm(); refreshAvatar(); if (!dlg.open) dlg.showModal();
+      App.editor.frameUi && App.editor.frameUi();
     },
     current: () => E,
+    // v8.4: nuovo personaggio da un modello pronto (sempre un personaggio NUOVO: nessun testo esistente viene toccato)
+    openPreset(key) {
+      const p = App.PRESETS && App.PRESETS[key]; if (!p) return;
+      App.editor.open(null);
+      Object.assign(E, { name: p.name, avatar: p.emoji, avatarSource: 'emoji', personality: p.personality, style: p.style, voice: p.voice, preset: key });
+      E.identity.core = p.core; E.appearance.age = p.age; E.appearance.gender = 'donna'; Object.assign(E.look, p.look || {});
+      toForm(); refreshAvatar();
+      $('#regen-extra').value = p.photo;
+      const h = $('#preset-hint'); h.hidden = false;
+      h.textContent = `Modello «${App.PRESET_LABELS[key]}»: nome, testi e voce sono modificabili. La foto non è inclusa: tocca «✨ Rigenera avatar» qui sotto per crearla con l'IA (usa la tua chiave xAI).`;
+    },
     // Il personaggio è stato modificato sull'altro dispositivo (archivio condiviso): aggiorna l'editor se aperto.
     remoteUpdate(ch) {
       if (!dlg.open || !E || E.id !== ch.id || ch.updatedAt === E.updatedAt) return;
@@ -204,6 +220,36 @@
   }));
   $('[data-id="locked"]').addEventListener('change', (e) => { $('[data-id="core"]').disabled = e.target.checked; });
   $('#regen-btn').addEventListener('click', () => regenerate('rigenerazione'));
+  // v8.4: «Adatta alla cornice» / «Foto originale» (versione 9:16 fatta dall'IA, solo per la visualizzazione)
+  async function frameUi() {
+    const box = $('#frame-box'), photo = E.id && typeof E.avatar === 'string' && E.avatar.startsWith('/api/');
+    if (!photo) { box.hidden = true; return; }
+    const ff = E.frameFill && E.frameFill.src === E.avatar ? E.frameFill : null;
+    const r = await App.frame.ratio(E.avatar); box.hidden = !ff && !(r && Math.abs(r - 9 / 16) > 0.04);
+    $('#frame-fit').hidden = !!(ff && !ff.off) ; $('#frame-fit').textContent = ff ? '🖼️ Usa la foto adattata' : '🖼️ Adatta alla cornice';
+    $('#frame-undo').hidden = !(ff && !ff.off);
+    $('#frame-info').textContent = ff && !ff.off ? 'In chat e in chiamata si vede la versione allargata a 9:16 (stessa foto, bordi completati dall\'IA).' : 'La foto non è in formato 9:16: la cornice la riempie da sola (taglio leggero e bordi in tinta, niente sfocature). «Adatta alla cornice» la allarga con l\'IA (usa la tua chiave).';
+  }
+  App.editor.frameUi = frameUi;
+  $('#frame-fit').addEventListener('click', async () => {
+    if (!App.roles.guard()) return; const ch = App.charById(E.id); if (!ch) return;
+    const ff = E.frameFill && E.frameFill.src === E.avatar ? E.frameFill : null;
+    try { const r = ff ? await App.frame.setOff(ch, false) : await App.frame.extend(ch, false); if (r) E.frameFill = r; } catch (e) { App.toast('⚠️ ' + e.message); }
+    frameUi();
+  });
+  $('#frame-undo').addEventListener('click', async () => {
+    if (!App.roles.guard()) return; const ch = App.charById(E.id); if (!ch) return;
+    try { E.frameFill = await App.frame.setOff(ch, true); App.toast('↩︎ Torno alla foto originale'); } catch (e) { App.toast('⚠️ ' + e.message); }
+    frameUi();
+  });
+  // v8.4: «Riempi con base»: completa SOLO i campi vuoti con i testi di partenza (mai sovrascrivere testi esistenti)
+  $('#fill-base').addEventListener('click', () => {
+    fromForm(); const T = App.DEF_TEXTS, done = [];
+    if (!String(E.personality || '').trim()) { E.personality = T.personality; done.push('personalità'); }
+    if (!String(E.style || '').trim()) { E.style = T.style; done.push('stile'); }
+    if (!E.identity.locked && !String(E.identity.core || '').trim()) { E.identity.core = T.core; done.push('descrizione'); }
+    dirty = true; toForm(); App.toast(done.length ? `✍️ Completati: ${done.join(', ')}. Controlla e salva.` : 'Nessun campo vuoto da completare');
+  });
   $('#hair-apply').addEventListener('click', () => regenerate('parrucchiere'));
   $('#hair-presets').addEventListener('click', (e) => {
     const b = e.target.closest('[data-hair]'); if (!b) return;
@@ -233,7 +279,7 @@
   $('#mem-base-btn').addEventListener('click', async () => {
     if (!E.id) return App.toast('Salva prima il personaggio');
     if (!confirm(`Rigenerare la memoria base di ${E.name} dai campi attuali? I ricordi "base" precedenti di questo personaggio vengono sostituiti (gli altri restano).`)) return;
-    try { if (dirty) await save(); const r = await App.api(`/api/characters/${E.id}/memory-base`, { method: 'POST', body: {} }); await App.account.loadMemory(); App.toast(`🧠 Memoria base: ${r.added.length} elementi (modificabili in Account)`); }
+    try { if (dirty) await save(); const r = await App.api(`/api/characters/${E.id}/memory-base`, { method: 'POST', body: {} }); await App.account.loadMemory(); App.toast(`🧠 Memoria base: ${r.added.length} elementi (modificabili in Impostazioni)`); }
     catch (err) { App.toast(err.message); }
   });
   $('#state-reset').addEventListener('click', async () => {

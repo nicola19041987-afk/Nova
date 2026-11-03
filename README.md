@@ -172,6 +172,47 @@ Tutto in `data/` sul server (escluso da git e dallo zip): `pins.json`, `sessions
 - Le clip delle azioni suonano con il loro audio (se presente) solo con Lettura attiva e audio sbloccato; se iOS lo blocca, la clip parte muta.
 - Sul telefono: interruttore laterale (silenzioso) disattivato e volume alzato; su iPhone la sintesi vocale può restare muta in modalità silenziosa.
 
+## Novità v8.4 (aspetto iPhone, chiamate in tempo reale, Galleria, ruoli)
+
+**Conversazione in tempo reale (voce e videochiamata)**
+- Nuovo motore «⚡ Conversazione in tempo reale» (Impostazioni → Voce → *Motore delle chiamate*; predefinito). Usa la **Voice Agent API di xAI** (`wss://api.x.ai/v1/realtime`, modello `grok-voice-latest`), come la modalità vocale di Grok: microfono in streaming continuo (PCM 24 kHz), fine frase rilevata dal server (VAD, ~500 ms di silenzio), voce che arriva in streaming e parte subito, **interruzione** (se parli mentre lei parla, lei si ferma), labiale guidato dall'audio in arrivo.
+- La sessione riceve le stesse istruzioni delle chiamate normali: personalità, regole, memoria, ultimi messaggi, voce del personaggio. Le regole per adulti restano identiche e attive solo quando la modalità adulti è attiva per entrambi (e con il consenso personale di Luisa); si aggiornano anche a chiamata in corso.
+- Le frasi dette (tue e sue) vengono salvate nella chat come trascrizione (`rt: true`, interrotte segnate con «…»).
+- **La chiave xAI resta sul telefono**: il server la usa solo per chiedere a xAI un token temporaneo (60 s) per la singola chiamata (`POST /api/realtime/session`) e **non la salva**; il browser si collega direttamente a xAI con quel token.
+- Se il tempo reale non è raggiungibile (rete, chiave, servizio), la chiamata passa da sola alla **chiamata classica** con un avviso.
+- Anche la chiamata classica è più veloce: fine frase dopo ~600 ms di silenzio, risposta in streaming, voce che parte dalla prima frase (o dal primo inciso), connessione «calda», stato «Sta parlando…» subito.
+- Impostazioni → Voce mostra la **latenza misurata** (fine del tuo parlato → primo suono di lei) per i due motori.
+- Nota onesta: il tempo reale è implementato seguendo la documentazione xAI e provato con un server di prova locale che parla lo stesso protocollo; il servizio xAI vero non era raggiungibile dall'ambiente di sviluppo.
+
+**Aspetto iPhone**
+- Tema scuro iOS (carattere di sistema, titoli grandi, barre traslucide, liste raggruppate, interruttori iOS, margini sicuri) e barra delle schede in basso: **Chat · Chiamate · Galleria · Impostazioni** (si nasconde in conversazione, in chiamata, a schermo intero e nel visore).
+- **Schermata Home** con widget orologio, sfondo, icone e dock. Diario, Crea e **Grok** (apre grok.com) dalla griglia; Calcolatrice, Appunti e Mail sono decorative (tremano, non si aprono).
+- Barra di stato finta (ora, segnale, wi-fi, batteria reale se il browser la fornisce) solo nel browser; nell'app installata si vede quella vera di iPhone.
+- Chat e chiamate restano in stile WhatsApp.
+
+**Chiamate**: registro delle chiamate vocali e video (tutte / video / vocali), tocca per richiamare.
+
+**Galleria**
+- «＋ Aggiungi» apre il selettore foto di iPhone: le foto e i video scelti vengono copiati nello spazio privato del tuo profilo (Safari vede solo quello che scegli, non tutto il rullino).
+- Sezione con le immagini dell'app (avatar, scene, immagini e video creati).
+- Visore a tutto schermo con scorrimento, Condividi/Salva, «Usa come foto avatar» (solo Nico), «Invia in chat».
+- Eliminare chiede sempre conferma; gli elementi eliminati vanno in «Eliminati di recente» (ripristinabili).
+
+**Personaggi**
+- Testi di partenza (personalità, stile, descrizione) coerenti con le regole; «✍️ Riempi con base» completa **solo i campi vuoti**.
+- 4 modelli pronti accanto a «＋ Nuovo» (donne adulte immaginarie, 25–40 anni): solare e ironica, dolce e romantica, decisa e sarcastica, tranquilla e intellettuale. Ogni modello crea un **nuovo** personaggio modificabile con nome, testi, voce consigliata e descrizione per la foto (la foto si genera con «✨ Rigenera avatar» e la tua chiave).
+- Voce per personaggio.
+
+**Cornice 9:16 senza sfocature**: tolte tutte le sfocature della foto (cornice, chiamate, editor). La foto riempie la cornice tagliando al massimo ~12% per lato e mai la testa; il resto è riempito coi colori dei bordi. Se la foto è molto fuori formato, una volta sola l'IA la allarga a 9:16 («🖼️ Adatta alla cornice», annullabile con «↩︎ Foto originale» nell'editor). La cornice resta ferma.
+
+**Viso più realistico**: ammiccamenti ogni 2–6 s (a volte doppi, chiusura rapida e riapertura più lenta), palpebra vera presa dalla pelle della foto con ombra e ciglia, palpebre a volte rilassate, saccadi e micro-movimenti, sguardo in camera mentre parla, ammiccamenti con i grandi spostamenti di sguardo; bocca con forme diverse per sillaba, interno scuro a lente, accenno dei denti, angoli che seguono il sorriso, tutto ancorato ai punti del viso.
+
+**Ruoli (controllati dal server)**
+- **Nico è l'amministratore**: solo lui può creare, modificare o eliminare personaggi, modelli, regole, descrizioni, voci, scene, gesti, foto avatar, impostazioni dell'app, attivare o disattivare funzioni e sblocchi, cancellare memorie ed eliminare elementi condivisi. Il server risponde 403 a Luisa su queste operazioni (non è solo nascosto).
+- **Luisa** può chattare, chiamare (voce e video), usare la Galleria (aggiungere le sue foto, vedere, inviare in chat) e **regalare memorie** (vengono aggiunte alla memoria del personaggio; non può modificare o cancellare quelle esistenti). Nell'app i comandi di modifica sono nascosti o disattivati con la nota «Solo Nicola può modificare».
+- Modalità adulti: la gestisce Nico, ma resta obbligatorio il **consenso personale di Luisa** (una volta) prima che i contenuti per adulti la coinvolgano nelle chat condivise; lei può sempre revocarlo.
+- Per cambiare l'amministratore: variabile `ADMIN_USER` (`nicola` predefinito).
+
 ## Novità v8.3.1 (correzione modalità adulti)
 
 - Impostazioni → «Modalità adulti (18+)» ora mostra lo stato di **entrambi** (✅ attiva / ⏳ non ancora / manca il consenso vocale) e dice esattamente cosa manca, per esempio «Manca il consenso di Luisa: deve accedere con il suo profilo → Account → Modalità adulti (18+)».

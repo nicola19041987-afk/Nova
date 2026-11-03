@@ -1,6 +1,5 @@
 /* core.js — stato condiviso, chiamate API, utilità. Tutti i moduli usano l'oggetto globale App. */
 window.App = {
-  SETTINGS_NAME: 'Account', // v8.3.1: nome della scheda impostazioni (in v8.4 diventa «Impostazioni»)
   me: null,          // { user, name, activated, consent, ... }
   chars: [],         // personaggi dell'utente
   opts: {},          // opzioni aspetto/look dal server
@@ -25,13 +24,13 @@ App.key = () => (App.me ? App.ls.get('key', '') : '');
 App.api = async function (path, { method = 'GET', body, ai = false, raw = false, headers = {} } = {}) {
   const h = { 'X-Requested-With': 'app-privata', ...headers };
   if (body !== undefined && !(body instanceof Blob)) h['Content-Type'] = 'application/json';
-  if (ai) { const k = App.key(); if (!k) { App.toast('🔑 Inserisci la chiave xAI in Account'); throw new Error('NO_KEY'); } h['X-AI-Key'] = k; }
+  if (ai) { const k = App.key(); if (!k) { App.toast('🔑 Inserisci la chiave xAI in Impostazioni'); throw new Error('NO_KEY'); } h['X-AI-Key'] = k; }
   const r = await fetch(path, { method, headers: h, credentials: 'same-origin', body: body instanceof Blob ? body : body !== undefined ? JSON.stringify(body) : undefined });
   if (r.status === 401 && !['/api/login', '/api/pin/setup'].includes(path)) { App.showLogin(); throw new Error('Accesso richiesto'); }
   if (raw) return r;
   const j = await r.json().catch(() => ({}));
   if (r.status === 403 && /non attivato/.test(j.error || '')) { App.showActivation(); }
-  if (!r.ok) throw new Error(j.error || `Errore ${r.status}`);
+  if (!r.ok) { const e = new Error(j.error || `Errore ${r.status}`); e.status = r.status; e.code = j.code; throw e; }
   return j;
 };
 
@@ -44,14 +43,14 @@ App.showView = function (name) { $$('.view').forEach((v) => { v.hidden = v.id !=
 // Scarica/condividi: SOLO su azione manuale e solo se "Consenti esportazione/condivisione" è attivo.
 App.canExport = () => !!App.settings.allowExport;
 App.download = async function (url, name) {
-  if (!App.canExport()) return App.toast('Esportazione disattivata (Account > Privacy)');
+  if (!App.canExport()) return App.toast('Esportazione disattivata (Impostazioni > Privacy)');
   const r = await fetch(url + (url.includes('?') ? '&' : '?') + 'download=1', { credentials: 'same-origin' });
   if (!r.ok) return App.toast('Download non consentito');
   const b = await r.blob(); const a = document.createElement('a');
   a.href = URL.createObjectURL(b); a.download = name || 'immagine'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
 };
 App.share = async function (url, name, text) {
-  if (!App.canExport()) return App.toast('Condivisione disattivata (Account > Privacy)');
+  if (!App.canExport()) return App.toast('Condivisione disattivata (Impostazioni > Privacy)');
   try {
     const b = url.startsWith('data:') ? await (await fetch(url)).blob() : await (await fetch(url + (url.includes('?') ? '&' : '?') + 'download=1', { credentials: 'same-origin' })).blob();
     const file = new File([b], name || 'immagine.png', { type: b.type });

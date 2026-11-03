@@ -13,6 +13,11 @@ const rateLimit = require('express-rate-limit');
 const PORT = Number(process.env.PORT || 3000);
 const AI_BASE_URL = (process.env.AI_BASE_URL || 'https://api.x.ai/v1').replace(/\/+$/, '');
 const CHAT_MODEL = process.env.CHAT_MODEL || 'grok-4';
+// v8.4: conversazione in tempo reale (xAI Voice Agent / Speech to Speech, WebSocket). Il telefono si collega DIRETTAMENTE a xAI
+// con un token effimero (60 s, una sola sessione) creato qui con la chiave del dispositivo, che NON viene salvata.
+const REALTIME_URL = (process.env.REALTIME_URL || 'wss://api.x.ai/v1/realtime').replace(/\/+$/, '');
+const REALTIME_MODEL = process.env.REALTIME_MODEL || 'grok-voice-latest';
+const RT_ORIGIN = (() => { try { const u = new URL(REALTIME_URL); return `${u.protocol}//${u.host}`; } catch { return ''; } })();
 const IMAGE_MODEL = process.env.IMAGE_MODEL || 'grok-imagine-image-2.0';
 const IMAGE_EDIT_MODEL = process.env.IMAGE_EDIT_MODEL || IMAGE_MODEL;
 // Video: endpoint asincrono xAI (POST /videos/generations -> request_id, poi GET /videos/{id}).
@@ -32,6 +37,10 @@ const COOKIE = 'sid';
 
 // Solo due profili, nessuna registrazione pubblica. Accesso con PIN a 4 cifre (hash bcrypt in data/pins.json).
 const USERS = { nicola: { name: 'Nico' }, luisa: { name: 'Luisa' } };
+// v8.4: ruoli. Nicola è l'amministratore (modifica personaggi, regole, scene, gesti, impostazioni e sblocchi);
+// Luisa usa l'app (chat, chiamate, galleria, «regala memoria») e dà o ritira SOLO il proprio consenso per la modalità adulti.
+const ADMIN_USER = USERS[process.env.ADMIN_USER] ? process.env.ADMIN_USER : 'nicola';
+const isAdmin = (u) => u === ADMIN_USER;
 const USER_ALIASES = { nico: 'nicola', nicola: 'nicola', luisa: 'luisa' };
 // Facoltativo: se impostato, serve anche questo codice per creare il PIN la prima volta.
 const SETUP_CODE = process.env.SETUP_CODE || '';
@@ -155,7 +164,7 @@ app.use((req, res, next) => {
   res.setHeader('Referrer-Policy', 'no-referrer');
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Permissions-Policy', 'microphone=(self), camera=(self)');
-  res.setHeader('Content-Security-Policy', "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; connect-src 'self'");
+  res.setHeader('Content-Security-Policy', `default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; connect-src 'self' ${RT_ORIGIN}`);
   next();
 });
 app.use(cookieParser());
@@ -184,6 +193,26 @@ app.use('/api', (req, res, next) => {
   if (req.get('X-Requested-With') !== 'app-privata') return res.status(403).json({ error: 'Richiesta non valida' });
   next();
 });
+
+// v8.4: permessi controllati sul SERVER (non solo nascosti nell'interfaccia)
+const ADMIN_ONLY = [
+  ['POST', /^\/api\/characters\/?$/], ['PUT', /^\/api\/characters\/[^/]+$/], ['DELETE', /^\/api\/characters\/[^/]+$/],
+  ['POST', /^\/api\/characters\/[^/]+\/(regenerate|scene-image|auto-change|memory-base|frame-extend|revert\/[^/]+|actions\/[^/]+)$/],
+  ['PUT', /^\/api\/characters\/[^/]+\/frame-fill$/],
+  ['DELETE', /^\/api\/characters\/[^/]+\/(scene\/[^/]+|actions\/[^/]+)$/],
+  ['PUT', /^\/api\/rules$/], ['PUT', /^\/api\/memory$/], ['DELETE', /^\/api\/memory(\/[^/]+)?$/], ['PATCH', /^\/api\/memory\/[^/]+$/],
+  ['DELETE', /^\/api\/chats\/[^/]+$/], ['POST', /^\/api\/wipe$/], ['POST', /^\/api\/recovery$/],
+];
+const ADMIN_MSG = `Solo ${USERS[ADMIN_USER].name === 'Nico' ? 'Nicola' : USERS[ADMIN_USER].name} può modificare questa parte dell'app.`;
+function adminGuard(req, res, next) {
+  const p = req.path.replace(/\/+$/, '') || '/';
+  if (!ADMIN_ONLY.some(([m, re]) => m === req.method && re.test('/api' + p))) return next();
+  const s = sessions[req.cookies[COOKIE]];
+  if (!s || s.exp < Date.now()) return next(); // la rotta risponde 401 come sempre
+  if (!isAdmin(s.user)) return res.status(403).json({ error: ADMIN_MSG, code: 'ADMIN_ONLY' });
+  next();
+}
+app.use('/api', adminGuard);
 
 // ---------- accesso con PIN ----------
 const PINS_FILE = path.join(DATA_DIR, 'pins.json');
@@ -253,7 +282,7 @@ app.post('/api/logout', (req, res) => {
 });
 
 app.get('/api/me', auth, (req, res) => {
-  res.json({ user: req.user, name: USERS[req.user].name, activated: isActivated(req.user), consent: getConsent(req.user), adult: adultOn(req.user), adultChat: adultChat(), chatModel: CHAT_MODEL, imageModel: IMAGE_MODEL, videoModel: VIDEO_MODEL, videoEnabled: !!VIDEO_PATH });
+  res.json({ user: req.user, name: USERS[req.user].name, admin: isAdmin(req.user), adminName: ADMIN_MSG.split(' ')[1], activated: isActivated(req.user), consent: getConsent(req.user), adult: adultOn(req.user), adultChat: adultChat(), chatModel: CHAT_MODEL, imageModel: IMAGE_MODEL, videoModel: VIDEO_MODEL, videoEnabled: !!VIDEO_PATH });
 });
 
 // ---------- consenso vocale ----------
@@ -299,6 +328,11 @@ app.get('/api/settings', auth, (req, res) => res.json(getSettings(req.user)));
 app.get('/api/adult-status', auth, (req, res) => { res.setHeader('Cache-Control', 'no-store'); res.json(adultStatus(req.user)); });
 app.put('/api/settings', auth, (req, res) => {
   if (req.body.adultMode === true && !isActivated(req.user)) return res.status(403).json({ error: 'La modalità adulti si attiva solo dopo il consenso vocale.' });
+  if (!isAdmin(req.user)) { // v8.4: Luisa può solo dare o ritirare il PROPRIO consenso alla modalità adulti
+    const cur = getSettings(req.user), keys = ['autoSave', 'allowExport', 'videoModel', 'videoDuration'];
+    if (keys.some((k) => req.body[k] !== undefined && String(req.body[k]) !== String(cur[k]))) return res.status(403).json({ error: ADMIN_MSG + ' Tu puoi solo dare o ritirare il tuo consenso alla modalità adulti.', code: 'ADMIN_ONLY' });
+    const s = { ...cur, adultMode: req.body.adultMode === true }; writeJSON(settingsFile(req.user), s); return res.json(s);
+  }
   const s = { autoSave: req.body.autoSave === true, allowExport: req.body.allowExport === true, adultMode: req.body.adultMode === true,
     videoModel: /^[\w.\-]{0,60}$/.test(req.body.videoModel || '') ? String(req.body.videoModel || '') : '',
     videoDuration: num(req.body.videoDuration, 1, 15, 6) };
@@ -631,6 +665,8 @@ function cleanChar(u, b, prev = {}) {
     identity: cleanIdentity(b.identity || prev.identity, prev.identity || {}),
     autoChanges: cleanAuto(b.autoChanges || prev.autoChanges, prev.autoChanges || {}),
     personality: String(b.personality || '').slice(0, 8000), style: String(b.style || '').slice(0, 2000),
+    voice: /^[a-z0-9_-]{1,64}$/i.test(String(b.voice === undefined ? prev.voice || '' : b.voice || '')) ? String(b.voice === undefined ? prev.voice : b.voice) : '', // v8.4: voce del personaggio (vuota = quella scelta nelle Impostazioni)
+    preset: b.preset === undefined ? prev.preset || null : (/^[a-z]{2,20}$/.test(String(b.preset || '')) ? String(b.preset) : null),
     state: b.resetState ? defaultState() : (prev.state || defaultState()), // stato evolutivo: lo aggiorna solo il server
     memorySeededAt: prev.memorySeededAt || null,
     scenes: cleanScenes(prev.scenes), // immagini "scena" a figura intera per stanza: le aggiorna solo il server
@@ -911,6 +947,7 @@ app.put('/api/characters/:id/scene', auth, async (req, res) => {
   const room = String(req.body.room || '');
   if (!SCENE_ROOMS[room]) return res.status(400).json({ error: 'Stanza non valida' });
   const v = {};
+  if (req.body.pendingId && !isAdmin(req.user)) return res.status(403).json({ error: ADMIN_MSG, code: 'ADMIN_ONLY' });
   if (req.body.pendingId) {
     const pend = takePending(req.user, String(req.body.pendingId), 'scene');
     if (!pend) return res.status(410).json({ error: 'Anteprima scaduta: rigenera la scena' });
@@ -925,6 +962,37 @@ app.delete('/api/characters/:id/scene/:room', auth, async (req, res) => {
   res.json({ character: await setScene(req.user, req.params.id, req.params.room, null) });
 });
 
+// v8.4: «Adatta alla cornice» — versione 9:16 della foto dell'avatar (allargata dall'IA, stessa persona), usata SOLO per
+// la visualizzazione: l'avatar originale, le azioni e le regole restano legati alla foto originale. Annullabile (off).
+const FRAME_PROMPT = 'Extend this exact photo outward to a vertical 9:16 portrait frame (outpainting). Keep the person EXACTLY identical: same face, same identity, same expression, same hair, same clothes, same pose, same size and position in the frame, same lighting and colours. Do not crop, zoom, retouch or change anything that is already in the photo; only continue the existing background and, where needed, the body naturally into the new areas, photorealistic, seamless.';
+app.post('/api/characters/:id/frame-extend', auth, requireActivated, requireKey, async (req, res) => {
+  const ch = getChars(req.user).find((c) => c.id === req.params.id);
+  if (!ch) return res.status(404).json({ error: 'Personaggio non trovato' });
+  const m = AV_RE.exec(String(ch.avatar || '')); const f = m && avatarPath(m[1]);
+  if (!f || !fs.existsSync(f)) return res.status(400).json({ error: 'Serve una foto come avatar' });
+  try {
+    const gen = await editImage(req.aiKey, FRAME_PROMPT, [fileToDataUrl(f)], false, '9:16');
+    const url = saveAvatarBuffer(req.user, gen.buf);
+    const src = ch.avatar;
+    const c = await patchChar(ch.id, (c) => { if (c.avatar !== src) return false; c.frameFill = { src, url, at: new Date().toISOString(), landmarks: null, off: false }; c.updatedAt = new Date().toISOString(); c.updatedBy = req.user; });
+    if (!c) return res.status(409).json({ error: 'L\'avatar è cambiato nel frattempo: riprova' });
+    res.json({ frameFill: c.frameFill });
+  } catch (e) { res.status(502).json({ error: e.message || 'Servizio AI non raggiungibile' }); }
+});
+// usa la versione adattata / torna alla foto originale (il file adattato resta salvato)
+app.put('/api/characters/:id/frame-fill', auth, async (req, res) => {
+  const c = await patchChar(req.params.id, (c) => { if (!c.frameFill) return false; c.frameFill = { ...c.frameFill, off: req.body.off === true }; c.updatedAt = new Date().toISOString(); c.updatedBy = req.user; }).catch(() => null);
+  if (!c) return res.status(404).json({ error: 'Nessuna versione adattata' });
+  res.json({ frameFill: c.frameFill });
+});
+// punti del viso sulla versione adattata (rilevati sul telefono, anche da Luisa: non è una modifica)
+app.put('/api/characters/:id/frame-fill/landmarks', auth, async (req, res) => {
+  const lm = req.body.landmarks, url = String(req.body.url || '');
+  if (!lm || !lm.eyeL || !lm.eyeR || !lm.mouth) return res.status(400).json({ error: 'Punti del viso mancanti' });
+  let ok = false;
+  await patchChar(req.params.id, (c) => { if (!c.frameFill || c.frameFill.url !== url) return false; c.frameFill = { ...c.frameFill, landmarks: cleanLm({ ...lm, auto: true, src: url }, url) }; ok = true; }).catch(() => null);
+  res.json({ applied: ok });
+});
 // v8: punti del viso rilevati in automatico sul telefono per l'avatar attuale (anche migrazione dei personaggi esistenti).
 // body: { avatar, landmarks } — applicato solo se l'avatar è ancora quello (niente sovrascritture su un look cambiato nel frattempo).
 // Non distruttivo: i punti precedenti messi a mano restano in landmarks.manual.
@@ -1181,6 +1249,7 @@ class NameGuard {
 function callText(user, mode) {
   return `${mode === 'voice' ? `SEI IN CHIAMATA VOCALE CON ${USERS[user].name.toUpperCase()} (come una telefonata su WhatsApp: ti sente ma non ti vede, quindi niente riferimenti a quello che vede)` : `SEI IN VIDEOCHIAMATA CON ${USERS[user].name.toUpperCase()}: ti vede e ti sente`}, e tu rispondi A VOCE (il testo viene letto ad alta voce). Parla come in una vera telefonata, in italiano parlato e spontaneo: di solito 1–3 frasi brevi (al massimo una quarantina di parole), niente elenchi, emoji, asterischi, markdown o descrizioni di azioni tra parentesi. Reagisci prima a quello che ha appena detto, poi rilancia con una domanda o un'osservazione quando ha senso. Usa con misura gli intercalari naturali (beh, dai, sai, mmh) e qualche pausa ("..."). Il suo nome usalo raramente: in una telefonata vera quasi non lo si dice. I messaggi arrivano dal riconoscimento vocale: se una frase sembra spezzata o senza senso, chiedi con naturalezza di ripetere.`;
 }
+const REALTIME_TEXT = (user) => `CONVERSAZIONE IN TEMPO REALE: senti direttamente la voce di ${USERS[user].name} e parli tu con la tua voce, come in una telefonata vera. Tutto quello che produci viene pronunciato: NON usare mai tag tra parentesi quadre, asterischi, emoji o descrizioni di azioni. Turni brevi e vivi (di solito una o due frasi), pause naturali; se ti interrompe, fermati e ascolta, poi riprendi con naturalezza da dove serve. Parla sempre in italiano.`;
 const BODY_TEXT = `LINGUAGGIO DEL CORPO (visibile sull'avatar, non letto ad alta voce): puoi INIZIARE la risposta con un tag [gesto:annuisce|sorride|ride|inclina|nega|pensa|ammicca|saluta] e/o [umore:allegra|tenera|seria|maliziosa|triste|sorpresa|pensierosa|offesa], scelti in base a ciò che dici e al tono emotivo del momento. Usali solo quando aggiungono qualcosa (non in ogni risposta) e non ripetere lo stesso gesto più volte di fila.`;
 const ADULT_FLOW = `COME SI SVILUPPA L'INTIMITÀ: come tra persone reali, il tono intimo o esplicito deve nascere in modo GRADUALE e naturale dal flusso della conversazione, dall'umore del momento e dal tono reciproco, mai in modo brusco o meccanico (niente frasi fatte o copioni): prima complicità e flirt leggero, poi più intensità solo se l'altra persona ricambia davvero. Ogni tanto verifica con naturalezza che vada bene ("ti va?", "continuo?"). Se l'altra persona rallenta, cambia argomento, è stanca o sembra a disagio, rallenta subito e torna a un tono affettuoso. Una parola volgare o cruda detta fuori contesto NON è un invito: non passare di colpo a contenuti espliciti, rispondi in modo coerente con il momento. Mai insistere.`;
 // user = chi sta scrivendo adesso (e la cui chiave xAI paga la risposta)
@@ -1203,8 +1272,9 @@ function buildSystem(user, ch, opts = {}) {
     variationText(ch.id),
     styleText(ch.id, user),
     opts.call && callText(user, opts.callMode),
-    opts.chat && BODY_TEXT,
-    actionsPrompt(ch),
+    opts.realtime && REALTIME_TEXT(user),
+    opts.chat && !opts.realtime && BODY_TEXT,
+    !opts.realtime && actionsPrompt(ch),
     adultChat() ? 'MODALITÀ ADULTI ATTIVA (scelta da entrambi gli utenti, che hanno registrato il consenso vocale): sono ammessi linguaggio esplicito e gioco di ruolo sessuale esplicito tra Nico, Luisa e il personaggio, che è una donna adulta inventata (25+). Resta sempre tutto entro le regole di base qui sotto.\n' + ADULT_FLOW
       : 'Modalità adulti NON attiva: niente contenuti sessuali espliciti; se richiesti, ricorda con gentilezza che va attivata in Account da entrambi.',
     BASE_RULE, // sempre ultima, non sovrascrivibile
@@ -1222,13 +1292,19 @@ app.post('/api/chats/:id', auth, requireActivated, (req, res, next) => (req.body
   const ch = getChars(req.user).find((c) => c.id === id);
   if (!ch) return res.status(404).json({ error: 'Personaggio non trovato' });
   const text = String(req.body.message || '').trim().slice(0, 8000);
-  if (!text) return res.status(400).json({ error: 'Messaggio vuoto' });
+  // v8.4: foto/video dalla Galleria (copiati nell'archivio condiviso della chat)
+  let photo = null;
+  if (req.body.photo) {
+    const gid = String(req.body.photo.gid || '');
+    if (!ID_RE.test(gid) || !(photo = galToChat(req.user, gid))) return res.status(404).json({ error: 'Foto non trovata nella Galleria' });
+  }
+  if (!text && !photo) return res.status(400).json({ error: 'Messaggio vuoto' });
 
   // parola chiave della modalità adulti: confrontata qui sul server (hash), MAI salvata in chat né inviata a xAI
-  const kw = await keywordMatch(req.user, text);
+  const kw = text && !photo ? await keywordMatch(req.user, text) : null;
   if (kw) return res.json({ keyword: true, token: kw, question: 'Vuoi attivare la modalità adulti? Rispondi sì o no', activated: isActivated(req.user) });
   if (!ch.memorySeededAt) await seedBaseMemory(ch).catch(() => {});
-  const mine = await appendMsg(id, { role: 'user', author: req.user, content: text, extra: req.body.noAI === true ? { noAI: true } : {} });
+  const mine = await appendMsg(id, { role: 'user', author: req.user, content: text, extra: { ...(req.body.noAI === true ? { noAI: true } : {}), ...(photo ? { photo } : {}) } });
   if (req.body.noAI === true) return res.json({ message: pubMsg(mine, ch) });
   if (typing.has(id) && Date.now() - typing.get(id).at < 120e3) {
     // l'IA sta già rispondendo all'altra persona: il messaggio resta in chat e verrà letto nella prossima risposta
@@ -1240,7 +1316,7 @@ app.post('/api/chats/:id', auth, requireActivated, (req, res, next) => (req.body
   const vis = chatNow.messages.filter(visibleMsg), fresh = vis.filter((m) => m.n > upto);
   const history = (fresh.length >= 12 ? fresh : vis.slice(-12)).slice(-40);
   const messages = [{ role: 'system', content: buildSystem(req.user, ch, { chat: true, call: req.body.call === true, callMode: req.body.callMode === 'voice' ? 'voice' : 'video' }) },
-    ...history.map((m) => (m.role === 'user' ? { role: 'user', content: `${authorLabel(m)}: ${m.content}` } : { role: 'assistant', content: m.content }))];
+    ...history.map((m) => (m.role === 'user' ? { role: 'user', content: `${authorLabel(m)}: ${m.content}${m.photo ? `${m.content ? ' ' : ''}[ti ha mandato ${m.photo.kind === 'video' ? 'un video' : 'una foto'} dalla sua galleria: non puoi vederne il contenuto; reagisci con naturalezza e, se ti va, chiedi cosa c'è]` : ''}` } : { role: 'assistant', content: m.content }))];
   const replyId = newId();
   res.setHeader('X-Msg-Id', mine.id); res.setHeader('X-Msg-N', String(mine.n)); res.setHeader('X-Reply-Id', replyId);
 
@@ -1339,6 +1415,82 @@ app.get('/api/chats/:id/summary', auth, (req, res) => {
   const sm = readChat(req.params.id).summary || null; res.json({ summary: sm ? sm.text : '', upto: sm ? sm.upto : 0, at: sm ? sm.at : null });
 });
 
+// ---------- v8.4: conversazione in tempo reale (xAI Voice Agent API) ----------
+// POST /api/realtime/session { characterId, mode, voice } -> { token, url, model, session }
+// Il server crea un token effimero con la chiave del dispositivo (header X-AI-Key, mai salvata né registrata) e prepara
+// le istruzioni del personaggio con le STESSE regole della chat (memoria, regole, riassunto, modalità adulti solo se attiva
+// per entrambi). Il telefono apre il WebSocket direttamente con xAI: audio e risposte non passano dal server.
+const rtHits = new Map();
+function rtInstructions(user, ch, mode) {
+  const c = readChat(ch.id), upto = (c.summary && c.summary.upto) || 0;
+  const vis = c.messages.filter(visibleMsg), fresh = vis.filter((m) => m.n > upto);
+  const recent = (fresh.length >= 10 ? fresh : vis.slice(-10)).slice(-24)
+    .map((m) => `${m.role === 'user' ? authorLabel(m) : ch.name}: ${String(m.content || '').replace(/\s+/g, ' ').slice(0, 400)}${m.photo ? ' [foto dalla galleria]' : ''}`);
+  return [buildSystem(user, ch, { call: true, callMode: mode, realtime: true }),
+    recent.length && `ULTIMI MESSAGGI DELLA CHAT (contesto, continua da qui):\n${recent.join('\n')}`,
+    `In questa chiamata parli solo con ${USERS[user].name} (la senti dal vivo: le sue parole non hanno il prefisso col nome).`, BASE_RULE].filter(Boolean).join('\n\n');
+}
+function rtSession(user, ch, mode, voice) {
+  return {
+    instructions: rtInstructions(user, ch, mode),
+    voice,
+    turn_detection: { type: 'server_vad', threshold: 0.5, silence_duration_ms: 500, prefix_padding_ms: 300 },
+    audio: {
+      input: { format: { type: 'audio/pcm', rate: 24000 }, transcription: { model: 'grok-transcribe', language_hint: 'it', keyterms: [ch.name, 'Nico', 'Luisa'].filter(Boolean).slice(0, 10) } },
+      output: { format: { type: 'audio/pcm', rate: 24000 } },
+    },
+    reasoning: { effort: 'none' }, // risposta più rapida: in una telefonata conta la prontezza
+  };
+}
+app.post('/api/realtime/session', auth, requireActivated, requireKey, async (req, res) => {
+  const ch = getChars(req.user).find((c) => c.id === String(req.body.characterId || ''));
+  if (!ch) return res.status(404).json({ error: 'Personaggio non trovato' });
+  const now = Date.now(), hits = (rtHits.get(req.user) || []).filter((t) => now - t < 3600e3);
+  if (hits.length >= 40) return res.status(429).json({ error: 'Troppe chiamate in tempo reale in un\'ora: riprova più tardi' });
+  hits.push(now); rtHits.set(req.user, hits);
+  const mode = req.body.mode === 'voice' ? 'voice' : 'video';
+  const v = String(req.body.voice || ch.voice || 'ara'); const voice = /^[a-z0-9_-]{1,64}$/i.test(v) ? v : 'ara';
+  try {
+    const r = await fetch(`${AI_BASE_URL}/realtime/client_secrets`, { method: 'POST', headers: aiHeaders(req.aiKey), body: JSON.stringify({ expires_after: { seconds: 60 } }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) { console.error('Errore AI tempo reale: HTTP', r.status); return res.status(r.status === 401 ? 400 : 502).json({ error: aiErrorMsg(r.status, j), status: r.status }); }
+    const token = j.value || (j.client_secret && (j.client_secret.value || j.client_secret)) || j.token || j.secret;
+    if (!token || typeof token !== 'string') return res.status(502).json({ error: 'Token non ricevuto dal servizio voce' });
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ token, expiresAt: j.expires_at || null, url: `${REALTIME_URL}?model=${encodeURIComponent(REALTIME_MODEL)}`, model: REALTIME_MODEL, session: rtSession(req.user, ch, mode, voice), adult: adultChat() });
+  } catch (e) { console.error('Errore AI tempo reale:', e.message); res.status(502).json({ error: 'Servizio voce in tempo reale non raggiungibile' }); }
+});
+// istruzioni aggiornate durante la chiamata (es. modalità adulti cambiata, nuovi ricordi): nessuna chiamata a xAI
+app.post('/api/realtime/instructions', auth, requireActivated, (req, res) => {
+  const ch = getChars(req.user).find((c) => c.id === String(req.body.characterId || ''));
+  if (!ch) return res.status(404).json({ error: 'Personaggio non trovato' });
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ instructions: rtInstructions(req.user, ch, req.body.mode === 'voice' ? 'voice' : 'video'), adult: adultChat() });
+});
+// trascrizioni della chiamata salvate nella chat condivisa (come i messaggi delle videochiamate classiche)
+app.post('/api/chats/:id/voice-turn', auth, requireActivated, async (req, res) => {
+  const id = req.params.id;
+  if (!ID_RE.test(id)) return res.status(400).json({ error: 'ID non valido' });
+  const ch = getChars(req.user).find((c) => c.id === id);
+  if (!ch) return res.status(404).json({ error: 'Personaggio non trovato' });
+  const role = req.body.role === 'assistant' ? 'assistant' : 'user';
+  let text = String(req.body.text || '').replace(/\s+/g, ' ').trim().slice(0, 4000);
+  if (!text) return res.status(400).json({ error: 'Testo vuoto' });
+  const callX = { call: true, rt: true, ...(req.body.callMode === 'voice' ? { callMode: 'voice' } : {}), ...(req.body.interrupted === true ? { interrupted: true } : {}) };
+  let saved;
+  if (role === 'user') saved = await appendMsg(id, { role: 'user', author: req.user, content: text, extra: callX });
+  else {
+    const t = takeActionTag(text, ch); text = (t.text || text).replace(/\[[^\]]{0,40}\]/g, '').trim() || text;
+    saved = await appendMsg(id, { role: 'assistant', author: ch.id, content: text, extra: { replyTo: req.user, ...callX } });
+  }
+  res.json({ message: pubMsg(saved, ch), adult: adultChat() });
+});
+// connessione "calda" verso xAI all'inizio di una chiamata classica (DNS/TLS già pronti per la prima risposta)
+app.post('/api/ai-warm', auth, requireKey, async (req, res) => {
+  try { await fetch(`${AI_BASE_URL}/models`, { method: 'GET', headers: aiHeaders(req.aiKey), signal: AbortSignal.timeout(4000) }).then((r) => r.arrayBuffer()).catch(() => {}); } catch {}
+  res.json({ ok: true });
+});
+
 // ---------- v8: voce naturale (xAI Text to Speech) ----------
 // La chiave arriva dal dispositivo (header X-AI-Key) e NON viene salvata; il testo non viene registrato nei log.
 const TTS_VOICES = ['eve', 'ara', 'una', 'rex', 'sal', 'leo'];
@@ -1357,11 +1509,13 @@ app.post('/api/tts', auth, requireActivated, requireKey, async (req, res) => {
       body: JSON.stringify({ text, voice_id: voice, language: 'it', speed, output_format: { codec: 'mp3', sample_rate: 24000, bit_rate: 64000 } }),
     });
     if (!r.ok) { console.error('Errore AI voce: HTTP', r.status); return res.status(r.status === 401 ? 400 : 502).json({ error: aiErrorMsg(r.status, await r.json().catch(() => ({}))), status: r.status }); }
-    const buf = Buffer.from(await r.arrayBuffer());
-    if (!buf.length) return res.status(502).json({ error: 'Audio vuoto dal servizio AI' });
+    // v8.4: inoltrato a pezzi appena arriva (prima frase udibile prima)
     res.setHeader('Content-Type', r.headers.get('content-type') && /audio/.test(r.headers.get('content-type')) ? r.headers.get('content-type') : 'audio/mpeg');
-    res.setHeader('Cache-Control', 'no-store');
-    res.end(buf);
+    res.setHeader('Cache-Control', 'no-store'); res.setHeader('X-Accel-Buffering', 'no');
+    let n = 0;
+    if (r.body) for await (const chunk of r.body) { n += chunk.length; res.write(chunk); }
+    if (!n) { if (!res.headersSent) return res.status(502).json({ error: 'Audio vuoto dal servizio AI' }); }
+    res.end();
   } catch (e) {
     console.error('Errore AI voce:', e.message);
     res.status(502).json({ error: 'Servizio voce non raggiungibile' });
@@ -1829,6 +1983,181 @@ app.post('/api/recovery', auth, async (req, res) => {
 });
 
 // ---------- file statici (PWA) ----------
+// ---------- v8.4: Galleria (foto e video scelti dal telefono) ----------
+// Solo i file che scegli tu dal rullino (su iPhone le web app vedono solo quelli). Spazio privato per utente:
+// data/users/<utente>/gallery/ (+ indice gallery.json). Eliminare = spostare in "Eliminati di recente" (30 giorni, ripristinabili).
+const GAL_RE = /^[a-f0-9]{16}\.(jpg|png|webp|gif|heic|mp4|mov|webm)$/;
+const GAL_THUMB_RE = /^[a-f0-9]{16}\.t\.jpg$/;
+const GAL_MAX_IMG = 40 * 1024 * 1024, GAL_MAX_VID = 200 * 1024 * 1024, GAL_TRASH_DAYS = 30;
+const galIndex = (u) => path.join(userDir(u), 'gallery.json');
+const galDir = (u) => userDir(u, 'gallery');
+const galTrashDir = (u) => userDir(u, 'gallery-trash');
+function galSniff(b) { // tipo vero dal contenuto (non dal nome del file)
+  if (b.length < 12) return null;
+  if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return { ext: 'jpg', kind: 'image', type: 'image/jpeg' };
+  if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return { ext: 'png', kind: 'image', type: 'image/png' };
+  if (b.toString('ascii', 0, 4) === 'RIFF' && b.toString('ascii', 8, 12) === 'WEBP') return { ext: 'webp', kind: 'image', type: 'image/webp' };
+  if (b.toString('ascii', 0, 4) === 'GIF8') return { ext: 'gif', kind: 'image', type: 'image/gif' };
+  if (b[0] === 0x1a && b[1] === 0x45 && b[2] === 0xdf && b[3] === 0xa3) return { ext: 'webm', kind: 'video', type: 'video/webm' };
+  if (b.toString('ascii', 4, 8) === 'ftyp') {
+    const brand = b.toString('ascii', 8, 12);
+    if (/^(heic|heix|hevc|heim|heis|mif1|msf1)$/.test(brand)) return { ext: 'heic', kind: 'image', type: 'image/heic' };
+    if (brand === 'qt  ') return { ext: 'mov', kind: 'video', type: 'video/quicktime' };
+    return { ext: 'mp4', kind: 'video', type: 'video/mp4' };
+  }
+  return null;
+}
+const galPub = (it) => ({ id: it.id, kind: it.kind, type: it.type, size: it.size, name: it.name, w: it.w || null, h: it.h || null, duration: it.duration || null,
+  addedAt: it.addedAt, deletedAt: it.deletedAt || null, url: `/api/gallery/file/${it.file}`, thumb: it.thumb ? `/api/gallery/file/${it.thumb}` : null });
+function galPurge(u) { // svuota "Eliminati di recente" dopo 30 giorni (cancellazione già confermata dall'utente)
+  const now = Date.now(); let changed = false;
+  const list = readJSON(galIndex(u), []).filter((it) => {
+    if (!it.deletedAt || now - Date.parse(it.deletedAt) < GAL_TRASH_DAYS * 864e5) return true;
+    for (const f of [it.file, it.thumb]) if (f) fs.rmSync(path.join(galTrashDir(u), f), { force: true });
+    changed = true; return false;
+  });
+  if (changed) writeJSON(galIndex(u), list);
+}
+app.get('/api/gallery', auth, (req, res) => {
+  try { galPurge(req.user); } catch {}
+  const list = readJSON(galIndex(req.user), []).slice().reverse();
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ items: list.filter((i) => !i.deletedAt).map(galPub), trash: list.filter((i) => i.deletedAt).map(galPub), trashDays: GAL_TRASH_DAYS });
+});
+// Caricamento: il corpo della richiesta è il file stesso (scritto su disco a pezzi, mai tutto in memoria).
+app.post('/api/gallery', auth, requireActivated, (req, res) => {
+  const ct = String(req.get('Content-Type') || '');
+  if (!/^(image|video)\//.test(ct)) return res.status(400).json({ error: 'Solo foto o video' });
+  const max = /^video\//.test(ct) ? GAL_MAX_VID : GAL_MAX_IMG;
+  if (Number(req.get('Content-Length') || 0) > max) return res.status(413).json({ error: `File troppo grande (max ${Math.round(max / 1048576)} MB)` });
+  const id = newId(), tmp = path.join(galDir(req.user), `${id}.part`);
+  const out = fs.createWriteStream(tmp); let size = 0, head = Buffer.alloc(0), failed = null;
+  req.on('data', (c) => { size += c.length; if (head.length < 16) head = Buffer.concat([head, c.subarray(0, 16)]); if (size > max && !failed) { failed = 'big'; req.unpipe(out); out.destroy(); req.resume(); } });
+  req.pipe(out);
+  const done = () => {
+    if (failed === 'aborted') { fs.rmSync(tmp, { force: true }); return res.status(400).end(); }
+    if (failed) { fs.rmSync(tmp, { force: true }); return res.status(413).json({ error: `File troppo grande (max ${Math.round(max / 1048576)} MB)` }); }
+    const t = galSniff(head);
+    if (!t || !size) { fs.rmSync(tmp, { force: true }); return res.status(400).json({ error: 'Formato non riconosciuto: solo foto (JPEG, PNG, HEIC, WebP, GIF) o video (MP4, MOV, WebM)' }); }
+    const file = `${id}.${t.ext}`; fs.renameSync(tmp, path.join(galDir(req.user), file));
+    let name = ''; try { name = decodeURIComponent(String(req.get('X-File-Name') || '')); } catch {}
+    const num = (v, m) => { const n = Number(v); return Number.isFinite(n) && n > 0 && n < m ? Math.round(n * 10) / 10 : null; };
+    const it = { id, file, kind: t.kind, type: t.type, size, name: safeText(name, 120) || (t.kind === 'video' ? 'Video' : 'Foto'),
+      w: num(req.query.w, 20000), h: num(req.query.h, 20000), duration: t.kind === 'video' ? num(req.query.d, 36000) : null, addedAt: new Date().toISOString(), thumb: null };
+    mutateJSON(galIndex(req.user), [], (l) => [...l, it]).then(() => res.json({ item: galPub(it) })).catch((e) => res.status(500).json({ error: e.message }));
+  };
+  out.on('close', () => { if (!res.headersSent) done(); });
+  out.on('error', () => { if (!res.headersSent) { fs.rmSync(tmp, { force: true }); res.status(500).json({ error: 'Salvataggio non riuscito' }); } });
+  req.on('aborted', () => { failed = failed || 'aborted'; });
+});
+// Miniatura creata sul telefono (JPEG piccolo) per una griglia veloce
+app.put('/api/gallery/:id/thumb', auth, async (req, res) => {
+  const m = String(req.body.dataUrl || '').match(/^data:image\/jpeg;base64,(.+)$/);
+  if (!ID_RE.test(req.params.id) || !m) return res.status(400).json({ error: 'Miniatura non valida' });
+  const buf = Buffer.from(m[1], 'base64'); if (buf.length > 400000 || buf[0] !== 0xff) return res.status(400).json({ error: 'Miniatura non valida' });
+  let pub = null;
+  await mutateJSON(galIndex(req.user), [], (l) => l.map((it) => {
+    if (it.id !== req.params.id || it.deletedAt) return it;
+    const thumb = `${it.id}.t.jpg`; fs.writeFileSync(path.join(galDir(req.user), thumb), buf);
+    const n = { ...it, thumb }; pub = galPub(n); return n;
+  }));
+  if (!pub) return res.status(404).json({ error: 'Elemento non trovato' });
+  res.json({ item: pub });
+});
+app.get('/api/gallery/file/:f', auth, (req, res) => {
+  const f = path.basename(req.params.f);
+  if (!GAL_RE.test(f) && !GAL_THUMB_RE.test(f)) return res.status(400).end();
+  const id = f.slice(0, 16), it = readJSON(galIndex(req.user), []).find((i) => i.id === id);
+  if (!it) return res.status(404).end();
+  const p = path.join(it.deletedAt ? galTrashDir(req.user) : galDir(req.user), f);
+  if (!fs.existsSync(p)) return res.status(404).end();
+  if (req.query.download) res.attachment((it.name && !GAL_THUMB_RE.test(f) ? it.name.replace(/[^\w.\- ]+/g, '_') : f));
+  if (it.type) res.type(GAL_THUMB_RE.test(f) ? 'image/jpeg' : it.type);
+  res.setHeader('Cache-Control', 'private, max-age=2592000, immutable');
+  res.sendFile(p); // con Range (video su iPhone)
+});
+// Eliminazione esplicita (conferma nell'interfaccia): va in "Eliminati di recente" per 30 giorni
+app.delete('/api/gallery/:id', auth, async (req, res) => {
+  if (!ID_RE.test(req.params.id) || req.body.confirm !== true) return res.status(400).json({ error: 'Conferma richiesta' });
+  let found = null;
+  await mutateJSON(galIndex(req.user), [], (l) => l.map((it) => {
+    if (it.id !== req.params.id) return it;
+    if (it.deletedAt) { // già nel cestino: elimina subito per sempre
+      found = 'gone'; for (const f of [it.file, it.thumb]) if (f) fs.rmSync(path.join(galTrashDir(req.user), f), { force: true }); return null;
+    }
+    for (const f of [it.file, it.thumb]) if (f && fs.existsSync(path.join(galDir(req.user), f))) fs.renameSync(path.join(galDir(req.user), f), path.join(galTrashDir(req.user), f));
+    found = 'trash'; return { ...it, deletedAt: new Date().toISOString() };
+  }).filter(Boolean));
+  if (!found) return res.status(404).json({ error: 'Elemento non trovato' });
+  audit(req.user, 'galleria-elimina', { id: req.params.id, how: found });
+  res.json({ ok: true, trashed: found === 'trash', trashDays: GAL_TRASH_DAYS });
+});
+app.post('/api/gallery/:id/restore', auth, async (req, res) => {
+  if (!ID_RE.test(req.params.id)) return res.status(400).end();
+  let pub = null;
+  await mutateJSON(galIndex(req.user), [], (l) => l.map((it) => {
+    if (it.id !== req.params.id || !it.deletedAt) return it;
+    for (const f of [it.file, it.thumb]) if (f && fs.existsSync(path.join(galTrashDir(req.user), f))) fs.renameSync(path.join(galTrashDir(req.user), f), path.join(galDir(req.user), f));
+    const n = { ...it }; delete n.deletedAt; pub = galPub(n); return n;
+  }));
+  if (!pub) return res.status(404).json({ error: 'Elemento non trovato' });
+  res.json({ item: pub });
+});
+// Foto/video inviati in una chat: copiati nell'archivio condiviso (la chat è di coppia, la vede anche l'altro profilo)
+const CHAT_MEDIA_RE = /^[a-f0-9]{16}\.(jpg|png|webp|gif|heic|mp4|mov|webm)$/;
+function galToChat(u, gid) {
+  const it = readJSON(galIndex(u), []).find((i) => i.id === gid && !i.deletedAt);
+  if (!it || !fs.existsSync(path.join(galDir(u), it.file))) return null;
+  const file = `${newId()}.${it.file.split('.').pop()}`;
+  fs.copyFileSync(path.join(galDir(u), it.file), path.join(sharedDir('chat-media'), file));
+  let thumb = null;
+  if (it.thumb && fs.existsSync(path.join(galDir(u), it.thumb))) { thumb = `${file.slice(0, 16)}.t.jpg`; fs.copyFileSync(path.join(galDir(u), it.thumb), path.join(sharedDir('chat-media'), thumb)); }
+  return { file, thumb, kind: it.kind, type: it.type, w: it.w || null, h: it.h || null };
+}
+app.get('/api/chat-media/:f', auth, (req, res) => {
+  const f = path.basename(req.params.f);
+  if (!CHAT_MEDIA_RE.test(f) && !GAL_THUMB_RE.test(f)) return res.status(400).end();
+  const p = path.join(sharedDir('chat-media'), f); if (!fs.existsSync(p)) return res.status(404).end();
+  if (req.query.download) res.attachment(f);
+  res.setHeader('Cache-Control', 'private, max-age=2592000, immutable');
+  res.sendFile(p);
+});
+
+// ---------- v8.4: registro chiamate (per utente) ----------
+// Le chiamate nuove vengono registrate a fine chiamata; quelle di prima si ricavano dai messaggi segnati 📞/📹 nelle chat.
+const callsFile = (u) => path.join(userDir(u), 'calls.json');
+app.post('/api/calls', auth, async (req, res) => {
+  const id = String(req.body.characterId || '');
+  if (!ID_RE.test(id) || !getChars(req.user).find((c) => c.id === id)) return res.status(400).json({ error: 'Personaggio non valido' });
+  const st = Date.parse(req.body.startedAt); const sec = Math.max(0, Math.min(86400, Math.round(Number(req.body.seconds) || 0)));
+  if (!Number.isFinite(st) || Math.abs(Date.now() - st) > 2 * 864e5) return res.status(400).json({ error: 'Orario non valido' });
+  const rec = { id: newId(), characterId: id, mode: req.body.mode === 'voice' ? 'voice' : 'video', startedAt: new Date(st).toISOString(), seconds: sec };
+  await mutateJSON(callsFile(req.user), [], (l) => [...l, rec].slice(-500));
+  res.json({ call: rec });
+});
+app.get('/api/calls', auth, (req, res) => {
+  const chars = getChars(req.user), logged = readJSON(callsFile(req.user), []);
+  const out = logged.filter((c) => chars.find((x) => x.id === c.characterId)).map((c) => ({ ...c, derived: false }));
+  for (const ch of chars) {
+    let s = null; const sessions = [];
+    for (const m of readChat(ch.id).messages) {
+      if (!m.call) continue;
+      const t = Date.parse(m.at); if (!Number.isFinite(t)) continue;
+      const mine = m.role === 'user' ? m.author === req.user : m.replyTo === req.user;
+      if (s && t - s.end < 8 * 60e3) { s.end = t; s.mine = s.mine || mine; if (m.callMode !== 'voice') s.mode = 'video'; }
+      else { s = { start: t, end: t, mine, mode: m.callMode === 'voice' ? 'voice' : 'video' }; sessions.push(s); }
+    }
+    for (const x of sessions) {
+      if (!x.mine) continue;
+      const dup = out.some((c) => c.characterId === ch.id && !c.derived && Date.parse(c.startedAt) - 120e3 <= x.end && Date.parse(c.startedAt) + c.seconds * 1000 + 120e3 >= x.start);
+      if (!dup) out.push({ id: 'm' + x.start.toString(16), characterId: ch.id, mode: x.mode, startedAt: new Date(x.start).toISOString(), seconds: Math.round((x.end - x.start) / 1000), derived: true });
+    }
+  }
+  out.sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt));
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ calls: out.slice(0, 150) });
+});
+
 app.get('/sw.js', (req, res, next) => { res.setHeader('Cache-Control', 'no-cache'); next(); });
 app.get('/manifest.json', (req, res, next) => { res.type('application/manifest+json'); next(); });
 // File statici. MediaPipe (/vendor/mediapipe) servito dall'app stessa, mai da CDN: .wasm con il MIME corretto

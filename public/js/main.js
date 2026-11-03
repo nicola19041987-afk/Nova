@@ -19,7 +19,8 @@ App.boot = async function () {
   App.actions && App.actions.load();
   App.sync();
   App.autoChanges();
-  setTimeout(() => App.faceMigrate && App.faceMigrate(), 6000); // v8: occhi e bocca automatici sugli avatar esistenti (una volta, in background)
+  setTimeout(() => App.faceMigrate && App.faceMigrate(), 6000);
+  document.body.dataset.tab = 'chat'; if (App.roles) App.roles.apply(); if (App.home) App.home.boot(); // v8: occhi e bocca automatici sugli avatar esistenti (una volta, in background)
 };
 // Modalità adulti (per utente): solo effetti locali sull'avatar (espressioni/movimenti più sensuali, canvas).
 App.applyAdult = function () {
@@ -35,7 +36,7 @@ App.applyStyle = function () {
 
 // Cambi automatici: al primo avvio del giorno (o secondo la frequenza scelta), piccole variazioni plausibili
 App.autoChanges = async function () {
-  if (!App.key()) return;
+  if (!App.key() || !(App.me && App.me.admin)) return; // v8.4: le modifiche dei personaggi le fa solo Nicola
   for (const c of App.chars) {
     const ac = c.autoChanges || {};
     if (!ac.enabled || !/^\/api\/avatars\//.test(c.avatar)) continue;
@@ -49,16 +50,25 @@ App.autoChanges = async function () {
   }
 };
 
-const TITLES = { chat: 'Chat', feed: 'Diario', images: 'Immagini e video', account: 'Account' };
-$$('.tabbar button').forEach((b) => b.addEventListener('click', () => {
-  const t = b.dataset.tab;
-  $$('.tabbar button').forEach((x) => x.classList.toggle('active', x === b));
-  ['chat', 'conv', 'feed', 'images', 'account'].forEach((n) => { $(`#tab-${n}`).hidden = true; });
-  if (t === 'chat' && App.current) { $('#tab-conv').hidden = false; $('#back-btn').hidden = false; $('#title').textContent = App.current.name; }
+const TITLES = { chat: 'Chat', calls: 'Chiamate', feed: 'Diario', images: 'Galleria', account: 'Impostazioni' };
+App.TITLES = TITLES;
+$$('.tabbar button').forEach((b) => b.addEventListener('click', () => App.openTab(b.dataset.tab)));
+// v8.4: navigazione tra le schede (anche dalla Home). La conversazione resta aperta dentro «Chat».
+App.openTab = function (t) {
+  if (App.home) App.home.hide();
+  $$('.tabbar button').forEach((x) => x.classList.toggle('active', x.dataset.tab === t));
+  ['chat', 'conv', 'calls', 'feed', 'images', 'account'].forEach((n) => { const el = $(`#tab-${n}`); if (el) el.hidden = true; });
+  const conv = t === 'chat' && App.current;
+  if (conv) { $('#tab-conv').hidden = false; $('#back-btn').hidden = false; $('#title').textContent = App.current.name; }
   else { $(`#tab-${t}`).hidden = false; $('#back-btn').hidden = true; $('#title').textContent = TITLES[t]; }
+  document.body.dataset.tab = conv ? 'conv' : t;
+  $('#large-title').textContent = TITLES[t]; $('#large-title').hidden = !!conv;
   if (App.chat && App.chat.header) App.chat.header(); // v8.2: intestazione WhatsApp solo nella conversazione
   if (t === 'feed') App.feed.load().catch(() => {});
-}));
+  if (t === 'calls' && App.calls) App.calls.load();
+  if (t === 'images' && App.gallery) App.gallery.load();
+  window.scrollTo(0, 0);
+};
 
 if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
 App.boot();

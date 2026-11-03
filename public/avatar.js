@@ -91,7 +91,10 @@
       this.lm = JSON.parse(JSON.stringify(ch.landmarks || this.lm));
       if (ch.appearance && ch.appearance.colors) this.setColors(ch.appearance.colors);
       this.framing = (ch.appearance && ch.appearance.framing) || 'ritratto';
-      this.setImage(ch.avatar);
+      const ff = ch.frameFill;
+      if (ff && ff.url && !ff.off && ff.src === ch.avatar && ff.landmarks && ff.landmarks.eyeL) { this.lm = JSON.parse(JSON.stringify(ff.landmarks)); this.setImage(ff.url); }
+      else this.setImage(ch.avatar);
+      if (window.App && App.frame && this.c && this.c.id === 'avatar-canvas') App.frame.check(ch);
     }
     setImage(src) {
       if (src && (src.startsWith('/api/') || src.startsWith('data:'))) {
@@ -194,14 +197,19 @@
       if (/\[laugh\]|\bah(ah)+\b|\bih(ih)+\b/i.test(t)) B.laugh(now + 150);
       else if (/\b(uff+|ehh+|mah+|sigh)\b|sospir/i.test(t)) B.sigh(now);
     }
-    stopAudio() { this._env = null; this.speaking = false; this.kf = [{ t: performance.now() + 60, v: 0 }]; }
+    // v8.4: labiale dal vivo (voce in streaming della conversazione in tempo reale): livello e "apertura larga" letti a ogni fotogramma
+    speakLive(levelFn, wideFn) { this._live = { levelFn, wideFn }; this._env = null; this.kf = []; this.simUntil = 0; this.speaking = true; }
+    stopAudio() { this._live = null; this._env = null; this.speaking = false; this.kf = [{ t: performance.now() + 60, v: 0 }]; }
     target(now) {
       if (this.breathM && this.breathM.inhaling(now)) return 0.12; // v8.1: bocca appena socchiusa mentre prende fiato prima di parlare
+      if (this._live && this.speaking) { let v = 0; try { v = this._live.levelFn() || 0; this.vWide = this._live.wideFn ? this._live.wideFn() || 0 : 0; } catch {} return v; }
       if (this._env && this.speaking) {
         const { el, env, rate } = this._env;
         if (el.paused || el.ended) return 0;
         const x = el.currentTime * rate + 2, i = Math.floor(x), f = x - i; // +2: anticipo di ~30 ms (la bocca si apre un filo prima del suono)
         const a = env[Math.min(env.length - 1, i)] || 0, b = env[Math.min(env.length - 1, i + 1)] || 0;
+        // v8.4: "visemi" approssimati: ogni sillaba (~130 ms) ha una forma diversa (A aperta, E larga, O/U stretta)
+        const syl = Math.floor(x / 8), h = Math.sin(syl * 12.9898 + 78.233) * 43758.5453; this.vWide = (h - Math.floor(h)) * (a > 0.15 ? 1 : 0.5);
         return a + (b - a) * f;
       }
       if (this.analyser && this.speaking) {
@@ -229,6 +237,7 @@
       if (this.simUntil && now > this.simUntil) { this.simUntil = 0; this.speaking = false; }
       const ctx = this.ctx, S = VS; // spazio virtuale; la trasformazione porta tutto alle dimensioni reali del canvas
       { const tg = this.target(now); this.mouth += (tg - this.mouth) * (tg > this.mouth ? 0.5 : 0.28); } // apertura rapida, chiusura morbida
+      this.wide = (this.wide || 0.5) + (((this.speaking ? this.vWide : 0.5) ?? 0.5) - (this.wide || 0.5)) * 0.25; // forma della bocca interpolata
       const dt = Math.min(100, now - (this._last || now)); this._last = now;
       // ritmo: se l'utente si muove a tempo, l'oscillazione segue il suo periodo (fase continua, niente scatti)
       const sens = this.sensual;
@@ -291,26 +300,40 @@
       }
       // battito di ciglia (in modalità sensuale: più lento, palpebre un po' abbassate)
       // ammiccamenti variabili: durata 120–240 ms, a volte doppi o a metà; più frequenti mentre parla
+      // v8.4: ogni 2–6 s (a volte doppio); chiusura rapida (~150 ms) e riapertura più lenta (curva asimmetrica)
       if (now > this.nextBlink) {
-        this.blinkStart = now; this.blinkDur = (sens ? 260 : 120) + Math.random() * 120; this.blinkAmp = Math.random() < 0.12 ? 0.55 : 1;
-        const dbl = !this.blinkDouble && Math.random() < 0.15; this.blinkDouble = dbl ? 1 : 0;
-        this.nextBlink = dbl ? now + this.blinkDur + 90 : now + ((sens ? 3500 : 2500) + Math.random() * 4000) * (this.speaking ? 0.7 : 1);
+        this.blinkStart = now; this.blinkDur = (sens ? 330 : 250) + Math.random() * 70; this.blinkAmp = Math.random() < 0.08 ? 0.6 : 1;
+        const dbl = !this.blinkDouble && Math.random() < 0.14; this.blinkDouble = dbl ? 1 : 0;
+        this.nextBlink = dbl ? now + this.blinkDur + 70 : now + (2000 + Math.random() * 4000) * (sens ? 1.25 : 1);
       }
-      const bt = (now - this.blinkStart) / this.blinkDur; let blink = bt < 1 ? Math.sin(bt * Math.PI) * this.blinkAmp : 0;
+      const bt = (now - this.blinkStart) / this.blinkDur, BC = 0.36;
+      let blink = bt < 0 || bt >= 1 ? 0 : (bt < BC ? Math.sin((bt / BC) * Math.PI / 2) ** 1.6 : 1 - ease((bt - BC) / (1 - BC))) * this.blinkAmp;
+      // palpebre rilassate: a riposo a volte un filo abbassate (mai mentre parla con enfasi)
+      if (now > (mc.nextLid || 0)) { mc.lidT = Math.random() < 0.45 ? 0 : 0.06 + Math.random() * 0.1; mc.nextLid = now + 3500 + Math.random() * 5500; }
+      mc.lid = (mc.lid || 0) + (((this.speaking ? 0 : mc.lidT) || 0) - (mc.lid || 0)) * Math.min(1, dt / 700);
+      blink = Math.max(blink, mc.lid);
       // sopracciglia: alzate rapide su enfasi/reazioni e piccole alzate spontanee
       if ((now - this.emph < 120 || (re && now - re.start < 80)) && mc.browUntil < now) { mc.browT = 0.7 + Math.random() * 0.3; mc.browUntil = now + 380; }
       if (now > mc.nextBrow) { mc.browT = 0.3 + Math.random() * 0.4; mc.browUntil = now + 250 + Math.random() * 250; mc.nextBrow = now + 6000 + Math.random() * 8000; }
       if (now > mc.browUntil) mc.browT = 0;
       mc.brow += (mc.browT - mc.brow) * Math.min(1, dt / (mc.browT > mc.brow ? 70 : 220));
       // sguardo: saccadi rapide verso punti vicini, poi fissazione; con l'imitazione tende a guardare l'utente
-      if (now > mc.nextSacc) { const r = R ? 0.35 : 1; mc.gtx = (Math.random() * 2 - 1) * r - (R ? R.yaw * 0.3 : 0); mc.gty = (Math.random() * 2 - 1) * 0.5 * r; if (Math.random() < 0.35) { mc.gtx = 0; mc.gty = 0; } mc.nextSacc = now + 700 + Math.random() * 2600; }
-      const sk = Math.min(1, dt / 35); mc.gx += (mc.gtx - mc.gx) * sk; mc.gy += (mc.gty - mc.gy) * sk;
+      // v8.4: mentre parla guarda in camera (saccadi piccole); i grandi spostamenti di sguardo spesso portano un ammiccamento
+      if (now > mc.nextSacc) {
+        const r = R ? 0.35 : this.speaking ? 0.28 : 1, ox = mc.gtx, oy = mc.gty;
+        mc.gtx = (Math.random() * 2 - 1) * r - (R ? R.yaw * 0.3 : 0); mc.gty = (Math.random() * 2 - 1) * 0.5 * r;
+        if (Math.random() < (this.speaking ? 0.6 : 0.35)) { mc.gtx = 0; mc.gty = 0; }
+        if (Math.hypot(mc.gtx - ox, mc.gty - oy) > 0.55 && Math.random() < 0.45 && now - this.blinkStart > 700) this.nextBlink = now + 20;
+        mc.nextSacc = now + (this.speaking ? 900 : 700) + Math.random() * 2600;
+      }
+      if (now > (mc.nextMicro || 0)) { mc.mx = (Math.random() * 2 - 1) * 0.07; mc.my = (Math.random() * 2 - 1) * 0.05; mc.nextMicro = now + 280 + Math.random() * 420; } // micro-saccadi
+      const sk = Math.min(1, dt / 30); mc.gx += (mc.gtx + (mc.mx || 0) - mc.gx) * sk; mc.gy += (mc.gty + (mc.my || 0) - mc.gy) * sk;
       // sorrisi accennati spontanei (più spesso in modalità sensuale)
       if (now > mc.nextSmile) { mc.smileT = 0.2 + Math.random() * 0.25; mc.smileUntil = now + 1200 + Math.random() * 1800; mc.nextSmile = now + (sens ? 6000 : 9000) + Math.random() * 12000; }
       if (now > mc.smileUntil) mc.smileT = 0;
       mc.smile += (mc.smileT - mc.smile) * Math.min(1, dt / 400);
       const realSmile = smile; smile = Math.max(smile, mc.smile);
-      if (sens) blink = Math.max(blink, 0.22 + Math.sin(now / 3000) * 0.06);
+      if (sens) blink = Math.max(blink, 0.18 + Math.sin(now / 3000) * 0.05);
       const squint = realSmile; // solo sorrisi veri (reazioni/sensuale) socchiudono gli occhi, non quelli accennati
       if (squint > 0.3) blink = Math.max(blink, squint * 0.25); // occhi che "sorridono"
 
@@ -363,11 +386,26 @@
     // v7.1: avatar GRANDE e fermo. La foto è contenuta per intero (contain, mai ritagliata) e riempie il più possibile il riquadro;
     // lo spazio avanzato è coperto da una copia sfocata e statica della stessa foto (v7.2: sfondo CSS sfocato, vedi syncBackdrop).
     // Il riquadro della foto NON si muove: il movimento è una deformazione interna (strisce orizzontali) che fa ondeggiare busto e testa.
+    // v8.4: riempimento intelligente della cornice 9:16: "cover" ancorato al viso, ma al massimo ~12% tagliato per lato
+    // e mai la testa; se la foto è troppo diversa dalla cornice restano bande riempite col colore dei bordi (mai sfocate).
     photoRect(box, E, alignBottom) {
-      const pad = Math.min(box.w, box.h) * 0.006;
-      const fit = Math.max(1e-6, Math.min((box.w - 2 * pad) / E.w, (box.h - 2 * pad) / E.h));
-      const cx = box.x + box.w / 2, cy = alignBottom ? box.y + box.h - pad - (E.h * fit) / 2 : box.y + box.h / 2;
-      return { fit, ox: cx - (E.x0 + E.w / 2) * fit, oy: cy - (E.y0 + E.h / 2) * fit };
+      const fc = Math.max(1e-6, Math.min(box.w / E.w, box.h / E.h));
+      if (!this.img || this.transparent || this.noCover) {
+        const pad = Math.min(box.w, box.h) * 0.006, fit = Math.max(1e-6, Math.min((box.w - 2 * pad) / E.w, (box.h - 2 * pad) / E.h));
+        const cx = box.x + box.w / 2, cy = alignBottom ? box.y + box.h - pad - (E.h * fit) / 2 : box.y + box.h / 2;
+        return { fit, ox: cx - (E.x0 + E.w / 2) * fit, oy: cy - (E.y0 + E.h / 2) * fit };
+      }
+      const CROP = 0.12, fv = Math.max(box.w / E.w, box.h / E.h), fit = Math.min(fv, fc / (1 - 2 * CROP));
+      const W = E.w * fit, H = E.h * fit, S = VS, lm = this.lm || {};
+      const eL = lm.eyeL || { x: 0.42, y: 0.4 }, eR = lm.eyeR || { x: 0.58, y: 0.4 }, ed = Math.hypot(eR.x - eL.x, eR.y - eL.y) * S;
+      const fx = ((eL.x + eR.x) / 2) * S, fy = Math.min(eL.y, eR.y) * S, head = fy - ed * 1.6; // cima della testa (stima)
+      const ovw = Math.max(0, W - box.w), ovh = Math.max(0, H - box.h);
+      const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+      const cl = ovw ? clamp(((fx - E.x0) / E.w) * W - box.w / 2, Math.max(0, ovw - CROP * W), Math.min(ovw, CROP * W)) : -(box.w - W) / 2;
+      const headPx = ((head - E.y0) / E.h) * H;
+      const ctMax = Math.max(0, Math.min(ovh, CROP * H, headPx - box.h * 0.02));
+      const ct = ovh ? (alignBottom ? ovh : clamp(((fy - E.y0) / E.h) * H - box.h * 0.36, Math.min(ctMax, Math.max(0, ovh - CROP * H)), ctMax)) : -(box.h - H) / 2;
+      return { fit, ox: box.x - cl - E.x0 * fit, oy: box.y - ct - E.y0 * fit };
     }
     paintAvatar(ctx, box, A, top, alignBottom) {
       const S = VS, img = this.img, E = this.extent(img), col = this.colors;
@@ -452,8 +490,10 @@
       if (!show) return;
       Object.assign(bd.style, { left: c.offsetLeft + 'px', top: c.offsetTop + 'px', width: c.offsetWidth + 'px', height: c.offsetHeight + 'px', borderRadius: getComputedStyle(c).borderRadius, background: this.colors.background });
       const inner = bd.firstChild;
-      inner.style.backgroundImage = `url("${this.img._src}")`;
-      inner.style.filter = `blur(${Math.round(Math.max(18, c.offsetWidth * 0.07))}px) brightness(0.55) saturate(1.1)${f === 'none' ? '' : ' ' + f}`;
+      // v8.4: bande riempite coi colori dei bordi della foto (sfumatura), mai una copia sfocata
+      const ed = this.edgeColors(), wideImg = this.img.naturalWidth / this.img.naturalHeight > c.offsetWidth / Math.max(1, c.offsetHeight);
+      inner.style.backgroundImage = ed ? (wideImg ? `linear-gradient(180deg, ${ed.t} 0%, ${ed.t} 30%, ${ed.b} 70%, ${ed.b} 100%)` : `linear-gradient(90deg, ${ed.l} 0%, ${ed.l} 30%, ${ed.r} 70%, ${ed.r} 100%)`) : 'none';
+      inner.style.filter = f === 'none' ? 'none' : f;
     }
     // bordi della foto sfumati verso lo sfondo (trasparenza nel canvas, lo sfondo CSS si vede sotto); lati a filo del riquadro lasciati netti
     featherEdges(ctx, r, CW, CH) {
@@ -465,6 +505,18 @@
       if (r.y > CH * 0.02) side(0, r.y, 0, r.y + by, r.x - 1, r.y - 1, r.w + 2, by + 1);
       if (r.y + r.h < CH * 0.98) side(0, r.y + r.h, 0, r.y + r.h - by, r.x - 1, r.y + r.h - by, r.w + 2, by + 1);
       ctx.restore();
+    }
+    edgeColors() {
+      const im = this.img; if (!im || !im.naturalWidth) return null;
+      if (im._edges) return im._edges;
+      try {
+        const n = 24, t = document.createElement('canvas'); t.width = t.height = n; const g = t.getContext('2d', { willReadFrequently: true });
+        g.drawImage(im, 0, 0, n, n); const d = g.getImageData(0, 0, n, n).data;
+        const avg = (xs, ys) => { let r = 0, gg = 0, b = 0, k = 0; for (const y of ys) for (const x of xs) { const i = (y * n + x) * 4; r += d[i]; gg += d[i + 1]; b += d[i + 2]; k++; } return `rgb(${(r / k) | 0},${(gg / k) | 0},${(b / k) | 0})`; };
+        const all = [...Array(n).keys()];
+        im._edges = { l: avg([0, 1], all), r: avg([n - 2, n - 1], all), t: avg(all, [0, 1]), b: avg(all, [n - 2, n - 1]) };
+      } catch { im._edges = null; }
+      return im._edges;
     }
     colorFilter() { const col = this.colors; return (!+col.hue && +col.saturation === 100 && +col.brightness === 100) ? 'none' : `hue-rotate(${col.hue}deg) saturate(${col.saturation}%) brightness(${col.brightness}%)`; }
     // ---- AZIONI (v7): clip video o posa, disegnate nel riquadro dell'avatar con gli stessi movimenti (niente ritagli) ----
@@ -539,16 +591,19 @@
       const m = lm.mouth, open = Math.max(0, this.mouth), F = S * fs;
       // v8: geometria reale rilevata in automatico (larghezza bocca, occhi, sopracciglia), se disponibile
       const MW = lm.mouthW ? lm.mouthW * S : F * 0.2, EW = lm.eyeW ? lm.eyeW * S : F * 0.072, EH = lm.eyeH ? Math.max(lm.eyeH * S, EW * 0.22) : F * 0.026;
-      if (smile > 0.05 && open < 0.2) {
-        const w = Math.max(F * 0.12, MW * 1.0), h = w * 0.45;
-        ctx.save(); ctx.beginPath(); ctx.ellipse(m.x * S, m.y * S, w / 2, h / 2, 0, 0, Math.PI * 2); ctx.clip();
-        ctx.translate(m.x * S, m.y * S); ctx.scale(1 + smile * 0.07, 1 - smile * 0.02); ctx.translate(-m.x * S, -m.y * S - smile * F * 0.004);
-        drawCover(ctx, img, S, { sx: m.x * S - w / 2, sy: m.y * S - h / 2, sw: w, sh: h }); ctx.restore();
+      // v8.4: angoli e forma della bocca: larghezza (visemi) e sorriso spostano gli angoli; patch ancorate ai punti del viso
+      const wide = Math.max(0, Math.min(1, this.wide ?? 0.5)), cxm = m.x * S, ly = m.y * S;
+      const sxw = 1 + smile * 0.07 + (wide - 0.5) * 0.1 * Math.min(1, open * 2.2);
+      if (smile > 0.05 || (open > 0.03 && Math.abs(sxw - 1) > 0.004)) {
+        const w = Math.max(F * 0.12, MW * 1.12), h = w * 0.5;
+        ctx.save(); ctx.beginPath(); ctx.ellipse(cxm, ly, w / 2, h / 2, 0, 0, Math.PI * 2); ctx.clip();
+        ctx.translate(cxm, ly); ctx.scale(sxw, 1 - smile * 0.02); ctx.translate(-cxm, -ly - smile * F * 0.004);
+        drawCover(ctx, img, S, { sx: cxm - w / 2, sy: ly - h / 2, sw: w, sh: h }); ctx.restore();
       }
       if (open > 0.03) {
-        // v8: mandibola e labbro inferiore scendono in modo graduale (ellissi annidate: il bordo si sposta poco, il centro di più)
-        // così non ci sono "gradini" ai lati; sopra la linea delle labbra non si muove nulla.
-        const jw = Math.max(F * 0.2, MW * 1.7), jh = jw * 0.76, cx = m.x * S, ly = m.y * S, drop = open * Math.max(F * 0.018, MW * 0.14);
+        // mandibola e labbro inferiore scendono in modo graduale (ellissi annidate: il bordo si sposta poco, il centro di più)
+        // così non ci sono "gradini" ai lati; sopra la linea delle labbra non si muove nulla. O/U: più stretta e un po' più alta.
+        const jw = Math.max(F * 0.2, MW * 1.7), jh = jw * 0.76, cx = cxm, drop = open * Math.max(F * 0.024, MW * 0.2) * (0.9 + (1 - wide) * 0.25);
         const cy = ly + jh * 0.3, LV = [[1, 0.12], [0.86, 0.32], [0.72, 0.55], [0.58, 0.8], [0.45, 1]];
         for (const [k, f] of LV) {
           const rx = jw / 2 * k, ry = jh * 0.62 * k;
@@ -556,12 +611,26 @@
           ctx.beginPath(); ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2); ctx.clip();
           ctx.translate(0, drop * f); drawCover(ctx, img, S, { sx: cx - rx, sy: ly - drop, sw: rx * 2, sh: cy + ry - ly + drop }); ctx.restore();
         }
-        // interno della bocca: ombra morbida (niente ovale pieno dal bordo netto), larga quanto la bocca vera
-        const iw = MW * 0.44, ih = Math.max(F * 0.002, drop * 0.6);
-        ctx.save(); ctx.translate(cx, ly + drop * 0.5); ctx.scale(1, ih / iw);
-        const g = ctx.createRadialGradient(0, 0, 0, 0, 0, iw);
-        g.addColorStop(0, 'rgba(38,6,12,0.95)'); g.addColorStop(0.6, 'rgba(52,10,16,0.88)'); g.addColorStop(0.85, 'rgba(85,28,34,0.45)'); g.addColorStop(1, 'rgba(110,45,50,0)');
-        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, iw, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+        // interno della bocca a lente (fra labbro superiore e inferiore), scuro al centro e sfumato agli angoli; accenno dei denti superiori
+        const hw = MW * (0.3 + wide * 0.1 + smile * 0.04), top = ly - drop * 0.08, bot = ly + drop * 0.92, mid = (top + bot) / 2, hh = (bot - top) / 2;
+        if (hh > F * 0.0012) {
+          ctx.save(); ctx.beginPath();
+          ctx.moveTo(cx - hw, mid); ctx.bezierCurveTo(cx - hw * 0.55, top - hh * 0.15, cx + hw * 0.55, top - hh * 0.15, cx + hw, mid);
+          ctx.bezierCurveTo(cx + hw * 0.55, bot + hh * 0.3, cx - hw * 0.55, bot + hh * 0.3, cx - hw, mid); ctx.closePath(); ctx.clip();
+          ctx.translate(cx, mid); ctx.scale(1, Math.max(0.08, hh / hw));
+          const g = ctx.createRadialGradient(0, 0, 0, 0, 0, hw);
+          g.addColorStop(0, 'rgba(26,4,9,0.96)'); g.addColorStop(0.55, 'rgba(44,8,14,0.9)'); g.addColorStop(0.85, 'rgba(78,24,30,0.55)'); g.addColorStop(1, 'rgba(110,45,50,0.05)');
+          ctx.fillStyle = g; ctx.fillRect(-hw, -hw, hw * 2, hw * 2);
+          ctx.restore();
+          if (open > 0.22) { // denti: solo un accenno chiaro sotto il labbro superiore, sfumato ai lati
+            ctx.save(); ctx.beginPath();
+            ctx.moveTo(cx - hw, mid); ctx.bezierCurveTo(cx - hw * 0.55, top - hh * 0.15, cx + hw * 0.55, top - hh * 0.15, cx + hw, mid); ctx.closePath(); ctx.clip();
+            const tw = hw * 0.62, th = Math.min(hh * 0.42, F * 0.009), ta = Math.min(0.5, (open - 0.22) * 1.3);
+            const tg = ctx.createLinearGradient(cx - tw, 0, cx + tw, 0);
+            tg.addColorStop(0, 'rgba(225,215,210,0)'); tg.addColorStop(0.25, `rgba(232,224,218,${ta})`); tg.addColorStop(0.75, `rgba(232,224,218,${ta})`); tg.addColorStop(1, 'rgba(225,215,210,0)');
+            ctx.fillStyle = tg; ctx.fillRect(cx - tw, top, tw * 2, th + (mid - top) * 0.2); ctx.restore();
+          }
+        }
       }
       const gxp = mc.gx * F * 0.0045, gyp = mc.gy * F * 0.0025, bup = mc.brow * F * 0.007, px = F * 0.0006;
       [lm.eyeL, lm.eyeR].forEach((e, ei) => {
@@ -577,14 +646,48 @@
           ctx.translate(0, -bup); drawCover(ctx, img, S, { sx: cx - w / 2, sy: cy - h / 2, sw: w, sh: h + bup + F * 0.006 }); ctx.restore();
         }
       });
-      if (blink > 0.05) {
+      if (blink > 0.035) {
+        // v8.4: palpebra superiore vera: la pelle sopra l'occhio (dalla foto) scende seguendo la forma dell'occhio,
+        // con ombra sul bordo e ciglia; inclinata come la linea degli occhi. Tutto ancorato ai punti del viso.
+        const roll = Math.atan2(lm.eyeR.y - lm.eyeL.y, lm.eyeR.x - lm.eyeL.x);
         [lm.eyeL, lm.eyeR].forEach((e, i) => {
-          // la palpebra scende dall'alto; v7.2: bordo sfumato (gradiente) invece di un ovale pieno dal contorno netto
-          const rx = EW * 0.62, ry = Math.max(F * 0.004, EH * blink), cy = e.y * S - EH * (1 - blink);
-          const m = /^rgb\((\d+),(\d+),(\d+)\)$/.exec(String(lids[i]).replace(/\s/g, ''));
-          ctx.save(); ctx.translate(e.x * S, cy); ctx.scale(1, ry / rx);
-          if (m) { const g = ctx.createRadialGradient(0, 0, 0, 0, 0, rx); g.addColorStop(0, `rgba(${m[1]},${m[2]},${m[3]},1)`); g.addColorStop(0.7, `rgba(${m[1]},${m[2]},${m[3]},0.9)`); g.addColorStop(1, `rgba(${m[1]},${m[2]},${m[3]},0)`); ctx.fillStyle = g; } else ctx.fillStyle = lids[i];
-          ctx.beginPath(); ctx.arc(0, 0, rx, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+          const ex = e.x * S, ey = e.y * S, hw = EW * 0.6, eh = Math.max(EH * 0.62, EW * 0.16), b = Math.min(1, blink);
+          const up = (t) => ey - eh * Math.sqrt(Math.max(0, 1 - t * t)) * (1 - 0.12 * t * (i ? -1 : 1)); // bordo superiore (un po' asimmetrico)
+          const lo = (t) => ey + eh * 0.72 * Math.sqrt(Math.max(0, 1 - t * t));
+          const edge = (t) => up(t) + (lo(t) - up(t)) * b, skin = eh * 1.5, N = 14;
+          ctx.save(); ctx.translate(ex, ey); ctx.rotate(roll); ctx.translate(-ex, -ey);
+          ctx.beginPath(); ctx.moveTo(ex - hw * 1.08, ey);
+          for (let k = 0; k <= N; k++) { const t = -1 + (2 * k) / N; ctx.lineTo(ex + t * hw * 1.04, up(t) - skin * Math.sqrt(Math.max(0, 1 - t * t)) * 0.9); }
+          ctx.lineTo(ex + hw * 1.08, ey);
+          for (let k = N; k >= 0; k--) { const t = -1 + (2 * k) / N; ctx.lineTo(ex + t * hw, Math.max(edge(t), up(t))); }
+          ctx.closePath(); ctx.clip();
+          // pelle della palpebra: la fascia sopra l'occhio, allungata verso il basso fino al bordo
+          const sy0 = ey - eh - skin, sh0 = skin, dh = skin + eh * 1.72 * b + eh * 0.12 * b;
+          if (img.naturalWidth) { const sq = Math.min(img.naturalWidth, img.naturalHeight), k = sq / S, ox = (img.naturalWidth - sq) / 2, oy = (img.naturalHeight - sq) / 2;
+            ctx.drawImage(img, ox + (ex - hw * 1.1) * k, oy + sy0 * k, hw * 2.2 * k, sh0 * k, ex - hw * 1.1, sy0, hw * 2.2, dh); }
+          const mm = /^rgb\((\d+),(\d+),(\d+)\)$/.exec(String(lids && lids[i]).replace(/\s/g, ''));
+          const rgb = mm ? `${mm[1]},${mm[2]},${mm[3]}` : '200,150,150';
+          // un velo del colore della pelle (uniforma) e ombra verso il bordo della palpebra
+          const g = ctx.createLinearGradient(0, sy0, 0, ey + eh);
+          g.addColorStop(0, `rgba(${rgb},0)`); g.addColorStop(0.45, `rgba(${rgb},${0.4 * b})`); g.addColorStop(1, `rgba(${rgb},${0.55 * b})`);
+          ctx.fillStyle = g; ctx.fillRect(ex - hw * 1.2, sy0, hw * 2.4, ey + eh * 2 - sy0);
+          ctx.restore();
+          // piega e ciglia sul bordo
+          ctx.save(); ctx.translate(ex, ey); ctx.rotate(roll); ctx.translate(-ex, -ey);
+          ctx.lineCap = 'round';
+          ctx.strokeStyle = `rgba(60,30,30,${0.18 * b})`; ctx.lineWidth = Math.max(F * 0.0015, eh * 0.12);
+          ctx.beginPath(); for (let k = 2; k <= N - 2; k++) { const t = -1 + (2 * k) / N, y = edge(t) - eh * 0.35 * Math.sqrt(1 - t * t); k === 2 ? ctx.moveTo(ex + t * hw * 0.95, y) : ctx.lineTo(ex + t * hw * 0.95, y); } ctx.stroke();
+          const la = Math.min(0.9, 0.25 + b * 0.75), outer = i ? 1 : -1; // le ciglia si infittiscono verso l'angolo esterno
+          const pathE = (t0, t1) => { ctx.beginPath(); for (let k = 0; k <= 16; k++) { const t = t0 + (t1 - t0) * k / 16, x = ex + t * hw * 0.98, y = Math.max(edge(t), up(t)) + eh * 0.03; k ? ctx.lineTo(x, y) : ctx.moveTo(x, y); } };
+          ctx.lineJoin = 'round';
+          ctx.strokeStyle = `rgba(28,16,16,${la * 0.85})`; ctx.lineWidth = Math.max(F * 0.0012, eh * 0.1); pathE(-0.92, 0.92); ctx.stroke();
+          ctx.strokeStyle = `rgba(22,12,12,${la * 0.7})`; ctx.lineWidth = Math.max(F * 0.0016, eh * 0.15); outer > 0 ? pathE(0.25, 0.97) : pathE(-0.97, -0.25); ctx.stroke(); // angolo esterno più folto
+          if (b > 0.6) { // ciglia chiuse: piccole punte verso il basso, sottili e sfumate
+            ctx.lineWidth = Math.max(F * 0.0007, eh * 0.04); ctx.strokeStyle = `rgba(30,18,18,${(b - 0.6) * 1.2})`;
+            for (let k = 2; k < N - 1; k++) { const t = -1 + (2 * k) / N, x = ex + t * hw * 0.98, y = edge(t) + eh * 0.03, w8 = 0.5 + 0.7 * Math.max(0, t * outer);
+              ctx.beginPath(); ctx.moveTo(x, y); ctx.quadraticCurveTo(x + outer * eh * 0.06, y + eh * 0.16 * w8, x + (t * 0.12 + outer * 0.1) * eh * w8, y + eh * 0.24 * w8); ctx.stroke(); }
+          }
+          ctx.restore();
         });
       }
     }

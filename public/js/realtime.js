@@ -1,0 +1,248 @@
+/* realtime.js — v8.4 "Conversazione in tempo reale" (xAI Voice Agent API, speech-to-speech su WebSocket).
+ * Il telefono parla DIRETTAMENTE con xAI: microfono sempre aperto (full duplex), fine del turno rilevata da xAI (server VAD),
+ * voce di lei in streaming man mano che arriva, interruzione immediata quando parli sopra (barge-in), labiale dall'audio vero.
+ * La chiave xAI resta sul telefono: il server crea solo un token effimero (60 s, una sessione) e non salva nulla.
+ * Le trascrizioni (tue e sue) finiscono nella chat condivisa. Se il tempo reale non si collega si usa la chiamata classica. */
+(function () {
+  const RATE = 24000;
+  const AC = window.AudioContext || window.webkitAudioContext;
+  const supported = () => !!(window.WebSocket && AC && navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+  App.latency = App.latency || {
+    log: App.ls.get('latencyLog', []) || [],
+    add(path, ms) { const e = { path, ms: Math.round(ms), at: Date.now() }; this.log.push(e); this.log = this.log.slice(-40); App.ls.set('latencyLog', this.log); console.info(`[latenza] ${path}: ${e.ms} ms`); },
+    median(path) { const v = this.log.filter((x) => x.path === path).map((x) => x.ms).sort((a, b) => a - b); return v.length ? v[Math.floor(v.length / 2)] : null; },
+  };
+  const b64 = (buf) => { const u = new Uint8Array(buf); let s = ''; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(s); };
+  const unb64 = (s) => { const bin = atob(s), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return u.buffer; };
+  let S = null; // sessione attiva
+
+  function ctx() { if (!App.audio.ctx) App.audio.ctx = new AC(); if (App.audio.ctx.state !== 'running') App.audio.ctx.resume().catch(() => {}); return App.audio.ctx; }
+
+  // ---------- microfono -> 24 kHz PCM16, blocchi da 100 ms ----------
+  async function startMic(s) {
+    const c = ctx();
+    s.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } });
+    if (s.closed) { s.stream.getTracks().forEach((t) => t.stop()); return; }
+    s.src = c.createMediaStreamSource(s.stream);
+    const onChunk = (pcm, rms) => {
+      if (rms > 0.012 && !playing(s)) s.lastVoiceAt = performance.now(); // fine del parlato (per misurare la latenza)
+      if (s.muted) return;
+      if (s.ready && s.ws && s.ws.readyState === 1) s.ws.send(JSON.stringify({ type: 'input_audio_buffer.append', audio: b64(pcm) }));
+      else { s.early.push(pcm); if (s.early.length > 15) s.early.shift(); } // tiene ~1,5 s finché la sessione non è pronta
+    };
+    try {
+      if (!c.audioWorklet) throw new Error('no worklet');
+      await c.audioWorklet.addModule('/js/rt-worklet.js');
+      s.node = new AudioWorkletNode(c, 'rt-capture');
+      s.node.port.onmessage = (e) => onChunk(e.data.pcm, e.data.rms);
+      const mute = c.createGain(); mute.gain.value = 0; s.src.connect(s.node); s.node.connect(mute); mute.connect(c.destination);
+    } catch { // vecchi browser: ScriptProcessor (stesso formato)
+      const sp = c.createScriptProcessor(2048, 1, 1), ratio = c.sampleRate / RATE; let pos = 0, prev = 0, out = new Int16Array(2400), n = 0, e2 = 0;
+      sp.onaudioprocess = (ev) => {
+        const ch = ev.inputBuffer.getChannelData(0), X = (k) => (k === 0 ? prev : ch[k - 1]); let p = pos;
+        while (p < ch.length) { const i = Math.floor(p), f = p - i, v = Math.max(-1, Math.min(1, X(i) + (X(i + 1) - X(i)) * f)); out[n++] = v < 0 ? v * 0x8000 : v * 0x7fff; e2 += v * v; if (n === out.length) { const b = out.slice(0); onChunk(b.buffer, Math.sqrt(e2 / n)); n = 0; e2 = 0; } p += ratio; }
+        pos = p - ch.length; prev = ch[ch.length - 1];
+      };
+      const mute = c.createGain(); mute.gain.value = 0; s.src.connect(sp); sp.connect(mute); mute.connect(c.destination); s.node = sp;
+    }
+  }
+
+  // ---------- voce di lei: blocchi PCM in coda senza buchi, labiale dall'analizzatore ----------
+  function outChain(s) {
+    if (s.out) return s.out;
+    const c = ctx(), g = c.createGain(), an = c.createAnalyser(); an.fftSize = 1024; an.smoothingTimeConstant = 0.2;
+    g.gain.value = s.volume; g.connect(an); an.connect(c.destination);
+    s.out = { g, an, td: new Float32Array(an.fftSize), fd: new Uint8Array(an.frequencyBinCount) }; return s.out;
+  }
+  const playing = (s) => s && s.playT > ctx().currentTime + 0.005;
+  function play(s, buf) {
+    const c = ctx(), o = outChain(s), i16 = new Int16Array(buf), n = i16.length; if (!n) return;
+    const ab = c.createBuffer(1, n, RATE), d = ab.getChannelData(0); for (let i = 0; i < n; i++) d[i] = i16[i] / 32768;
+    const src = c.createBufferSource(); src.buffer = ab; src.connect(o.g);
+    const t = Math.max(c.currentTime + 0.025, s.playT || 0); src.start(t); s.playT = t + n / RATE;
+    s.sources.push(src); src.onended = () => { s.sources = s.sources.filter((x) => x !== src); };
+    if (s.resp && !s.resp.firstAt) { // primo audio della risposta: latenza fine-parlato -> primo suono
+      s.resp.firstAt = performance.now() + (t - c.currentTime) * 1000;
+      if (s.eosAt) { const ms = s.resp.firstAt - s.eosAt; if (ms > 0 && ms < 20000) { App.latency.add('tempo reale', ms); s.lat.push(Math.round(ms)); } s.eosAt = 0; }
+    }
+    lips(s, true);
+  }
+  // livello della voce (0..1) e "apertura larga" (vocali chiare/sibilanti) per il labiale, letti a ogni fotogramma
+  function level(s) {
+    const o = s.out; if (!o || !playing(s)) return 0;
+    o.an.getFloatTimeDomainData(o.td); let e = 0; for (let i = 0; i < o.td.length; i++) e += o.td[i] * o.td[i];
+    const rms = Math.sqrt(e / o.td.length); s.peak = Math.max(rms, (s.peak || 0.05) * 0.995);
+    const v = rms / (s.peak * 0.75); return v < 0.06 ? 0 : Math.min(1, Math.pow(v, 0.8));
+  }
+  function wide(s) {
+    const o = s.out; if (!o || !playing(s)) return 0;
+    o.an.getByteFrequencyData(o.fd); let lo = 0, hi = 0; const N = o.fd.length, k = Math.floor(N * 0.04), h = Math.floor(N * 0.12);
+    for (let i = 1; i < k; i++) lo += o.fd[i]; for (let i = k; i < h; i++) hi += o.fd[i];
+    return Math.max(0, Math.min(1, (hi / Math.max(1, h - k)) / Math.max(1, lo / Math.max(1, k - 1)) - 0.4));
+  }
+  function lips(s, on) {
+    const avs = [App.avatarConv, App.avatarPresence].filter(Boolean);
+    if (on && !s.lipsOn) { s.lipsOn = true; avs.forEach((a) => a.speakLive && a.speakLive(() => level(s), () => wide(s))); }
+    if (!on && s.lipsOn) { s.lipsOn = false; avs.forEach((a) => a.stopAudio && a.stopAudio()); }
+  }
+  function stopPlayback(s) {
+    for (const x of s.sources) { try { x.onended = null; x.stop(); } catch {} }
+    s.sources = []; s.playT = 0; lips(s, false);
+  }
+
+  // ---------- trascrizioni nella chat condivisa (in ordine) ----------
+  function save(s, role, text, extra = {}) {
+    text = String(text || '').replace(/\s+/g, ' ').trim(); if (!text) return;
+    s.saveQ = s.saveQ.then(async () => {
+      if (role === 'assistant') { const t0 = performance.now(); while (s.waitUser && performance.now() - t0 < 2500) await new Promise((r) => setTimeout(r, 120)); }
+      try {
+        const r = await App.api(`/api/chats/${s.ch.id}/voice-turn`, { method: 'POST', body: { role, text, callMode: s.mode, ...extra } });
+        s.turns++;
+        if ((r && r.adult !== s.adult) || s.turns % 8 === 0) refresh(s);
+        if (App.chat && App.chat.poll && App.current && App.current.id === s.ch.id) App.chat.poll();
+      } catch (e) { console.warn('Trascrizione non salvata:', e.message); }
+    });
+  }
+  async function refresh(s) { // istruzioni aggiornate (modalità adulti, ricordi, ultimi messaggi) senza interrompere la chiamata
+    try {
+      const r = await App.api('/api/realtime/instructions', { method: 'POST', body: { characterId: s.ch.id, mode: s.mode } });
+      s.adult = r.adult; if (s.ws && s.ws.readyState === 1) s.ws.send(JSON.stringify({ type: 'session.update', session: { instructions: r.instructions } }));
+    } catch {}
+  }
+
+  // ---------- eventi da xAI ----------
+  function onEvent(s, ev) {
+    switch (ev.type) {
+      case 'session.created':
+        s.created = true; s.ws.send(JSON.stringify({ type: 'session.update', session: s.cfg.session })); s.sentUpd = performance.now();
+        setTimeout(() => ready(s), 1500); break;
+      case 'session.updated':
+        s.upd = (s.upd || 0) + 1; if ((ev.session && ev.session.instructions) || s.upd >= 2) ready(s); break;
+      case 'input_audio_buffer.speech_started':
+        s.userSpeaking = true; s.phase = 'listening';
+        if (playing(s) || s.resp) bargeIn(s, false);
+        if (App.call && App.call.onInterim) App.call.onInterim('…'); break;
+      case 'input_audio_buffer.speech_stopped':
+        s.userSpeaking = false; s.waitUser = true; s.phase = 'replying'; // ottimista: "sta parlando…" appena hai finito
+        s.eosAt = s.lastVoiceAt && performance.now() - s.lastVoiceAt < 3000 ? s.lastVoiceAt : performance.now() - 500;
+        [App.avatarConv, App.avatarPresence].forEach((a) => a && a.breathM && a.breathM.preInhale(performance.now()));
+        break;
+      case 'conversation.item.input_audio_transcription.updated':
+        s.live = ev.transcript || ''; if (App.call && App.call.onInterim) App.call.onInterim(s.live); break;
+      case 'conversation.item.input_audio_transcription.completed':
+        s.waitUser = false; s.live = ''; save(s, 'user', ev.transcript); break;
+      case 'response.created':
+        s.resp = { id: ev.response && ev.response.id, text: '', firstAt: 0 }; s.phase = 'replying'; break;
+      case 'response.output_audio.delta': case 'response.audio.delta':
+        if (s.cancelled === (ev.response_id || 'x')) break;
+        if (!s.resp) s.resp = { id: ev.response_id, text: '', firstAt: 0 };
+        if (ev.delta) play(s, unb64(ev.delta)); break;
+      case 'response.output_audio_transcript.delta': case 'response.audio_transcript.delta':
+        if (s.resp) { s.resp.text += ev.delta || ''; if (App.call && App.call.caption) App.call.caption(s.resp.text); } break;
+      case 'response.output_audio_transcript.done': case 'response.audio_transcript.done':
+        if (s.resp && ev.transcript) s.resp.text = ev.transcript; break;
+      case 'response.done': {
+        const r = s.resp; s.resp = null; if (s.phase === 'replying') s.phase = 'idle';
+        const st = ev.response && ev.response.status;
+        if (r && isGreet(s, r.text)) break; // il saluto iniziale non va in chat
+        if (r && r.text && !r.saved) { r.saved = true; save(s, 'assistant', r.text + (st === 'cancelled' || r.cut ? '…' : ''), st === 'cancelled' || r.cut ? { interrupted: true } : {}); }
+        break;
+      }
+      case 'error':
+        console.warn('Tempo reale:', ev.error && (ev.error.message || ev.error.code));
+        if (!s.isReady) s.fail(new Error((ev.error && ev.error.message) || 'Errore del servizio voce'));
+        break;
+      default: break;
+    }
+  }
+  function isGreet(s, t) { if (!s.greet || !t) return false; const g = s.greet.trim().slice(0, 10), ok = String(t).trim().slice(0, 10) === g; if (ok) s.greet = null; return ok; }
+  function ready(s) {
+    if (s.isReady || s.closed) return; s.isReady = true; s.ready = true; s.ok();
+    for (const pcm of s.early.splice(0)) if (!s.muted) s.ws.send(JSON.stringify({ type: 'input_audio_buffer.append', audio: b64(pcm) }));
+  }
+  // interruzione: la sua voce si ferma subito; la risposta in corso viene annullata (e salvata fin dove è arrivata)
+  function bargeIn(s, manual) {
+    const r = s.resp;
+    if (playing(s) || r) { App.rt.barges = (App.rt.barges || 0) + 1; App.rt.lastBargeAt = performance.now(); } // per diagnostica/test
+    stopPlayback(s);
+    if (r) { r.cut = true; s.cancelled = r.id || 'x'; try { s.ws.send(JSON.stringify({ type: 'response.cancel' })); } catch {} if (r.text && !r.saved && !isGreet(s, r.text)) { r.saved = true; save(s, 'assistant', r.text + '…', { interrupted: true }); } s.resp = null; }
+    if (manual) s.phase = 'idle';
+  }
+
+  // ---------- connessione (token effimero, 5 s per partire, fino a 3 tentativi) ----------
+  function connect(s) {
+    return new Promise((ok, ko) => {
+      let done = false; const fin = (e) => { if (done) return; done = true; clearTimeout(to); if (e) { try { s.ws.close(); } catch {} ko(e); } else ok(); };
+      s.ok = () => fin(); s.fail = (e) => fin(e);
+      const ws = new WebSocket(s.cfg.url, [`xai-client-secret.${s.cfg.token}`]); ws.binaryType = 'arraybuffer'; s.ws = ws;
+      const to = setTimeout(() => fin(new Error('Il servizio voce non ha risposto in tempo')), 6000);
+      ws.onmessage = (m) => { if (typeof m.data !== 'string') { if (s.resp || s.isReady) play(s, m.data); return; } let ev; try { ev = JSON.parse(m.data); } catch { return; } onEvent(s, ev); };
+      ws.onerror = () => fin(new Error('Connessione al servizio voce non riuscita'));
+      ws.onclose = () => { if (!done) fin(new Error('Connessione chiusa dal servizio voce')); else if (!s.closed) dropped(s); };
+    });
+  }
+  async function dropped(s) { // connessione persa a chiamata in corso: un nuovo tentativo, poi la chiamata classica
+    if (s.closed || s.retrying) return; s.retrying = true; s.ready = false; stopPlayback(s);
+    try { await open(s, 1); s.retrying = false; App.toast('🔄 Ricollegata', 1800); }
+    catch { s.retrying = false; if (App.call && App.call.fallback) App.call.fallback('Connessione persa'); }
+  }
+  async function open(s, tries = 3) {
+    let last;
+    for (let i = 0; i < tries && !s.closed; i++) {
+      try {
+        s.isReady = false; s.upd = 0; s.created = false;
+        s.cfg = await App.api('/api/realtime/session', { method: 'POST', body: { characterId: s.ch.id, mode: s.mode, voice: s.voice }, ai: true });
+        s.adult = s.cfg.adult; await connect(s); return;
+      } catch (e) { last = e; if (e.status && e.status < 500 && e.status !== 408) break; }
+    }
+    throw last || new Error('Tempo reale non disponibile');
+  }
+
+  App.rt = {
+    supported,
+    enabled: () => App.ls.get('callEngine', 'realtime') === 'realtime' && supported() && !!App.key(),
+    get active() { return !!(S && !S.closed && S.isReady); },
+    // da chiamare DENTRO il tocco che avvia la chiamata (sblocco audio + microfono in parallelo alla connessione)
+    async start(ch, mode, greet) {
+      if (S) App.rt.stop();
+      const s = S = { ch, mode: mode === 'voice' ? 'voice' : 'video', voice: ch.voice || App.ls.get('ttsVoice', 'ara') || 'ara', early: [], sources: [], playT: 0, saveQ: Promise.resolve(), turns: 0, lat: [], volume: 1, muted: false, phase: 'connecting', closed: false };
+      ctx();
+      const mic = startMic(s); mic.catch(() => {});
+      try { await Promise.all([mic, open(s)]); }
+      catch (e) { App.rt.stop(); throw e; }
+      if (greet && !s.closed) s.greet = greet;
+      if (greet && !s.closed) s.ws.send(JSON.stringify({ type: 'conversation.item.create', item: { type: 'force_message', role: 'assistant', interruptible: true, content: [{ type: 'output_text', text: greet }] } }));
+      s.phase = 'idle'; return true;
+    },
+    stop() {
+      const s = S; if (!s) return null; S = null; s.closed = true; s.ready = false;
+      try { s.ws && s.ws.close(); } catch {}
+      stopPlayback(s);
+      try { s.node && s.node.disconnect(); s.src && s.src.disconnect(); } catch {}
+      if (s.stream) s.stream.getTracks().forEach((t) => t.stop());
+      if (s.resp && s.resp.text && !s.resp.saved) { s.resp.saved = true; save(s, 'assistant', s.resp.text + '…', { interrupted: true }); }
+      return { lat: s.lat };
+    },
+    interrupt() { if (S) bargeIn(S, true); },
+    sendText(t) { // messaggio scritto durante la chiamata (tastiera): lei risponde a voce
+      const s = S; t = String(t || '').trim(); if (!s || !t || !s.ws || s.ws.readyState !== 1) return false;
+      bargeIn(s, false); s.eosAt = performance.now(); s.phase = 'replying'; save(s, 'user', t);
+      s.ws.send(JSON.stringify({ type: 'conversation.item.create', item: { type: 'message', role: 'user', content: [{ type: 'input_text', text: t }] } }));
+      s.ws.send(JSON.stringify({ type: 'response.create' })); return true;
+    },
+    setMuted(v) { if (!S) return; S.muted = !!v; if (v && S.ws && S.ws.readyState === 1) S.ws.send(JSON.stringify({ type: 'input_audio_buffer.clear' })); },
+    setVolume(v) { if (!S) return; S.volume = v; if (S.out) S.out.g.gain.value = v; },
+    setMode(m) { if (!S) return; S.mode = m === 'voice' ? 'voice' : 'video'; refresh(S); },
+    status() {
+      if (!S) return null;
+      if (S.phase === 'connecting') return 'Collegamento…';
+      if (playing(S)) return 'Sta parlando…';
+      if (S.phase === 'replying') return 'Sta parlando…'; // ottimista: appena hai finito di parlare
+      if (S.muted) return 'Microfono spento';
+      return S.userSpeaking ? 'Ti ascolto…' : 'Ti ascolto…';
+    },
+    speaking: () => !!(S && playing(S)),
+    lat: () => (S ? S.lat.slice() : []),
+    _s: () => S,
+  };
+})();

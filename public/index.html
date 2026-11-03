@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#2a0f2e">
+  <meta name="theme-color" content="#000000">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -16,6 +16,11 @@
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
+  <!-- v8.4: barra di stato in stile iPhone (solo nel browser: nell'app installata c'è quella vera) -->
+  <div id="ios-status" class="ios-status" aria-hidden="true"><span id="sb-time" class="sb-time">9:41</span><span class="sb-island"></span>
+    <span class="sb-right"><svg class="sb-signal" viewBox="0 0 18 12"><rect x="0" y="8" width="3" height="4" rx="1"/><rect x="5" y="5.5" width="3" height="6.5" rx="1"/><rect x="10" y="3" width="3" height="9" rx="1"/><rect x="15" y="0" width="3" height="12" rx="1"/></svg>
+    <svg id="sb-wifi" class="sb-wifi" viewBox="0 0 16 12"><path d="M8 2.2c2.4 0 4.6.9 6.2 2.5l1.3-1.3C13.6 1.4 10.9.3 8 .3S2.4 1.4.5 3.4l1.3 1.3C3.4 3.1 5.6 2.2 8 2.2zm0 3.6c1.4 0 2.7.5 3.7 1.5L13 6c-1.3-1.3-3.1-2.1-5-2.1S4.3 4.7 3 6l1.3 1.3c1-1 2.3-1.5 3.7-1.5zm0 3.5c.5 0 1 .2 1.3.5L8 11.7 6.7 9.8c.3-.3.8-.5 1.3-.5z"/></svg>
+    <span class="sb-batt"><span id="sb-batt-lvl" class="sb-batt-lvl"></span></span></span></div>
   <!-- LOGIN -->
   <section id="view-login" class="view center" hidden>
     <div class="card narrow">
@@ -56,7 +61,30 @@
 
   <!-- APP -->
   <section id="view-app" class="view" hidden>
+    <!-- v8.4: schermata Home (orologio, icone, dock) -->
+    <section id="home" class="home" hidden>
+      <div class="home-page">
+        <div class="widget-clock" id="home-clock"><div class="wc-date" id="wc-date"></div><div class="wc-time" id="wc-time"></div><div class="wc-sub" id="wc-sub"></div></div>
+        <div class="home-grid">
+          <button class="app-ic" data-open="feed"><span class="ic ic-diary"><svg viewBox="0 0 40 40"><rect x="10" y="7" width="20" height="26" rx="3" fill="#fff"/><path d="M14 13h12M14 18h12M14 23h8" stroke="#ff9f0a" stroke-width="2.4" stroke-linecap="round"/></svg></span><span class="lbl">Diario</span></button>
+          <button class="app-ic" data-open="grok"><span class="ic ic-grok"><svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="10" fill="none" stroke="#fff" stroke-width="3"/><path d="M11 30L31 10" stroke="#fff" stroke-width="3" stroke-linecap="round"/></svg></span><span class="lbl">Grok</span></button>
+          <button class="app-ic deco" data-deco="calc"><span class="ic ic-calc"><svg viewBox="0 0 40 40"><circle cx="13" cy="13" r="4" fill="#a5a5a5"/><circle cx="27" cy="13" r="4" fill="#ff9f0a"/><circle cx="13" cy="27" r="4" fill="#505050"/><circle cx="27" cy="27" r="4" fill="#ff9f0a"/></svg></span><span class="lbl">Calcolatrice</span></button>
+          <button class="app-ic deco" data-deco="notes"><span class="ic ic-notes"><svg viewBox="0 0 40 40"><rect x="6" y="6" width="28" height="28" rx="6" fill="#fff"/><rect x="6" y="6" width="28" height="8" rx="4" fill="#ffd60a"/><path d="M11 20h18M11 25h18M11 30h12" stroke="#c7c7cc" stroke-width="1.6"/></svg></span><span class="lbl">Appunti</span></button>
+          <button class="app-ic deco" data-deco="mail"><span class="ic ic-mail"><svg viewBox="0 0 40 40"><rect x="7" y="11" width="26" height="18" rx="3" fill="#fff"/><path d="M8 12.5l12 9 12-9" fill="none" stroke="#1a7cf5" stroke-width="2"/></svg></span><span class="lbl">Mail</span></button>
+          <button class="app-ic" data-open="create"><span class="ic ic-create"><svg viewBox="0 0 40 40"><path d="M20 8l2.8 7.2L30 18l-7.2 2.8L20 28l-2.8-7.2L10 18l7.2-2.8z" fill="#fff"/><circle cx="29" cy="28" r="2.5" fill="#fff"/></svg></span><span class="lbl">Crea</span></button>
+        </div>
+        <div class="home-dots"><i class="on"></i><i></i></div>
+      </div>
+      <div class="dock">
+        <button class="app-ic" data-open="chat"><span class="ic ic-chat"><svg viewBox="0 0 28 28"><path d="M14 4C8 4 3.5 7.9 3.5 12.8c0 2.6 1.3 5 3.5 6.6-.2 1.6-1 3.2-2.3 4.3 2.4 0 4.6-.9 6.1-2.3 1 .2 2.1.4 3.2.4 6 0 10.5-3.9 10.5-8.9S20 4 14 4z" fill="currentColor"/></svg></span><span class="lbl">Chat</span><b class="badge-n" id="home-badge" hidden></b></button>
+        <button class="app-ic" data-open="calls"><span class="ic ic-calls"><svg viewBox="0 0 28 28"><path d="M9.2 4.3c.6-.2 1.3.1 1.6.7l2 4.3c.3.6.1 1.3-.4 1.7l-2 1.6c1.1 2.4 3 4.3 5.4 5.4l1.6-2c.4-.5 1.1-.7 1.7-.4l4.3 2c.6.3.9 1 .7 1.6l-.9 2.9c-.2.6-.8 1-1.4 1C11.7 22.9 5.1 16.3 4.9 8.2c0-.6.4-1.2 1-1.4z" fill="currentColor"/></svg></span><span class="lbl">Chiamate</span></button>
+        <button class="app-ic" data-open="images"><span class="ic ic-photos"><svg viewBox="0 0 40 40"><g transform="translate(20 20)"><ellipse rx="4" ry="9" cy="-7" fill="#ff9f0a" opacity=".9"/><ellipse rx="4" ry="9" cy="-7" fill="#ffd60a" opacity=".9" transform="rotate(45)"/><ellipse rx="4" ry="9" cy="-7" fill="#30d158" opacity=".9" transform="rotate(90)"/><ellipse rx="4" ry="9" cy="-7" fill="#64d2ff" opacity=".9" transform="rotate(135)"/><ellipse rx="4" ry="9" cy="-7" fill="#0a84ff" opacity=".9" transform="rotate(180)"/><ellipse rx="4" ry="9" cy="-7" fill="#bf5af2" opacity=".9" transform="rotate(225)"/><ellipse rx="4" ry="9" cy="-7" fill="#ff375f" opacity=".9" transform="rotate(270)"/><ellipse rx="4" ry="9" cy="-7" fill="#ff453a" opacity=".9" transform="rotate(315)"/></g></svg></span><span class="lbl">Galleria</span></button>
+        <button class="app-ic" data-open="account"><span class="ic ic-settings"><svg viewBox="0 0 28 28"><path d="M14 9.2a4.8 4.8 0 100 9.6 4.8 4.8 0 000-9.6zm0 7.2a2.4 2.4 0 110-4.8 2.4 2.4 0 010 4.8z" fill="currentColor"/><path d="M24 15.3v-2.6l-2.6-.6a7.6 7.6 0 00-.8-1.9l1.4-2.3-1.8-1.8-2.3 1.4c-.6-.3-1.2-.6-1.9-.8L15.3 4h-2.6l-.6 2.7c-.7.2-1.3.4-1.9.8L7.9 6.1 6.1 7.9l1.4 2.3c-.3.6-.6 1.2-.8 1.9l-2.7.6v2.6l2.7.6c.2.7.4 1.3.8 1.9l-1.4 2.3 1.8 1.8 2.3-1.4c.6.3 1.2.6 1.9.8l.6 2.7h2.6l.6-2.7c.7-.2 1.3-.4 1.9-.8l2.3 1.4 1.8-1.8-1.4-2.3c.3-.6.6-1.2.8-1.9z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg></span><span class="lbl">Impostazioni</span></button>
+      </div>
+    </section>
+
     <header class="topbar">
+      <button id="home-link" class="home-link" type="button" aria-label="Torna alla Home"><svg viewBox="0 0 12 20"><path d="M10 2L2 10l8 8" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Home</span></button>
       <button id="back-btn" class="icon" hidden aria-label="Indietro">‹</button>
       <div id="wa-photo" class="wa-photo" aria-hidden="true"></div>
       <div class="wa-title"><h2 id="title">Chat</h2><span id="wa-status" class="wa-status">online</span></div>
@@ -66,11 +94,14 @@
     </header>
 
     <main>
+      <h1 id="large-title" class="large-title">Chat</h1>
       <!-- elenco personaggi -->
       <div id="tab-chat" class="tab">
-        <div id="key-warning" class="notice" hidden>🔑 Inserisci la tua chiave xAI in <b>Account</b> per usare chat e immagini su questo dispositivo.</div>
+        <div id="key-warning" class="notice" hidden>🔑 Inserisci la tua chiave xAI in <b>Impostazioni</b> per usare chat e immagini su questo dispositivo.</div>
         <ul id="char-list" class="list"></ul>
-        <button id="new-char" class="primary block">＋ Nuovo personaggio</button>
+        <div class="new-row"><button id="new-char" class="primary block">＋ Nuovo</button></div>
+        <div id="preset-row" class="preset-row" aria-label="Modelli pronti"></div>
+        <p id="admin-note-chars" class="admin-note" hidden>🔒 Solo Nicola può modificare personaggi, regole e impostazioni. Tu puoi chattare, chiamare, usare la Galleria e regalare memorie.</p>
       </div>
 
       <!-- conversazione -->
@@ -101,13 +132,13 @@
           <div id="act-menu" class="scene-menu" hidden>
             <div id="act-list" class="act-list"></div>
             <label class="switch small"><input type="checkbox" id="act-auto" checked> Azioni spontanee quando è inattiva</label>
-            <button type="button" id="act-prepare">✨ Prepara azioni…</button>
+            <button type="button" id="act-prepare" class="admin-ctl">✨ Prepara azioni…</button>
             <p id="act-info"></p>
           </div>
           <div id="scene-menu" class="scene-menu" hidden>
             <button type="button" id="scene-toggle">🏠 Mostrala nel soggiorno</button>
-            <button type="button" id="scene-gen">✨ Crea il soggiorno con l'IA</button>
-            <button type="button" id="scene-gestures" hidden>🎬 Prepara i gesti al tavolo</button>
+            <button type="button" id="scene-gen" class="admin-ctl">✨ Crea il soggiorno con l'IA</button>
+            <button type="button" id="scene-gestures" class="admin-ctl" hidden>🎬 Prepara i gesti al tavolo</button>
             <p id="scene-info"></p>
           </div>
         </div>
@@ -117,7 +148,7 @@
           <button type="button" id="tts-btn" title="Leggi le risposte ad alta voce">🔇 <span>Lettura: off</span></button>
           <label class="switch small"><input type="checkbox" id="auto-send" checked> Invio automatico</label>
           <button type="button" id="presence-btn" class="cam-only" hidden title="Presenza: lei nella stanza">📷 Presenza</button>
-          <button type="button" id="clear-chat" title="Cancella conversazione">🗑️</button>
+          <button type="button" id="clear-chat" class="admin-ctl" title="Cancella conversazione">🗑️</button>
         </div>
         <p id="voice-status" class="muted small" hidden></p>
         <div id="messages" class="messages"></div>
@@ -129,8 +160,30 @@
         </form>
       </div>
 
+      <!-- v8.4: chiamate recenti -->
+      <div id="tab-calls" class="tab" hidden>
+        <div class="seg" id="calls-seg"><button class="on" data-f="all">Tutte</button><button data-f="video">Video</button><button data-f="voice">Vocali</button></div>
+        <ul id="calls-list" class="ios-list calls-list"></ul>
+        <p class="muted small center-text">Tocca una riga per richiamare. Le chiamate restano solo nel tuo profilo.</p>
+      </div>
+
       <!-- immagini -->
       <div id="tab-images" class="tab" hidden>
+        <div class="seg" id="gal-seg"><button class="on" data-g="photos">Foto</button><button data-g="create">Crea con l'IA</button></div>
+        <div id="gal-photos">
+          <div class="gal-toolbar"><button type="button" id="gal-add" class="primary">＋ Aggiungi</button><span id="gal-count" class="muted small"></span></div>
+          <input type="file" id="gal-file" accept="image/*,video/*" multiple hidden>
+          <p class="gal-note muted small">📱 Su iPhone le app web vedono solo le foto e i video che scegli tu con «Aggiungi»: vengono copiati qui, in uno spazio privato del tuo profilo (gli originali restano nel rullino).</p>
+          <div id="gal-progress" class="gal-progress" hidden><span></span></div>
+          <h3 class="sec-h">Dal telefono</h3>
+          <div id="gal-phone" class="pgrid"></div>
+          <h3 class="sec-h">Nell'app</h3>
+          <div id="gal-app" class="pgrid"></div>
+          <details id="gal-trash-box" class="gal-trash" hidden><summary>🗑️ Eliminati di recente <span id="gal-trash-n" class="muted small"></span></summary>
+            <p class="muted small">Restano qui 30 giorni, poi vengono eliminati. Tocca per ripristinare.</p>
+            <div id="gal-trash" class="pgrid"></div></details>
+        </div>
+        <div id="gal-create" hidden>
         <form id="img-form" class="card">
           <label>Descrivi l'immagine
             <textarea id="img-prompt" rows="3" required placeholder="Es. tramonto romantico su una terrazza a Positano, stile fotografico"></textarea>
@@ -178,6 +231,7 @@
 
         <video id="cam-video" playsinline muted hidden></video>
         <div id="gallery" class="gallery"></div>
+        </div>
       </div>
 
       <!-- diario: bacheca privata di coppia -->
@@ -216,6 +270,13 @@
             <input type="range" id="voice-speed" min="0.8" max="1.3" step="0.05"></label>
           <button id="voice-test" type="button" class="block">▶️ Prova la voce</button>
           <p id="voice-info" class="muted small"></p>
+          <label>Chiamate e videochiamate
+            <select id="call-engine">
+              <option value="realtime">⚡ Conversazione in tempo reale (come Grok)</option>
+              <option value="classic">🎙️ Classica (riconoscimento del telefono + voce)</option>
+            </select></label>
+          <p id="call-engine-info" class="muted small">In tempo reale lei ti sente mentre parli, risponde appena finisci e si ferma se parli sopra di lei. Il telefono si collega direttamente a xAI con un token valido 60 secondi: la tua chiave resta sul telefono. Se il collegamento non riesce si passa da soli alla chiamata classica.</p>
+          <p id="latency-info" class="muted small"></p>
         </div>
 
         <div class="card">
@@ -315,11 +376,27 @@
     </main>
 
     <nav class="tabbar">
-      <button data-tab="chat" class="active">💬<span>Chat</span></button>
-      <button data-tab="feed">📔<span>Diario</span></button>
-      <button data-tab="images">🖼️<span>Immagini</span></button>
-      <button data-tab="account">👤<span>Account</span></button>
+      <button data-tab="chat" class="active"><svg viewBox="0 0 28 28"><path d="M14 4C8 4 3.5 7.9 3.5 12.8c0 2.6 1.3 5 3.5 6.6-.2 1.6-1 3.2-2.3 4.3 2.4 0 4.6-.9 6.1-2.3 1 .2 2.1.4 3.2.4 6 0 10.5-3.9 10.5-8.9S20 4 14 4z" fill="currentColor"/></svg><span>Chat</span></button>
+      <button data-tab="calls"><svg viewBox="0 0 28 28"><path d="M9.2 4.3c.6-.2 1.3.1 1.6.7l2 4.3c.3.6.1 1.3-.4 1.7l-2 1.6c1.1 2.4 3 4.3 5.4 5.4l1.6-2c.4-.5 1.1-.7 1.7-.4l4.3 2c.6.3.9 1 .7 1.6l-.9 2.9c-.2.6-.8 1-1.4 1C11.7 22.9 5.1 16.3 4.9 8.2c0-.6.4-1.2 1-1.4z" fill="currentColor"/></svg><span>Chiamate</span></button>
+      <button data-tab="images"><svg viewBox="0 0 28 28"><rect x="3.5" y="5.5" width="21" height="17" rx="3.5" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="10" cy="11" r="2.2" fill="currentColor"/><path d="M5 20.5l5.5-5.5 4 4 3-3 5.5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg><span>Galleria</span></button>
+      <button data-tab="feed" hidden>📔<span>Diario</span></button>
+      <button data-tab="account"><svg viewBox="0 0 28 28"><path d="M14 9.2a4.8 4.8 0 100 9.6 4.8 4.8 0 000-9.6zm0 7.2a2.4 2.4 0 110-4.8 2.4 2.4 0 010 4.8z" fill="currentColor"/><path d="M24 15.3v-2.6l-2.6-.6a7.6 7.6 0 00-.8-1.9l1.4-2.3-1.8-1.8-2.3 1.4c-.6-.3-1.2-.6-1.9-.8L15.3 4h-2.6l-.6 2.7c-.7.2-1.3.4-1.9.8L7.9 6.1 6.1 7.9l1.4 2.3c-.3.6-.6 1.2-.8 1.9l-2.7.6v2.6l2.7.6c.2.7.4 1.3.8 1.9l-1.4 2.3 1.8 1.8 2.3-1.4c.6.3 1.2.6 1.9.8l.6 2.7h2.6l.6-2.7c.7-.2 1.3-.4 1.9-.8l2.3 1.4 1.8-1.8-1.4-2.3c.3-.6.6-1.2.8-1.9z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg><span>Impostazioni</span></button>
     </nav>
+    <button id="home-ind" class="home-ind" type="button" aria-label="Torna alla Home"><i></i></button>
+
+    <!-- v8.4: visore a tutto schermo della Galleria (scorri per cambiare foto) -->
+    <div id="viewer" class="viewer" hidden>
+      <div class="vw-top"><button type="button" id="vw-close" class="vw-btn">Chiudi</button><span id="vw-title" class="vw-title"></span><span id="vw-pos" class="vw-pos"></span></div>
+      <div id="vw-track" class="vw-track"></div>
+      <div class="vw-bar">
+        <button type="button" id="vw-share" class="vw-ic" aria-label="Condividi o salva"><svg viewBox="0 0 28 28"><path d="M14 3v15M9 8l5-5 5 5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 12H6.5A2.5 2.5 0 004 14.5v8A2.5 2.5 0 006.5 25h15a2.5 2.5 0 002.5-2.5v-8a2.5 2.5 0 00-2.5-2.5H20" fill="none" stroke="currentColor" stroke-width="2.2"/></svg></button>
+        <button type="button" id="vw-avatar" class="vw-txt">Usa come foto avatar</button>
+        <button type="button" id="vw-send" class="vw-txt">Invia in chat</button>
+        <button type="button" id="vw-del" class="vw-ic danger" aria-label="Elimina"><svg viewBox="0 0 28 28"><path d="M5 7h18M11 7V4.5h6V7M7.5 7l1.2 16a2 2 0 002 1.8h6.6a2 2 0 002-1.8L20.5 7" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      </div>
+    </div>
+    <!-- foglio azioni stile iOS -->
+    <div id="sheet" class="sheet" hidden><div class="sheet-box"><div id="sheet-body" class="sheet-body"></div><button type="button" id="sheet-cancel" class="sheet-cancel">Annulla</button></div></div>
   </section>
 
   <!-- editor personaggio -->
@@ -353,6 +430,9 @@
         <label>Nome <input name="name" required maxlength="60"></label>
         <label>Personalità / istruzioni <textarea name="personality" rows="4" placeholder="Chi è, come si comporta, cosa le/gli piace…"></textarea></label>
         <label>Stile <textarea name="style" rows="2" placeholder="Tono, lunghezza delle risposte, emoji…"></textarea></label>
+        <button type="button" id="fill-base" class="link fill-base" hidden>✍️ Riempi con base (solo i campi vuoti)</button>
+        <label>Voce <select name="voice" id="char-voice"><option value="">Come nelle Impostazioni</option><option value="ara">Ara — calda</option><option value="eve">Eve — vivace</option><option value="una">Una — decisa</option><option value="sal">Sal — pacata</option></select></label>
+        <p id="preset-hint" class="notice small" hidden></p>
       </details>
 
       <details><summary>Avatar animato</summary>
@@ -395,6 +475,10 @@
         </div>
       </details>
 
+      <div id="frame-box" class="frame-box" hidden>
+        <p class="muted small" id="frame-info">La foto non è in formato 9:16: la cornice la riempie da sola (taglio leggero e bordi in tinta, niente sfocature).</p>
+        <div class="row"><button type="button" id="frame-fit" class="admin-ctl">🖼️ Adatta alla cornice</button><button type="button" id="frame-undo" class="admin-ctl" hidden>↩︎ Foto originale</button></div>
+      </div>
       <details><summary>Identità base</summary>
         <p class="muted small">Descrizione fissa del volto, riusata in ogni rigenerazione perché resti riconoscibile.</p>
         <textarea data-id="core" rows="3" placeholder="Es. viso ovale, occhi verdi a mandorla, lentiggini leggere, capelli castano ramati, piccolo neo sopra il labbro"></textarea>
@@ -505,7 +589,12 @@
   <script src="/js/motion.js"></script>
   <script src="/js/stage.js"></script>
   <script src="/js/actions.js"></script>
+  <script src="/js/realtime.js"></script>
   <script src="/js/call.js"></script>
+  <script src="/js/ios.js"></script>
+  <script src="/js/gallery.js"></script>
+  <script src="/js/presets.js"></script>
+  <script src="/js/frame.js"></script>
   <script src="/js/live.js" type="module"></script>
   <script src="/js/main.js"></script>
 </body>

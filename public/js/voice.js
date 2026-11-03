@@ -4,6 +4,8 @@
 (function () {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   let rec = null, on = false, pausedForTTS = false, ttsOn = false;
+  let lastResAt = 0, eosT = 0, early = ''; // v8.4: fine del parlato anticipata (chiamate)
+  const norm = (t) => String(t || '').toLowerCase().replace(/[^\p{L}\d ]+/gu, '').replace(/\s+/g, ' ').trim();
   // ---- v7.3: sblocco dell'audio su iPhone ----
   // iOS Safari/PWA: la sintesi vocale e l'audio Web restano muti finché non partono la prima volta DENTRO un tocco dell'utente.
   // Le risposte arrivano dopo una richiesta di rete (fuori dal tocco), quindi senza sblocco la prima lettura veniva scartata in silenzio.
@@ -84,6 +86,8 @@
       const re = /[.!?…]+["»”')]*\s+|\n+/g; let m, last = 0, acc = '';
       while ((m = re.exec(this.buf))) { acc += this.buf.slice(last, m.index + m[0].length); last = m.index + m[0].length; if (acc.trim().length >= (this.sent === 0 ? 16 : 80)) { this.enqueue(acc); acc = ''; } }
       this.buf = acc + this.buf.slice(last);
+      // v8.4: la prima frase parte anche a una virgola (dopo ~5 parole), così la voce inizia prima
+      if (!force && this.sent === 0) { const c = this.buf.search(/[,;:]\s/); if (c >= 28 && c < 160) { this.enqueue(this.buf.slice(0, c + 1)); this.buf = this.buf.slice(c + 2); } }
       if (!force && this.buf.length > 420) { const cut = Math.max(this.buf.lastIndexOf(', ', 400), this.buf.lastIndexOf(' ', 400)); if (cut > 40) { this.enqueue(this.buf.slice(0, cut + 1)); this.buf = this.buf.slice(cut + 1); } }
       if (force && this.buf.trim()) { this.enqueue(this.buf); this.buf = ''; }
     },
@@ -116,12 +120,12 @@
       const a = this.audio();
       a.onended = () => { if (item.gen === this.gen) this.next(); };
       a.onerror = () => { if (item.gen === this.gen && a.src === res.url) this.next(); };
-      a.onplaying = () => { App.audio.hint(false); App.audio.unlocked = true; this.lips(a, res.env, item.text); pauseRec(); };
+      a.onplaying = () => { App.audio.hint(false); App.audio.unlocked = true; this.lips(a, res.env, item.text); pauseRec(); if (App.latency && App.latency.mark) { const ms = performance.now() - App.latency.mark; App.latency.mark = 0; if (ms > 0 && ms < 30000) App.latency.add('classica', ms); } };
       a.src = res.url; try { a.volume = NX.volume == null ? 1 : NX.volume; } catch {} // v8.2: altoparlante in chiamata vocale
       if (!this.lipsOn) { // v8.1: prima della prima frase prende fiato (bocca appena socchiusa), come una persona vera
         const avs = [App.avatarConv, App.avatarPresence].filter((x) => x && x.breathM);
         avs.forEach((x) => x.breathM.preInhale(performance.now()));
-        if (avs.length) { await new Promise((r) => setTimeout(r, 300)); if (item.gen !== this.gen) return; }
+        if (avs.length) { await new Promise((r) => setTimeout(r, App.call && App.call.active ? 90 : 300)); if (item.gen !== this.gen) return; } // in chiamata: respiro più breve
       }
       try { await a.play(); } catch (e) {
         if (item.gen !== this.gen) return;
@@ -183,17 +187,28 @@
   function build() {
     rec = new SR(); rec.lang = 'it-IT'; rec.continuous = true; rec.interimResults = true;
     rec.onresult = (e) => {
-      let interim = '';
+      let interim = ''; lastResAt = performance.now(); clearTimeout(eosT);
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const r = e.results[i];
         if (r.isFinal) {
-          const t = r[0].transcript.trim(); if (!t) continue;
+          let t = r[0].transcript.trim(); if (!t) continue;
+          if (early) { // v8.4: già inviato in anticipo dopo 600 ms di silenzio: manda solo l'eventuale parte nuova
+            const a = norm(early), b = norm(t), nw = early.split(/\s+/).length; early = '';
+            if (b === a || a.startsWith(b)) continue;
+            if (b.startsWith(a)) { t = t.split(/\s+/).slice(nw).join(' ').trim(); if (!t) continue; }
+          }
+          if (App.latency) App.latency.mark = App.latency.mark || lastResAt;
           if ($('#auto-send').checked) { $('#chat-input').value = ''; App.chat.send(t); }
           else { const inp = $('#chat-input'); inp.value = (inp.value ? inp.value + ' ' : '') + t; }
         } else interim += r[0].transcript;
       }
       status(interim ? '🎙️ ' + interim : '🎙️ In ascolto…');
       if (interim && App.call) App.call.onInterim(interim); // v8: annuisce mentre parli (videochiamata)
+      // v8.4: fine del parlato più rapida in chiamata: ~600 ms senza nuove parole = turno finito (non si aspetta il "final" del browser)
+      if (interim.trim() && App.call && App.call.active && $('#auto-send').checked) {
+        const snap = interim.trim(), at = lastResAt;
+        eosT = setTimeout(() => { if (!on || lastResAt !== at || App.chat.busy) return; early = snap; if (App.latency) App.latency.mark = at; $('#chat-input').value = ''; App.chat.send(snap); }, 600);
+      }
     };
     rec.onerror = (e) => {
       if (e.error === 'not-allowed' || e.error === 'service-not-allowed') { on = false; setBtn(); status('Permesso microfono negato.'); }
@@ -204,7 +219,7 @@
   App.voice = {
     start() {
       if (!SR) { status('Il riconoscimento vocale non è supportato da questo browser (su iPhone il supporto è parziale). Puoi usare il microfono della tastiera.'); return; }
-      if (!App.ls.get('micOn', false)) return App.toast('Attiva il microfono in Account');
+      if (!App.ls.get('micOn', false)) return App.toast('Attiva il microfono in Impostazioni');
       if (!rec) build();
       on = true; setBtn(); status('🎙️ In ascolto…'); try { rec.start(); } catch {}
     },
@@ -240,7 +255,7 @@
   App.voice.init = () => { ttsOn = App.ls.get('tts', true) && (!!SS || NX.enabled()); setBtn(); loadVoices(); };
   const au = document.getElementById('audio-unlock');
   if (au) au.addEventListener('click', (e) => { e.stopPropagation(); App.audio.unlock(); if (NX.playing || NX.q.length) return; if (performance.now() - (App.audio._spokeAt || 0) > 1500 && lastSpoken && SS && !SS.speaking) { App.audio._spokeAt = performance.now(); speakNow(lastSpoken.text, { ...lastSpoken.opts, sync: true }); } });
-  // ---- v8: impostazioni voce (Account) ----
+  // ---- v8: impostazioni voce (Impostazioni) ----
   (function voiceSettings() {
     const eng = document.getElementById('voice-engine'), vid = document.getElementById('voice-id'), sp = document.getElementById('voice-speed');
     if (!eng) return;
@@ -259,6 +274,14 @@
       } catch { loaded = false; }
       show();
     };
+    const ce = document.getElementById('call-engine'), li = document.getElementById('latency-info');
+    const showLat = () => {
+      if (ce) { ce.value = App.ls.get('callEngine', 'realtime'); if (App.rt && !App.rt.supported()) { ce.value = 'classic'; ce.disabled = true; } }
+      if (li && App.latency) { const a = App.latency.median('tempo reale'), b = App.latency.median('classica'); li.textContent = a || b ? `Ritardo misurato su questo telefono (da quando smetti di parlare alla sua voce, mediana): ${a ? 'tempo reale ' + (a / 1000).toFixed(2) + ' s' : ''}${a && b ? ' · ' : ''}${b ? 'classica ' + (b / 1000).toFixed(2) + ' s' : ''}` : ''; }
+    };
+    if (ce) ce.addEventListener('change', () => { App.ls.set('callEngine', ce.value); showLat(); });
+    const tabA = document.querySelector('[data-tab="account"]'); if (tabA) tabA.addEventListener('click', showLat);
+    setTimeout(showLat, 0);
     eng.addEventListener('change', () => { App.ls.set('voiceEngine', eng.value); NX.fails = 0; show(); loadVoices(); });
     vid.addEventListener('change', () => { App.ls.set('ttsVoice', vid.value); show(); });
     sp.addEventListener('input', () => { App.ls.set('ttsSpeed', Number(sp.value)); show(); });

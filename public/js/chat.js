@@ -11,7 +11,11 @@ App.chat = {
   async open(id) {
     const ch = App.charById(id); if (!ch) return;
     App.current = ch;
-    $('#tab-chat').hidden = true; $('#tab-conv').hidden = false; $('#back-btn').hidden = false; $('#title').textContent = ch.name;
+    if (App.home) App.home.hide();
+    ['chat', 'calls', 'feed', 'images', 'account'].forEach((n) => { const el = $(`#tab-${n}`); if (el) el.hidden = true; });
+    $$('.tabbar button').forEach((x) => x.classList.toggle('active', x.dataset.tab === 'chat'));
+    $('#tab-conv').hidden = false; $('#back-btn').hidden = false; $('#title').textContent = ch.name;
+    document.body.dataset.tab = 'conv'; $('#large-title').hidden = true;
     const shown = App.previews[ch.id] ? { ...ch, avatar: App.previews[ch.id].dataUrl } : ch;
     App.avatarConv.setCharacter(shown);
     App.scene && App.scene.apply();
@@ -25,6 +29,7 @@ App.chat = {
     App.stageFs && App.stageFs.exit(); $('#scene-menu').hidden = true; $('#act-menu').hidden = true; App.avatarConv.stopAction(true);
     App.current = null; App.voice && App.voice.stop(); App.voice && App.voice.cancel ? App.voice.cancel() : window.speechSynthesis && window.speechSynthesis.cancel();
     $('#tab-conv').hidden = true; $('#tab-chat').hidden = false; $('#back-btn').hidden = true; $('#title').textContent = 'Chat';
+    document.body.dataset.tab = 'chat'; $('#large-title').hidden = false; $('#large-title').textContent = 'Chat';
     this.setTyping(null); this.renderList(); document.body.classList.remove('wa-conv');
   },
   // Nome visibile dell'autore: Nico / Luisa / nome del personaggio
@@ -44,7 +49,16 @@ App.chat = {
     // v8.2: ora e spunte in basso a destra, come su WhatsApp (✓ inviato · ✓✓ salvato in chat · ✓✓ blu letto/risposto)
     const meta = document.createElement('span'); meta.className = 'meta';
     meta.innerHTML = `${m.call ? (m.callMode === 'voice' ? '📞 ' : '📹 ') : ''}<time>${m.at ? new Date(m.at).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }) : ''}</time>${mine && !m.local ? '<i class="ticks">✓</i>' : ''}`;
-    d.append(who, body, meta);
+    if (m.photo && (m.photo.file || m.photo.localSrc)) { // v8.4: foto/video dalla Galleria
+      const f = m.photo, box = document.createElement('div'); box.className = 'msg-media';
+      const src = f.localSrc || '/api/chat-media/' + f.file, th = f.localThumb || (f.thumb ? '/api/chat-media/' + f.thumb : null);
+      if (f.kind === 'video') box.innerHTML = `<video src="${esc(src)}" ${th ? `poster="${esc(th)}"` : ''} controls playsinline preload="metadata"></video>`;
+      else { box.innerHTML = `<img src="${esc(th || src)}" alt="Foto" loading="lazy">`; box.onclick = () => App.gallery && App.gallery.viewChat(f); }
+      if (f.w && f.h) box.style.aspectRatio = `${f.w} / ${f.h}`;
+      d.classList.add('has-media'); d.append(who, box);
+      if (m.content) d.append(body);
+      d.append(meta);
+    } else d.append(who, body, meta);
     const pin = document.createElement('button'); pin.className = 'pin'; pin.type = 'button'; pin.textContent = '📌'; pin.title = 'Ricorda questo';
     pin.onclick = () => { const t = prompt('Cosa devo ricordare?', body.textContent.slice(0, 280)); if (t) App.account.remember(t); };
     d.appendChild(pin); $('#messages').appendChild(d); return d;
@@ -102,19 +116,20 @@ App.chat = {
   },
   visible() { return !!App.current && !document.hidden && !$('#tab-conv').hidden; },
   // noAI = true: "solo messaggio" all'altra persona, l'IA non risponde (non serve la chiave).
-  async send(text, noAI = false) {
-    text = (text || '').trim(); if (!text || !App.current || this.busy) return;
-    if (this.pendingAdult) return this.answerAdult(text); // risposta sì/no alla domanda di conferma (resta sul telefono)
-    if (App.kwSet && text.length <= 80) { // parola chiave: confronto sul server (hash), mai in chat né all'IA
+  async send(text, noAI = false, photo = null) {
+    text = (text || '').trim(); if ((!text && !photo) || !App.current || this.busy) return;
+    if (!photo && this.pendingAdult) return this.answerAdult(text); // risposta sì/no alla domanda di conferma (resta sul telefono)
+    if (!photo && App.kwSet && text.length <= 80) { // parola chiave: confronto sul server (hash), mai in chat né all'IA
       try { const k = await App.api('/api/adult-keyword/check', { method: 'POST', body: { text } }); if (k.match) return this.askAdult(k.token); } catch { /* prosegui */ }
     }
-    if (!noAI && !App.key()) return App.toast('🔑 Inserisci la chiave xAI in Account (oppure usa 💬 per scrivere solo all\'altra persona)');
+    if (!noAI && !App.key()) return App.toast('🔑 Inserisci la chiave xAI in Impostazioni (oppure usa 💬 per scrivere solo all\'altra persona)');
     this.busy = true; const ch = App.current;
     const meName = App.me.name;
-    const local = this.addMsg({ role: 'user', author: App.me.user, authorName: meName, content: text, noAI, at: new Date().toISOString() });
+    const local = this.addMsg({ role: 'user', author: App.me.user, authorName: meName, content: text, noAI, at: new Date().toISOString(), ...(photo ? { photo: { localSrc: photo.url, localThumb: photo.thumb, kind: photo.kind, w: photo.w, h: photo.h } } : {}) });
+    const ph = photo ? { photo: { gid: photo.id } } : {};
     this.scroll();
     if (noAI) {
-      try { const r = await App.api(`/api/chats/${ch.id}`, { method: 'POST', body: { message: text, noAI: true } }); if (r.keyword) { local.remove(); this.busy = false; return this.askAdult(r.token); } this.claim(local, r.message.id); }
+      try { const r = await App.api(`/api/chats/${ch.id}`, { method: 'POST', body: { message: text, noAI: true, ...ph } }); if (r.keyword) { local.remove(); this.busy = false; return this.askAdult(r.token); } this.claim(local, r.message.id); }
       catch (e) { local.querySelector('.body').textContent += `\n⚠️ ${e.message}`; }
       this.busy = false; this.poll(); return;
     }
@@ -124,7 +139,7 @@ App.chat = {
     let reply = '', streamTTS = false;
     const cue = App.chat.cues();
     try {
-      const r = await App.api(`/api/chats/${ch.id}`, { method: 'POST', body: { message: text, ...(App.call && App.call.active ? { call: true, callMode: App.call.mode || 'video' } : {}) }, ai: true, raw: true });
+      const r = await App.api(`/api/chats/${ch.id}`, { method: 'POST', body: { message: text, ...ph, ...(App.call && App.call.active ? { call: true, callMode: App.call.mode || 'video' } : {}) }, ai: true, raw: true });
       if (!r.ok) {
         const j = await r.json().catch(() => ({}));
         if (j.message) this.claim(local, j.message.id); // il tuo messaggio è comunque salvato nella chat condivisa
