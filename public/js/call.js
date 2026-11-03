@@ -5,6 +5,7 @@
   const stage = $('#stage'), ui = $('#call-ui');
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   let on = false, t0 = 0, tick = 0, prevTts = null, prevAuto = null, cam = null, muted = false, lastNod = 0;
+  let mode = 'video', speaker = true, raf = 0, amp = 0; // v8.2: 'voice' = chiamata vocale stile WhatsApp, 'video' = videochiamata
   const fmt = (ms) => { const s = Math.floor(ms / 1000); return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0'); };
   const GREET = ['Ehi, ciao!', 'Eccomi! Ciao.', 'Ehi! Come va?', 'Ciao, che bello vederti!', 'Ciao {n}!', 'Eccomi... ciao!']; // v8.1: il nome solo ogni tanto
   function state() {
@@ -12,14 +13,56 @@
     $('#call-timer').textContent = fmt(Date.now() - t0);
     const speaking = (App.tts && App.tts.playing) || App.avatarConv.speaking || (window.speechSynthesis && window.speechSynthesis.speaking);
     const micOk = SR && App.voice.listening && App.voice.listening();
-    const st = App.chat.busy ? 'Sta pensando…' : speaking ? 'Sta parlando… (tocca per interrompere)' : muted ? 'Microfono spento' : !micOk ? 'Scrivi qui sotto (o usa il 🎙️ della tastiera)' : 'Ti ascolto…';
+    const st = App.chat.busy ? 'Sta pensando…' : speaking ? 'Sta parlando…' : muted ? 'Microfono spento' : !micOk ? 'Scrivi qui sotto (o usa il 🎙️ della tastiera)' : 'Ti ascolto…';
     $('#call-text').hidden = !!micOk || muted;
     $('#call-state').textContent = st;
     ui.classList.toggle('speaking', !!speaking); ui.classList.toggle('thinking', !!App.chat.busy);
     $('#call-mute').classList.toggle('off', muted); $('#call-mute').textContent = muted ? '🔇' : '🎙️';
   }
-  async function start() {
+  // v8.2: modalità della chiamata (si può passare da vocale a video col tasto verde, il timer continua)
+  function setMode(m) {
+    mode = m === 'voice' ? 'voice' : 'video';
+    stage.classList.toggle('voice', mode === 'voice'); ui.classList.toggle('voice', mode === 'voice');
+    $('#call-kind').textContent = mode === 'voice' ? 'Chiamata vocale' : 'Videochiamata';
+    $('#call-portrait').hidden = mode !== 'voice';
+    $('#call-tovideo').hidden = mode !== 'voice'; $('#call-speaker').hidden = mode !== 'voice';
+    $('#call-cam').hidden = mode === 'voice'; $('#call-cc').hidden = mode === 'voice';
+    if (mode === 'voice') { stopCam(); $('#call-caption').hidden = true; }
+    App.call.mode = mode;
+    cancelAnimationFrame(raf); if (mode === 'voice') raf = requestAnimationFrame(portrait);
+    requestAnimationFrame(() => App.fitFrame && App.fitFrame());
+    if (on) { state(); App.chat.header && App.chat.header(); }
+  }
+  // Ritratto rotondo: copiato a ogni fotogramma dal canvas dell'avatar (respiro, labiale, sguardo continuano);
+  // l'alone pulsa con la voce. Il canvas grande resta dietro, sfocato, a tutto schermo.
+  function portrait() {
+    if (!on || mode !== 'voice') return;
+    raf = requestAnimationFrame(portrait);
+    const av = App.avatarConv, src = av.c, out = $('#call-face'), x = out.getContext('2d');
+    const P = out.width; x.clearRect(0, 0, P, P);
+    let sx = 0, sy = 0, sw = Math.min(src.width, src.height), cx = src.width / 2, cy = src.height * 0.32;
+    const b = av._bounds, img = av.img, lm = av.lm;
+    if (b && b.x1 !== undefined && img && img.naturalWidth && lm && lm.eyeL) {
+      const nw = img.naturalWidth, nh = img.naturalHeight, s = Math.min(nw, nh), ox = (nw - s) / 2, oy = (nh - s) / 2, k = (b.x1 - b.x0) / nw;
+      const X = (p) => b.x0 + (p.x * s + ox) * k, Y = (p) => b.y0 + (p.y * s + oy) * k;
+      const ed = Math.hypot(X(lm.eyeR) - X(lm.eyeL), Y(lm.eyeR) - Y(lm.eyeL));
+      cx = (X(lm.eyeL) + X(lm.eyeR)) / 2; cy = (Y(lm.eyeL) + Y(lm.eyeR) + 2 * Y(lm.mouth)) / 4;
+      sw = Math.max(40, Math.min(ed * 4.4, b.x1 - b.x0, b.y1 - b.y0));
+    }
+    sx = Math.max(0, Math.min(src.width - sw, cx - sw / 2)); sy = Math.max(0, Math.min(src.height - sw, cy - sw / 2));
+    try { x.drawImage(src, sx, sy, sw, sw, 0, 0, P, P); } catch {}
+    const tg = Math.max(0, Math.min(1, av.mouth * 1.6)); amp += (tg - amp) * (tg > amp ? 0.35 : 0.08);
+    $('#call-portrait').style.setProperty('--amp', amp.toFixed(3));
+  }
+  // Altoparlante: dove il browser lo permette (iPhone: sessione audio "play-and-record" = auricolare), altrimenti volume ridotto
+  function setSpeaker(v) {
+    speaker = v; const b = $('#call-speaker'); b.classList.toggle('on', v); b.textContent = v ? '🔊' : '🔈';
+    try { if (navigator.audioSession) navigator.audioSession.type = v ? 'playback' : 'play-and-record'; } catch {}
+    if (App.tts) App.tts.volume = v ? 1 : 0.45;
+  }
+  async function start(m) {
     const ch = App.current; if (!ch) return;
+    if (on) return setMode(m || mode);
     if (!App.key()) return App.toast('🔑 Per la videochiamata serve la chiave xAI (Account)');
     if (SR && !App.ls.get('micOn', false)) {
       if (!confirm('La videochiamata usa il microfono per ascoltarti (il riconoscimento resta sul telefono / nel browser). Attivarlo?')) return;
@@ -29,6 +72,7 @@
     App.audio.unlock(); // dentro il tocco: sblocca l'audio su iPhone
     App.stageFs.exit(); stage.classList.add('fs', 'call'); document.body.classList.add('avatar-fs-on', 'in-call');
     ui.hidden = false; $('#call-name').textContent = ch.name; $('#call-caption').hidden = true;
+    setMode(m || 'video'); speaker = true; $('#call-speaker').classList.add('on'); $('#call-speaker').textContent = '🔊'; if (App.tts) App.tts.volume = 1;
     $('#act-menu').hidden = true; $('#scene-menu').hidden = true;
     prevTts = App.voice.ttsOn(); if (!prevTts) $('#tts-btn').click(); // in chiamata lei parla sempre
     prevAuto = $('#auto-send').checked; $('#auto-send').checked = true;
@@ -38,16 +82,18 @@
     App.avatarConv.react('smile');
     setTimeout(() => { if (on) App.voice.sayNow(greet); }, 350);
     if (SR) setTimeout(() => { if (on && !muted) App.voice.start(); }, 600);
-    clearInterval(tick); tick = setInterval(state, 250); state();
+    clearInterval(tick); tick = setInterval(state, 250); state(); App.chat.header && App.chat.header();
   }
   function end() {
-    if (!on) return; on = false; App.call.active = false;
+    if (!on) return; on = false; App.call.active = false; cancelAnimationFrame(raf);
+    stage.classList.remove('voice'); ui.classList.remove('voice'); App.call.mode = null;
+    try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch {} if (App.tts) App.tts.volume = 1;
     clearInterval(tick); App.voice.stop(); App.voice.cancel();
     stopCam(); ui.hidden = true; stage.classList.remove('fs', 'call'); document.body.classList.remove('avatar-fs-on', 'in-call');
     if (prevTts === false && App.voice.ttsOn()) $('#tts-btn').click();
     if (prevAuto !== null) $('#auto-send').checked = prevAuto;
-    App.toast('📞 Chiamata terminata · ' + fmt(Date.now() - t0));
-    requestAnimationFrame(() => App.fitFrame && App.fitFrame());
+    App.toast((mode === 'voice' ? '📞 Chiamata vocale terminata · ' : '📹 Videochiamata terminata · ') + fmt(Date.now() - t0));
+    requestAnimationFrame(() => App.fitFrame && App.fitFrame()); App.chat.header && App.chat.header();
   }
   async function toggleCam() {
     if (cam) return stopCam();
@@ -62,14 +108,18 @@
   }
   function stopCam() { if (cam) cam.getTracks().forEach((t) => t.stop()); cam = null; const v = $('#call-self'); v.srcObject = null; v.hidden = true; $('#call-cam').classList.remove('on'); }
   App.call = {
-    active: false, start, end,
+    active: false, mode: null, start, end, setMode,
     // mentre parli: ogni tanto annuisce (ascolto attivo), mai a raffica
     onInterim(text) { if (!on || !text) return; const now = Date.now(); if (now - lastNod > 2600 + Math.random() * 1500) { lastNod = now; App.avatarConv.react(Math.random() < 0.75 ? 'nod' : 'tilt'); } },
     // sottotitolo breve della sua risposta (utile anche ad audio spento)
-    caption(text) { if (!on) return; const c = $('#call-caption'); const t = String(text || '').replace(/\s+/g, ' ').trim(); c.hidden = !t || !App.ls.get('callCaptions', true); c.textContent = t.length > 160 ? '…' + t.slice(-158) : t; },
+    caption(text) { if (!on || mode === 'voice') return; const c = $('#call-caption'); const t = String(text || '').replace(/\s+/g, ' ').trim(); c.hidden = !t || !App.ls.get('callCaptions', true); c.textContent = t.length > 160 ? '…' + t.slice(-158) : t; },
   };
-  $('#call-btn').addEventListener('click', (e) => { e.stopPropagation(); start(); });
-  $('#call-btn2').addEventListener('click', (e) => { e.stopPropagation(); start(); });
+  $('#call-btn').addEventListener('click', (e) => { e.stopPropagation(); start('video'); });
+  $('#call-btn2').addEventListener('click', (e) => { e.stopPropagation(); start('video'); });
+  $('#wa-video').addEventListener('click', (e) => { e.stopPropagation(); start('video'); });
+  $('#wa-voice').addEventListener('click', (e) => { e.stopPropagation(); start('voice'); });
+  $('#call-tovideo').addEventListener('click', (e) => { e.stopPropagation(); setMode('video'); });
+  $('#call-speaker').addEventListener('click', (e) => { e.stopPropagation(); setSpeaker(!speaker); });
   $('#call-end').addEventListener('click', (e) => { e.stopPropagation(); end(); });
   $('#call-mute').addEventListener('click', (e) => { e.stopPropagation(); muted = !muted; if (muted) App.voice.stop(); else if (SR) App.voice.start(); state(); });
   $('#call-cam').addEventListener('click', (e) => { e.stopPropagation(); toggleCam(); });

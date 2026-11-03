@@ -1166,8 +1166,8 @@ class NameGuard {
   end() { const f = this.on ? stripVocatives(this.raw, this.user) : this.raw; const o = f.slice(this.sent); this.sent = f.length; this.text = f; return o; }
 }
 // v8: videochiamata (risposte dette a voce), linguaggio del corpo contestuale, fase intima graduale
-function callText(user) {
-  return `SEI IN VIDEOCHIAMATA CON ${USERS[user].name.toUpperCase()}: ti vede e ti sente, e tu rispondi A VOCE (il testo viene letto ad alta voce). Parla come in una vera telefonata, in italiano parlato e spontaneo: di solito 1–3 frasi brevi (al massimo una quarantina di parole), niente elenchi, emoji, asterischi, markdown o descrizioni di azioni tra parentesi. Reagisci prima a quello che ha appena detto, poi rilancia con una domanda o un'osservazione quando ha senso. Usa con misura gli intercalari naturali (beh, dai, sai, mmh) e qualche pausa ("..."). Il suo nome usalo raramente: in una telefonata vera quasi non lo si dice. I messaggi arrivano dal riconoscimento vocale: se una frase sembra spezzata o senza senso, chiedi con naturalezza di ripetere.`;
+function callText(user, mode) {
+  return `${mode === 'voice' ? `SEI IN CHIAMATA VOCALE CON ${USERS[user].name.toUpperCase()} (come una telefonata su WhatsApp: ti sente ma non ti vede, quindi niente riferimenti a quello che vede)` : `SEI IN VIDEOCHIAMATA CON ${USERS[user].name.toUpperCase()}: ti vede e ti sente`}, e tu rispondi A VOCE (il testo viene letto ad alta voce). Parla come in una vera telefonata, in italiano parlato e spontaneo: di solito 1–3 frasi brevi (al massimo una quarantina di parole), niente elenchi, emoji, asterischi, markdown o descrizioni di azioni tra parentesi. Reagisci prima a quello che ha appena detto, poi rilancia con una domanda o un'osservazione quando ha senso. Usa con misura gli intercalari naturali (beh, dai, sai, mmh) e qualche pausa ("..."). Il suo nome usalo raramente: in una telefonata vera quasi non lo si dice. I messaggi arrivano dal riconoscimento vocale: se una frase sembra spezzata o senza senso, chiedi con naturalezza di ripetere.`;
 }
 const BODY_TEXT = `LINGUAGGIO DEL CORPO (visibile sull'avatar, non letto ad alta voce): puoi INIZIARE la risposta con un tag [gesto:annuisce|sorride|ride|inclina|nega|pensa|ammicca|saluta] e/o [umore:allegra|tenera|seria|maliziosa|triste|sorpresa|pensierosa|offesa], scelti in base a ciò che dici e al tono emotivo del momento. Usali solo quando aggiungono qualcosa (non in ogni risposta) e non ripetere lo stesso gesto più volte di fila.`;
 const ADULT_FLOW = `COME SI SVILUPPA L'INTIMITÀ: come tra persone reali, il tono intimo o esplicito deve nascere in modo GRADUALE e naturale dal flusso della conversazione, dall'umore del momento e dal tono reciproco, mai in modo brusco o meccanico (niente frasi fatte o copioni): prima complicità e flirt leggero, poi più intensità solo se l'altra persona ricambia davvero. Ogni tanto verifica con naturalezza che vada bene ("ti va?", "continuo?"). Se l'altra persona rallenta, cambia argomento, è stanca o sembra a disagio, rallenta subito e torna a un tono affettuoso. Una parola volgare o cruda detta fuori contesto NON è un invito: non passare di colpo a contenuti espliciti, rispondi in modo coerente con il momento. Mai insistere.`;
@@ -1190,7 +1190,7 @@ function buildSystem(user, ch, opts = {}) {
     summaryText(ch.id),
     variationText(ch.id),
     styleText(ch.id, user),
-    opts.call && callText(user),
+    opts.call && callText(user, opts.callMode),
     opts.chat && BODY_TEXT,
     actionsPrompt(ch),
     adultChat() ? 'MODALITÀ ADULTI ATTIVA (scelta da entrambi gli utenti, che hanno registrato il consenso vocale): sono ammessi linguaggio esplicito e gioco di ruolo sessuale esplicito tra Nico, Luisa e il personaggio, che è una donna adulta inventata (25+). Resta sempre tutto entro le regole di base qui sotto.\n' + ADULT_FLOW
@@ -1227,7 +1227,7 @@ app.post('/api/chats/:id', auth, requireActivated, (req, res, next) => (req.body
   // con il riassunto: solo i messaggi non ancora riassunti (minimo gli ultimi 12), massimo 40
   const vis = chatNow.messages.filter(visibleMsg), fresh = vis.filter((m) => m.n > upto);
   const history = (fresh.length >= 12 ? fresh : vis.slice(-12)).slice(-40);
-  const messages = [{ role: 'system', content: buildSystem(req.user, ch, { chat: true, call: req.body.call === true }) },
+  const messages = [{ role: 'system', content: buildSystem(req.user, ch, { chat: true, call: req.body.call === true, callMode: req.body.callMode === 'voice' ? 'voice' : 'video' }) },
     ...history.map((m) => (m.role === 'user' ? { role: 'user', content: `${authorLabel(m)}: ${m.content}` } : { role: 'assistant', content: m.content }))];
   const replyId = newId();
   res.setHeader('X-Msg-Id', mine.id); res.setHeader('X-Msg-N', String(mine.n)); res.setHeader('X-Reply-Id', replyId);
@@ -1271,7 +1271,7 @@ app.post('/api/chats/:id', auth, requireActivated, (req, res, next) => (req.body
   // la risposta viene aggiunta in coda alla versione aggiornata della chat (eventuali messaggi arrivati nel frattempo restano)
   if (reply) {
     const t = takeActionTag(reply, ch); // [azione:xxx] -> tolto dal testo, salvato come campo del messaggio (lo vedono entrambi)
-    await appendMsg(id, { id: replyId, role: 'assistant', author: ch.id, content: t.text || reply, extra: { replyTo: req.user, ...(t.action ? { action: t.action } : {}), ...(t.gesture ? { gesture: t.gesture } : {}), ...(t.mood ? { mood: t.mood } : {}), ...(req.body.call === true ? { call: true } : {}) } });
+    await appendMsg(id, { id: replyId, role: 'assistant', author: ch.id, content: t.text || reply, extra: { replyTo: req.user, ...(t.action ? { action: t.action } : {}), ...(t.gesture ? { gesture: t.gesture } : {}), ...(t.mood ? { mood: t.mood } : {}), ...(req.body.call === true ? { call: true, ...(req.body.callMode === 'voice' ? { callMode: 'voice' } : {}) } : {}) } });
     if (t.mood === 'offesa') await setMood(id, 1); // v8.1: si attenua da sola a ogni scambio
   }
   typing.delete(id);

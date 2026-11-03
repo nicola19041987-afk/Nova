@@ -56,6 +56,7 @@ $$('.tabbar button').forEach((b) => b.addEventListener('click', () => {
   ['chat', 'conv', 'feed', 'images', 'account'].forEach((n) => { $(`#tab-${n}`).hidden = true; });
   if (t === 'chat' && App.current) { $('#tab-conv').hidden = false; $('#back-btn').hidden = false; $('#title').textContent = App.current.name; }
   else { $(`#tab-${t}`).hidden = false; $('#back-btn').hidden = true; $('#title').textContent = TITLES[t]; }
+  if (App.chat && App.chat.header) App.chat.header(); // v8.2: intestazione WhatsApp solo nella conversazione
   if (t === 'feed') App.feed.load().catch(() => {});
 }));
 

@@ -246,3 +246,74 @@ details.card summary{font-weight:600}
 .face-status.ok{color:#7be0a0}
 .face-status.warn{color:#ffb86b}
 .lm-manual summary{cursor:pointer;color:var(--muted);font-size:.9em;margin:4px 0}
+
+/* ---------- v8.2: stile WhatsApp (chat, chiamata vocale, videochiamata) ---------- */
+:root{--wa-bg:#0b141a;--wa-head:#202c33;--wa-out:#005c4b;--wa-in:#202c33;--wa-text:#e9edef;--wa-meta:#8696a0;--wa-green:#00a884;--wa-blue:#53bdeb}
+.wa-photo,.wa-status,.wa-ic{display:none}
+body.wa-conv .topbar{background:var(--wa-head);border-bottom:0;gap:6px;padding-left:6px;padding-right:6px}
+body.wa-conv #who{display:none}
+body.wa-conv .wa-photo{display:block;flex:0 0 auto}
+body.wa-conv .wa-photo .wa-av{width:38px;height:38px;border-radius:50%;overflow:hidden;display:flex;align-items:center;justify-content:center;background:#2a3942;font-size:22px}
+body.wa-conv .wa-photo .wa-av img{width:100%;height:100%;object-fit:cover;object-position:50% 18%;display:block}
+.wa-title{flex:1;min-width:0;display:flex;flex-direction:column;line-height:1.15}
+body.wa-conv .topbar h2{font-size:1.05em;font-weight:600;color:var(--wa-text)}
+body.wa-conv .wa-status{display:block;font-size:.78em;color:var(--wa-meta);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+body.wa-conv .wa-status.typing{color:var(--wa-green)}
+body.wa-conv .wa-ic{display:inline-flex;align-items:center;justify-content:center;width:42px;height:42px;padding:0;border:0;border-radius:50%;background:transparent;font-size:21px}
+body.wa-conv .wa-ic:active{background:#ffffff14}
+body.wa-conv #back-btn{border:0;background:transparent;font-size:28px;padding:0 6px;color:var(--wa-text)}
+body.wa-conv{background:var(--wa-bg)}
+#tab-conv .messages{background-color:var(--wa-bg);background-image:radial-gradient(#ffffff08 1px,transparent 1.4px),radial-gradient(#ffffff05 1px,transparent 1.4px);background-size:22px 22px,22px 22px;background-position:0 0,11px 11px;border-radius:10px;padding:6px 8px 10px}
+#tab-conv .msg{max-width:82%;padding:6px 9px 18px;border-radius:9px;margin:3px 0;color:var(--wa-text);font-size:.95em;line-height:1.35;box-shadow:0 1px .5px #0b141a80;min-width:76px}
+#tab-conv .msg.user{background:var(--wa-out);border-top-right-radius:2px;border-bottom-right-radius:9px}
+#tab-conv .msg.user.other,#tab-conv .msg.assistant{background:var(--wa-in);border:0;border-top-left-radius:2px;border-bottom-left-radius:9px;margin-left:0;margin-right:auto}
+#tab-conv .msg.user + .msg.user:not(.other),#tab-conv .msg.assistant + .msg.assistant{border-top-right-radius:9px;border-top-left-radius:9px}
+#tab-conv .msg .who{display:block;font-size:.8em;font-weight:600;margin-bottom:1px}
+#tab-conv .msg.user:not(.other) .who{display:none}
+#tab-conv .msg .who[data-c=a]{color:#f15c9c}
+#tab-conv .msg .who[data-c=o]{color:#53bdeb}
+#tab-conv .msg.user:not(.other) .who:not(:empty){font-weight:400}
+#tab-conv .msg.local .who{display:block;color:var(--wa-meta)}
+#tab-conv .msg .meta{position:absolute;right:8px;bottom:3px;font-size:.68em;color:#ffffff99;display:flex;gap:3px;align-items:center;white-space:nowrap}
+#tab-conv .msg .ticks{font-style:normal;letter-spacing:-3px;padding-right:3px;color:#ffffff99}
+#tab-conv .msg .ticks.read{color:var(--wa-blue)}
+#tab-conv .msg .pin{bottom:auto;top:-8px;right:-6px;opacity:0;transition:opacity .2s;background:#2a3942;border:0}
+#tab-conv .msg:hover .pin,#tab-conv .msg:focus-within .pin{opacity:1}
+@media (hover:none){#tab-conv .msg .pin{opacity:.55}}
+#tab-conv .msg.typing .body{color:var(--wa-meta);font-style:italic}
+#typing{display:none!important} /* "sta scrivendo…" ora è nell'intestazione */
+#tab-conv .composer{gap:6px;align-items:flex-end}
+#tab-conv .composer textarea{border-radius:22px;background:#2a3942;border:0;color:var(--wa-text);padding:10px 14px}
+#tab-conv .composer button{border-radius:50%;width:46px;height:46px;padding:0;flex:0 0 46px;border:0;background:#2a3942}
+#tab-conv .composer button.primary{background:var(--wa-green)}
+#tab-conv .voicebar{border-bottom:0}
+#tab-conv .voicebar .call-start-wide{background:var(--wa-green)}
+/* chiamata: barra in basso stile WhatsApp, riquadrino della tua fotocamera arrotondato */
+.call-ui [hidden]{display:none!important}
+.call-kind{font-size:.78em;opacity:.8;letter-spacing:.02em}
+.call-bar{align-self:center;background:#1f2c34e0;border-radius:32px;padding:10px 16px;gap:14px;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+.call-btn{background:#ffffff1f}
+.call-btn.green{background:var(--wa-green)}
+.call-self{border-radius:14px;border:0;box-shadow:0 6px 18px #000a}
+/* chiamata vocale: foto sfocata a tutto schermo + ritratto rotondo con alone che pulsa con la voce */
+#stage.call.voice #avatar-canvas{filter:blur(28px) brightness(.5) saturate(1.15)!important;transform:scale(1.12)!important}
+#stage.call.voice .av-backdrop{filter:blur(30px) brightness(.45)!important}
+.call-ui.voice{background:linear-gradient(#0b141a66,#0b141a22 40%,#0b141a99)}
+.call-ui.voice .call-top{margin-top:4vh}
+.call-ui.voice .call-top b{font-size:1.6em}
+.call-portrait{--amp:0;align-self:center;width:min(52vw,34vh);aspect-ratio:1;border-radius:50%;position:relative;margin:auto 0;
+  box-shadow:0 0 0 calc(3px + var(--amp) * 14px) #25d36640,0 0 calc(18px + var(--amp) * 46px) calc(var(--amp) * 10px) #25d36633,0 8px 30px #000a}
+.call-portrait canvas{width:100%;height:100%;border-radius:50%;display:block;background:#2a3942}
+.call-ui.voice.thinking .call-portrait{animation:wa-think 1.6s ease-in-out infinite}
+@keyframes wa-think{50%{box-shadow:0 0 0 9px #7b2cbf40,0 0 40px #7b2cbf33,0 8px 30px #000a}}
+@media (orientation:landscape) and (max-height:600px){
+  .call-ui.voice .call-top{margin-top:0}
+  .call-portrait{width:min(40vh,30vw)}
+  .call-ui.voice .call-top b{font-size:1.3em}
+}
+#stage.call.voice{overflow:hidden}
+#tab-conv .voicebar button.on{background:var(--wa-green);border:0}
+body.wa-conv #avatar-canvas{box-shadow:0 0 0 1px #2a3942}
+body.wa-conv #stage.speaking #avatar-canvas{box-shadow:0 0 0 3px var(--wa-green),0 0 22px #00a88466}
+.call-ui:not(.voice) .call-top{padding:0 calc(min(24%,130px) + 8px)}
+@media (orientation:landscape) and (max-height:600px){#stage:not(.fs):not(.call) .stage-tools{left:6px;right:6px;top:6px;gap:4px;justify-content:center;flex-wrap:wrap}#stage:not(.fs):not(.call) .stage-tools button{width:34px;height:34px;line-height:34px;font-size:16px}}

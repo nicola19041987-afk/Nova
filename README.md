@@ -172,6 +172,14 @@ Tutto in `data/` sul server (escluso da git e dallo zip): `pins.json`, `sessions
 - Le clip delle azioni suonano con il loro audio (se presente) solo con Lettura attiva e audio sbloccato; se iOS lo blocca, la clip parte muta.
 - Sul telefono: interruttore laterale (silenzioso) disattivato e volume alzato; su iPhone la sintesi vocale può restare muta in modalità silenziosa.
 
+## Novità v8.2 (stile WhatsApp)
+
+- **Chat**: intestazione con foto rotonda, nome e stato (online / sta scrivendo… / in chiamata) e icone 📞 📹; bolle verdi a destra per i tuoi messaggi, scure a sinistra per lei e per l'altra persona (con il nome colorato), ora e spunte in basso (✓ inviato, ✓✓ consegnato in chat, ✓✓ blu quando c'è una risposta dopo).
+- **Chiamata vocale (📞)**: la sua foto sfocata a tutto schermo, ritratto rotondo vivo (respiro, labiale e sguardo continuano), alone che pulsa con la sua voce, timer, altoparlante / microfono / chiudi. Voce a mani libere come nella videochiamata; lei sa che è una telefonata (non ti vede).
+- **Videochiamata (📹 o tasto verde nella chiamata vocale)**: passa dal vocale al video senza riagganciare (il timer continua); riquadrino della tua fotocamera in alto a destra e barra in basso stile WhatsApp. Cornice 9:16 fissa e intera.
+- L'altoparlante usa la sessione audio del browser dove esiste (iPhone), altrimenti abbassa il volume.
+- Nessun cambiamento ai dati, agli sblocchi o alla modalità adulti.
+
 ## Novità v8.1 (respiro realistico, conversazione più naturale)
 
 **Respiro e profondità (sul telefono, nessun dato esce):**

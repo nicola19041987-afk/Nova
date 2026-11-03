@@ -17,6 +17,7 @@ App.chat = {
     App.scene && App.scene.apply();
     App.avatarConv.stopAction(true); App.actions && App.actions.render();
     $('#messages').innerHTML = ''; this.epoch = null; this.last = 0; this.ids = new Set();
+    this.header(null);
     await this.poll(true);
     this.scroll();
   },
@@ -24,7 +25,7 @@ App.chat = {
     App.stageFs && App.stageFs.exit(); $('#scene-menu').hidden = true; $('#act-menu').hidden = true; App.avatarConv.stopAction(true);
     App.current = null; App.voice && App.voice.stop(); App.voice && App.voice.cancel ? App.voice.cancel() : window.speechSynthesis && window.speechSynthesis.cancel();
     $('#tab-conv').hidden = true; $('#tab-chat').hidden = false; $('#back-btn').hidden = true; $('#title').textContent = 'Chat';
-    this.setTyping(null); this.renderList();
+    this.setTyping(null); this.renderList(); document.body.classList.remove('wa-conv');
   },
   // Nome visibile dell'autore: Nico / Luisa / nome del personaggio
   label(m) { return m.authorName || (m.author === 'nicola' ? 'Nico' : m.author === 'luisa' ? 'Luisa' : (App.current && App.current.name) || ''); },
@@ -37,18 +38,44 @@ App.chat = {
     if (m.id) d.dataset.id = m.id;
     if (m.local) d.classList.add('local');
     const who = document.createElement('span'); who.className = 'who';
-    who.textContent = `${this.label(m)}${m.noAI ? ' · solo messaggio' : ''}${m.local ? ' · solo su questo telefono' : ''}${m.at ? ' · ' + new Date(m.at).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }) : ''}`;
+    who.textContent = `${this.label(m)}${m.noAI ? ' · solo messaggio' : ''}${m.local ? ' · solo su questo telefono' : ''}`;
+    if (!mine) who.dataset.c = m.role === 'assistant' ? 'a' : 'o';
     const body = document.createElement('span'); body.className = 'body'; body.textContent = App.actions ? App.actions.strip(m.content) : m.content;
-    d.append(who, body);
+    // v8.2: ora e spunte in basso a destra, come su WhatsApp (✓ inviato · ✓✓ salvato in chat · ✓✓ blu letto/risposto)
+    const meta = document.createElement('span'); meta.className = 'meta';
+    meta.innerHTML = `${m.call ? (m.callMode === 'voice' ? '📞 ' : '📹 ') : ''}<time>${m.at ? new Date(m.at).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }) : ''}</time>${mine && !m.local ? '<i class="ticks">✓</i>' : ''}`;
+    d.append(who, body, meta);
     const pin = document.createElement('button'); pin.className = 'pin'; pin.type = 'button'; pin.textContent = '📌'; pin.title = 'Ricorda questo';
     pin.onclick = () => { const t = prompt('Cosa devo ricordare?', body.textContent.slice(0, 280)); if (t) App.account.remember(t); };
     d.appendChild(pin); $('#messages').appendChild(d); return d;
+  },
+  // spunte: due spunte quando il server ha il messaggio, blu quando dopo c'è una risposta (del personaggio o dell'altra persona)
+  ticks() {
+    const all = [...$('#messages').querySelectorAll('.msg')]; let seen = false;
+    for (let i = all.length - 1; i >= 0; i--) {
+      const el = all[i], t = el.querySelector('.ticks');
+      if (!el.classList.contains('user') || el.classList.contains('other')) { if (el.dataset.id && !el.classList.contains('typing')) seen = true; continue; }
+      if (!t) continue;
+      const st = !el.dataset.id ? 'sent' : seen ? 'read' : 'saved';
+      t.textContent = st === 'sent' ? '✓' : '✓✓'; t.className = 'ticks ' + st; t.title = st === 'read' ? 'Letto' : st === 'saved' ? 'Consegnato' : 'Inviato';
+    }
+  },
+  // intestazione stile WhatsApp: foto rotonda, nome, "online" / "sta scrivendo…" / "in chiamata"
+  header(state) {
+    const ch = App.current, st = $('#wa-status'); if (!st) return;
+    const on = !!ch && !$('#tab-conv').hidden; document.body.classList.toggle('wa-conv', on);
+    if (!on) return;
+    const ph = $('#wa-photo'); if (ph.dataset.for !== ch.id + (ch.avatar || '')) { ph.dataset.for = ch.id + (ch.avatar || ''); ph.innerHTML = App.avatarHtml(App.previews[ch.id] ? { ...ch, avatar: App.previews[ch.id].dataUrl } : ch, 'wa-av'); }
+    if (state !== undefined) this._hs = state;
+    st.textContent = App.call && App.call.active ? (App.call.mode === 'voice' ? 'in chiamata' : 'in videochiamata') : this.busy || this._hs ? (this._hs || 'sta scrivendo…') : 'online';
+    st.classList.toggle('typing', !!(this.busy || this._hs));
   },
   scroll() { const m = $('#messages'); m.scrollTop = m.scrollHeight; },
   nearBottom() { const m = $('#messages'); return m.scrollHeight - m.scrollTop - m.clientHeight < 80; },
   setTyping(t) {
     const el = $('#typing'); if (!el) return;
     el.hidden = !t; el.textContent = t ? `${t.name || 'Il personaggio'} sta scrivendo${t.for ? ' a ' + t.for : ''}…` : '';
+    this.header(t ? `sta scrivendo${t.for ? ' a ' + t.for : ''}…` : null);
   },
   // Chiede al server solo i messaggi nuovi (n > last). Se la chat è stata svuotata (epoch diversa) ricarica tutto.
   async poll(full = false) {
@@ -70,6 +97,7 @@ App.chat = {
       }
       this.setTyping(this.busy ? null : r.typing && r.typing.by !== App.me.user ? r.typing : null);
       if (added && (stick || r.reset)) this.scroll();
+      this.ticks();
     } catch { /* rete assente: si riprova al prossimo giro */ } finally { this.polling = false; }
   },
   visible() { return !!App.current && !document.hidden && !$('#tab-conv').hidden; },
@@ -90,12 +118,13 @@ App.chat = {
       catch (e) { local.querySelector('.body').textContent += `\n⚠️ ${e.message}`; }
       this.busy = false; this.poll(); return;
     }
+    this.header();
     const bubble = this.addMsg({ role: 'assistant', authorName: ch.name, content: '…' }); bubble.classList.add('typing'); this.scroll();
     const body = bubble.querySelector('.body');
     let reply = '', streamTTS = false;
     const cue = App.chat.cues();
     try {
-      const r = await App.api(`/api/chats/${ch.id}`, { method: 'POST', body: { message: text, ...(App.call && App.call.active ? { call: true } : {}) }, ai: true, raw: true });
+      const r = await App.api(`/api/chats/${ch.id}`, { method: 'POST', body: { message: text, ...(App.call && App.call.active ? { call: true, callMode: App.call.mode || 'video' } : {}) }, ai: true, raw: true });
       if (!r.ok) {
         const j = await r.json().catch(() => ({}));
         if (j.message) this.claim(local, j.message.id); // il tuo messaggio è comunque salvato nella chat condivisa
@@ -103,7 +132,7 @@ App.chat = {
         throw new Error(j.error || `Errore ${r.status}`);
       }
       if ((r.headers.get('Content-Type') || '').includes('application/json')) { // parola chiave riconosciuta dal server
-        const j = await r.json(); local.remove(); bubble.remove(); this.busy = false;
+        const j = await r.json(); local.remove(); bubble.remove(); this.busy = false; this.header();
         if (j.keyword) return this.askAdult(j.token);
       }
       this.claim(local, r.headers.get('X-Msg-Id')); this.claim(bubble, r.headers.get('X-Reply-Id'));
@@ -121,7 +150,7 @@ App.chat = {
         else if (!App.voice || !App.voice.ttsOn()) App.avatarConv.talkText(chunk); // labiale anche senza lettura vocale
       }
     } catch (e) { body.textContent = '⚠️ ' + e.message; bubble.classList.remove('typing'); }
-    this.busy = false;
+    this.busy = false; this.header();
     this.poll();
     if (reply) { cue.check(reply, true); if (!cue.any) App.avatarConv.emote(reply); }
     if (reply && App.actions) App.actions.fromReply(reply);
@@ -163,7 +192,7 @@ App.chat = {
     } catch (e) { this.addMsg({ role: 'assistant', authorName: App.current.name, content: '⚠️ ' + e.message, local: true }); }
     this.scroll();
   },
-  claim(el, id) { if (el && id) { el.dataset.id = id; this.ids.add(id); } },
+  claim(el, id) { if (el && id) { el.dataset.id = id; this.ids.add(id); this.ticks(); } },
   // Ogni 3 messaggi: estrai ricordi (se attivo) e aggiorna lo stato emotivo del personaggio
   async afterReply(ch) {
     const n = (App.ls.get(`count:${ch.id}`, 0) || 0) + 1; App.ls.set(`count:${ch.id}`, n);

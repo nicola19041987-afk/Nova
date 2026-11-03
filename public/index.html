@@ -58,8 +58,11 @@
   <section id="view-app" class="view" hidden>
     <header class="topbar">
       <button id="back-btn" class="icon" hidden aria-label="Indietro">‹</button>
-      <h2 id="title">Chat</h2>
+      <div id="wa-photo" class="wa-photo" aria-hidden="true"></div>
+      <div class="wa-title"><h2 id="title">Chat</h2><span id="wa-status" class="wa-status">online</span></div>
       <span id="who" class="muted small"></span>
+      <button type="button" id="wa-voice" class="wa-ic" title="Chiamata vocale" aria-label="Chiamata vocale">📞</button>
+      <button type="button" id="wa-video" class="wa-ic" title="Videochiamata" aria-label="Videochiamata">📹</button>
     </header>
 
     <main>
@@ -75,11 +78,14 @@
         <div class="stage" id="stage">
           <canvas id="avatar-canvas" width="300" height="300"></canvas>
           <div id="call-ui" class="call-ui" hidden>
-            <div class="call-top"><b id="call-name"></b><span id="call-timer" class="call-timer">00:00</span><span id="call-state" class="call-state">…</span></div>
+            <div class="call-top"><span id="call-kind" class="call-kind">Videochiamata</span><b id="call-name"></b><span id="call-timer" class="call-timer">00:00</span><span id="call-state" class="call-state">…</span></div>
+            <div id="call-portrait" class="call-portrait" hidden><canvas id="call-face" width="320" height="320"></canvas></div>
             <video id="call-self" class="call-self" playsinline muted autoplay hidden></video>
             <p id="call-caption" class="call-caption" hidden></p>
             <form id="call-text" class="call-text" hidden><input id="call-input" placeholder="Scrivile…" autocomplete="off"><button class="primary" aria-label="Invia">➤</button></form>
             <div class="call-bar">
+              <button type="button" id="call-speaker" class="call-btn" title="Altoparlante" aria-label="Altoparlante">🔊</button>
+              <button type="button" id="call-tovideo" class="call-btn green" title="Passa al video" aria-label="Passa al video">📹</button>
               <button type="button" id="call-cc" class="call-btn small" title="Sottotitoli" aria-label="Sottotitoli">CC</button>
               <button type="button" id="call-cam" class="call-btn" title="La tua fotocamera" aria-label="Fotocamera">📷</button>
               <button type="button" id="call-mute" class="call-btn" title="Microfono" aria-label="Microfono">🎙️</button>
