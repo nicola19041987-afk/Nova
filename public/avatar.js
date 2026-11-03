@@ -30,7 +30,8 @@
   const ease = (t) => { t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t); }; // smoothstep
   class TalkingAvatar {
     constructor(canvas) {
-      this.c = canvas; this.ctx = canvas.getContext('2d', { willReadFrequently: true });
+      this.c = canvas; this.ctx = canvas.getContext('2d'); // v8.1: canvas su GPU (le letture di pixel usano canvas temporanei)
+      this.breathM = new Breath(); this.breather = null; this._wasSpk = false; // v8.1: respiro realistico (modello + deformazione morbida WebGL)
       this.img = null; this.emoji = '🙂';
       this.lm = { eyeL: { x: 0.38, y: 0.42 }, eyeR: { x: 0.62, y: 0.42 }, mouth: { x: 0.5, y: 0.7 } };
       this.colors = { hue: 0, saturation: 100, brightness: 100, background: '#2b1530', glow: '#d14b8f' };
@@ -108,6 +109,7 @@
     react(kind, badge) {
       const dur = { wave: 1800, smile: 2200, nod: 1200, tilt: 1600, shake: 1100 }[kind] || 1500;
       this.reaction = { kind, start: performance.now(), dur };
+      if (badge === '😄' && this.breathM) this.breathM.laugh(performance.now()); // ride davvero: il petto sobbalza
       if (badge) this.badges.push({ t: performance.now(), e: badge, x: 0.18 + Math.random() * 0.1 });
       if (this.badges.length > 4) this.badges.shift();
     }
@@ -145,6 +147,7 @@
     speakUtterance(u, text) {
       const rate = u.rate || 1; let gotBoundary = false;
       u.addEventListener('start', () => {
+        this.breathCue(text, false);
         this.speaking = true; this.kf = [];
         setTimeout(() => { if (!gotBoundary && this.speaking) this.simulateText(text, rate); }, 450); // iOS: boundary spesso assenti
       });
@@ -179,12 +182,21 @@
     }
     // v8: labiale guidato dall'ampiezza reale dell'audio (inviluppo RMS precalcolato, a 60 punti/secondo)
     speakAudio(el, env, text, rate = 60) {
+      this.breathCue(text, this.speaking);
       this._env = env && env.length ? { el, env, rate } : null;
       this.kf = []; this.simUntil = 0; this.speaking = true;
       if (!this._env && text) this.simulateText(text, 1); // inviluppo non disponibile: labiale stimato dal testo
     }
+    // v8.1: il respiro segue il parlato: presa di fiato tra le frasi, risata, sospiro
+    breathCue(text, cont) {
+      const B = this.breathM; if (!B) return; const now = performance.now(), t = String(text || '');
+      if (cont) B.gap(now);
+      if (/\[laugh\]|\bah(ah)+\b|\bih(ih)+\b/i.test(t)) B.laugh(now + 150);
+      else if (/\b(uff+|ehh+|mah+|sigh)\b|sospir/i.test(t)) B.sigh(now);
+    }
     stopAudio() { this._env = null; this.speaking = false; this.kf = [{ t: performance.now() + 60, v: 0 }]; }
     target(now) {
+      if (this.breathM && this.breathM.inhaling(now)) return 0.12; // v8.1: bocca appena socchiusa mentre prende fiato prima di parlare
       if (this._env && this.speaking) {
         const { el, env, rate } = this._env;
         if (el.paused || el.ended) return 0;
@@ -229,6 +241,9 @@
       const styleAmp = 0.75 + ST.headAmp * 0.9 + ST.energy * 0.35; // chi si muove di più → lei un po' più mobile
       const rAmp = (this.rhythm ? 0.034 + this.rhythm.strength * 0.022 : sens ? 0.05 : 0.042) * (this.rhythm ? 1 : styleAmp);
       const breath = Math.sin(now / (sens ? 5200 : 4000) * Math.PI * 2) * (sens ? 1.4 : 1);
+      // v8.1: respiro accoppiato al parlato (inspira prima, espira piano mentre parla, riprende fiato tra le frasi)
+      if (this.speaking !== this._wasSpk) { this._wasSpk = this.speaking; if (this.speaking) this.breathM.speechStart(now); else this.breathM.speechEnd(now); }
+      const vol = this.breathM.vol(now);
       let sway = Math.sin(this._ph * Math.PI * 2) * rAmp + Math.sin(now / 2300) * 0.014 + Math.sin(now / 9100 + 2) * 0.01;
       let bob = this.rhythm ? Math.abs(Math.sin(this._ph * Math.PI * 2)) * this.rhythm.strength * S * 0.008 : 0;
       const talkNod = this.mouth * 0.02 + (this.speaking ? Math.sin(now / 330) * 0.008 : 0);
@@ -300,7 +315,7 @@
       if (squint > 0.3) blink = Math.max(blink, squint * 0.25); // occhi che "sorridono"
 
       // ---- disegno: contenimento (contain) nel riquadro, mai ritagliato; scena cinematografica facoltativa ----
-      const A = { now, S, rot: Math.max(-ROT_MAX, Math.min(ROT_MAX, sway + talkNod + rRot)), shiftX: Math.max(-SHIFT_MAX, Math.min(SHIFT_MAX, shiftX + rx)), bob: Math.max(-SHIFT_MAX, Math.min(SHIFT_MAX, bob + ry)), skew, breath, smile, blink, wave, mc, M, spring };
+      const A = { now, S, rot: Math.max(-ROT_MAX, Math.min(ROT_MAX, sway + talkNod + rRot)), shiftX: Math.max(-SHIFT_MAX, Math.min(SHIFT_MAX, shiftX + rx)), bob: Math.max(-SHIFT_MAX, Math.min(SHIFT_MAX, bob + ry)), skew, breath, vol, smile, blink, wave, mc, M, spring };
       if (!this.transparent && (this._frame % 10 === 0 || !this.bd)) this.syncBackdrop();
       const CW = this.c.width, CH = this.c.height, col = this.colors;
       ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalCompositeOperation = 'source-over'; ctx.clearRect(0, 0, CW, CH);
@@ -366,10 +381,16 @@
       if (img) {
         // v7.2: foto disegnata in un colpo solo (niente strisce: su iPhone Safari lasciavano giunture orizzontali).
         // Respiro: compressione verticale minima ancorata in basso (≤ 0,25%), sempre dentro il riquadro.
-        const Y1b = E.y0 + E.h, bs = 1 - 0.00125 * (1 + Math.max(-1, Math.min(1, A.breath)));
+        // v8.1: respiro realistico con deformazione morbida WebGL (spalle/petto/testa, sfondo fermo); se WebGL manca, il vecchio respiro.
+        let src = img, headDy = 0;
+        if (this.breathOn !== false && img.naturalWidth) {
+          if (!this.breather) this.breather = new Breather();
+          if (this.breather.ok && this.breather.setup(img, this.lm)) { const amp = this.breathAmp || 1; src = this.breather.render(A.vol, amp); headDy = this.breather.headDy(A.vol, amp); }
+        }
+        const Y1b = E.y0 + E.h, bs = src === img ? 1 - 0.00125 * (1 + Math.max(-1, Math.min(1, A.breath))) : 1;
         ctx.save(); ctx.beginPath(); ctx.rect(E.x0, E.y0, E.w, E.h); ctx.clip();
         ctx.translate(0, Y1b); ctx.scale(1, bs); ctx.translate(0, -Y1b);
-        ctx.drawImage(img, E.x0, E.y0, E.w, E.h);
+        ctx.drawImage(src, E.x0, E.y0, E.w, E.h);
         // Gesti (mezzo busto / figura intera): braccia che si muovono col ritmo e l'intensità del parlato.
         const tgt = (this.speaking ? 0.35 + this.mouth * 0.7 + (now - this.emph < 700 ? 0.6 : 0) : 0) + M.energy * 0.6 + wave * 0.8;
         this.gesture = Math.max(0, spring(this.gesture, tgt, 'gesture', 9)); // gesti morbidi (molla smorzata)
@@ -392,7 +413,9 @@
         }
         // viso (labiale, occhi, sopracciglia): le "toppe" sono scalate sulla distanza reale fra gli occhi (v7.2: prima erano
         // dimensionate per un primo piano, e su una figura intera la toppa delle sopracciglia diventava una striscia scura sulla fronte)
-        this.paintFace(ctx, img, this.lm, A, faceScale(this.lm), this.lidColor);
+        // la testa è salita col respiro: le espressioni usano i punti spostati di quanto (nella foto deformata il viso è lì)
+        const lmF = headDy ? shiftLm(this.lm, headDy / S) : this.lm;
+        this.paintFace(ctx, src, lmF, A, faceScale(this.lm), this.lidColor);
         ctx.restore();
       } else {
         ctx.font = `${S * 0.6}px system-ui, "Apple Color Emoji", "Segoe UI Emoji", sans-serif`;
@@ -652,6 +675,7 @@
 
 
   // Disegna l'immagine ritagliata a quadrato (center crop); opzionalmente solo una regione (in coord. del quadrato)
+  function shiftLm(lm, dy) { const o = {}; for (const k of Object.keys(lm)) { const p = lm[k]; o[k] = p && typeof p === 'object' && 'y' in p ? { x: p.x, y: p.y + dy } : p; } return o; }
   function drawCover(ctx, img, S, region) {
     const s = Math.min(img.naturalWidth, img.naturalHeight);
     const ox = (img.naturalWidth - s) / 2, oy = (img.naturalHeight - s) / 2, k = s / S;
@@ -693,6 +717,125 @@
       },
     };
   }
+
+  // ---------- v8.1: RESPIRO realistico ----------
+  // Modello del volume dei polmoni (0 = fine espirazione, 1 = respiro normale pieno): 12–16 respiri/minuto con variabilità,
+  // inspirazione ~40%, espirazione più lenta, breve pausa; respiro più profondo ogni tanto. Accoppiato al parlato:
+  // piccola inspirazione prima di parlare, espirazione lenta mentre parla, "presa di fiato" tra le frasi, sospiri e risate.
+  class Breath {
+    constructor() { this.seg = null; this.mode = 'idle'; this.n = 0; this.laughAt = 0; this.pre = 0; this._v = 0; this.next(performance.now(), 0); }
+    ease(t) { return t <= 0 ? 0 : t >= 1 ? 1 : 0.5 - 0.5 * Math.cos(Math.PI * t); }
+    go(now, to, dur, kind, curve) { this.seg = { t0: now, dur: Math.max(60, dur), from: this._v, to, kind, curve: curve || 'sine' }; }
+    next(now) { // prossimo segmento del ciclo a riposo
+      const s = this.seg ? this.seg.kind : 'hold';
+      if (this.mode === 'speak') { // parlando: espira piano finché c'è aria, poi prende fiato veloce
+        if (s === 'in' || s === 'catch') return this.go(now, 0.22, 3800 + Math.random() * 1600, 'out', 'lin');
+        return this.go(now, 0.78 + Math.random() * 0.15, 320 + Math.random() * 120, 'catch');
+      }
+      if (s === 'in') return this.go(now, 0, (this.P || 4300) * 0.56, 'out', 'outq');
+      if (s === 'out') return this.go(now, this._v, (this.P || 4300) * (0.04 + Math.random() * 0.05), 'hold');
+      this.n++; this.P = 3750 + Math.random() * 1250; // 12–16 respiri al minuto
+      const deep = this.n % (6 + Math.floor(Math.random() * 4)) === 0;
+      this.go(now, (deep ? 1.35 : 0.85 + Math.random() * 0.25), this.P * (deep ? 0.48 : 0.4), 'in');
+    }
+    speechStart(now) { this.mode = 'speak'; if (this._v < 0.55) this.go(now, 0.85 + Math.random() * 0.1, 330, 'catch'); else this.go(now, 0.22, 4200, 'out', 'lin'); }
+    gap(now) { if (this.mode === 'speak' && this._v < 0.6) this.go(now, 0.75, 300, 'catch'); } // presa di fiato tra due frasi
+    speechEnd(now) { this.mode = 'idle'; this.go(now, 0, 1300 + Math.random() * 500, 'out', 'outq'); }
+    preInhale(now) { this.pre = now + 420; this.go(now, 0.92, 380, 'catch'); } // prima di parlare: bocca appena aperta + inspirazione
+    sigh(now) { this.mode = this.mode === 'speak' ? 'speak' : 'idle'; this.go(now, 1.45, 950, 'in'); this.seg.after = () => this.go(performance.now(), 0, 2100, 'out', 'outq'); }
+    laugh(now) { this.laughAt = now; }
+    vol(now) {
+      const g = this.seg;
+      if (!g) this.next(now);
+      let t = (now - this.seg.t0) / this.seg.dur;
+      if (t >= 1) { this._v = this.seg.to; const after = this.seg.after; this.seg.after = null; if (after) after(); else this.next(now); t = 0; }
+      const k = this.seg.curve === 'lin' ? Math.min(1, t) : this.seg.curve === 'outq' ? 1 - Math.pow(1 - Math.min(1, t), 2) : this.ease(t);
+      this._v = this.seg.from + (this.seg.to - this.seg.from) * k;
+      let v = this._v;
+      const lt = now - this.laughAt; // risata: piccole spinte del diaframma (~5 al secondo) che svaniscono
+      if (lt < 1100) v += 0.22 * Math.abs(Math.sin(lt / 1000 * Math.PI * 5)) * (1 - lt / 1100);
+      return v;
+    }
+    inhaling(now) { return now < this.pre; }
+  }
+  // Deformazione morbida della foto (WebGL, un solo passaggio, niente strisce né giunture):
+  // spalle e petto salgono, il petto si espande appena verso chi guarda (pseudo-3D: leggero ingrandimento radiale e luce),
+  // la testa sale rigida insieme alle spalle, lo sfondo resta fermo (maschera della persona di MediaPipe, se c'è),
+  // il bordo inferiore della foto resta ancorato (niente vuoti), nessun movimento laterale.
+  const BR_VS = 'attribute vec2 a;varying vec2 v;void main(){v=a*0.5+0.5;v.y=1.0-v.y;gl_Position=vec4(a,0.0,1.0);}';
+  const BR_FS = `#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+#else
+precision mediump float;
+#endif
+varying vec2 v;uniform sampler2D uI,uM;uniform float uHM,uVol,uRise,uExp,uEd,uShY,uShHW,uWY,uChinY,uFX,uAmp;uniform vec2 uR,uC,uCR;
+float body(vec2 p){if(uHM>0.5){vec2 o=vec2(uEd*0.22)/uR;float m=texture2D(uM,v).r*0.28;m+=texture2D(uM,v+vec2(o.x,0.0)).r*0.12;m+=texture2D(uM,v-vec2(o.x,0.0)).r*0.12;m+=texture2D(uM,v+vec2(0.0,o.y)).r*0.12;m+=texture2D(uM,v-vec2(0.0,o.y)).r*0.12;m+=texture2D(uM,v+o).r*0.06;m+=texture2D(uM,v-o).r*0.06;m+=texture2D(uM,v+vec2(o.x,-o.y)).r*0.06;m+=texture2D(uM,v+vec2(-o.x,o.y)).r*0.06;return smoothstep(0.15,0.85,m);}
+float hw=mix(uEd*1.45,uShHW*1.3,smoothstep(uChinY,uShY,p.y));return 1.0-smoothstep(hw*0.8,hw*1.3,abs(p.x-uFX));}
+void main(){vec2 p=v*uR;float w=body(p);
+float up=1.0-smoothstep(uShY,uWY,p.y);float head=mix(1.0,0.72,1.0-smoothstep(uChinY,uShY,p.y));
+float dy=-uRise*uVol*up*head*w*uAmp;vec2 q=(p-uC)/uCR;float cw=exp(-dot(q,q)*1.7)*w;vec2 dc=(p-uC)*uExp*uVol*cw*uAmp;
+vec2 src=(p-vec2(0.0,dy)-dc)/uR;vec4 c=texture2D(uI,clamp(src,vec2(0.0),vec2(1.0)));c.rgb*=1.0+0.014*uVol*cw*uAmp;gl_FragColor=c;}`;
+  class Breather {
+    constructor() {
+      const c = document.createElement('canvas'); this.c = c; this.ok = false;
+      try {
+        const gl = c.getContext('webgl', { premultipliedAlpha: false, preserveDrawingBuffer: true, antialias: false }); if (!gl) return;
+        const sh = (t, src) => { const o = gl.createShader(t); gl.shaderSource(o, src); gl.compileShader(o); if (!gl.getShaderParameter(o, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(o)); return o; };
+        const pr = gl.createProgram(); gl.attachShader(pr, sh(gl.VERTEX_SHADER, BR_VS)); gl.attachShader(pr, sh(gl.FRAGMENT_SHADER, BR_FS)); gl.linkProgram(pr);
+        if (!gl.getProgramParameter(pr, gl.LINK_STATUS)) throw new Error('link');
+        gl.useProgram(pr); const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+        const loc = gl.getAttribLocation(pr, 'a'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+        this.u = {}; ['uI', 'uM', 'uHM', 'uVol', 'uRise', 'uExp', 'uEd', 'uShY', 'uShHW', 'uWY', 'uChinY', 'uFX', 'uR', 'uC', 'uCR', 'uAmp'].forEach((n) => { this.u[n] = gl.getUniformLocation(pr, n); });
+        const tex = (unit) => { const t = gl.createTexture(); gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, t); [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T].forEach((k) => gl.texParameteri(gl.TEXTURE_2D, k, gl.CLAMP_TO_EDGE)); [gl.TEXTURE_MIN_FILTER, gl.TEXTURE_MAG_FILTER].forEach((k) => gl.texParameteri(gl.TEXTURE_2D, k, gl.LINEAR)); return t; };
+        this.tI = tex(0); this.tM = tex(1); gl.uniform1i(this.u.uI, 0); gl.uniform1i(this.u.uM, 1);
+        c.addEventListener('webglcontextlost', (e) => { e.preventDefault(); this.ok = false; });
+        this.gl = gl; this.ok = true;
+      } catch (e) { console.warn('Respiro WebGL non disponibile, uso quello semplice', e); this.ok = false; }
+    }
+    // immagine + punti del viso/corpo -> geometria in pixel (calcolata una volta per foto)
+    setup(img, lm) {
+      if (!this.ok) return false;
+      const gl = this.gl, nw = img.naturalWidth, nh = img.naturalHeight, gs = Math.min(1, 1400 / Math.max(nw, nh));
+      const W = Math.max(1, Math.round(nw * gs)), H = Math.max(1, Math.round(nh * gs));
+      const key = img.src + '|' + W + 'x' + H;
+      if (this.key !== key) {
+        this.c.width = W; this.c.height = H; this.c.naturalWidth = W; this.c.naturalHeight = H; gl.viewport(0, 0, W, H);
+        gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, this.tI);
+        try { gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img); } catch (e) { console.warn('Respiro: immagine non utilizzabile', e); this.ok = false; return false; }
+        this.key = key;
+      }
+      const s = Math.min(nw, nh), ox = (nw - s) / 2, oy = (nh - s) / 2;
+      const P = (p) => ({ x: (p.x * s + ox) * gs, y: (p.y * s + oy) * gs });
+      const eL = P(lm.eyeL), eR = P(lm.eyeR), M = P(lm.mouth), ed = Math.max(3, Math.hypot(eR.x - eL.x, eR.y - eL.y));
+      const fx = (eL.x + eR.x) / 2, chinY = M.y + 0.6 * ed, b = lm.body || {};
+      let shY = M.y + 1.35 * ed, shHW = 1.9 * ed, shX = fx;
+      if (b.shL && b.shR) { const a = P(b.shL), c = P(b.shR); shY = (a.y + c.y) / 2; shHW = Math.abs(a.x - c.x) / 2; shX = (a.x + c.x) / 2; if (shY < chinY + 0.2 * ed) shY = chinY + 0.5 * ed; }
+      let wY = shY + 3.4 * ed;
+      if (b.hipL && b.hipR) { const a = P(b.hipL), c = P(b.hipR); const hy = (a.y + c.y) / 2; if (hy > shY + ed) wY = hy; }
+      wY = Math.min(wY, H); // ancorato al bordo inferiore se la vita è fuori dalla foto
+      const cY = shY + Math.min(1.1 * ed, (wY - shY) * 0.35);
+      this.g = { W, H, gs, ed, fx, chinY, shY, shHW, shX, wY, cX: shX, cY, cRx: shHW * 0.8, cRy: shHW * 0.62,
+        rise: Math.max(0.055 * ed, 0.0016 * H), exp: 0.011, k: (s * gs) / 1000 };
+      // maschera della persona (facoltativa): ferma lo sfondo
+      const m = b.mask;
+      if (m !== this.maskSrc) {
+        this.maskSrc = m; this.hasMask = false;
+        if (m) { const im = new Image(); im.onload = () => { if (this.maskSrc !== m) return; gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, this.tM); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, im); this.hasMask = true; }; im.src = m; }
+      }
+      return true;
+    }
+    render(vol, amp = 1) {
+      const gl = this.gl, g = this.g, u = this.u;
+      gl.uniform2f(u.uR, g.W, g.H); gl.uniform1f(u.uVol, vol); gl.uniform1f(u.uAmp, amp); gl.uniform1f(u.uRise, g.rise); gl.uniform1f(u.uExp, g.exp);
+      gl.uniform1f(u.uEd, g.ed); gl.uniform1f(u.uShY, g.shY); gl.uniform1f(u.uShHW, g.shHW); gl.uniform1f(u.uWY, g.wY); gl.uniform1f(u.uChinY, g.chinY); gl.uniform1f(u.uFX, g.fx);
+      gl.uniform2f(u.uC, g.cX, g.cY); gl.uniform2f(u.uCR, g.cRx, g.cRy); gl.uniform1f(u.uHM, this.hasMask ? 1 : 0);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      return this.c;
+    }
+    // spostamento verticale della testa (spazio del viso S=1000), per allineare le espressioni alla foto deformata
+    headDy(vol, amp = 1) { const g = this.g; return (-g.rise * vol * 0.72 * amp) / g.k; }
+  }
+  TalkingAvatar.Breath = Breath; TalkingAvatar.Breather = Breather;
 
   window.TalkingAvatar = TalkingAvatar;
   window.LandmarkEditor = LandmarkEditor;

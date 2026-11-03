@@ -45,7 +45,9 @@
       let wA = d(33, 133), wB = d(362, 263), hA = d(159, 145), hB = d(386, 374);
       if (eA.x > eB.x) { [eA, eB] = [eB, eA]; [bA, bB] = [bB, bA]; [wA, wB] = [wB, wA]; [hA, hB] = [hB, hA]; }
       if (Math.hypot(eB.x - eA.x, eB.y - eA.y) < 0.008) continue; // troppo piccolo per animarlo bene
+      const body = await autoBody(img).catch((e) => { console.warn('Corpo non rilevato', e); return null; });
       return {
+        v: 2, ...(body ? { body } : {}),
         eyeL: eA, eyeR: eB, mouth: avg([13, 14]), browL: bA, browR: bB,
         mouthW: d(61, 291), mouthH: d(0, 17), eyeW: (wA + wB) / 2, eyeH: (hA + hB) / 2, tilt: Math.atan2(eB.y - eA.y, eB.x - eA.x),
         auto: true, src: srcKey(src), at: new Date().toISOString(),
@@ -54,16 +56,47 @@
     return null;
   }
   App.autoFace = autoFace;
+  // v8.1: spalle/fianchi (MediaPipe Pose, sul telefono) e maschera della persona a bassa risoluzione (PNG ~96 px):
+  // servono al respiro per muovere spalle e petto lasciando fermo lo sfondo.
+  async function autoBody(img) {
+    if (!Motion.imagePose) return null;
+    const task = await Motion.imagePose();
+    const nw = img.naturalWidth, nh = img.naturalHeight, s = Math.min(nw, nh), ox = (nw - s) / 2, oy = (nh - s) / 2;
+    const r = task.detect(img);
+    const L = r && r.landmarks && r.landmarks[0];
+    const out = {};
+    const Q = (p) => ({ x: (p.x * nw - ox) / s, y: (p.y * nh - oy) / s });
+    if (L) {
+      const vis = (i) => (L[i].visibility == null ? 1 : L[i].visibility) > 0.5 && L[i].y < 1.02 && L[i].y > -0.02;
+      if (vis(11) && vis(12)) { let a = Q(L[11]), b = Q(L[12]); if (a.x > b.x) [a, b] = [b, a]; out.shL = a; out.shR = b; }
+      if (vis(23) && vis(24)) { let a = Q(L[23]), b = Q(L[24]); if (a.x > b.x) [a, b] = [b, a]; out.hipL = a; out.hipR = b; }
+    }
+    const m = r && r.segmentationMasks && r.segmentationMasks[0];
+    if (m) {
+      try {
+        const f = m.getAsFloat32Array(), mw = m.width, mh = m.height, W = 96, H = Math.max(8, Math.round(96 * nh / nw));
+        const c = document.createElement('canvas'); c.width = W; c.height = H; const x = c.getContext('2d'); const id = x.createImageData(W, H);
+        for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) {
+          let acc = 0, n = 0; // media su un piccolo blocco (niente scalini)
+          for (let dj = 0; dj < 2; dj++) for (let di = 0; di < 2; di++) { const sx = Math.min(mw - 1, Math.floor((i + (di + 0.5) / 2) / W * mw)), sy = Math.min(mh - 1, Math.floor((j + (dj + 0.5) / 2) / H * mh)); acc += f[sy * mw + sx]; n++; }
+          const v = Math.round(Math.max(0, Math.min(1, acc / n)) * 255), o = (j * W + i) * 4; id.data[o] = id.data[o + 1] = id.data[o + 2] = v; id.data[o + 3] = 255;
+        }
+        x.putImageData(id, 0, 0); out.mask = c.toDataURL('image/png');
+      } catch (e) { console.warn('Maschera non creata', e); }
+      try { m.close && m.close(); } catch {}
+    }
+    return Object.keys(out).length ? out : null;
+  }
   // Migrazione una tantum (non distruttiva): rileva il viso sugli avatar dei personaggi esistenti che non l'hanno ancora.
   // Gira in background, uno alla volta; i vecchi segni a mano restano salvati come riserva.
   App.faceMigrate = async function () {
     if (App._faceMig || !window.Motion) return; App._faceMig = true;
-    const todo = (App.chars || []).filter((c) => /^\/api\/avatars\//.test(c.avatar || '') && !(c.landmarks && c.landmarks.auto && c.landmarks.src === c.avatar) && !App.ls.get('faceTried:' + c.avatar, false));
+    const todo = (App.chars || []).filter((c) => /^\/api\/avatars\//.test(c.avatar || '') && !(c.landmarks && c.landmarks.auto && c.landmarks.src === c.avatar && c.landmarks.v >= 2) && !App.ls.get('faceTried2:' + c.avatar, false)); // v8.1: v2 = anche corpo e maschera
     for (const c of todo) {
       await new Promise((ok) => (window.requestIdleCallback ? requestIdleCallback(ok, { timeout: 3000 }) : setTimeout(ok, 500)));
       try {
         const lm = await autoFace(c.avatar);
-        App.ls.set('faceTried:' + c.avatar, true);
+        App.ls.set('faceTried2:' + c.avatar, true);
         if (!lm) continue;
         const r = await App.api(`/api/characters/${c.id}/landmarks`, { method: 'PUT', body: { avatar: c.avatar, landmarks: lm } });
         if (r.applied) { adopt(r.character); if (App.current && App.current.id === c.id) App.avatarConv.setLandmarks(r.character.landmarks); }

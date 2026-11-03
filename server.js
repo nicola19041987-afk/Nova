@@ -568,6 +568,16 @@ function cleanLm(lm, avatar) {
   const out = { eyeL: P(lm.eyeL, 0.38, 0.42), eyeR: P(lm.eyeR, 0.62, 0.42), mouth: P(lm.mouth, 0.5, 0.7), auto: true, src, at: String(lm.at || new Date().toISOString()).slice(0, 30),
     mouthW: r(lm.mouthW, 0.003, 0.6), mouthH: r(lm.mouthH, 0, 0.3), eyeW: r(lm.eyeW, 0.002, 0.3), eyeH: r(lm.eyeH, 0, 0.15), tilt: r(lm.tilt, -0.8, 0.8) };
   if (lm.browL && lm.browR) { out.browL = P(lm.browL, 0.38, 0.36); out.browR = P(lm.browR, 0.62, 0.36); }
+  if (Number(lm.v) >= 2) out.v = 2;
+  // v8.1: corpo (spalle, fianchi) e maschera della persona a bassa risoluzione per il respiro
+  const B = lm.body;
+  if (B && typeof B === 'object') {
+    const body = {};
+    if (B.shL && B.shR) { body.shL = P(B.shL, 0.3, 0.9); body.shR = P(B.shR, 0.7, 0.9); }
+    if (B.hipL && B.hipR) { body.hipL = P(B.hipL, 0.4, 1.4); body.hipR = P(B.hipR, 0.6, 1.4); }
+    if (typeof B.mask === 'string' && B.mask.length < 40000 && /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(B.mask)) body.mask = B.mask;
+    if (Object.keys(body).length) out.body = body;
+  }
   if (lm.manual && lm.manual.eyeL) out.manual = { eyeL: pt(lm.manual.eyeL, 0.38, 0.42), eyeR: pt(lm.manual.eyeR, 0.62, 0.42), mouth: pt(lm.manual.mouth, 0.5, 0.7) };
   Object.keys(out).forEach((k) => out[k] === undefined && delete out[k]);
   return out;
@@ -1086,10 +1096,10 @@ app.delete('/api/chats/:id', auth, async (req, res) => {
 function stateText(ch) {
   const st = ch.state || defaultState();
   return `IL TUO MONDO INTERIORE (personalità aperta, in evoluzione — non un copione):
-Sei una persona con emozioni vere e una personalità che cresce con le conversazioni. Puoi avere sbalzi d'umore, discutere, non essere d'accordo, offenderti, tenere il broncio per un po' e non fare pace subito se ti senti ferita; puoi anche emozionarti, affezionarti, scherzare. Reagisci in modo coerente con la tua storia.
+Sei una persona con emozioni vere e una personalità che cresce con le conversazioni. Puoi avere sbalzi d'umore, discutere, non essere d'accordo, offenderti e mostrarlo; ma come una persona matura ti passa da sola dopo qualche scambio, senza pretendere scuse e senza mai chiudere il dialogo; puoi anche emozionarti, affezionarti, scherzare. Reagisci in modo coerente con la tua storia.
 Umore attuale: ${st.mood}. Stato della relazione: ${st.relationship}.
 ${st.traits.length ? 'Tratti emersi: ' + st.traits.join('; ') + '.' : ''}
-${st.grudges.length ? 'Cose che ti hanno ferita o infastidita (e non hai ancora del tutto perdonato): ' + st.grudges.join('; ') + '.' : ''}
+${st.grudges.length ? 'Cose che ti hanno ferita o infastidita (le ricordi, ma senza rinfacciarle di continuo): ' + st.grudges.join('; ') + '.' : ''}
 ${st.notes ? 'Note su di te: ' + st.notes : ''}`.replace(/\n{2,}/g, '\n');
 }
 // v8: riassunto progressivo della chat (le parti vecchie, fuori dagli ultimi messaggi) e anti-ripetizione
@@ -1102,12 +1112,65 @@ function variationText(chatId) {
     .map((m) => String(m.content || '').replace(/\s+/g, ' ').trim().split(/(?<=[.!?…])\s/)[0].slice(0, 70)).filter(Boolean);
   return `STILE DELLE RISPOSTE: rispondi in modo naturale e vivo, come in una vera chat; varia lessico, ritmo e il modo di iniziare. Non ripetere saluti, complimenti, domande o frasi già usate di recente.${last.length ? ' Le tue ultime risposte iniziavano così (NON ricominciare allo stesso modo):\n' + last.map((t) => '- ' + t).join('\n') : ''}`;
 }
+// ---------- v8.1: stile naturale (nomi rari, registro, parolacce solo se servono) e umore offeso che si attenua da solo ----------
+const NAME_RE = { nicola: /\b(Nico|Nicola|Nicolino)\b/i, luisa: /\b(Luisa|Lu|Luisina)\b/ };
+const NAME_WINDOW = 5; // il nome dell'utente al massimo circa una volta ogni NAME_WINDOW risposte
+function nameUses(chatId, user) {
+  const re = NAME_RE[user]; if (!re) return { recent: 0, allow: true };
+  const msgs = readChat(chatId).messages.filter(visibleMsg);
+  const asst = msgs.filter((m) => m.role === 'assistant').slice(-NAME_WINDOW);
+  const recent = asst.filter((m) => re.test(String(m.content || ''))).length;
+  // dopo una lunga pausa (o all'inizio) un saluto col nome è naturale
+  const lastAt = asst.length ? Date.parse(asst[asst.length - 1].at) : 0;
+  const longGap = !asst.length || !Number.isFinite(lastAt) || Date.now() - lastAt > 3 * 3600e3;
+  return { recent, allow: longGap || recent === 0 };
+}
+const MOOD_DECAY = 0.55; // a ogni messaggio dell'utente l'offesa si riduce (dopo 2–4 scambi è passata)
+function moodLevel(c) {
+  const md = c && c.mood; if (!md || !md.level) return 0;
+  const turns = c.messages.filter((m) => m.role === 'user' && m.n > (md.n || 0)).length;
+  const hours = Math.max(0, (Date.now() - Date.parse(md.at || 0)) / 3600e3) || 0;
+  return md.level * Math.pow(MOOD_DECAY, turns) * Math.pow(0.5, hours / 0.5);
+}
+async function setMood(chatId, level) {
+  await mutateJSON(chatFile(chatId), newChat, (raw) => { const c = normChat(raw); const last = c.messages.length ? c.messages[c.messages.length - 1].n : 0; c.mood = { level, n: last, at: new Date().toISOString() }; return c; });
+}
+function styleText(chatId, user) {
+  const nu = nameUses(chatId, user), lvl = moodLevel(readChat(chatId));
+  return [
+    `REGISTRO E NATURALEZZA: parla come una persona vera nella vita di tutti i giorni: italiano parlato, frasi semplici, niente tono da assistente, niente formule fatte o complimenti a raffica. Le parolacce usale solo quando il contesto le richiede davvero (rabbia sincera, battuta tra complici, momento intimo che le rende naturali), mai gratuite o in ogni frase.`,
+    nu.allow ? `NOMI: in questa risposta puoi usare il nome di ${USERS[user].name} solo se serve davvero; di norma non serve.`
+      : `NOMI: hai già usato di recente il nome di ${USERS[user].name}: in questa risposta NON usarlo (né all'inizio né alla fine delle frasi).`,
+    `SE TI SENTI OFFESA: mostralo in modo umano e breve (un tono più asciutto, una frase sincera), poi dopo 2–4 scambi torni serena DA SOLA, anche senza scuse formali. Non bloccare mai la conversazione, non smettere di rispondere, non tenere il muso, non ripetere il rimprovero. Quando sei offesa puoi usare [umore:offesa].`,
+    lvl > 0.5 ? `In questo momento sei ancora un po' offesa per quanto successo poco fa: si sente, ma resti nel dialogo e rispondi davvero.`
+      : lvl > 0.15 ? `L'offesa di poco fa ti sta passando: stai tornando serena da sola, con naturalezza (senza tornarci sopra).` : '',
+  ].filter(Boolean).join('\n');
+}
+// Filtro in streaming: se il nome è già stato usato di recente, toglie gli appellativi ("Nico, …", "…, Nico.", "Ciao Nico!")
+// lasciando intatte le menzioni normali ("Luisa mi ha detto…"). Trattiene in coda pochi caratteri per decidere.
+function stripVocatives(t, user) {
+  const N = { nicola: '(?:Nico|Nicola|Nicolino)', luisa: '(?:Luisa|Luisina)' }[user]; if (!N) return t;
+  return t
+    .replace(new RegExp(`(^|[.!?…]\\s+|\\]\\s*)(?:${N})\\s*[,!]\\s*(\\S)`, 'g'), (m, pre, c) => pre + c.toUpperCase()) // "Nico, dai" -> "Dai"
+    .replace(new RegExp(`\\b(ciao|ehi|hey|oh|dai|ah|allora|sai|senti|guarda|buongiorno|buonanotte|buonasera)\\s+${N}\\b`, 'gi'), '$1') // "Ciao Nico" -> "Ciao"
+    .replace(new RegExp(`,\\s*${N}(?=\\s*[.!?…,;)]|\\s*$)`, 'g'), ''); // "…, Nico." -> "…."
+}
+class NameGuard {
+  constructor(user, on) { this.user = user; this.on = on; this.raw = ''; this.sent = 0; }
+  push(d) { // restituisce il testo da inviare adesso
+    this.raw += d; if (!this.on) { const o = this.raw.slice(this.sent); this.sent = this.raw.length; return o; }
+    const f = stripVocatives(this.raw, this.user), safe = Math.max(0, f.length - 16);
+    if (safe <= this.sent) return '';
+    const o = f.slice(this.sent, safe); this.sent = safe; this.f = f; return o;
+  }
+  end() { const f = this.on ? stripVocatives(this.raw, this.user) : this.raw; const o = f.slice(this.sent); this.sent = f.length; this.text = f; return o; }
+}
 // v8: videochiamata (risposte dette a voce), linguaggio del corpo contestuale, fase intima graduale
 function callText(user) {
-  return `SEI IN VIDEOCHIAMATA CON ${USERS[user].name.toUpperCase()}: ti vede e ti sente, e tu rispondi A VOCE (il testo viene letto ad alta voce). Parla come in una vera telefonata, in italiano parlato e spontaneo: di solito 1–3 frasi brevi (al massimo una quarantina di parole), niente elenchi, emoji, asterischi, markdown o descrizioni di azioni tra parentesi. Reagisci prima a quello che ha appena detto, poi rilancia con una domanda o un'osservazione quando ha senso. Usa con misura gli intercalari naturali (beh, dai, sai, mmh) e qualche pausa ("..."). Chiamalo/a per nome ogni tanto, senza esagerare. I messaggi arrivano dal riconoscimento vocale: se una frase sembra spezzata o senza senso, chiedi con naturalezza di ripetere.`;
+  return `SEI IN VIDEOCHIAMATA CON ${USERS[user].name.toUpperCase()}: ti vede e ti sente, e tu rispondi A VOCE (il testo viene letto ad alta voce). Parla come in una vera telefonata, in italiano parlato e spontaneo: di solito 1–3 frasi brevi (al massimo una quarantina di parole), niente elenchi, emoji, asterischi, markdown o descrizioni di azioni tra parentesi. Reagisci prima a quello che ha appena detto, poi rilancia con una domanda o un'osservazione quando ha senso. Usa con misura gli intercalari naturali (beh, dai, sai, mmh) e qualche pausa ("..."). Il suo nome usalo raramente: in una telefonata vera quasi non lo si dice. I messaggi arrivano dal riconoscimento vocale: se una frase sembra spezzata o senza senso, chiedi con naturalezza di ripetere.`;
 }
-const BODY_TEXT = `LINGUAGGIO DEL CORPO (visibile sull'avatar, non letto ad alta voce): puoi INIZIARE la risposta con un tag [gesto:annuisce|sorride|ride|inclina|nega|pensa|ammicca|saluta] e/o [umore:allegra|tenera|seria|maliziosa|triste|sorpresa|pensierosa], scelti in base a ciò che dici e al tono emotivo del momento. Usali solo quando aggiungono qualcosa (non in ogni risposta) e non ripetere lo stesso gesto più volte di fila.`;
-const ADULT_FLOW = `COME SI SVILUPPA L'INTIMITÀ: il tono intimo o esplicito deve nascere in modo GRADUALE e naturale dal flusso della conversazione e dal tono reciproco: prima complicità e flirt leggero, poi più intensità solo se l'altra persona ricambia davvero. Ogni tanto verifica con naturalezza che vada bene ("ti va?", "continuo?"). Se l'altra persona rallenta, cambia argomento, è stanca o sembra a disagio, rallenta subito e torna a un tono affettuoso. Una parola volgare o cruda detta fuori contesto NON è un invito: non passare di colpo a contenuti espliciti, rispondi in modo coerente con il momento. Mai insistere.`;
+const BODY_TEXT = `LINGUAGGIO DEL CORPO (visibile sull'avatar, non letto ad alta voce): puoi INIZIARE la risposta con un tag [gesto:annuisce|sorride|ride|inclina|nega|pensa|ammicca|saluta] e/o [umore:allegra|tenera|seria|maliziosa|triste|sorpresa|pensierosa|offesa], scelti in base a ciò che dici e al tono emotivo del momento. Usali solo quando aggiungono qualcosa (non in ogni risposta) e non ripetere lo stesso gesto più volte di fila.`;
+const ADULT_FLOW = `COME SI SVILUPPA L'INTIMITÀ: come tra persone reali, il tono intimo o esplicito deve nascere in modo GRADUALE e naturale dal flusso della conversazione, dall'umore del momento e dal tono reciproco, mai in modo brusco o meccanico (niente frasi fatte o copioni): prima complicità e flirt leggero, poi più intensità solo se l'altra persona ricambia davvero. Ogni tanto verifica con naturalezza che vada bene ("ti va?", "continuo?"). Se l'altra persona rallenta, cambia argomento, è stanca o sembra a disagio, rallenta subito e torna a un tono affettuoso. Una parola volgare o cruda detta fuori contesto NON è un invito: non passare di colpo a contenuti espliciti, rispondi in modo coerente con il momento. Mai insistere.`;
 // user = chi sta scrivendo adesso (e la cui chiave xAI paga la risposta)
 function buildSystem(user, ch, opts = {}) {
   const rulesOf = (u) => getRules(u).text.trim();
@@ -1117,7 +1180,7 @@ function buildSystem(user, ch, opts = {}) {
     `PERSONAGGIO: ${ch.name}.`,
     ch.personality && `Personalità: ${ch.personality}`,
     ch.style && `Stile: ${ch.style}`,
-    `CHAT DI COPPIA CONDIVISA: gli utenti sono Nico (Nicola) e Luisa, una coppia, entrambi adulti. Sono due persone reali che vedono gli stessi messaggi. Ogni loro messaggio inizia con il nome di chi scrive ("Nico:" o "Luisa:"): riconosci da lì chi ti sta scrivendo, rivolgiti a quella persona chiamandola per nome e, quando qualcuno arriva o ti scrive per la prima volta dopo un po', salutalo per nome. Ricorda chi ha detto cosa e, quando ha senso, coinvolgi entrambi. Non iniziare le tue risposte con il tuo nome e non scrivere tu il prefisso "Nico:"/"Luisa:".`,
+    `CHAT DI COPPIA CONDIVISA: gli utenti sono Nico (Nicola) e Luisa, una coppia, entrambi adulti. Sono due persone reali che vedono gli stessi messaggi. Ogni loro messaggio inizia con il nome di chi scrive ("Nico:" o "Luisa:"): riconosci da lì chi ti sta scrivendo e rivolgiti a quella persona; il suo nome però usalo DI RADO, come fanno le persone vere che si parlano spesso (al massimo una volta ogni tanto, quando serve a distinguere tra Nico e Luisa o in un saluto dopo tanto tempo), mai come intercalare a inizio o fine frase. Ricorda chi ha detto cosa e, quando ha senso, coinvolgi entrambi. Non iniziare le tue risposte con il tuo nome e non scrivere tu il prefisso "Nico:"/"Luisa:".`,
     `Ora ti sta scrivendo ${USERS[user].name}.`,
     ...Object.keys(USERS).map((u) => rulesOf(u) && `LE REGOLE / IL GIOCO DI ${USERS[u].name.toUpperCase()}:\n${rulesOf(u)}`),
     mem.filter((m) => !m.charId).length && `MEMORIA CONDIVISA (cosa sai di Nico, di Luisa e della coppia):\n${mem.filter((m) => !m.charId).map((m) => '- ' + m.text).join('\n')}`,
@@ -1126,6 +1189,7 @@ function buildSystem(user, ch, opts = {}) {
     stateText(ch),
     summaryText(ch.id),
     variationText(ch.id),
+    styleText(ch.id, user),
     opts.call && callText(user),
     opts.chat && BODY_TEXT,
     actionsPrompt(ch),
@@ -1172,6 +1236,7 @@ app.post('/api/chats/:id', auth, requireActivated, (req, res, next) => (req.body
   res.on('close', () => { if (!res.writableEnded) ctrl.abort(); });
   typing.set(id, { by: req.user, at: Date.now() });
   let reply = '';
+  const guard = new NameGuard(req.user, !nameUses(id, req.user).allow); // v8.1: niente nome ripetuto
   try {
     const r = await fetch(`${AI_BASE_URL}/chat/completions`, {
       method: 'POST', headers: aiHeaders(req.aiKey), signal: ctrl.signal,
@@ -1195,17 +1260,19 @@ app.post('/api/chats/:id', auth, requireActivated, (req, res, next) => (req.body
         if (!l.startsWith('data:')) continue;
         const data = l.slice(5).trim();
         if (data === '[DONE]') continue;
-        try { const d = JSON.parse(data).choices?.[0]?.delta?.content; if (d) { reply += d; res.write(d); } } catch {}
+        try { const d = JSON.parse(data).choices?.[0]?.delta?.content; if (d) { reply += d; const o = guard.push(d); if (o) res.write(o); } } catch {}
       }
     }
   } catch (e) {
     if (e.name !== 'AbortError') console.error('Errore AI chat:', e.message);
     if (!res.headersSent) { typing.delete(id); return res.status(502).json({ error: 'Servizio AI non raggiungibile', message: pubMsg(mine, ch) }); }
   }
+  { const o = guard.end(); if (o && !res.writableEnded) try { res.write(o); } catch {} if (reply) reply = guard.text; }
   // la risposta viene aggiunta in coda alla versione aggiornata della chat (eventuali messaggi arrivati nel frattempo restano)
   if (reply) {
     const t = takeActionTag(reply, ch); // [azione:xxx] -> tolto dal testo, salvato come campo del messaggio (lo vedono entrambi)
     await appendMsg(id, { id: replyId, role: 'assistant', author: ch.id, content: t.text || reply, extra: { replyTo: req.user, ...(t.action ? { action: t.action } : {}), ...(t.gesture ? { gesture: t.gesture } : {}), ...(t.mood ? { mood: t.mood } : {}), ...(req.body.call === true ? { call: true } : {}) } });
+    if (t.mood === 'offesa') await setMood(id, 1); // v8.1: si attenua da sola a ogni scambio
   }
   typing.delete(id);
   res.end();
@@ -1551,7 +1618,7 @@ function actionsPrompt(c) {
   return `AZIONI VISIBILI: puoi compiere un gesto che Nico e Luisa vedono sull'avatar aggiungendo IN FONDO alla risposta un solo tag [azione:<nome>], solo quando è davvero naturale (non spesso). Azioni disponibili: ${ready.map((aid) => `${aid} (${ACTIONS[aid].label.toLowerCase()})`).join(', ')}.${ready.some((aid) => ACTIONS[aid].adult) ? ' Le azioni intime solo quando la conversazione ci è arrivata in modo graduale e reciproco, mai come risposta a una singola parola cruda.' : ''}`;
 }
 const GESTURES = ['annuisce', 'sorride', 'ride', 'inclina', 'nega', 'pensa', 'ammicca', 'saluta'];
-const MOODS = ['allegra', 'tenera', 'seria', 'maliziosa', 'triste', 'sorpresa', 'pensierosa'];
+const MOODS = ['allegra', 'tenera', 'seria', 'maliziosa', 'triste', 'sorpresa', 'pensierosa', 'offesa'];
 function takeActionTag(text, c) {
   let action = null, gesture = null, mood = null;
   const out = String(text).replace(/\s*\[azione:\s*([a-zà-ù]+)\s*\]/gi, (m, aid) => { aid = aid.toLowerCase(); if (!action && visibleActions(c)[aid]) action = aid; return ''; })

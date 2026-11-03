@@ -118,6 +118,11 @@
       a.onerror = () => { if (item.gen === this.gen && a.src === res.url) this.next(); };
       a.onplaying = () => { App.audio.hint(false); App.audio.unlocked = true; this.lips(a, res.env, item.text); pauseRec(); };
       a.src = res.url;
+      if (!this.lipsOn) { // v8.1: prima della prima frase prende fiato (bocca appena socchiusa), come una persona vera
+        const avs = [App.avatarConv, App.avatarPresence].filter((x) => x && x.breathM);
+        avs.forEach((x) => x.breathM.preInhale(performance.now()));
+        if (avs.length) { await new Promise((r) => setTimeout(r, 300)); if (item.gen !== this.gen) return; }
+      }
       try { await a.play(); } catch (e) {
         if (item.gen !== this.gen) return;
         if (e && e.name === 'NotAllowedError') { this.q.unshift(item); this.playing = null; App.audio.pending = { resume: () => { if (!this.playing) this.next(); } }; App.audio.hint(true); }

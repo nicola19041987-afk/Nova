@@ -6,7 +6,7 @@
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   let on = false, t0 = 0, tick = 0, prevTts = null, prevAuto = null, cam = null, muted = false, lastNod = 0;
   const fmt = (ms) => { const s = Math.floor(ms / 1000); return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0'); };
-  const GREET = ['Ciao {n}!', 'Eccomi! Ciao {n}.', 'Ehi, ciao {n}! Come va?', 'Ciao {n}, che bello vederti!'];
+  const GREET = ['Ehi, ciao!', 'Eccomi! Ciao.', 'Ehi! Come va?', 'Ciao, che bello vederti!', 'Ciao {n}!', 'Eccomi... ciao!']; // v8.1: il nome solo ogni tanto
   function state() {
     if (!on) return;
     $('#call-timer').textContent = fmt(Date.now() - t0);

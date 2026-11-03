@@ -133,11 +133,11 @@ App.chat = {
   // il gesto parte quando arriva (insieme alla voce), niente animazioni casuali.
   cues() {
     const G = { annuisce: 'nod', sorride: 'smile', ride: 'smile', inclina: 'tilt', nega: 'shake', pensa: 'tilt', ammicca: 'smile', saluta: 'wave' };
-    const M = { allegra: 'smile', tenera: 'smile', maliziosa: 'smile', sorpresa: 'tilt', pensierosa: 'tilt', triste: 'tilt', seria: null };
+    const M = { allegra: 'smile', tenera: 'smile', maliziosa: 'smile', sorpresa: 'tilt', pensierosa: 'tilt', triste: 'tilt', seria: null, offesa: null };
     const c = { done: false, any: false, g: null, m: null,
       check(t, final) {
         if (!this.g) { const g = /\[gesto:\s*([a-zà-ù]+)\s*\]/i.exec(t); if (g) { this.g = g[1].toLowerCase(); this.any = true; if (G[this.g]) App.avatarConv.react(G[this.g], this.g === 'ride' ? '😄' : null); } }
-        if (!this.m) { const m = /\[umore:\s*([a-zà-ù]+)\s*\]/i.exec(t); if (m) { this.m = m[1].toLowerCase(); this.any = true; if (!this.g && M[this.m]) App.avatarConv.react(M[this.m]); } }
+        if (!this.m) { const m = /\[umore:\s*([a-zà-ù]+)\s*\]/i.exec(t); if (m) { this.m = m[1].toLowerCase(); this.any = true; if (!this.g && M[this.m]) App.avatarConv.react(M[this.m]); if (this.m === 'triste' && App.avatarConv.breathM) App.avatarConv.breathM.sigh(performance.now()); } }
         if ((this.g && this.m) || final || t.length > 160) this.done = true;
       } };
     return c;

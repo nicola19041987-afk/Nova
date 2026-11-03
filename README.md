@@ -172,6 +172,21 @@ Tutto in `data/` sul server (escluso da git e dallo zip): `pins.json`, `sessions
 - Le clip delle azioni suonano con il loro audio (se presente) solo con Lettura attiva e audio sbloccato; se iOS lo blocca, la clip parte muta.
 - Sul telefono: interruttore laterale (silenzioso) disattivato e volume alzato; su iPhone la sintesi vocale può restare muta in modalità silenziosa.
 
+## Novità v8.1 (respiro realistico, conversazione più naturale)
+
+**Respiro e profondità (sul telefono, nessun dato esce):**
+- Respiro naturale sulla foto: 12–16 respiri al minuto con variazioni (inspirazione più rapida, espirazione più lenta, breve pausa, ogni tanto un respiro più profondo).
+- Salgono spalle e petto, la testa sale insieme alle spalle; il petto si espande appena verso chi guarda (effetto pseudo-3D con una leggera luce). Il bordo inferiore resta ancorato: niente vuoti, niente giunture, niente movimenti laterali, inquadratura 9:16 fissa e mai tagliata.
+- Deformazione morbida in WebGL (un solo passaggio). Con MediaPipe Pose vengono rilevati spalle, fianchi e una maschera della persona a bassa risoluzione (~96 px), così lo sfondo resta perfettamente fermo. Se WebGL non c'è, resta il respiro semplice di prima.
+- Accoppiato alla voce: prende fiato (bocca appena socchiusa) prima di parlare, espira piano mentre parla, riprende fiato tra le frasi; sospiro con l'umore triste o con "uff", piccoli sobbalzi del petto quando ride.
+- Migrazione automatica e non distruttiva: le foto già rilevate vengono rianalizzate una volta per aggiungere i dati del corpo (`landmarks.v = 2`, `landmarks.body`); i punti messi a mano restano.
+
+**Conversazione:**
+- Il nome di chi scrive viene usato di rado: se è già comparso nelle ultime risposte, l'IA è avvisata e un filtro in streaming toglie gli appellativi ("Nico, …", "…, Luisa?", "Ciao Nico!"), lasciando le menzioni normali.
+- Registro naturale; parolacce solo quando il contesto le richiede davvero.
+- Se si offende (`[umore:offesa]`) lo mostra in modo umano e breve; l'offesa si attenua da sola a ogni scambio (dopo 2–4 è passata), senza mai bloccare la conversazione.
+- Sblocchi e modalità adulti invariati; l'intimità continua a nascere in modo graduale dal flusso della conversazione.
+
 ## Novità v8 (videochiamata, voce naturale, memoria)
 
 - **📹 Videochiamata**: pulsante verde in chat. Lei a tutto schermo nel riquadro 9:16 fisso, timer, microfono, fotocamera (riquadrino, resta sul telefono), sottotitoli (CC) e riaggancia. Ascolto continuo con invio automatico; mentre lei parla l'ascolto è in pausa (niente eco); tocca il suo viso per interromperla. Se il riconoscimento vocale non è disponibile (alcune versioni di iPhone/PWA) compare una casella per scrivere o dettare con la tastiera.

@@ -28,13 +28,13 @@
     catch (e) { throw fail('wasm', 'Motore WebAssembly di MediaPipe non avviato su questo browser.', e); }
   }
   // Crea un task con GPU (se possibile) e ripiega sulla CPU
-  async function createTask(kind, runningMode = 'VIDEO') {
+  async function createTask(kind, runningMode = 'VIDEO', more = {}) {
     await loadVision();
     const T = { face: st.vision.FaceLandmarker, hands: st.vision.HandLandmarker, pose: st.vision.PoseLandmarker }[kind];
     if (!T) throw fail(kind, `Modulo ${NAMES[kind]} assente nella libreria MediaPipe.`);
     if (!(await head(`${V}/${MODELS[kind]}`))) throw fail(kind, `Modello ${NAMES[kind]} (${MODELS[kind]}) mancante sul server.`);
     const extra = kind === 'face' ? { numFaces: 1 } : kind === 'hands' ? { numHands: 2, minHandDetectionConfidence: 0.5, minTrackingConfidence: 0.5 } : { numPoses: 1 };
-    const opts = (delegate) => ({ baseOptions: { modelAssetPath: `${V}/${MODELS[kind]}`, delegate }, runningMode, ...extra });
+    const opts = (delegate) => ({ baseOptions: { modelAssetPath: `${V}/${MODELS[kind]}`, delegate }, runningMode, ...extra, ...more });
     if (hasWebGL2()) {
       try { const t = await T.createFromOptions(st.files, opts('GPU')); return { t, delegate: 'GPU' }; }
       catch (e) { console.warn(`GPU non disponibile per ${kind}, uso la CPU`, e); }
@@ -47,6 +47,8 @@
     if (!st.loading[kind]) st.loading[kind] = createTask(kind).then((r) => { st.tasks[kind] = r.t; st.delegate[kind] = r.delegate; return r.t; }).finally(() => { st.loading[kind] = null; });
     return st.loading[kind];
   }
+  // v8.1: corpo su foto (spalle, fianchi) + maschera della persona, per il respiro realistico
+  async function imagePose() { if (!st.imagePose) st.imagePose = (await createTask('pose', 'IMAGE', { outputSegmentationMasks: true })).t; return st.imagePose; }
   async function imageFace() { if (!st.imageFace) st.imageFace = (await createTask('face', 'IMAGE')).t; return st.imageFace; }
 
   // ---------- gesti della mano ----------
@@ -189,6 +191,6 @@
     }
   }
 
-  window.Motion = { ensure, imageFace, Processor, Style, STYLE_DEF, classify, hasWebGL2, isIOS, isStandalone, delegate: st.delegate, NAMES,
+  window.Motion = { ensure, imageFace, imagePose, Processor, Style, STYLE_DEF, classify, hasWebGL2, isIOS, isStandalone, delegate: st.delegate, NAMES,
     REACTIONS: { wave: ['wave', '👋'], open: ['smile', '✋'], thumbs: ['nod', '👍'], peace: ['smile', '✌️'], ok: ['nod', '👌'], point: ['tilt', '👉'] } };
 })();
