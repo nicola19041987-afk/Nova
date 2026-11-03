@@ -41,7 +41,7 @@
     const av = App.avatarConv, src = av.c, out = $('#call-face'), x = out.getContext('2d');
     const P = out.width; x.clearRect(0, 0, P, P);
     let sx = 0, sy = 0, sw = Math.min(src.width, src.height), cx = src.width / 2, cy = src.height * 0.32;
-    const b = av._bounds, img = av.img, lm = av.lm;
+    const b = av._bounds, img = (av._shown && av._shown.img) || av.img, lm = (av._shown && av._shown.lm) || av.lm; // v8.3: anche seduta al tavolo
     if (b && b.x1 !== undefined && img && img.naturalWidth && lm && lm.eyeL) {
       const nw = img.naturalWidth, nh = img.naturalHeight, s = Math.min(nw, nh), ox = (nw - s) / 2, oy = (nh - s) / 2, k = (b.x1 - b.x0) / nw;
       const X = (p) => b.x0 + (p.x * s + ox) * k, Y = (p) => b.y0 + (p.y * s + oy) * k;

@@ -320,7 +320,13 @@
       const CW = this.c.width, CH = this.c.height, col = this.colors;
       ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalCompositeOperation = 'source-over'; ctx.clearRect(0, 0, CW, CH);
       const scn = this.sceneOn();
-      if (scn) this.paintScene(ctx, CW, CH, A, scn);
+      if (scn && scn.landmarks && scn.landmarks.auto) {
+        // v8.3: scena seduta al tavolo (foto 9:16) disegnata come la foto dell'avatar: intera, respiro da seduta, viso animato, gesti
+        const sv = [this.img, this.lm, this.lidColor];
+        this.img = scn.img; this.lm = scn.landmarks; this.lidColor = scn.lids || sv[2];
+        try { const r = this.paintAvatar(ctx, { x: 0, y: 0, w: CW, h: CH }, A, true); this.featherEdges(ctx, r, CW, CH); }
+        finally { this.img = sv[0]; this.lm = sv[1]; this.lidColor = sv[2]; }
+      } else if (scn) this.paintScene(ctx, CW, CH, A, scn);
       else {
         // con la foto: canvas trasparente intorno, sotto c'è lo sfondo sfocato CSS (syncBackdrop); senza foto (emoji): colore pieno
         if (!this.transparent && !this.img) { ctx.fillStyle = col.background; ctx.fillRect(0, 0, CW, CH); }
@@ -371,6 +377,7 @@
       const plain = !+col.hue && +col.saturation === 100 && +col.brightness === 100; // filtro solo se serve (è costoso)
       ctx.filter = plain ? 'none' : `hue-rotate(${col.hue}deg) saturate(${col.saturation}%) brightness(${col.brightness}%)`;
       if (top) {
+        this._shown = { img, lm: this.lm }; // v8.2/8.3: ritratto della chiamata vocale (avatar o scena al tavolo)
         this._bounds = { x0: rect.x, y0: rect.y, x1: rect.x + rect.w, y1: rect.y + rect.h, cw: this.c.width, ch: this.c.height, static: true, warp: 0 };
       }
       const { mc, M, spring, now, wave } = A;
@@ -744,6 +751,16 @@
     preInhale(now) { this.pre = now + 420; this.go(now, 0.92, 380, 'catch'); } // prima di parlare: bocca appena aperta + inspirazione
     sigh(now) { this.mode = this.mode === 'speak' ? 'speak' : 'idle'; this.go(now, 1.45, 950, 'in'); this.seg.after = () => this.go(performance.now(), 0, 2100, 'out', 'outq'); }
     laugh(now) { this.laughAt = now; }
+    // v8.3: gesti (clip) sincronizzati col respiro: la foto "prende fiato" mentre la clip entra, poi riprende fiato quando la clip esce
+    gestureStart(kind, now) {
+      if (kind === 'starnuto') this.go(now, 1.35, 420, 'in'); // prima dello starnuto: inspirazione
+      else if (kind === 'tosse') this.go(now, 0.8, 300, 'catch');
+      else if (kind === 'ride') this.laugh(now);
+    }
+    gestureEnd(kind, now) {
+      if (kind === 'tosse' || kind === 'starnuto') { this._v = Math.min(this._v, 0.15); this.go(now, 0.95, 520, 'catch'); } // dopo: un respiro per riprendersi
+      else if (kind === 'ride') { this.laugh(now - 300); }
+    }
     vol(now) {
       const g = this.seg;
       if (!g) this.next(now);
@@ -813,6 +830,8 @@ vec2 src=(p-vec2(0.0,dy)-dc)/uR;vec4 c=texture2D(uI,clamp(src,vec2(0.0),vec2(1.0
       let wY = shY + 3.4 * ed;
       if (b.hipL && b.hipR) { const a = P(b.hipL), c = P(b.hipR); const hy = (a.y + c.y) / 2; if (hy > shY + ed) wY = hy; }
       wY = Math.min(wY, H); // ancorato al bordo inferiore se la vita è fuori dalla foto
+      // v8.3: seduta al tavolo: il respiro si ferma alla linea del tavolo (sotto non si muove nulla: tavolo e braccia appoggiate)
+      if (b.table && Number.isFinite(b.table.y)) { const ty = (b.table.y * s + oy) * gs; if (ty > shY + 0.8 * ed) wY = Math.min(wY, ty); }
       const cY = shY + Math.min(1.1 * ed, (wY - shY) * 0.35);
       this.g = { W, H, gs, ed, fx, chinY, shY, shHW, shX, wY, cX: shX, cY, cRx: shHW * 0.8, cRy: shHW * 0.62,
         rise: Math.max(0.055 * ed, 0.0016 * H), exp: 0.011, k: (s * gs) / 1000 };

@@ -4,11 +4,21 @@
 (function () {
   const av = () => App.avatarConv;
   const TAG = /\s*\[azione:\s*([a-zà-ù]+)\s*\]/gi;
+  const GESTURE_IDS = ['capelli', 'tosse', 'starnuto', 'ride'];
   const AUTO_MIN_GAP = 150e3, AUTO_IDLE = 45e3, AUTO_MAX_HOUR = 8;
   let info = { catalog: [], adult: false, video: true }, lastActivity = Date.now(), autoLog = [], lastAuto = 0, running = null;
   const poseLm = new Map(); // url -> punti del viso trovati sul telefono
 
   const ready = (ch) => Object.entries((ch && ch.actions) || {}).filter(([, a]) => !a.stale);
+  // v8.3: gesti spontanei (capelli, tosse, starnuto, risata), anche nella scena seduta al tavolo
+  const GEST_W = { capelli: 3, tosse: 1, starnuto: 0.6, ride: 0 }; // la risata parte solo quando ride davvero (contesto)
+  const GEST_GAP = 150e3, GEST_MAX_HOUR = 6;
+  let lastGest = 0, lastGestId = null, pendingCue = null, prepBase = 'avatar', gestLog = [];
+  const seatedOn = () => { const A = av(); return !!(A.sceneOn && A.sceneOn() && A.sceneOn().landmarks && A.sceneOn().landmarks.auto); };
+  const readySeated = (ch) => Object.entries((ch && ch.seated) || {}).filter(([, a]) => a && a.url && !a.stale);
+  const pick = (ids) => { // a pesi, mai lo stesso gesto due volte di fila
+    const pool = ids.filter((id) => ids.length < 2 || id !== lastGestId); const w = pool.map((id) => (id in GEST_W ? GEST_W[id] : 1));
+    let r = Math.random() * w.reduce((a, b) => a + b, 0); for (let i = 0; i < pool.length; i++) { r -= w[i]; if (r <= 0 && w[i] > 0) return pool[i]; } return null; };
   const meta = (id) => info.catalog.find((c) => c.id === id) || { id, label: id, emoji: '🎭' };
 
   App.actions = {
@@ -24,8 +34,12 @@
     // riproduce un'azione pronta del personaggio aperto (mai durante la scena cinematografica o se ne sta già facendo una)
     async play(aid, why = 'manuale') {
       const ch = App.current; if (!ch) return false;
-      const a = ch.actions && ch.actions[aid]; if (!a || a.stale) return false;
-      const A = av(); if (A.actionBusy() || (A.sceneOn && A.sceneOn())) return false;
+      const A = av(); if (A.actionBusy()) return false;
+      // seduta al tavolo: solo le clip preparate da quella foto; scena vecchia (senza punti completi): niente azioni
+      const seat = seatedOn();
+      if (!seat && A.sceneOn && A.sceneOn()) return false;
+      const a = seat ? ch.seated && ch.seated[aid] : ch.actions && ch.actions[aid]; if (!a || a.stale || !a.url) return false;
+      if (GESTURE_IDS.includes(aid)) { lastGest = Date.now(); lastGestId = aid; gestLog.push(lastGest); A.breathM && A.breathM.gestureStart(aid, performance.now()); }
       try {
         if (a.kind === 'pose') {
           const p = A.playAction({ kind: 'pose', url: a.url, lm: poseLm.get(a.url) || null }); if (A.act) A.act.adult = !!meta(aid).adult;
@@ -34,10 +48,27 @@
         } else { const p = A.playAction({ kind: 'video', url: a.url }); if (A.act) A.act.adult = !!meta(aid).adult; await p; }
         return true;
       } catch (e) { console.warn('Azione non riprodotta', aid, why, e && e.message); return false; }
+      finally { if (GESTURE_IDS.includes(aid) && A.breathM) A.breathM.gestureEnd(aid, performance.now()); }
+    },
+    // v8.3: gesto legato al contesto (risata quando ride davvero, capelli con umore tenero/malizioso):
+    // parte nella pausa dopo che ha finito di parlare, al massimo uno ogni 2,5 minuti, mai lo stesso due volte di fila
+    cue(aid, prob = 1) {
+      if (!GESTURE_IDS.includes(aid) || Math.random() > prob) return;
+      if (Date.now() - lastGest < GEST_GAP || aid === lastGestId) return;
+      pendingCue = { aid, at: Date.now() };
+    },
+    cueTick() {
+      const c = pendingCue; if (!c) return;
+      if (Date.now() - c.at > 25000 || Date.now() - lastGest < GEST_GAP) { pendingCue = null; return; }
+      const A = av(), talking = A.speaking || (App.tts && App.tts.playing) || App.chat.busy;
+      if (talking) { this._quietSince = 0; return; }
+      if (!this._quietSince) { this._quietSince = Date.now(); return; }
+      if (Date.now() - this._quietSince < 700) return; // un attimo di pausa dopo la frase
+      pendingCue = null; this.play(c.aid, 'contesto');
     },
     render() {
       const ch = App.current, list = $('#act-list'); if (!list) return;
-      const acts = Object.entries((ch && ch.actions) || {});
+      const acts = Object.entries((ch && (seatedOn() ? ch.seated : ch.actions)) || {}).filter(([, a]) => a && a.url); // v8.3: seduta al tavolo -> i suoi gesti
       list.innerHTML = acts.length ? acts.map(([id, a]) => { const m = meta(id); return `<button type="button" data-act="${esc(id)}" class="${a.stale ? 'stale' : ''}" title="${a.stale ? 'Preparata con un avatar precedente: rifalla' : esc(m.label)}">${m.emoji} ${esc(m.label)}</button>`; }).join('') : '';
       const n = ready(ch).length;
       $('#act-info').textContent = !ch ? '' : !/^\/api\/avatars\//.test(ch.avatar || '') ? 'Serve un avatar immagine per le azioni.' : n ? `${n} azioni pronte${acts.length > n ? ` · ${acts.length - n} da rifare (avatar cambiato)` : ''}` : 'Nessuna azione pronta: usa «Prepara azioni».';
@@ -45,14 +76,17 @@
       $('#act-auto').checked = App.ls.get('actAuto', true) !== false;
     },
     // ---- finestra «Prepara azioni» ----
-    openPrepare() {
+    openPrepare(base) {
       const ch = App.current; if (!ch) return;
-      const row = (c) => { const a = ch.actions && ch.actions[c.id]; const st = !a ? 'da preparare' : a.stale ? 'da rifare (avatar cambiato)' : `pronta (${a.kind === 'pose' ? 'posa' : 'clip'})`;
+      prepBase = base === 'seated' ? 'seated' : 'avatar';
+      const src = prepBase === 'seated' ? ch.seated || {} : ch.actions || {};
+      const row = (c) => { const a = src[c.id]; const st = !a ? 'da preparare' : a.stale ? (prepBase === 'seated' ? 'da rifare (scena cambiata)' : 'da rifare (avatar cambiato)') : `pronta (${a.kind === 'pose' ? 'posa' : 'clip'})`;
         return `<label><input type="checkbox" data-prep="${c.id}" ${!a || a.stale ? 'checked' : ''}> ${c.emoji} ${esc(c.label)} <span class="st">${st}</span></label>`; };
-      $('#act-choices').innerHTML = info.catalog.filter((c) => !c.adult).map(row).join('');
+      $('#act-dialog h3').textContent = prepBase === 'seated' ? '🎬 Gesti al tavolo' : '🎭 Prepara azioni';
+      $('#act-choices').innerHTML = info.catalog.filter((c) => !c.adult && (prepBase !== 'seated' || c.gesture)).map(row).join('');
       const adult = info.catalog.filter((c) => c.adult);
-      $('#act-adult').hidden = !info.adult; // a modalità adulti spenta queste azioni non esistono nemmeno nell'elenco
-      if (info.adult) {
+      $('#act-adult').hidden = !info.adult || prepBase === 'seated'; // a modalità adulti spenta queste azioni non esistono nemmeno nell'elenco
+      if (info.adult && prepBase !== 'seated') {
         const ok = !!ch.adultActionsOk;
         $('#act-adult-note').textContent = ok
           ? `Il volto di ${ch.name} è stato generato dall'IA: le azioni per adulti sono disponibili (personaggio inventato, adulto 25+). Non partono mai da sole se la modalità adulti è spenta, e «Cancella tutto» le elimina.`
@@ -61,6 +95,7 @@
       }
       $('#act-log').innerHTML = ''; $('#act-progress').hidden = true;
       $('#act-cost').textContent = `Ogni azione è una breve clip di circa ${info.seconds || 5} secondi generata dall'IA a partire dall'avatar attuale, con la tua chiave xAI (consuma crediti). Viene preparata una volta sola, solo quando premi «Prepara», ed è condivisa con l'altro profilo.${info.video ? '' : ' Video non disponibile: verranno create pose (immagini) animate.'}`;
+      if (prepBase === 'seated') $('#act-cost').textContent = `Gesti spontanei di lei seduta al tavolo (capelli, tosse, starnuto, risata): ognuno è una clip di circa ${info.seconds || 5} secondi creata dall'IA partendo dalla foto al tavolo, con la tua chiave xAI (consuma crediti). Si preparano una volta sola, sono condivisi con l'altro profilo e partono raramente, mai due di fila.`;
       $('#act-dialog').showModal();
     },
     log(text, cls = '') { const li = document.createElement('li'); li.className = cls; li.textContent = text; $('#act-log').appendChild(li); li.scrollIntoView({ block: 'nearest' }); return li; },
@@ -76,7 +111,8 @@
         if (run.stop) { this.log('Interrotto.'); break; }
         const m = meta(id), li = this.log(`${m.emoji} ${m.label}: avvio…`);
         try {
-          let r = await App.api(`/api/characters/${ch.id}/actions/${id}`, { method: 'POST', ai: true, body: {} });
+          const base = prepBase;
+          let r = await App.api(`/api/characters/${ch.id}/actions/${id}`, { method: 'POST', ai: true, body: base === 'seated' ? { base } : {} });
           if (r.status === 'pending') {
             const t0 = Date.now(), rid = r.rid;
             while (r.status !== 'done') {
@@ -89,7 +125,7 @@
             }
           }
           ok++; li.textContent = `${m.emoji} ${m.label}: pronta ✓${r.kind === 'pose' ? ' (posa)' : ''}`; li.className = 'ok';
-          if (r.action && App.current && App.current.id === ch.id) { App.current.actions = { ...(App.current.actions || {}), [id]: r.action }; this.render(); }
+          if (r.action && App.current && App.current.id === ch.id) { const k = base === 'seated' ? 'seated' : 'actions'; App.current[k] = { ...(App.current[k] || {}), [id]: r.action }; this.render(); }
         } catch (e) {
           li.className = 'err';
           li.textContent = `${m.emoji} ${m.label}: ${e.refused || /rifiutato/i.test(e.message) ? 'Contenuto rifiutato dal servizio AI — resta l\'avatar normale' : e.message}`;
@@ -105,20 +141,28 @@
       const ch = App.current, now = Date.now();
       if (!ch || !App.chat.visible() || App.chat.busy || App.ls.get('actAuto', true) === false) return;
       if (App.call && App.call.active) return; // v8: in videochiamata solo gesti legati a ciò che si dice, niente azioni a caso
-      const A = av(); if (A.speaking || A.actionBusy() || (A.sceneOn && A.sceneOn())) return;
-      if (now - lastActivity < AUTO_IDLE || now - lastAuto < AUTO_MIN_GAP) return;
+      const A = av(); if (A.speaking || A.actionBusy()) return;
+      const seat = seatedOn(); if (!seat && A.sceneOn && A.sceneOn()) return;
+      if (now - lastActivity < AUTO_IDLE || now - lastAuto < AUTO_MIN_GAP || now - lastGest < GEST_GAP) return;
       autoLog = autoLog.filter((t) => now - t < 3600e3); if (autoLog.length >= AUTO_MAX_HOUR) return;
+      gestLog = gestLog.filter((t) => now - t < 3600e3);
       if (Math.random() > 0.2) return;
+      if (seat) { // seduta al tavolo: solo i gesti spontanei preparati da quella foto
+        if (gestLog.length >= GEST_MAX_HOUR) return;
+        const id = pick(readySeated(ch).map(([k]) => k).filter((k) => GESTURE_IDS.includes(k))); if (!id) return;
+        lastAuto = now; autoLog.push(now); this.play(id, 'spontanea'); return;
+      }
       // le azioni per adulti possono partire da sole SOLO se la modalità adulti è attiva per entrambi (altrimenti non esistono)
       // v8: le azioni per adulti NON partono mai da sole: solo dal filo della conversazione (tag dell'IA) o a mano
       const pool = ready(ch).filter(([id]) => !meta(id).adult).map(([id]) => id);
       if (!pool.length) return;
-      const weighted = pool;
+      const id = pick(pool); if (!id) return; // v8.3: mai la stessa due volte di fila; la risata solo dal contesto
       lastAuto = now; autoLog.push(now);
-      this.play(weighted[Math.floor(Math.random() * weighted.length)], 'spontanea');
+      this.play(id, 'spontanea');
     },
     activity() { lastActivity = Date.now(); },
-    _forceIdle() { lastActivity = 0; lastAuto = 0; }, // solo per i test
+    _forceIdle() { lastActivity = 0; lastAuto = 0; lastGest = 0; }, // solo per i test
+    _gest() { return { lastGest, lastGestId, pendingCue }; }, // solo per i test
   };
 
   $('#act-btn').addEventListener('click', (e) => { e.stopPropagation(); const m = $('#act-menu'); m.hidden = !m.hidden; $('#scene-menu').hidden = true; if (!m.hidden) App.actions.render(); });
@@ -135,4 +179,5 @@
   document.addEventListener('click', (e) => { if (!e.target.closest('#act-menu, #act-btn')) $('#act-menu').hidden = true; });
   ['keydown', 'pointerdown', 'touchstart'].forEach((ev) => document.addEventListener(ev, () => App.actions.activity(), { passive: true }));
   setInterval(() => App.actions.tick(), 5000);
+  setInterval(() => App.actions.cueTick(), 400);
 })();

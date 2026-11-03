@@ -575,6 +575,7 @@ function cleanLm(lm, avatar) {
     const body = {};
     if (B.shL && B.shR) { body.shL = P(B.shL, 0.3, 0.9); body.shR = P(B.shR, 0.7, 0.9); }
     if (B.hipL && B.hipR) { body.hipL = P(B.hipL, 0.4, 1.4); body.hipR = P(B.hipR, 0.6, 1.4); }
+    if (B.table && Number.isFinite(+B.table.y)) body.table = { y: w(B.table.y, 1) }; // v8.3: seduta al tavolo (sotto non si muove nulla)
     if (typeof B.mask === 'string' && B.mask.length < 40000 && /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(B.mask)) body.mask = B.mask;
     if (Object.keys(body).length) out.body = body;
   }
@@ -643,7 +644,9 @@ function cleanScenes(sc) {
     // coordinate nello spazio del quadrato centrale dell'immagine 16:9: possono uscire da 0..1 in orizzontale
     const q = (p) => (p && Number.isFinite(+p.x) && Number.isFinite(+p.y) ? { x: Math.min(2, Math.max(-1, +p.x)), y: Math.min(2, Math.max(-1, +p.y)) } : null);
     const L = lm && { eyeL: q(lm.eyeL), eyeR: q(lm.eyeR), mouth: q(lm.mouth) };
-    out[k] = { url: v.url, at: v.at || null, landmarks: L && L.eyeL && L.eyeR && L.mouth ? L : null };
+    // v8.3: punti automatici completi (occhi, bocca, spalle, linea del tavolo, maschera) per il respiro da seduta
+    const full = lm && lm.auto && L && L.eyeL && L.eyeR && L.mouth ? cleanLm({ ...lm, manual: undefined }, v.url) : null;
+    out[k] = { url: v.url, at: v.at || null, landmarks: full || (L && L.eyeL && L.eyeR && L.mouth ? L : null) };
   }
   return out;
 }
@@ -653,7 +656,9 @@ function buildScenePrompt(ch, room) {
     `Photorealistic vertical 9:16 photo, like the frame of a smartphone video call: a natural, candid, real-life photograph (not a render, not an illustration). Recurring invented adult character (identity anchor #${id.seed}): the SAME person in every image, same face, same facial features.`,
     `A fictional adult ${EN[a.gender]}, clearly ${a.age} years old (adult, at least 25), mature adult features; not a real or famous person.`,
     id.core && `Fixed face/identity: ${id.core}.`,
-    `Framing: medium shot from the head down to the thighs, camera at eye level about 1.2 m away (35mm lens), head in the upper third with some space above the hair, nothing of the head, hair or hands cut off, person centered, ${SCENE_ROOMS[room]}.`,
+    room === 'soggiorno'
+      ? `Framing (v8.3, seated video call): she is SEATED at the table facing the camera, the phone is propped up on the table at eye level about 1 m away (35mm lens), the phone itself is NOT in the picture; we see her from a little above the top of her hair down to the table top, with her forearms resting relaxed on the table and her hands visible; head in the upper third, nothing of the head, hair or hands cut off, person centered, ${SCENE_ROOMS[room]}.`
+      : `Framing: medium shot from the head down to the thighs, camera at eye level about 1.2 m away (35mm lens), head in the upper third with some space above the hair, nothing of the head, hair or hands cut off, person centered, ${SCENE_ROOMS[room]}.`,
     `She looks straight into the camera as if talking to someone on a video call: face clearly visible and well lit, eyes open, lips gently closed, relaxed natural posture, hands resting naturally.`,
     `Lighting: soft warm late-afternoon daylight from the window mixed with warm indoor lamp light; the SAME light falls on her and on the room, with consistent direction, natural soft shadows and contact shadows on the chair and table; correct perspective and real-world scale between her and the furniture. Natural skin texture, realistic hair, slight background depth of field, true-to-life colors, no cutout look, no text, no watermark.`,
     `Body: ${EN[a.build]} build, ${EN[a.shape]} body shape, ${EN[a.proportions]}, height about ${a.height} cm.`,
@@ -752,7 +757,7 @@ app.post('/api/characters/:id/memory-base', auth, async (req, res) => {
 });
 
 app.get('/api/characters', auth, (req, res) => {
-  const list = getChars(req.user).map(({ drawer, ...c }) => ({ ...c, scenes: cleanScenes(c.scenes), actions: visibleActions(c), adultActionsOk: aiFace(c) })); // il vecchio campo del comodino non viene esposto
+  const list = getChars(req.user).map(({ drawer, ...c }) => ({ ...c, scenes: cleanScenes(c.scenes), actions: visibleActions(c), seated: visibleSeated(c), adultActionsOk: aiFace(c) })); // il vecchio campo del comodino non viene esposto
   res.setHeader('X-Version', fileRev(CHARS_FILE())); res.json(list);
 });
 app.get('/api/characters/options', auth, (req, res) => res.json(OPT));
@@ -890,7 +895,7 @@ async function setScene(u, id, room, v) {
     if (v === null) delete sc[room]; else sc[room] = { ...(sc[room] || {}), ...v, at: v.url ? new Date().toISOString() : (sc[room] || {}).at };
     c.scenes = cleanScenes(sc); c.updatedAt = new Date().toISOString(); c.updatedBy = u;
   });
-  const { drawer, ...pub } = c; return pub;
+  const { drawer, ...pub } = c; return { ...pub, scenes: cleanScenes(pub.scenes), actions: visibleActions(pub), seated: visibleSeated(pub), adultActionsOk: aiFace(pub) };
 }
 // Salva un'anteprima di scena e/o i punti del viso trovati sul telefono. body: { room, pendingId?, landmarks? }
 app.put('/api/characters/:id/scene', auth, async (req, res) => {
@@ -930,7 +935,7 @@ app.put('/api/characters/:id/landmarks', auth, async (req, res) => {
     c.landmarks = cleanLm({ ...lm, auto: true, src: avatar, manual }, avatar); applied = true;
   });
   const { drawer, ...pub } = c || ch;
-  res.json({ applied, character: { ...pub, scenes: cleanScenes(pub.scenes), actions: visibleActions(pub), adultActionsOk: aiFace(pub) } });
+  res.json({ applied, character: { ...pub, scenes: cleanScenes(pub.scenes), actions: visibleActions(pub), seated: visibleSeated(pub), adultActionsOk: aiFace(pub) } });
 });
 
 // Generatore di variazioni VINCOLATO: piccoli passi plausibili dallo stato attuale.
@@ -1595,11 +1600,26 @@ const ACTIONS = {
   pensa: { label: 'Pensa', emoji: '🤔', motion: 'she looks up thoughtfully, touches her chin with one finger, then smiles as if she had an idea', pose: 'she is looking up thoughtfully with a finger on her chin' },
   ammicca: { label: 'Fa l\'occhiolino', emoji: '😉', motion: 'she gives a playful wink at the camera with a charming smile, then returns to the starting pose', pose: 'she is winking playfully at the camera with a charming smile' },
   siede: { label: 'Si mette comoda', emoji: '🪑', motion: 'she shifts into a more comfortable position, relaxing her shoulders and settling in, then looks at the camera warmly', pose: 'she is settling comfortably, relaxed shoulders, looking warmly at the camera' },
+  tosse: { label: 'Tossisce', emoji: '😮‍💨', gesture: true, motion: 'she turns her head slightly to one side and gives a small natural cough into her loosely closed hand, once or twice, then lowers the hand and looks back at the camera with a small apologetic smile', pose: 'she is coughing softly into her hand, head turned slightly aside' },
+  starnuto: { label: 'Starnutisce', emoji: '🤧', gesture: true, motion: 'she feels a sneeze coming, her eyes half close and she takes a short breath, then she sneezes softly into the crook of her elbow turned slightly aside, then looks back at the camera with an embarrassed little smile', pose: 'she is about to sneeze, eyes half closed, hand near her face' },
   bacio: { label: 'Manda un bacio', emoji: '😘', motion: 'she blows a kiss to the camera with her hand and smiles', pose: 'she is blowing a kiss to the camera with her hand' },
   spoglia: { adult: true, label: 'Si spoglia', emoji: '🔥', motion: 'the fictional adult woman (25+) slowly and playfully takes off her top, sensual and confident, looking at the camera', pose: 'the fictional adult woman (25+) is slowly taking off her top, sensual and confident' },
   giochi: { adult: true, label: 'Scena intima con sex toy', emoji: '🔞', motion: 'solo intimate scene: the fictional adult woman (25+), alone, sensually uses an adult sex toy, tasteful cinematic lighting', pose: 'solo intimate scene: the fictional adult woman (25+), alone, sensually holding an adult sex toy, tasteful cinematic lighting' },
 };
 const ACT_DIR = () => sharedDir('actions');
+// v8.3: gesti spontanei (anche nella scena seduta al tavolo): pochi, naturali, mai per adulti
+const GESTURE_IDS = ['capelli', 'tosse', 'starnuto', 'ride'];
+ACTIONS.capelli.gesture = true; ACTIONS.ride.gesture = true;
+const SEATED_ROOM = 'soggiorno';
+const seatedUrl = (c) => { const v = c && c.scenes && c.scenes[SEATED_ROOM]; return v && AV_RE.test(String(v.url || '')) ? v.url : null; };
+function visibleSeated(c) {
+  const out = {}, cur = seatedUrl(c);
+  for (const [aid, a] of Object.entries(c.seated || {})) {
+    if (!a || !ACTIONS[aid] || ACTIONS[aid].adult || !ACT_FILE_RE.test(a.file || '') || !fs.existsSync(path.join(ACT_DIR(), a.file))) continue;
+    out[aid] = { kind: a.kind === 'pose' ? 'pose' : 'video', url: `/api/actions/file/${a.file}`, at: a.at, by: a.by, avatar: a.avatar, stale: !cur || a.avatar !== cur };
+  }
+  return out;
+}
 const ACT_FILE_RE = /^([a-f0-9]{16})-([a-z]+)-([a-f0-9]{8})\.(mp4|png|jpg)$/;
 // Volto generato dall'IA: avatar immagine creato dall'IA e MAI una foto caricata (avatarConsent resta per sempre se c'è stata una foto)
 const aiFace = (c) => !!c && c.avatarSource === 'ai' && !c.avatarConsent && AV_RE.test(String(c.avatar || ''));
@@ -1648,25 +1668,29 @@ const actionJobs = new Map(); // request_id -> { user, charId, aid, avatar, at }
 const actionBusy = new Set(); // charId:aid in preparazione
 const actionSpend = new Map(); // utente -> [timestamp] (al massimo ACTION_MAX_HOUR preparazioni l'ora)
 const ACTION_MAX_HOUR = Math.max(1, Number(process.env.ACTION_MAX_HOUR) || 24);
-async function saveAction(u, ch, aid, buf, kind, srcAvatar, ext) {
+async function saveAction(u, ch, aid, buf, kind, srcAvatar, ext, base) {
   const file = `${ch.id}-${aid}-${crypto.randomBytes(4).toString('hex')}.${ext}`;
   fs.writeFileSync(path.join(ACT_DIR(), file), buf);
+  if (base === 'seated') { // v8.3: clip partita dalla foto seduta al tavolo; le vecchie restano su disco (nessuna cancellazione)
+    await patchChar(ch.id, (c) => { c.seated = c.seated || {}; c.seated[aid] = { file, kind, at: new Date().toISOString(), by: u, avatar: srcAvatar }; });
+    return visibleSeated(getChars(u).find((c) => c.id === ch.id))[aid];
+  }
   let old = null;
   await patchChar(ch.id, (c) => { c.actions = c.actions || {}; old = c.actions[aid] && c.actions[aid].file; c.actions[aid] = { file, kind, at: new Date().toISOString(), by: u, avatar: srcAvatar }; });
   if (old && old !== file && ACT_FILE_RE.test(old)) fs.rmSync(path.join(ACT_DIR(), old), { force: true });
   const fresh = getChars(u).find((c) => c.id === ch.id);
   return visibleActions(fresh)[aid];
 }
-async function poseFallback(u, key, ch, aid, srcAvatar, buf) {
+async function poseFallback(u, key, ch, aid, srcAvatar, buf, base) {
   const A = ACTIONS[aid];
   const dataUrl = `data:image/${buf[0] === 0xff ? 'jpeg' : 'png'};base64,${buf.toString('base64')}`;
   const r = await editImage(key, `${ACT_BASE}Still photo of the moment: ${A.pose}.`, [dataUrl], !!A.adult, closestAspect(imgSize(buf)));
-  return saveAction(u, ch, aid, r.buf, 'pose', srcAvatar, r.jpg ? 'jpg' : 'png');
+  return saveAction(u, ch, aid, r.buf, 'pose', srcAvatar, r.jpg ? 'jpg' : 'png', base);
 }
 app.get('/api/actions', auth, (req, res) => {
   const adult = adultChat();
   res.json({ video: !!VIDEO_PATH, adult, seconds: ACTION_SECONDS,
-    catalog: Object.entries(ACTIONS).filter(([, a]) => !a.adult || adult).map(([id, a]) => ({ id, label: a.label, emoji: a.emoji, adult: !!a.adult })) });
+    catalog: Object.entries(ACTIONS).filter(([, a]) => !a.adult || adult).map(([id, a]) => ({ id, label: a.label, emoji: a.emoji, adult: !!a.adult, gesture: !!a.gesture })), gestures: GESTURE_IDS });
 });
 // Avvia la preparazione di UN'azione. Risposta: { status:'pending', rid } (video, poi /status) oppure { status:'done', action } (posa).
 app.post('/api/characters/:id/actions/:aid', auth, requireActivated, requireKey, async (req, res) => {
@@ -1677,9 +1701,13 @@ app.post('/api/characters/:id/actions/:aid', auth, requireActivated, requireKey,
   const A = ACTIONS[aid];
   if (A.adult && !adultChat()) return res.status(403).json({ error: 'Azione disponibile solo con la modalità adulti attiva per entrambi.' });
   if (A.adult && !aiFace(ch)) return res.status(403).json({ error: 'Le azioni per adulti si possono preparare solo per personaggi con il volto generato dall\'IA, mai da una foto caricata.' });
-  const m = AV_RE.exec(String(ch.avatar || ''));
+  const base = req.body.base === 'seated' ? 'seated' : 'avatar';
+  if (base === 'seated' && A.adult) return res.status(400).json({ error: 'Nella scena al tavolo ci sono solo i gesti spontanei.' });
+  const srcUrl = base === 'seated' ? seatedUrl(ch) : String(ch.avatar || '');
+  if (base === 'seated' && !srcUrl) return res.status(400).json({ error: 'Crea prima la scena al tavolo (🏠).' });
+  const m = AV_RE.exec(srcUrl);
   if (!m || !fs.existsSync(avatarPath(m[1]))) return res.status(400).json({ error: 'Serve un avatar immagine (non emoji) per preparare le azioni.' });
-  const key = `${ch.id}:${aid}`;
+  const key = `${ch.id}:${aid}:${base}`;
   if (actionBusy.has(key)) return res.status(409).json({ error: 'Questa azione è già in preparazione' });
   const now = Date.now(), spent = (actionSpend.get(req.user) || []).filter((t) => now - t < 3600e3);
   if (spent.length >= ACTION_MAX_HOUR) return res.status(429).json({ error: `Limite di ${ACTION_MAX_HOUR} preparazioni l'ora raggiunto: riprova più tardi.` });
@@ -1689,21 +1717,21 @@ app.post('/api/characters/:id/actions/:aid', auth, requireActivated, requireKey,
   actionBusy.add(key);
   try {
     if (VIDEO_PATH && req.body.mode !== 'pose') {
-      const body = { model: ACTION_VIDEO_MODEL, prompt: imgPrefix(!!A.adult) + ACT_BASE + A.motion + (A.adult ? '' : ' It ends in exactly the same pose as the first frame.'), image: { url: dataUrl }, duration: ACTION_SECONDS, resolution: ACTION_RESOLUTION };
+      const body = { model: ACTION_VIDEO_MODEL, prompt: imgPrefix(!!A.adult) + ACT_BASE + A.motion + (base === 'seated' ? '. She stays seated at the table the whole time, forearms back on the table at the end' : '') + (A.adult ? '' : ' It ends in exactly the same pose as the first frame.'), image: { url: dataUrl }, duration: ACTION_SECONDS, resolution: ACTION_RESOLUTION };
       if (!A.adult) body.last_frame = { url: dataUrl }; // loop pulito: l'ultimo fotogramma torna l'avatar
       let r = await fetch(AI_BASE_URL + VIDEO_PATH, { method: 'POST', headers: aiHeaders(req.aiKey), body: JSON.stringify(body) });
       let j = await r.json().catch(() => ({}));
       if (!r.ok && body.last_frame && r.status === 400 && /last_frame/i.test(JSON.stringify(j))) { // modello senza ultimo fotogramma fissato
         delete body.last_frame; r = await fetch(AI_BASE_URL + VIDEO_PATH, { method: 'POST', headers: aiHeaders(req.aiKey), body: JSON.stringify(body) }); j = await r.json().catch(() => ({}));
       }
-      if (r.ok && j.request_id) { actionJobs.set(j.request_id, { user: req.user, charId: ch.id, aid, avatar: ch.avatar, at: now }); return res.json({ status: 'pending', rid: j.request_id, kind: 'video' }); }
+      if (r.ok && j.request_id) { actionJobs.set(j.request_id, { user: req.user, charId: ch.id, aid, avatar: srcUrl, base, at: now }); return res.json({ status: 'pending', rid: j.request_id, kind: 'video' }); }
       const msg = aiErrorMsg(r.status, j);
       console.error(`Azione ${aid}: video non avviato (HTTP ${r.status})`);
       if (msg === 'Contenuto rifiutato dal servizio AI' || r.status === 401) return res.status(r.status === 401 ? 400 : 422).json({ error: msg, refused: msg === 'Contenuto rifiutato dal servizio AI' }); // 400: mai 401 (farebbe uscire dall'app)
       if (![404, 405, 501].includes(r.status)) return res.status(502).json({ error: msg });
       // video non disponibile con questa chiave/servizio: ripiego sulle pose (immagini)
     }
-    const action = await poseFallback(req.user, req.aiKey, ch, aid, ch.avatar, buf);
+    const action = await poseFallback(req.user, req.aiKey, ch, aid, srcUrl, buf, base);
     res.json({ status: 'done', kind: 'pose', action });
   } catch (e) {
     const refused = e.message === 'Contenuto rifiutato dal servizio AI';
@@ -1730,7 +1758,7 @@ app.get('/api/characters/:id/actions/:aid/status/:rid', auth, requireKey, async 
     if (ACTIONS[job.aid].adult && !actionAllowed(ch, job.aid)) return res.status(403).json({ error: 'Modalità adulti non più attiva: clip scartata.' });
     const buf = Buffer.from(await (await fetch(j.video.url)).arrayBuffer());
     if (buf.length < 100) return res.json({ status: 'failed', error: 'Video vuoto' });
-    res.json({ status: 'done', kind: 'video', action: await saveAction(req.user, ch, job.aid, buf, 'video', job.avatar, 'mp4') });
+    res.json({ status: 'done', kind: 'video', action: await saveAction(req.user, ch, job.aid, buf, 'video', job.avatar, 'mp4', job.base) });
   } catch (e) { res.status(502).json({ error: 'Servizio AI non raggiungibile' }); }
 });
 app.delete('/api/characters/:id/actions/:aid', auth, async (req, res) => {

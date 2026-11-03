@@ -172,6 +172,15 @@ Tutto in `data/` sul server (escluso da git e dallo zip): `pins.json`, `sessions
 - Le clip delle azioni suonano con il loro audio (se presente) solo con Lettura attiva e audio sbloccato; se iOS lo blocca, la clip parte muta.
 - Sul telefono: interruttore laterale (silenzioso) disattivato e volume alzato; su iPhone la sintesi vocale può restare muta in modalità silenziosa.
 
+## Novità v8.3 (seduta al tavolo e gesti spontanei)
+
+- **Lei seduta al tavolo del soggiorno**: foto realistica generata dall'IA (stesso viso, inquadratura da videochiamata 9:16, il telefono appoggiato sul tavolo), creata **una volta sola** per personaggio con la chiave xAI del telefono. Avatar, messaggi e vecchie scene restano intatti; per le scene già esistenti viso, spalle e linea del tavolo vengono ritrovati sul telefono senza toccare i vecchi dati.
+- **Respiro da seduta**: petto e spalle si muovono, si ferma alla linea degli avambracci appoggiati; tavolo e stanza restano fermi.
+- **Gesti spontanei** (si sistema i capelli, tossisce, starnutisce, ride): brevi clip generate dalla foto al tavolo, fuse con l'immagine e sincronizzate con il respiro (inspira prima dello starnuto, riprende fiato dopo la tosse). Rari (al massimo uno ogni 2,5 minuti), mai lo stesso due volte di fila. In chiamata solo quando c'entrano: la risata quando ride davvero, dopo la frase; i capelli quando è tenera o maliziosa.
+- Le azioni per adulti e gli sblocchi restano come prima, sull'avatar; nella scena al tavolo ci sono solo i gesti.
+
+Cosa toccare: apri la chat → 🏠 → «✨ Crea la scena al tavolo con l'IA» (conferma se chiede di salvare) → lei appare seduta; poi 🏠 → «🎬 Prepara i gesti al tavolo» → «Prepara». Per tornare all'avatar di sempre: 🏠 → «✓ Seduta al tavolo — tocca per spegnere».
+
 ## Novità v8.2 (stile WhatsApp)
 
 - **Chat**: intestazione con foto rotonda, nome e stato (online / sta scrivendo… / in chiamata) e icone 📞 📹; bolle verdi a destra per i tuoi messaggi, scure a sinistra per lei e per l'altra persona (con il nome colorato), ora e spunte in basso (✓ inviato, ✓✓ consegnato in chat, ✓✓ blu quando c'è una risposta dopo).

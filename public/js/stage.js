@@ -66,15 +66,26 @@
     const L = r && r.landmarks && r.landmarks[0];
     const out = {};
     const Q = (p) => ({ x: (p.x * nw - ox) / s, y: (p.y * nh - oy) / s });
+    let arms = null;
     if (L) {
       const vis = (i) => (L[i].visibility == null ? 1 : L[i].visibility) > 0.5 && L[i].y < 1.02 && L[i].y > -0.02;
       if (vis(11) && vis(12)) { let a = Q(L[11]), b = Q(L[12]); if (a.x > b.x) [a, b] = [b, a]; out.shL = a; out.shR = b; }
+      // v8.3: avambracci appoggiati al tavolo (gomiti e polsi quasi alla stessa altezza, sotto le spalle)
+      if (vis(13) && vis(14) && vis(15) && vis(16)) {
+        const fy = [];
+        for (const [e, w] of [[13, 15], [14, 16]]) {
+          const E = Q(L[e]), Wr = Q(L[w]);
+          if (Math.abs(Wr.y - E.y) < 0.7 * Math.abs(Wr.x - E.x) + 0.02) fy.push((E.y + Wr.y) / 2);
+        }
+        if (fy.length) arms = Math.min(...fy);
+      }
       if (vis(23) && vis(24)) { let a = Q(L[23]), b = Q(L[24]); if (a.x > b.x) [a, b] = [b, a]; out.hipL = a; out.hipR = b; }
     }
+    let F = null, MW = 0, MH = 0;
     const m = r && r.segmentationMasks && r.segmentationMasks[0];
     if (m) {
       try {
-        const f = m.getAsFloat32Array(), mw = m.width, mh = m.height, W = 96, H = Math.max(8, Math.round(96 * nh / nw));
+        const f = m.getAsFloat32Array(), mw = m.width, mh = m.height; F = f; MW = mw; MH = mh; const W0 = 96, W = W0, H = Math.max(8, Math.round(96 * nh / nw));
         const c = document.createElement('canvas'); c.width = W; c.height = H; const x = c.getContext('2d'); const id = x.createImageData(W, H);
         for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) {
           let acc = 0, n = 0; // media su un piccolo blocco (niente scalini)
@@ -83,6 +94,22 @@
         }
         x.putImageData(id, 0, 0); out.mask = c.toDataURL('image/png');
       } catch (e) { console.warn('Maschera non creata', e); }
+      // v8.3: seduta al tavolo? la persona "finisce" sopra il bordo inferiore (il tavolo la copre): lì il respiro si ferma
+      try {
+        if (F && out.shL && out.shR) { // anche se Pose "indovina" i fianchi nascosti dal tavolo
+          const sy = Math.max(0, Math.floor(((out.shL.y + out.shR.y) / 2 * s + oy) / nh * MH));
+          const x0 = ((Math.min(out.shL.x, out.shR.x) * s + ox) / nw), x1 = ((Math.max(out.shL.x, out.shR.x) * s + ox) / nw), ends = [];
+          for (let t = 0.3; t <= 0.71; t += 0.1) {
+            const cx = Math.min(MW - 1, Math.max(0, Math.round((x0 + (x1 - x0) * t) * MW)));
+            let y = sy; while (y < MH && F[y * MW + cx] > 0.5) y++;
+            ends.push(y);
+          }
+          ends.sort((a, b) => a - b); const ey = ends[Math.floor(ends.length / 2)];
+          if (ey < MH * 0.97 && ey > sy + MH * 0.08) out.table = { y: (ey / MH * nh - oy) / s };
+          // la maschera spesso include il tavolo (primo piano): allora vale la linea degli avambracci
+          if (arms != null) { const sh = (out.shL.y + out.shR.y) / 2; if (arms > sh + 0.12 && (!out.table || arms < out.table.y)) out.table = { y: arms }; }
+        }
+      } catch {}
       try { m.close && m.close(); } catch {}
     }
     return Object.keys(out).length ? out : null;
@@ -119,34 +146,36 @@
       const prev = this.preview && this.preview.charId === (ch && ch.id) ? this.preview : null;
       const url = prev ? prev.dataUrl : sc ? sc.url : null;
       av().setSceneMode(on && url ? { on: true, room: ROOM, url, landmarks: prev ? prev.landmarks : sc.landmarks } : { on: false });
+      const g = $('#scene-gestures'); if (g) g.hidden = !(sc && sc.url && !prev);
       $('#scene-btn').classList.toggle('on', on && !!url);
-      const t = $('#scene-toggle'); if (t) { t.textContent = on ? '✓ Soggiorno attivo — tocca per spegnere' : '🏠 Mostrala nel soggiorno'; t.classList.toggle('on', on); t.disabled = !url; }
-      $('#scene-gen').textContent = url ? '✨ Rigenera il soggiorno' : '✨ Crea il soggiorno con l\'IA';
+      const t = $('#scene-toggle'); if (t) { t.textContent = on ? '✓ Seduta al tavolo — tocca per spegnere' : '🪑 Mostrala seduta al tavolo'; t.classList.toggle('on', on); t.disabled = !url; }
+      $('#scene-gen').textContent = url ? '✨ Rigenera la scena al tavolo' : '✨ Crea la scena al tavolo con l\'IA';
       $('#scene-info').textContent = prev ? 'Anteprima (non salvata).'
-        : !url ? 'Foto realistica di lei nel soggiorno di casa, con la stessa luce: si crea una volta sola (serve la chiave xAI).'
-        : sc && !sc.landmarks ? 'Soggiorno pronto (viso non trovato: solo l\'immagine).' : on ? 'Soggiorno attivo: viso animato.' : 'Soggiorno pronto.';
-      if (sc && !sc.landmarks && !this.tried.has(sc.url)) { this.tried.add(sc.url); this.locate(ch.id, ROOM, sc.url); }
+        : !url ? 'Foto realistica di lei seduta al tavolo del soggiorno, stesso viso e stessa luce, inquadratura da videochiamata: si crea una volta sola con la tua chiave xAI.'
+        : sc && !sc.landmarks ? 'Scena pronta (viso non trovato: solo l\'immagine).' : on ? 'Seduta al tavolo: respiro e viso animati.' : 'Scena al tavolo pronta.';
+      // v8.3: punti completi (viso + spalle + linea del tavolo) trovati sul telefono, una volta per foto; i vecchi restano finché non ci sono i nuovi
+      if (sc && !(sc.landmarks && sc.landmarks.auto && sc.landmarks.v >= 2) && !this.tried.has(sc.url) && !App.ls.get('sceneTried2:' + sc.url, false)) { this.tried.add(sc.url); this.locate(ch.id, ROOM, sc.url); }
     },
     tried: new Set(), preview: null,
     set(on) { if (!App.current) return; App.ls.set(`scene:${App.current.id}`, on ? ROOM : ''); this.apply(); },
     toggle() { this.set(!this.room()); menu.hidden = true; },
     async locate(id, room, url) {
-      const lm = await findFace(url); if (!lm) return;
+      const lm = (await autoFace(url).catch(() => null)) || await findFace(url); App.ls.set('sceneTried2:' + url, true); if (!lm) return;
       try { const r = await App.api(`/api/characters/${id}/scene`, { method: 'PUT', body: { room, landmarks: lm } }); adopt(r.character); this.apply(); } catch { /* riprova al prossimo avvio */ }
     },
     async gen() {
       const ch = App.current; if (!ch) return;
-      if (!App.key()) return App.toast('Serve la chiave xAI (Account) per creare il soggiorno');
-      const btn = $('#scene-gen'); btn.disabled = true; $('#scene-info').textContent = 'Creo la foto nel soggiorno… (può volerci un minuto)';
+      if (!App.key()) return App.toast('Serve la chiave xAI (Account) per creare la scena al tavolo');
+      const btn = $('#scene-gen'); btn.disabled = true; $('#scene-info').textContent = 'Creo la foto di lei seduta al tavolo… (può volerci un minuto)';
       try {
         const r = await App.api(`/api/characters/${ch.id}/scene-image`, { method: 'POST', body: { room: ROOM }, ai: true });
-        if (r.character) { adopt(r.character); this.set(true); App.toast('🏠 Soggiorno salvato'); return; }
-        const lm = await findFace(r.preview.dataUrl);
+        if (r.character) { adopt(r.character); this.set(true); App.toast('🪑 Scena al tavolo salvata'); return; }
+        const lm = (await autoFace(r.preview.dataUrl).catch(() => null)) || await findFace(r.preview.dataUrl);
         this.preview = { charId: ch.id, room: ROOM, dataUrl: r.preview.dataUrl, landmarks: lm }; App.ls.set(`scene:${ch.id}`, ROOM); this.apply();
         await new Promise((ok) => setTimeout(ok, 400));
-        if (confirm('Salvare questa foto nel soggiorno per il personaggio?')) {
+        if (confirm('Salvare questa foto di lei seduta al tavolo?')) {
           const s2 = await App.api(`/api/characters/${ch.id}/scene`, { method: 'PUT', body: { room: ROOM, pendingId: r.preview.pending, landmarks: lm } });
-          adopt(s2.character); App.toast('🏠 Soggiorno salvato');
+          adopt(s2.character); App.toast('🪑 Scena al tavolo salvata');
         }
         this.preview = null; this.apply();
       } catch (e) { $('#scene-info').textContent = '⚠️ ' + e.message; }
@@ -157,6 +186,7 @@
   menu.addEventListener('click', (e) => e.stopPropagation());
   $('#scene-toggle').addEventListener('click', () => App.scene.toggle());
   $('#scene-gen').addEventListener('click', () => App.scene.gen());
+  $('#scene-gestures').addEventListener('click', () => { menu.hidden = true; App.actions && App.actions.openPrepare('seated'); });
 
   // ---- schermo intero: Fullscreen API se disponibile, altrimenti sovrapposizione CSS (iPhone Safari / app installata) ----
   const fsEl = () => document.fullscreenElement || document.webkitFullscreenElement;

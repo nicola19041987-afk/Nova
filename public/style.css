@@ -317,3 +317,7 @@ body.wa-conv #avatar-canvas{box-shadow:0 0 0 1px #2a3942}
 body.wa-conv #stage.speaking #avatar-canvas{box-shadow:0 0 0 3px var(--wa-green),0 0 22px #00a88466}
 .call-ui:not(.voice) .call-top{padding:0 calc(min(24%,130px) + 8px)}
 @media (orientation:landscape) and (max-height:600px){#stage:not(.fs):not(.call) .stage-tools{left:6px;right:6px;top:6px;gap:4px;justify-content:center;flex-wrap:wrap}#stage:not(.fs):not(.call) .stage-tools button{width:34px;height:34px;line-height:34px;font-size:16px}}
+/* v8.3: in orizzontale il riquadro di lei è stretto: i menu 🎭/🏠 si aprono accanto, interi */
+@media (orientation:landscape) and (max-height:560px){
+  .scene-menu{position:fixed;top:64px;left:calc(8px + min(34vw, 45vh));right:auto;max-width:300px;z-index:30}
+}
