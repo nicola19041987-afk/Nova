@@ -57,6 +57,8 @@
       this.blinkDur = 160; this.blinkAmp = 1; this.blinkDouble = 0;
       this.loop = this.loop.bind(this);
       this._frame = 0; this.simUntil = 0;
+      this.dist = 0.75; this._dEff = 0.75; this._nod = 0; this._nodV = 0; this._mh = 0; // v8.4.1: distanza dalla camera, cenni del capo
+      this._pf = { draw: new Float32Array(240), gap: new Float32Array(240), n: 0 }; // v8.4.1: tempi dei fotogrammi (media e p95)
       this.resize();
       if (window.ResizeObserver) new ResizeObserver(() => this.resize()).observe(canvas);
       requestAnimationFrame(this.loop); // parte subito, anche senza fotocamera
@@ -91,10 +93,18 @@
       this.lm = JSON.parse(JSON.stringify(ch.landmarks || this.lm));
       if (ch.appearance && ch.appearance.colors) this.setColors(ch.appearance.colors);
       this.framing = (ch.appearance && ch.appearance.framing) || 'ritratto';
+      this.setDistance(ch.frameDist == null ? 0.75 : ch.frameDist, true);
       const ff = ch.frameFill;
       if (ff && ff.url && !ff.off && ff.src === ch.avatar && ff.landmarks && ff.landmarks.eyeL) { this.lm = JSON.parse(JSON.stringify(ff.landmarks)); this.setImage(ff.url); }
       else this.setImage(ch.avatar);
       if (window.App && App.frame && this.c && this.c.id === 'avatar-canvas') App.frame.check(ch);
+    }
+    // v8.4.1: distanza dalla camera (0 = vicina come in v8.4, 1 = lontana: testa ~18% dell'altezza); passaggio morbido
+    setDistance(d, instant) { this.dist = Math.max(0, Math.min(1, Number(d) || 0)); if (instant && !this.img) this._dEff = this.dist; }
+    perf() {
+      const P = this._pf, n = Math.min(P.n, 240); if (!n) return null;
+      const st = (a) => { const v = Array.from(a.slice(0, n)).sort((x, y) => x - y); return { avg: +(v.reduce((x, y) => x + y, 0) / n).toFixed(2), p95: +v[Math.min(n - 1, Math.floor(n * 0.95))].toFixed(2) }; };
+      return { frames: n, draw: st(P.draw), interval: st(P.gap) };
     }
     setImage(src) {
       if (src && (src.startsWith('/api/') || src.startsWith('data:'))) {
@@ -112,6 +122,7 @@
     react(kind, badge) {
       const dur = { wave: 1800, smile: 2200, nod: 1200, tilt: 1600, shake: 1100 }[kind] || 1500;
       this.reaction = { kind, start: performance.now(), dur };
+      if (kind === 'nod') { const n = Math.random() < 0.55 ? 1 : 2; Object.assign(this.reaction, { n, amp: 0.6 + Math.random() * 0.4, dur: (n === 1 ? 650 : 1050) + Math.random() * 350 }); } // v8.4.1: cenni vari (uno o due, ampiezza e durata diverse)
       if (badge === '😄' && this.breathM) this.breathM.laugh(performance.now()); // ride davvero: il petto sobbalza
       if (badge) this.badges.push({ t: performance.now(), e: badge, x: 0.18 + Math.random() * 0.1 });
       if (this.badges.length > 4) this.badges.shift();
@@ -231,14 +242,18 @@
       // non visibile: risparmia batteria (getClientRects funziona anche dentro contenitori position:fixed su iOS)
       if (!this.c.isConnected || this.c.getClientRects().length === 0) return;
       if (++this._frame % 30 === 0) this.resize();
-      // v8: a riposo (nessuna voce, azione o dissolvenza) bastano ~30 fotogrammi al secondo: meno batteria e niente scatti
-      if (!this.speaking && !this.act && !this._snap && this.mouth < 0.01 && now - (this._drawn || 0) < 30) return;
-      this._drawn = now;
+      // v8.4.1: ritmo costante ~60 fotogrammi al secondo anche a riposo (prima 30: il movimento sembrava "a scatti");
+      // sugli schermi a 120 Hz si salta un fotogramma su due (stesso ritmo, metà lavoro)
+      if (now - (this._drawn || 0) < 12) return;
+      const gap = this._drawn ? now - this._drawn : 16.7; this._drawn = now; const tP0 = performance.now();
       if (this.simUntil && now > this.simUntil) { this.simUntil = 0; this.speaking = false; }
       const ctx = this.ctx, S = VS; // spazio virtuale; la trasformazione porta tutto alle dimensioni reali del canvas
-      { const tg = this.target(now); this.mouth += (tg - this.mouth) * (tg > this.mouth ? 0.5 : 0.28); } // apertura rapida, chiusura morbida
-      this.wide = (this.wide || 0.5) + (((this.speaking ? this.vWide : 0.5) ?? 0.5) - (this.wide || 0.5)) * 0.25; // forma della bocca interpolata
       const dt = Math.min(100, now - (this._last || now)); this._last = now;
+      const kf = (a) => 1 - Math.pow(1 - a, dt / 16.67); // v8.4.1: smorzamenti indipendenti dal frame rate (uguali a 30, 60 o 120 Hz)
+      { const tg = this.target(now); this.mouth += (tg - this.mouth) * kf(tg > this.mouth ? 0.5 : 0.28); } // apertura rapida, chiusura morbida
+      this.wide = (this.wide || 0.5) + (((this.speaking ? this.vWide : 0.5) ?? 0.5) - (this.wide || 0.5)) * kf(0.25); // forma della bocca interpolata
+      this._dEff += (this.dist - this._dEff) * (1 - Math.exp(-dt / 260)); // distanza: avvicinamento/allontanamento morbido
+      this._mh += (this.mouth - this._mh) * (1 - Math.exp(-dt / 140));
       // ritmo: se l'utente si muove a tempo, l'oscillazione segue il suo periodo (fase continua, niente scatti)
       const sens = this.sensual;
       const ST = this.style, learned = ST.confidence;
@@ -284,20 +299,25 @@
       // spalle: una sale mentre l'altra scende (lento), più marcato quando alza un braccio
       const skew = Math.max(-SKEW_MAX, Math.min(SKEW_MAX, Math.sin(now / 3700 + 1) * 0.011 * idle + (M.lift[1] - M.lift[0]) * 0.01 + M.tilt * 0.004));
       // reazione in corso
-      let rx = 0, ry = 0, rRot = 0, smile = sens ? 0.25 : 0, wave = 0;
+      let rx = 0, ry = 0, rRot = 0, smile = sens ? 0.25 : 0, wave = 0, A_nod = 0;
       const re = this.reaction;
       if (re) {
         const p = (now - re.start) / re.dur;
         if (p >= 1) this.reaction = null;
         else {
           const env = p < 0.3 ? ease(p / 0.3) : p > 0.65 ? ease((1 - p) / 0.35) : 1; // attacco e rilascio morbidi
-          if (re.kind === 'nod') ry = Math.sin(p * Math.PI * 4) * S * 0.014 * env;
+          if (re.kind === 'nod') { ry = Math.sin(p * Math.PI * 4) * S * 0.014 * env; A_nod = Math.max(0, Math.sin(p * Math.PI * (re.n || 2) * 2)) * env * (re.amp || 1); }
           if (re.kind === 'shake') rx = Math.sin(p * Math.PI * 6) * S * 0.012 * env;
           if (re.kind === 'tilt') rRot = 0.07 * env;
           if (re.kind === 'smile' || re.kind === 'wave') smile = Math.max(smile, env);
           if (re.kind === 'wave') { wave = env; rRot = Math.sin(p * Math.PI * 6) * 0.03 * env; }
         }
       }
+      // v8.4.1: cenni del capo (solo verticali, nessun movimento laterale): reazioni "annuisce", micro-movimenti a riposo con
+      // rumore a strati (3 sinusoidi lente non multiple), leggero accento sulle sillabe mentre parla; tutto con una molla smorzata
+      const idleN = (Math.sin(now / 1730) * 0.5 + Math.sin(now / 2970 + 1.3) * 0.3 + Math.sin(now / 5310 + 2.1) * 0.2) * (this.speaking ? 0.6 : 1);
+      const nodT = A_nod * 1.0 + idleN * 0.07 + this._mh * 0.16;
+      { const K = 70, D = 2 * Math.sqrt(K) * 0.9, sd = dt / 1000; this._nodV += ((nodT - this._nod) * K - this._nodV * D) * sd; this._nod += this._nodV * sd; }
       // battito di ciglia (in modalità sensuale: più lento, palpebre un po' abbassate)
       // ammiccamenti variabili: durata 120–240 ms, a volte doppi o a metà; più frequenti mentre parla
       // v8.4: ogni 2–6 s (a volte doppio); chiusura rapida (~150 ms) e riapertura più lenta (curva asimmetrica)
@@ -338,7 +358,7 @@
       if (squint > 0.3) blink = Math.max(blink, squint * 0.25); // occhi che "sorridono"
 
       // ---- disegno: contenimento (contain) nel riquadro, mai ritagliato; scena cinematografica facoltativa ----
-      const A = { now, S, rot: Math.max(-ROT_MAX, Math.min(ROT_MAX, sway + talkNod + rRot)), shiftX: Math.max(-SHIFT_MAX, Math.min(SHIFT_MAX, shiftX + rx)), bob: Math.max(-SHIFT_MAX, Math.min(SHIFT_MAX, bob + ry)), skew, breath, vol, smile, blink, wave, mc, M, spring };
+      const A = { nod: this._nod, now, S, rot: Math.max(-ROT_MAX, Math.min(ROT_MAX, sway + talkNod + rRot)), shiftX: Math.max(-SHIFT_MAX, Math.min(SHIFT_MAX, shiftX + rx)), bob: Math.max(-SHIFT_MAX, Math.min(SHIFT_MAX, bob + ry)), skew, breath, vol, smile, blink, wave, mc, M, spring };
       if (!this.transparent && (this._frame % 10 === 0 || !this.bd)) this.syncBackdrop();
       const CW = this.c.width, CH = this.c.height, col = this.colors;
       ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalCompositeOperation = 'source-over'; ctx.clearRect(0, 0, CW, CH);
@@ -371,9 +391,11 @@
         ctx.globalAlpha = 1;
       }
       const stage = this.c.parentElement;
-      if (stage) { stage.classList.toggle('speaking', this.speaking); stage.style.setProperty('--glow', col.glow); }
+      if (stage && (this._stSp !== this.speaking || this._stGl !== col.glow)) { this._stSp = this.speaking; this._stGl = col.glow; stage.classList.toggle('speaking', this.speaking); stage.style.setProperty('--glow', col.glow); }
       const pulse = sens ? Math.round(14 + Math.sin(now / 1400) * 8) : 0;
-      this.c.style.boxShadow = this.speaking ? `0 0 0 3px ${col.glow}, 0 0 22px ${col.glow}88` : sens ? `0 0 ${pulse}px ${col.glow}66` : '';
+      const bs = this.speaking ? `0 0 0 3px ${col.glow}, 0 0 22px ${col.glow}88` : sens ? `0 0 ${pulse}px ${col.glow}66` : '';
+      if (bs !== this._bs) { this._bs = bs; this.c.style.boxShadow = bs; } // v8.4.1: niente scritture di stile a ogni fotogramma
+      const P = this._pf, i = P.n++ % 240; P.draw[i] = performance.now() - tP0; P.gap[i] = gap;
     }
 
     // Estensione dell'immagine intera nello spazio "quadrato S" dei punti del viso (il quadrato centrale = 0..S)
@@ -399,8 +421,25 @@
       const W = E.w * fit, H = E.h * fit, S = VS, lm = this.lm || {};
       const eL = lm.eyeL || { x: 0.42, y: 0.4 }, eR = lm.eyeR || { x: 0.58, y: 0.4 }, ed = Math.hypot(eR.x - eL.x, eR.y - eL.y) * S;
       const fx = ((eL.x + eR.x) / 2) * S, fy = Math.min(eL.y, eR.y) * S, head = fy - ed * 1.6; // cima della testa (stima)
-      const ovw = Math.max(0, W - box.w), ovh = Math.max(0, H - box.h);
       const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+      // v8.4.1: più lontana. La testa (≈3,6 × distanza fra gli occhi) punta al 18–32% dell'altezza della cornice secondo la
+      // "distanza" (predefinita 0,75 ≈ 21%): meno taglio, più corpo e più stanza. Solo rimpicciolimento e al massimo fino a
+      // contenere la foto (niente riquadri dentro la cornice); per allontanarla davvero c'è «🔭 Allontana con l'IA» (foto più ampia).
+      const dd = this._dEff == null ? this.dist || 0 : this._dEff;
+      if (dd > 0.01) {
+        const T = 0.32 - 0.14 * dd, fD = (T * box.h) / Math.max(1, ed * 3.6), fMin = fc, f2 = clamp(fD, fMin, fit); // mai una "foto nella foto": al massimo fino a contenerla (bande in tinta solo sul lato corto)
+        if (f2 < fit - 1e-9) {
+          const W2 = E.w * f2, H2 = E.h * f2, ow = W2 - box.w, oh = H2 - box.h;
+          const eyeX = ((fx - E.x0) / E.w) * W2, eyeY = ((fy - E.y0) / E.h) * H2;
+          const cl2 = ow > 0 ? clamp(eyeX - box.w / 2, 0, ow) : -(box.w - W2) / 2;
+          const hp = ((head - E.y0) / E.h) * H2;
+          const ct2 = oh > 0 ? clamp(eyeY - box.h * 0.33, 0, Math.max(0, Math.min(oh, hp - box.h * 0.03))) : -(box.h - H2) / 2;
+          this._headFrac = (ed * 3.6 * f2) / box.h;
+          return { fit: f2, ox: box.x - cl2 - E.x0 * f2, oy: box.y - ct2 - E.y0 * f2 };
+        }
+      }
+      this._headFrac = (ed * 3.6 * fit) / box.h;
+      const ovw = Math.max(0, W - box.w), ovh = Math.max(0, H - box.h);
       const cl = ovw ? clamp(((fx - E.x0) / E.w) * W - box.w / 2, Math.max(0, ovw - CROP * W), Math.min(ovw, CROP * W)) : -(box.w - W) / 2;
       const headPx = ((head - E.y0) / E.h) * H;
       const ctMax = Math.max(0, Math.min(ovh, CROP * H, headPx - box.h * 0.02));
@@ -430,7 +469,7 @@
         let src = img, headDy = 0;
         if (this.breathOn !== false && img.naturalWidth) {
           if (!this.breather) this.breather = new Breather();
-          if (this.breather.ok && this.breather.setup(img, this.lm)) { const amp = this.breathAmp || 1; src = this.breather.render(A.vol, amp); headDy = this.breather.headDy(A.vol, amp); }
+          if (this.breather.ok && this.breather.setup(img, this.lm)) { const amp = this.breathAmp || 1; src = this.breather.render(A.vol, amp, A.nod || 0); headDy = this.breather.headDy(A.vol, amp, A.nod || 0); }
         }
         const Y1b = E.y0 + E.h, bs = src === img ? 1 - 0.00125 * (1 + Math.max(-1, Math.min(1, A.breath))) : 1;
         ctx.save(); ctx.beginPath(); ctx.rect(E.x0, E.y0, E.w, E.h); ctx.clip();
@@ -888,12 +927,12 @@ precision highp float;
 #else
 precision mediump float;
 #endif
-varying vec2 v;uniform sampler2D uI,uM;uniform float uHM,uVol,uRise,uExp,uEd,uShY,uShHW,uWY,uChinY,uFX,uAmp;uniform vec2 uR,uC,uCR;
+varying vec2 v;uniform sampler2D uI,uM;uniform float uHM,uVol,uRise,uExp,uEd,uShY,uShHW,uWY,uChinY,uFX,uAmp,uNod;uniform vec2 uR,uC,uCR;
 float body(vec2 p){if(uHM>0.5){vec2 o=vec2(uEd*0.22)/uR;float m=texture2D(uM,v).r*0.28;m+=texture2D(uM,v+vec2(o.x,0.0)).r*0.12;m+=texture2D(uM,v-vec2(o.x,0.0)).r*0.12;m+=texture2D(uM,v+vec2(0.0,o.y)).r*0.12;m+=texture2D(uM,v-vec2(0.0,o.y)).r*0.12;m+=texture2D(uM,v+o).r*0.06;m+=texture2D(uM,v-o).r*0.06;m+=texture2D(uM,v+vec2(o.x,-o.y)).r*0.06;m+=texture2D(uM,v+vec2(-o.x,o.y)).r*0.06;return smoothstep(0.15,0.85,m);}
 float hw=mix(uEd*1.45,uShHW*1.3,smoothstep(uChinY,uShY,p.y));return 1.0-smoothstep(hw*0.8,hw*1.3,abs(p.x-uFX));}
 void main(){vec2 p=v*uR;float w=body(p);
 float up=1.0-smoothstep(uShY,uWY,p.y);float head=mix(1.0,0.72,1.0-smoothstep(uChinY,uShY,p.y));
-float dy=-uRise*uVol*up*head*w*uAmp;vec2 q=(p-uC)/uCR;float cw=exp(-dot(q,q)*1.7)*w;vec2 dc=(p-uC)*uExp*uVol*cw*uAmp;
+float dy=-uRise*uVol*up*head*w*uAmp+uNod*(1.0-smoothstep(uChinY,uShY,p.y))*w;vec2 q=(p-uC)/uCR;float cw=exp(-dot(q,q)*1.7)*w;vec2 dc=(p-uC)*uExp*uVol*cw*uAmp;
 vec2 src=(p-vec2(0.0,dy)-dc)/uR;vec4 c=texture2D(uI,clamp(src,vec2(0.0),vec2(1.0)));c.rgb*=1.0+0.014*uVol*cw*uAmp;gl_FragColor=c;}`;
   class Breather {
     constructor() {
@@ -905,7 +944,7 @@ vec2 src=(p-vec2(0.0,dy)-dc)/uR;vec4 c=texture2D(uI,clamp(src,vec2(0.0),vec2(1.0
         if (!gl.getProgramParameter(pr, gl.LINK_STATUS)) throw new Error('link');
         gl.useProgram(pr); const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
         const loc = gl.getAttribLocation(pr, 'a'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
-        this.u = {}; ['uI', 'uM', 'uHM', 'uVol', 'uRise', 'uExp', 'uEd', 'uShY', 'uShHW', 'uWY', 'uChinY', 'uFX', 'uR', 'uC', 'uCR', 'uAmp'].forEach((n) => { this.u[n] = gl.getUniformLocation(pr, n); });
+        this.u = {}; ['uI', 'uM', 'uHM', 'uVol', 'uRise', 'uExp', 'uEd', 'uShY', 'uShHW', 'uWY', 'uChinY', 'uFX', 'uR', 'uC', 'uCR', 'uAmp', 'uNod'].forEach((n) => { this.u[n] = gl.getUniformLocation(pr, n); });
         const tex = (unit) => { const t = gl.createTexture(); gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, t); [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T].forEach((k) => gl.texParameteri(gl.TEXTURE_2D, k, gl.CLAMP_TO_EDGE)); [gl.TEXTURE_MIN_FILTER, gl.TEXTURE_MAG_FILTER].forEach((k) => gl.texParameteri(gl.TEXTURE_2D, k, gl.LINEAR)); return t; };
         this.tI = tex(0); this.tM = tex(1); gl.uniform1i(this.u.uI, 0); gl.uniform1i(this.u.uM, 1);
         c.addEventListener('webglcontextlost', (e) => { e.preventDefault(); this.ok = false; });
@@ -915,6 +954,8 @@ vec2 src=(p-vec2(0.0,dy)-dc)/uR;vec4 c=texture2D(uI,clamp(src,vec2(0.0),vec2(1.0
     // immagine + punti del viso/corpo -> geometria in pixel (calcolata una volta per foto)
     setup(img, lm) {
       if (!this.ok) return false;
+      if (this._img === img && this._lm === lm && this.g && this.c.width) return true; // v8.4.1: geometria in cache (calcolata una volta per foto)
+      this._img = img; this._lm = lm;
       const gl = this.gl, nw = img.naturalWidth, nh = img.naturalHeight, gs = Math.min(1, 1400 / Math.max(nw, nh));
       const W = Math.max(1, Math.round(nw * gs)), H = Math.max(1, Math.round(nh * gs));
       const key = img.src + '|' + W + 'x' + H;
@@ -946,8 +987,10 @@ vec2 src=(p-vec2(0.0,dy)-dc)/uR;vec4 c=texture2D(uI,clamp(src,vec2(0.0),vec2(1.0
       }
       return true;
     }
-    render(vol, amp = 1) {
+    render(vol, amp = 1, nod = 0) { this._vol = vol; this._nod = nod; return this.renderGL(vol, amp, nod); }
+    renderGL(vol, amp = 1, nod = 0) {
       const gl = this.gl, g = this.g, u = this.u;
+      gl.uniform1f(u.uNod, nod * g.ed * 0.075); // cenno del capo: ~7% della distanza fra gli occhi (verso il basso)
       gl.uniform2f(u.uR, g.W, g.H); gl.uniform1f(u.uVol, vol); gl.uniform1f(u.uAmp, amp); gl.uniform1f(u.uRise, g.rise); gl.uniform1f(u.uExp, g.exp);
       gl.uniform1f(u.uEd, g.ed); gl.uniform1f(u.uShY, g.shY); gl.uniform1f(u.uShHW, g.shHW); gl.uniform1f(u.uWY, g.wY); gl.uniform1f(u.uChinY, g.chinY); gl.uniform1f(u.uFX, g.fx);
       gl.uniform2f(u.uC, g.cX, g.cY); gl.uniform2f(u.uCR, g.cRx, g.cRy); gl.uniform1f(u.uHM, this.hasMask ? 1 : 0);
@@ -955,7 +998,7 @@ vec2 src=(p-vec2(0.0,dy)-dc)/uR;vec4 c=texture2D(uI,clamp(src,vec2(0.0),vec2(1.0
       return this.c;
     }
     // spostamento verticale della testa (spazio del viso S=1000), per allineare le espressioni alla foto deformata
-    headDy(vol, amp = 1) { const g = this.g; return (-g.rise * vol * 0.72 * amp) / g.k; }
+    headDy(vol, amp = 1, nod = 0) { const g = this.g; return (-g.rise * vol * 0.72 * amp + nod * g.ed * 0.075) / g.k; }
   }
   TalkingAvatar.Breath = Breath; TalkingAvatar.Breather = Breather;
 

@@ -6,6 +6,14 @@
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   let on = false, t0 = 0, tick = 0, prevTts = null, prevAuto = null, cam = null, muted = false, lastNod = 0;
   let rt = false, everVideo = false, warm = 0, connecting = false; // v8.4: conversazione in tempo reale (xAI Voice Agent)
+  let why = '', micMode = ''; // v8.4.1: motivo della chiamata classica e microfono usato ('vad' = nostro, 'sr' = riconoscimento del telefono)
+  // v8.4.1: indicatore sempre visibile del motore della chiamata (tocca per il motivo)
+  function badge(kind, reason) {
+    const b = $('#call-badge'); if (!b) return;
+    b.hidden = !kind; b.dataset.kind = kind || ''; why = reason || '';
+    b.textContent = kind === 'rt' ? '⚡ Tempo reale' : kind === 'classic' ? 'Classica' : kind === 'conn' ? '⏳ Collegamento…' : '';
+    b.title = kind === 'classic' ? (why ? 'Chiamata classica: ' + why : 'Chiamata classica (scelta nelle Impostazioni)') + (micMode === 'sr' ? ' · microfono: riconoscimento del telefono' : micMode === 'vad' ? ' · microfono continuo + trascrizione xAI' : '') : kind === 'rt' ? 'Conversazione in tempo reale xAI' : '';
+  }
   let mode = 'video', speaker = true, raf = 0, amp = 0; // v8.2: 'voice' = chiamata vocale stile WhatsApp, 'video' = videochiamata
   const fmt = (ms) => { const s = Math.floor(ms / 1000); return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0'); };
   const GREET = ['Ehi, ciao!', 'Eccomi! Ciao.', 'Ehi! Come va?', 'Ciao, che bello vederti!', 'Ciao {n}!', 'Eccomi... ciao!']; // v8.1: il nome solo ogni tanto
@@ -21,7 +29,7 @@
     }
     ui.classList.remove('rt');
     const speaking = (App.tts && App.tts.playing) || App.avatarConv.speaking || (window.speechSynthesis && window.speechSynthesis.speaking);
-    const micOk = SR && App.voice.listening && App.voice.listening();
+    const micOk = (App.callMic && App.callMic.active) || (SR && App.voice.listening && App.voice.listening());
     // v8.4: appena hai finito di parlare lo stato diventa subito "sta parlando…" (la voce parte frase per frase)
     const st = connecting ? 'Collegamento…' : App.chat.busy ? 'Sta parlando…' : speaking ? 'Sta parlando…' : muted ? 'Microfono spento' : !micOk ? 'Scrivi qui sotto (o usa il 🎙️ della tastiera)' : 'Ti ascolto…';
     $('#call-text').hidden = !!micOk || muted || connecting;
@@ -68,7 +76,7 @@
   // Altoparlante: dove il browser lo permette (iPhone: sessione audio "play-and-record" = auricolare), altrimenti volume ridotto
   function setSpeaker(v) {
     speaker = v; const b = $('#call-speaker'); b.classList.toggle('on', v); b.textContent = v ? '🔊' : '🔈';
-    try { if (navigator.audioSession) navigator.audioSession.type = v ? 'playback' : 'play-and-record'; } catch {}
+    // v8.4.1: la sessione audio NON si cambia durante la chiamata (sarebbe un "clic" e un cambio di instradamento): solo volume
     if (App.tts) App.tts.volume = v ? 1 : 0.45;
     if (rt) App.rt.setVolume(v ? 1 : 0.45);
   }
@@ -77,12 +85,13 @@
     if (on) return setMode(m || mode);
     if (!App.key()) return App.toast('🔑 Per la videochiamata serve la chiave xAI (Impostazioni)');
     const useRt = App.rt && App.rt.enabled();
-    if ((SR || useRt) && !App.ls.get('micOn', false)) {
+    if ((SR || useRt || (App.callMic && App.callMic.supported())) && !App.ls.get('micOn', false)) {
       if (!confirm('La videochiamata usa il microfono per ascoltarti (il riconoscimento resta sul telefono / nel browser). Attivarlo?')) return;
       App.ls.set('micOn', true); const cb = $('#set-mic'); if (cb) cb.checked = true; App.applyDevicePrefs && App.applyDevicePrefs();
     }
     on = true; t0 = Date.now(); muted = false; everVideo = false; rt = false;
     App.audio.unlock(); // dentro il tocco: sblocca l'audio su iPhone
+    App.audio.callSession(true); // v8.4.1: una sola sessione audio (registra + riproduce) per tutta la chiamata
     App.stageFs.exit(); stage.classList.add('fs', 'call'); document.body.classList.add('avatar-fs-on', 'in-call');
     ui.hidden = false; $('#call-name').textContent = ch.name; $('#call-caption').hidden = true;
     setMode(m || 'video'); speaker = true; $('#call-speaker').classList.add('on'); $('#call-speaker').textContent = '🔊'; if (App.tts) App.tts.volume = 1;
@@ -95,26 +104,33 @@
     App.avatarConv.react('smile');
     clearInterval(tick); tick = setInterval(state, 250); App.chat.header && App.chat.header();
     if (useRt) { // v8.4: tempo reale (microfono e connessione partono insieme, già dentro il tocco)
-      connecting = true; state();
+      connecting = true; badge('conn'); state();
       const p = App.rt.start(ch, mode, greet);
-      try { await p; if (!on) { App.rt.stop(); return; } rt = true; connecting = false; state(); return; }
-      catch (e) { connecting = false; if (!on) return; console.warn('Tempo reale non disponibile:', e.message); App.toast('⚡ Tempo reale non disponibile (' + e.message + '): uso la chiamata classica', 4500); }
+      try { await p; if (!on) { App.rt.stop(); return; } rt = true; connecting = false; badge('rt'); state(); return; }
+      catch (e) { connecting = false; if (!on) return; console.warn('Tempo reale non disponibile:', e.message); App.toast('⚡ Tempo reale non disponibile: ' + e.message + ' · uso la chiamata classica (dettagli: Impostazioni → Diagnostica voce)', 6000); classic(greet, e.message); return; }
     }
-    classic(greet);
+    classic(greet, !App.key() ? 'manca la chiave xAI' : App.ls.get('callEngine', 'realtime') !== 'realtime' ? 'scelta nelle Impostazioni' : App.rt && !App.rt.supported() ? 'browser non compatibile con il tempo reale' : '');
   }
   // chiamata classica: riconoscimento vocale del telefono + risposta in streaming + voce frase per frase
-  function classic(greet) {
-    rt = false; state();
+  // v8.4.1: microfono continuo + nostro rilevatore del parlato + trascrizione xAI (niente bip); riserva: riconoscimento continuo
+  function classic(greet, reason) {
+    rt = false; micMode = ''; badge('classic', reason); state();
     App.api('/api/ai-warm', { method: 'POST', ai: true }).catch(() => {}); // connessione calda verso xAI
-    clearInterval(warm); warm = setInterval(() => { if (on && !rt) App.api('/api/ai-warm', { method: 'POST', ai: true }).catch(() => {}); }, 50000);
+    clearInterval(warm); warm = setInterval(() => { if (on && !rt) App.api('/api/ai-warm', { method: 'POST', ai: true }).catch(() => {}); }, 25000);
     if (greet) setTimeout(() => { if (on) App.voice.sayNow(greet); }, 350);
-    if (SR) setTimeout(() => { if (on && !muted) App.voice.start(); }, greet ? 600 : 50);
+    const useSR = () => { micMode = 'sr'; badge('classic', reason); if (SR && on && !muted) App.voice.start(); };
+    if (App.callMic && App.callMic.supported() && App.ls.get('callMicVad', true)) {
+      App.callMic.start({ onFail: (e) => { if (!on || rt) return; App.callMic.stop(); App.toast('🎙️ Trascrizione xAI non disponibile (' + e.message + '): uso il riconoscimento del telefono', 4500); useSR(); } })
+        .then(() => { if (!on || rt) { App.callMic.stop(); return; } micMode = 'vad'; badge('classic', reason); if (muted) App.callMic.setMuted(true); state(); })
+        .catch((e) => { console.warn('Microfono continuo non disponibile:', e.message); if (on && !rt) useSR(); });
+    } else if (SR) setTimeout(useSR, greet ? 600 : 50);
   }
   function end() {
     if (!on) return; on = false; App.call.active = false; cancelAnimationFrame(raf);
     stage.classList.remove('voice'); ui.classList.remove('voice'); App.call.mode = null;
-    try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch {} if (App.tts) App.tts.volume = 1;
-    clearInterval(tick); clearInterval(warm); App.voice.stop(); App.voice.cancel();
+    if (App.tts) App.tts.volume = 1;
+    clearInterval(tick); clearInterval(warm); App.voice.stop(); App.voice.cancel(); if (App.callMic) App.callMic.stop(); micMode = ''; badge('');
+    App.audio.callSession(false);
     if (rt) { App.rt.stop(); rt = false; } connecting = false; ui.classList.remove('rt');
     const ch = App.current, secs = Math.round((Date.now() - t0) / 1000); // v8.4: registro chiamate (scheda Chiamate)
     if (ch) App.api('/api/calls', { method: 'POST', body: { characterId: ch.id, mode: everVideo ? 'video' : 'voice', startedAt: new Date(t0).toISOString(), seconds: secs } }).catch(() => {});
@@ -139,8 +155,10 @@
   App.call = {
     active: false, mode: null, start, end, setMode,
     get realtime() { return rt; },
+    engine: () => (!on ? null : rt ? 'realtime' : connecting ? 'connecting' : 'classic'),
+    why: () => why, micMode: () => micMode,
     // tempo reale caduto a chiamata in corso: si continua con la chiamata classica, senza chiudere
-    fallback(why) { if (!on || !rt) return; App.rt.stop(); rt = false; App.toast('⚡ ' + (why || 'Tempo reale interrotto') + ': continuo con la chiamata classica', 4000); classic(null); },
+    fallback(w) { if (!on || !rt) return; App.rt.stop(); rt = false; App.toast('⚡ ' + (w || 'Tempo reale interrotto') + ': continuo con la chiamata classica', 5000); App.audio.callSession(true); classic(null, w || 'tempo reale interrotto'); },
     // mentre parli: ogni tanto annuisce (ascolto attivo), mai a raffica
     onInterim(text) { if (!on || !text) return; const now = Date.now(); if (now - lastNod > 2600 + Math.random() * 1500) { lastNod = now; App.avatarConv.react(Math.random() < 0.75 ? 'nod' : 'tilt'); } },
     // sottotitolo breve della sua risposta (utile anche ad audio spento)
@@ -153,7 +171,8 @@
   $('#call-tovideo').addEventListener('click', (e) => { e.stopPropagation(); setMode('video'); });
   $('#call-speaker').addEventListener('click', (e) => { e.stopPropagation(); setSpeaker(!speaker); });
   $('#call-end').addEventListener('click', (e) => { e.stopPropagation(); end(); });
-  $('#call-mute').addEventListener('click', (e) => { e.stopPropagation(); muted = !muted; if (rt) App.rt.setMuted(muted); else if (muted) App.voice.stop(); else if (SR) App.voice.start(); state(); });
+  $('#call-mute').addEventListener('click', (e) => { e.stopPropagation(); muted = !muted; if (rt) App.rt.setMuted(muted); else if (micMode === 'vad') App.callMic.setMuted(muted); else if (muted) App.voice.stop(); else if (SR) App.voice.start(); state(); });
+  const eb = $('#call-badge'); if (eb) eb.addEventListener('click', (e) => { e.stopPropagation(); App.toast(eb.title || eb.textContent, 5000); });
   $('#call-cam').addEventListener('click', (e) => { e.stopPropagation(); toggleCam(); });
   $('#call-cc').addEventListener('click', (e) => { e.stopPropagation(); const v = !App.ls.get('callCaptions', true); App.ls.set('callCaptions', v); $('#call-cc').classList.toggle('on', v); if (!v) $('#call-caption').hidden = true; });
   $('#call-cc').classList.toggle('on', App.ls.get('callCaptions', true));
@@ -161,7 +180,7 @@
   ui.addEventListener('click', (e) => {
     if (e.target.closest('button,form,input,video')) return;
     if (rt) { if (App.rt.speaking()) App.rt.interrupt(); return; }
-    if ((App.tts && App.tts.playing) || App.avatarConv.speaking) { App.voice.cancel(); App.avatarConv.stopAudio(); if (SR && !muted) setTimeout(() => App.voice.start(), 200); }
+    if ((App.tts && App.tts.playing) || App.avatarConv.speaking) { App.voice.cancel(); App.avatarConv.stopAudio(); if (micMode === 'sr' && SR && !muted && !App.voice.isListening()) setTimeout(() => App.voice.start(), 200); }
   });
   $('#call-text').addEventListener('submit', (e) => { e.preventDefault(); e.stopPropagation(); const i = $('#call-input'); const t = i.value.trim(); i.value = ''; if (t && !(rt && App.rt.sendText(t))) App.chat.send(t); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && on) end(); });

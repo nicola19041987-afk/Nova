@@ -109,7 +109,7 @@
         <div class="stage" id="stage">
           <canvas id="avatar-canvas" width="300" height="300"></canvas>
           <div id="call-ui" class="call-ui" hidden>
-            <div class="call-top"><span id="call-kind" class="call-kind">Videochiamata</span><b id="call-name"></b><span id="call-timer" class="call-timer">00:00</span><span id="call-state" class="call-state">…</span></div>
+            <div class="call-top"><span id="call-kind" class="call-kind">Videochiamata</span><b id="call-name"></b><span id="call-timer" class="call-timer">00:00</span><button type="button" id="call-badge" class="call-badge" hidden></button><span id="call-state" class="call-state">…</span></div>
             <div id="call-portrait" class="call-portrait" hidden><canvas id="call-face" width="320" height="320"></canvas></div>
             <video id="call-self" class="call-self" playsinline muted autoplay hidden></video>
             <p id="call-caption" class="call-caption" hidden></p>
@@ -265,7 +265,7 @@
               <option value="device">📱 Voce del telefono</option>
             </select></label>
           <label>Voce
-            <select id="voice-id"><option value="ara">Ara</option><option value="eve">Eve</option><option value="una">Una</option><option value="sal">Sal</option><option value="rex">Rex</option><option value="leo">Leo</option></select></label>
+            <select id="voice-id"><option value="ara">Ara</option><option value="eve">Eve</option><option value="sal">Sal</option><option value="rex">Rex</option><option value="leo">Leo</option></select></label>
           <label>Velocità <span id="voice-speed-val" class="muted small"></span>
             <input type="range" id="voice-speed" min="0.8" max="1.3" step="0.05"></label>
           <button id="voice-test" type="button" class="block">▶️ Prova la voce</button>
@@ -273,10 +273,12 @@
           <label>Chiamate e videochiamate
             <select id="call-engine">
               <option value="realtime">⚡ Conversazione in tempo reale (come Grok)</option>
-              <option value="classic">🎙️ Classica (riconoscimento del telefono + voce)</option>
+              <option value="classic">🎙️ Classica (microfono continuo + trascrizione xAI)</option>
             </select></label>
-          <p id="call-engine-info" class="muted small">In tempo reale lei ti sente mentre parli, risponde appena finisci e si ferma se parli sopra di lei. Il telefono si collega direttamente a xAI con un token valido 60 secondi: la tua chiave resta sul telefono. Se il collegamento non riesce si passa da soli alla chiamata classica.</p>
+          <p id="call-engine-info" class="muted small">In tempo reale lei ti sente mentre parli, risponde appena finisci e si ferma se parli sopra di lei. Il telefono si collega direttamente a xAI con un token valido 5 minuti: la tua chiave resta sul telefono. Se il collegamento non riesce si passa da soli alla chiamata classica, e in alto nella chiamata vedi <b>⚡ Tempo reale</b> o <b>Classica</b> (toccalo per il motivo).</p>
           <p id="latency-info" class="muted small"></p>
+          <button id="voice-diag" type="button" class="block">🩺 Diagnostica voce</button>
+          <div id="voice-diag-out" class="diag-out" hidden></div>
         </div>
 
         <div class="card">
@@ -360,6 +362,9 @@
           <ul id="recovery-list" class="list"></ul>
           <button id="recovery-go" class="primary block" hidden>Recupera i selezionati</button>
           <p id="recovery-status" class="muted small"></p>
+          <h4>🗑️ Personaggi eliminati (ripristinabili per 7 giorni)</h4>
+          <button id="trash-load" type="button" class="block">Mostra i personaggi eliminati</button>
+          <ul id="trash-list" class="list"></ul>
         </div>
 
         <div class="card danger-zone">
@@ -423,6 +428,12 @@
   <dialog id="char-dialog">
     <form id="char-form" method="dialog">
       <h3 id="char-dialog-title">Personaggio</h3>
+      <details id="import-box" class="import-box" hidden><summary>📋 Importa personaggio da testo</summary>
+        <p class="muted small">Incolla una descrizione libera (anche esportata da ChatGPT): l'IA compila nome, carattere, aspetto, modo di parlare e ricordi di un <b>nuovo</b> personaggio. Controlli tutto e salvi tu; le regole per adulti dell'app restano quelle di sempre. Sempre adulti (25+), sempre inventati.</p>
+        <textarea id="import-text" rows="6" maxlength="12000" placeholder="Es. «Si chiama Giulia, ha 32 anni, fotografa a Napoli, ironica e curiosa…»"></textarea>
+        <button type="button" id="import-go" class="primary block">✨ Compila i campi con l'IA</button>
+        <div id="import-status" class="muted small"></div>
+      </details>
       <div class="stage"><canvas id="editor-canvas" width="300" height="300"></canvas></div>
       <p id="avatar-status" class="muted small center-text"></p>
 
@@ -431,11 +442,14 @@
         <label>Personalità / istruzioni <textarea name="personality" rows="4" placeholder="Chi è, come si comporta, cosa le/gli piace…"></textarea></label>
         <label>Stile <textarea name="style" rows="2" placeholder="Tono, lunghezza delle risposte, emoji…"></textarea></label>
         <button type="button" id="fill-base" class="link fill-base" hidden>✍️ Riempi con base (solo i campi vuoti)</button>
-        <label>Voce <select name="voice" id="char-voice"><option value="">Come nelle Impostazioni</option><option value="ara">Ara — calda</option><option value="eve">Eve — vivace</option><option value="una">Una — decisa</option><option value="sal">Sal — pacata</option></select></label>
+        <label>Voce <select name="voice" id="char-voice"><option value="">Come nelle Impostazioni</option><option value="ara">Ara — calda</option><option value="eve">Eve — vivace</option><option value="sal">Sal — pacata</option></select></label>
         <p id="preset-hint" class="notice small" hidden></p>
       </details>
 
       <details><summary>Avatar animato</summary>
+        <label class="admin-row">Distanza dalla camera <span id="frame-dist-val" class="muted small"></span>
+          <input type="range" id="frame-dist" min="0" max="1" step="0.05" value="0.75"></label>
+        <p class="muted small">Più a destra = meno taglio della foto: più corpo e più stanza, fino alla foto intera (si salva con «Salva»). Se la foto è un primo piano, «🔭 Allontana con l'IA» (sotto la foto) crea la stessa foto ripresa da più lontano, con più stanza; le nuove foto generate sono già più lontane.</p>
         <label>Emoji <input name="avatarEmoji" maxlength="8" placeholder="🌙"></label>
         <label>…oppure carica un ritratto <input type="file" id="avatar-file" accept="image/*"></label>
         <label class="switch consent-check" id="avatar-consent-wrap" hidden>
@@ -477,7 +491,7 @@
 
       <div id="frame-box" class="frame-box" hidden>
         <p class="muted small" id="frame-info">La foto non è in formato 9:16: la cornice la riempie da sola (taglio leggero e bordi in tinta, niente sfocature).</p>
-        <div class="row"><button type="button" id="frame-fit" class="admin-ctl">🖼️ Adatta alla cornice</button><button type="button" id="frame-undo" class="admin-ctl" hidden>↩︎ Foto originale</button></div>
+        <div class="row"><button type="button" id="frame-fit" class="admin-ctl">🖼️ Adatta alla cornice</button><button type="button" id="frame-far" class="admin-ctl">🔭 Allontana con l'IA</button><button type="button" id="frame-undo" class="admin-ctl" hidden>↩︎ Foto originale</button></div>
       </div>
       <details><summary>Identità base</summary>
         <p class="muted small">Descrizione fissa del volto, riusata in ogni rigenerazione perché resti riconoscibile.</p>
@@ -543,7 +557,7 @@
       </details>
 
       <div class="row sticky-actions">
-        <button type="button" id="char-delete" class="danger">Elimina</button>
+        <button type="button" id="char-delete" class="danger">🗑️ Elimina personaggio</button>
         <button type="button" id="char-cancel">Chiudi</button>
         <button type="submit" class="primary">Salva</button>
       </div>
@@ -590,6 +604,8 @@
   <script src="/js/stage.js"></script>
   <script src="/js/actions.js"></script>
   <script src="/js/realtime.js"></script>
+  <script src="/js/callmic.js"></script>
+  <script src="/js/diag.js"></script>
   <script src="/js/call.js"></script>
   <script src="/js/ios.js"></script>
   <script src="/js/gallery.js"></script>

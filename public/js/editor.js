@@ -88,7 +88,8 @@
       ${st.notes ? `<p><b>Note:</b> ${esc(st.notes)}</p>` : ''}<p class="muted small">${st.updatedAt ? 'Aggiornato il ' + esc(fmtDate(st.updatedAt)) : 'Si aggiornerà dopo le prime conversazioni.'}</p>` : '<p class="muted small">Si creerà dopo il primo salvataggio.</p>';
     $('#look-history').innerHTML = (E.lookHistory || []).map((h) => `<figure><img src="${esc(h.avatar)}" alt=""><figcaption>${esc(fmtDate(h.at))}<br>${esc(h.reason)}</figcaption><button type="button" data-revert="${h.id}">Ripristina</button></figure>`).join('') || '<p class="muted small">Nessun look precedente.</p>';
     $('#avatar-consent-wrap').hidden = !(E.avatarSource === 'upload' && String(E.avatar).startsWith('data:'));
-    $('#char-delete').hidden = !E.id; $('#char-dialog-title').textContent = E.id ? `Modifica ${E.name}` : 'Nuovo personaggio';
+    { const d = E.frameDist == null ? 0.75 : E.frameDist, el = $('#frame-dist'); if (el) { el.value = d; $('#frame-dist-val').textContent = distLabel(d); } }
+    $('#char-delete').hidden = !E.id || !App.isAdmin(); $('#import-box').hidden = !!E.id || !App.isAdmin(); $('#char-dialog-title').textContent = E.id ? `Modifica ${E.name}` : 'Nuovo personaggio';
     $('#doc-canvas').hidden = true; $('#doc-actions').hidden = true;
   }
   function fromForm() {
@@ -103,7 +104,7 @@
   function body(extra = {}) {
     return { name: E.name, avatar: E.avatar, avatarSource: E.avatarSource, avatarConsent: $('#avatar-consent').checked, pendingId: E.pendingId,
       personality: E.personality, style: E.style, voice: E.voice || '', ...(E.preset ? { preset: E.preset } : {}), landmarks: E.landmarks, appearance: E.appearance, look: E.look, identity: E.identity,
-      wardrobe: E.wardrobe, autoChanges: E.autoChanges, ...extra };
+      wardrobe: E.wardrobe, autoChanges: E.autoChanges, frameDist: E.frameDist == null ? 0.75 : E.frameDist, ...extra };
   }
   function store(ch) {
     const i = App.chars.findIndex((c) => c.id === ch.id);
@@ -116,7 +117,13 @@
     fromForm();
     if (!E.name) { App.toast('Il nome è obbligatorio'); throw new Error('nome'); }
     if (E.avatarSource === 'upload' && String(E.avatar).startsWith('data:') && !$('#avatar-consent').checked) { App.toast('Spunta la dichiarazione di consenso per la foto'); throw new Error('consenso'); }
+    const isNew = !E.id;
     const ch = E.id ? await App.api(`/api/characters/${E.id}`, { method: 'PUT', body: body(extra) }) : await App.api('/api/characters', { method: 'POST', body: body(extra) });
+    if (isNew && importMem.length) { // v8.4.1: ricordi ricavati dal testo importato -> memoria di base del nuovo personaggio
+      const list = importMem; importMem = [];
+      for (const text of list) await App.api('/api/memory', { method: 'POST', body: { text, charId: ch.id } }).catch(() => {});
+      App.toast(`🧠 ${list.length} ricordi aggiunti a ${ch.name}`);
+    }
     store(ch); return ch;
   }
   // Rigenerazione via xAI ancorata all'identità base; cambio dal vivo, senza ricaricare
@@ -143,6 +150,14 @@
     } catch (e) { if (e.message !== 'NO_KEY') $('#avatar-status').textContent = '⚠️ ' + e.message; }
   }
 
+  const distLabel = (d) => (d < 0.2 ? 'vicina (primo piano)' : d < 0.5 ? 'media' : d < 0.85 ? 'lontana (consigliata)' : 'molto lontana');
+  // v8.4.1: distanza dalla camera, anteprima dal vivo (anche nella chat aperta)
+  { const el = $('#frame-dist'); if (el) el.addEventListener('input', () => {
+    if (!App.isAdmin()) return; const d = Number(el.value); E.frameDist = d; $('#frame-dist-val').textContent = distLabel(d); dirty = true;
+    App.avatarEditor && App.avatarEditor.setDistance && App.avatarEditor.setDistance(d);
+    if (App.current && App.current.id === E.id) { App.avatarConv.setDistance(d); if (App.avatarPresence) App.avatarPresence.setDistance(d); }
+  }); }
+  let importMem = []; // v8.4.1: ricordi dall'importazione da testo (salvati insieme al nuovo personaggio)
   App.editor = {
     init() {
       fillSelects();
@@ -157,7 +172,7 @@
       if (pv) Object.assign(E, { avatar: pv.dataUrl, avatarSource: 'ai', pendingId: pv.pending, appearance: pv.appearance || E.appearance, look: pv.look || E.look });
       $('#avatar-consent').checked = false; $('#avatar-status').textContent = pv ? '👀 C\'è un nuovo look non salvato: premi Salva per tenerlo.' : '';
       $('#regen-extra').value = ''; dirty = false;
-      $('#preset-hint').hidden = true;
+      $('#preset-hint').hidden = true; importMem = []; $('#import-status').innerHTML = ''; $('#import-box').open = false;
       toForm(); refreshAvatar(); if (!dlg.open) dlg.showModal();
       App.editor.frameUi && App.editor.frameUi();
     },
@@ -192,12 +207,58 @@
   form.addEventListener('change', () => { dirty = true; });
   form.addEventListener('submit', async (e) => { e.preventDefault(); try { await save(); App.toast('💾 Salvato'); } catch {} });
   $('#char-cancel').addEventListener('click', () => dlg.close());
+  // v8.4.1: «Elimina personaggio» (solo Nicola), doppia conferma. Prima dell'eliminazione il server fa una copia di sicurezza
+  // completa e mette il personaggio nel cestino (ripristinabile per 7 giorni da Impostazioni → Recupero personaggi).
   $('#char-delete').addEventListener('click', async () => {
-    if (!confirm(`Eliminare ${E.name} e la sua conversazione?`)) return;
-    await App.api(`/api/characters/${E.id}`, { method: 'DELETE' });
-    App.chars = App.chars.filter((c) => c.id !== E.id); delete App.previews[E.id];
-    if (App.current && App.current.id === E.id) App.chat.close();
-    dlg.close(); App.chat.renderList();
+    if (!App.roles.guard()) return;
+    const id = E.id, name = E.name;
+    if (!confirm(`Eliminare ${name}?\n\nVerranno tolti: il personaggio, la sua conversazione, i suoi ricordi di base e le sue foto.\nLa memoria condivisa (Nico e Luisa) e gli altri personaggi restano.\nPrima viene fatta una copia di sicurezza: potrai ripristinarlo per 7 giorni.`)) return;
+    const typed = prompt(`Seconda conferma: scrivi il nome «${name}» per eliminarlo.`);
+    if (typed == null) return;
+    if (typed.trim().toLowerCase() !== String(name).trim().toLowerCase()) { App.toast('Nome diverso: non ho eliminato nulla'); return; }
+    try {
+      const r = await App.api(`/api/characters/${id}`, { method: 'DELETE' });
+      App.chars = App.chars.filter((c) => c.id !== id); delete App.previews[id];
+      if (App.current && App.current.id === id) App.chat.close();
+      dlg.close(); App.chat.renderList();
+      App.toast(`🗑️ ${name} eliminato (${r.messages || 0} messaggi, ${r.memories || 0} ricordi, ${r.files || 0} foto). Ripristinabile per 7 giorni: Impostazioni → Recupero personaggi.`, 6500);
+    } catch (e) { App.toast('⚠️ ' + e.message, 5000); }
+  });
+  // v8.4.1: personaggi eliminati negli ultimi 7 giorni
+  async function trashList() {
+    const ul = $('#trash-list'); if (!ul) return;
+    try {
+      const r = await App.api('/api/trash/characters');
+      ul.innerHTML = r.items.length ? r.items.map((x) => `<li><span><b>${esc(x.name)}</b><br><span class="muted small">eliminato il ${esc(fmtDate(x.deletedAt))} · ${x.messages} messaggi · ripristinabile fino al ${esc(fmtDate(x.until))}</span></span><button type="button" data-trash="${esc(x.tid)}">Ripristina</button></li>`).join('') : '<li class="muted small">Nessun personaggio eliminato negli ultimi 7 giorni.</li>';
+    } catch (e) { ul.innerHTML = `<li class="muted small">⚠️ ${esc(e.message)}</li>`; }
+  }
+  const tl = $('#trash-load'); if (tl) tl.addEventListener('click', trashList);
+  const tlist = $('#trash-list'); if (tlist) tlist.addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-trash]'); if (!b || !App.roles.guard()) return;
+    try { const r = await App.api(`/api/trash/characters/${encodeURIComponent(b.dataset.trash)}/restore`, { method: 'POST' }); await App.loadChars(); App.chat.renderList(); App.toast(`↩︎ ${r.character.name} ripristinato con la sua chat`); trashList(); }
+    catch (er) { App.toast('⚠️ ' + er.message); }
+  });
+  // v8.4.1: «Importa personaggio da testo» -> compila i campi di un NUOVO personaggio (da rivedere, niente viene salvato da solo)
+  $('#import-go').addEventListener('click', async () => {
+    if (!App.roles.guard()) return;
+    const text = $('#import-text').value.trim(), st = $('#import-status'), b = $('#import-go');
+    if (text.length < 20) { st.textContent = 'Incolla una descrizione un po\' più lunga.'; return; }
+    b.disabled = true; st.textContent = '✨ Lettura del testo in corso…';
+    try {
+      const { draft: d } = await App.api('/api/characters-import', { method: 'POST', body: { text }, ai: true });
+      fromForm();
+      if (d.name) E.name = d.name;
+      if (d.personality) E.personality = d.personality;
+      if (d.style) E.style = d.style;
+      if (d.voice) E.voice = d.voice;
+      Object.assign(E.appearance, d.appearance || {}); Object.assign(E.look, d.look || {});
+      if (d.identity && d.identity.core) E.identity.core = d.identity.core;
+      importMem = d.memories || [];
+      toForm(); refreshAvatar(); dirty = true;
+      st.innerHTML = `✅ Campi compilati: controllali e premi <b>Salva</b>.${importMem.length ? `<br>Ricordi che verranno aggiunti al salvataggio:<ul>${importMem.map((m) => `<li>${esc(m)}</li>`).join('')}</ul>` : ''}${d.notes ? `<br>Note: ${esc(d.notes)}` : ''}<br>La foto non è inclusa: usa «✨ Rigenera avatar».`;
+      $('#import-box').open = true;
+    } catch (e) { if (e.message !== 'NO_KEY') st.textContent = '⚠️ ' + e.message; }
+    b.disabled = false;
   });
   form.avatarEmoji.addEventListener('input', () => { const v = form.avatarEmoji.value.trim(); if (v) { E.avatar = v; E.avatarSource = 'emoji'; E.pendingId = null; refreshAvatar(); } });
   $('#avatar-file').addEventListener('change', async (e) => {
@@ -225,16 +286,23 @@
     const box = $('#frame-box'), photo = E.id && typeof E.avatar === 'string' && E.avatar.startsWith('/api/');
     if (!photo) { box.hidden = true; return; }
     const ff = E.frameFill && E.frameFill.src === E.avatar ? E.frameFill : null;
-    const r = await App.frame.ratio(E.avatar); box.hidden = !ff && !(r && Math.abs(r - 9 / 16) > 0.04);
+    box.hidden = false; // v8.4.1: sempre visibile con una foto (c'è anche «Allontana con l'IA»)
     $('#frame-fit').hidden = !!(ff && !ff.off) ; $('#frame-fit').textContent = ff ? '🖼️ Usa la foto adattata' : '🖼️ Adatta alla cornice';
     $('#frame-undo').hidden = !(ff && !ff.off);
-    $('#frame-info').textContent = ff && !ff.off ? 'In chat e in chiamata si vede la versione allargata a 9:16 (stessa foto, bordi completati dall\'IA).' : 'La foto non è in formato 9:16: la cornice la riempie da sola (taglio leggero e bordi in tinta, niente sfocature). «Adatta alla cornice» la allarga con l\'IA (usa la tua chiave).';
+    const r = await App.frame.ratio(E.avatar), odd = r && Math.abs(r - 9 / 16) > 0.04;
+    $('#frame-fit').hidden = !!(ff && !ff.off) || (!ff && !odd);
+    $('#frame-info').textContent = ff && !ff.off ? (ff.far ? 'In chat e in chiamata si vede la versione ripresa più da lontano (fatta dall\'IA dalla stessa foto).' : 'In chat e in chiamata si vede la versione allargata a 9:16 (stessa foto, bordi completati dall\'IA).') : (odd ? 'La foto non è in formato 9:16: la cornice la riempie da sola (taglio leggero e bordi in tinta, niente sfocature). «Adatta alla cornice» la allarga con l\'IA. ' : '') + '«🔭 Allontana con l\'IA» crea la stessa foto ripresa da più lontano (usa la tua chiave).';
   }
   App.editor.frameUi = frameUi;
   $('#frame-fit').addEventListener('click', async () => {
     if (!App.roles.guard()) return; const ch = App.charById(E.id); if (!ch) return;
     const ff = E.frameFill && E.frameFill.src === E.avatar ? E.frameFill : null;
     try { const r = ff ? await App.frame.setOff(ch, false) : await App.frame.extend(ch, false); if (r) E.frameFill = r; } catch (e) { App.toast('⚠️ ' + e.message); }
+    frameUi();
+  });
+  $('#frame-far').addEventListener('click', async () => {
+    if (!App.roles.guard()) return; const ch = App.charById(E.id); if (!ch) return;
+    try { const r = await App.frame.extend(ch, false, true); if (r) E.frameFill = r; } catch (e) { App.toast('⚠️ ' + e.message); }
     frameUi();
   });
   $('#frame-undo').addEventListener('click', async () => {

@@ -1,7 +1,10 @@
 /* realtime.js — v8.4 "Conversazione in tempo reale" (xAI Voice Agent API, speech-to-speech su WebSocket).
  * Il telefono parla DIRETTAMENTE con xAI: microfono sempre aperto (full duplex), fine del turno rilevata da xAI (server VAD),
  * voce di lei in streaming man mano che arriva, interruzione immediata quando parli sopra (barge-in), labiale dall'audio vero.
- * La chiave xAI resta sul telefono: il server crea solo un token effimero (60 s, una sessione) e non salva nulla.
+ * La chiave xAI resta sul telefono: il server crea solo un token effimero (5 min, una sessione) e non salva nulla.
+ * v8.4.1: configurazione conforme allo schema ufficiale, errori di configurazione NON fatali (in v8.4 un campo non previsto
+ * faceva cadere il tempo reale sul telefono vero -> chiamata classica con i "bip"), motivo esatto in caso di problemi,
+ * dissolvenze sulla voce (niente click) e sessione audio iOS fissa su play-and-record per tutta la chiamata.
  * Le trascrizioni (tue e sue) finiscono nella chat condivisa. Se il tempo reale non si collega si usa la chiamata classica. */
 (function () {
   const RATE = 24000;
@@ -15,6 +18,9 @@
   const b64 = (buf) => { const u = new Uint8Array(buf); let s = ''; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(s); };
   const unb64 = (s) => { const bin = atob(s), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return u.buffer; };
   let S = null; // sessione attiva
+  const LOG = []; // ultimi eventi (per «Diagnostica voce»)
+  const note = (t, d) => { LOG.push({ at: Math.round(performance.now()), t, d: d == null ? undefined : String(d).slice(0, 200) }); if (LOG.length > 60) LOG.shift(); };
+  const errText = (ev) => { const e = (ev && ev.error) || ev || {}; return [e.message || e.code || 'errore', e.param && `(${e.param})`].filter(Boolean).join(' '); };
 
   function ctx() { if (!App.audio.ctx) App.audio.ctx = new AC(); if (App.audio.ctx.state !== 'running') App.audio.ctx.resume().catch(() => {}); return App.audio.ctx; }
 
@@ -59,7 +65,9 @@
     const c = ctx(), o = outChain(s), i16 = new Int16Array(buf), n = i16.length; if (!n) return;
     const ab = c.createBuffer(1, n, RATE), d = ab.getChannelData(0); for (let i = 0; i < n; i++) d[i] = i16[i] / 32768;
     const src = c.createBufferSource(); src.buffer = ab; src.connect(o.g);
-    const t = Math.max(c.currentTime + 0.025, s.playT || 0); src.start(t); s.playT = t + n / RATE;
+    const fresh = !(s.playT > c.currentTime + 0.002), t = Math.max(c.currentTime + 0.025, s.playT || 0);
+    if (fresh) { const g = o.g.gain; g.cancelScheduledValues(t); g.setValueAtTime(0, t); g.linearRampToValueAtTime(s.volume, t + 0.015); } // dissolvenza in entrata: niente click
+    src.start(t); s.playT = t + n / RATE;
     s.sources.push(src); src.onended = () => { s.sources = s.sources.filter((x) => x !== src); };
     if (s.resp && !s.resp.firstAt) { // primo audio della risposta: latenza fine-parlato -> primo suono
       s.resp.firstAt = performance.now() + (t - c.currentTime) * 1000;
@@ -85,9 +93,17 @@
     if (on && !s.lipsOn) { s.lipsOn = true; avs.forEach((a) => a.speakLive && a.speakLive(() => level(s), () => wide(s))); }
     if (!on && s.lipsOn) { s.lipsOn = false; avs.forEach((a) => a.stopAudio && a.stopAudio()); }
   }
-  function stopPlayback(s) {
-    for (const x of s.sources) { try { x.onended = null; x.stop(); } catch {} }
+  function stopPlayback(s) { // dissolvenza in uscita di 30 ms, poi stop (niente "tac")
+    const c = App.audio.ctx, o = s.out;
+    if (c && o && s.sources.length) {
+      const t = c.currentTime, g = o.g.gain; g.cancelScheduledValues(t); g.setValueAtTime(g.value, t); g.linearRampToValueAtTime(0, t + 0.03);
+      for (const x of s.sources) { try { x.onended = null; x.stop(t + 0.035); } catch {} }
+    } else for (const x of s.sources) { try { x.onended = null; x.stop(); } catch {} }
     s.sources = []; s.playT = 0; lips(s, false);
+  }
+  function fadeOutEnd(s) { // fine risposta: chiude dolcemente l'ultimo pezzo
+    const c = App.audio.ctx, o = s.out; if (!c || !o || !(s.playT > c.currentTime + 0.05)) return;
+    const g = o.g.gain, e = s.playT; g.setValueAtTime(s.volume, e - 0.02); g.linearRampToValueAtTime(0, e);
   }
 
   // ---------- trascrizioni nella chat condivisa (in ordine) ----------
@@ -114,10 +130,9 @@
   function onEvent(s, ev) {
     switch (ev.type) {
       case 'session.created':
-        s.created = true; s.ws.send(JSON.stringify({ type: 'session.update', session: s.cfg.session })); s.sentUpd = performance.now();
-        setTimeout(() => ready(s), 1500); break;
+        s.created = true; note('session.created'); configure(s); break;
       case 'session.updated':
-        s.upd = (s.upd || 0) + 1; if ((ev.session && ev.session.instructions) || s.upd >= 2) ready(s); break;
+        s.upd = (s.upd || 0) + 1; note('session.updated'); if (s.step) { const f = s.step; s.step = null; f(true); } break;
       case 'input_audio_buffer.speech_started':
         s.userSpeaking = true; s.phase = 'listening';
         if (playing(s) || s.resp) bargeIn(s, false);
@@ -142,18 +157,41 @@
       case 'response.output_audio_transcript.done': case 'response.audio_transcript.done':
         if (s.resp && ev.transcript) s.resp.text = ev.transcript; break;
       case 'response.done': {
-        const r = s.resp; s.resp = null; if (s.phase === 'replying') s.phase = 'idle';
+        fadeOutEnd(s); const r = s.resp; s.resp = null; if (s.phase === 'replying') s.phase = 'idle';
         const st = ev.response && ev.response.status;
         if (r && isGreet(s, r.text)) break; // il saluto iniziale non va in chat
         if (r && r.text && !r.saved) { r.saved = true; save(s, 'assistant', r.text + (st === 'cancelled' || r.cut ? '…' : ''), st === 'cancelled' || r.cut ? { interrupted: true } : {}); }
         break;
       }
-      case 'error':
-        console.warn('Tempo reale:', ev.error && (ev.error.message || ev.error.code));
-        if (!s.isReady) s.fail(new Error((ev.error && ev.error.message) || 'Errore del servizio voce'));
+      case 'error': // NON fatale: il servizio resta collegato e tiene la configurazione precedente
+        const et = errText(ev); note('error', et); if (!s.inExtra) { s.lastError = et; App.rt.lastError = et; } // l'opzione accessoria rifiutata non è un problema
+        console.warn('Tempo reale:', s.lastError);
+        if (s.step) { const f = s.step; s.step = null; f(false); }
         break;
       default: break;
     }
+  }
+  // configurazione a passi: prima tutto insieme; se il servizio rifiuta, pezzo per pezzo (così le istruzioni del personaggio
+  // arrivano sempre, anche se un'opzione accessoria non fosse accettata). Il modello di trascrizione è un extra separato.
+  function upd(s, session) {
+    return new Promise((res) => {
+      if (!s.ws || s.ws.readyState !== 1) return res(false);
+      s.step = res; s.ws.send(JSON.stringify({ type: 'session.update', session }));
+      setTimeout(() => { if (s.step === res) { s.step = null; res(true); } }, 1500); // nessuna risposta: proseguiamo
+    });
+  }
+  async function configure(s) {
+    const c = s.cfg.session || {}, t0 = performance.now();
+    let ok = await upd(s, c);
+    if (!ok && !s.closed) {
+      const parts = [{ instructions: c.instructions, voice: c.voice }, { instructions: c.instructions }, { turn_detection: c.turn_detection }, { audio: c.audio && { input: { format: c.audio.input.format }, output: c.audio.output } }, { audio: c.audio && { input: { transcription: c.audio.input.transcription } } }, { reasoning: c.reasoning }];
+      const done = new Set();
+      for (const p of parts) { if (s.closed) return; if (p.instructions && done.has('instructions')) continue; if (Object.values(p).some((v) => v === undefined)) continue; if (await upd(s, p)) Object.keys(p).forEach((k) => done.add(k)); }
+      s.partial = true; note('config', 'parziale: ' + [...done].join(', '));
+    }
+    s.cfgMs = Math.round(performance.now() - t0);
+    ready(s);
+    if (s.cfg.extra && !s.closed) { s.inExtra = true; const okx = await upd(s, s.cfg.extra); s.inExtra = false; note('extra', okx ? 'ok' : 'rifiutato (non necessario)'); }
   }
   function isGreet(s, t) { if (!s.greet || !t) return false; const g = s.greet.trim().slice(0, 10), ok = String(t).trim().slice(0, 10) === g; if (ok) s.greet = null; return ok; }
   function ready(s) {
@@ -177,23 +215,31 @@
       const ws = new WebSocket(s.cfg.url, [`xai-client-secret.${s.cfg.token}`]); ws.binaryType = 'arraybuffer'; s.ws = ws;
       const to = setTimeout(() => fin(new Error('Il servizio voce non ha risposto in tempo')), 6000);
       ws.onmessage = (m) => { if (typeof m.data !== 'string') { if (s.resp || s.isReady) play(s, m.data); return; } let ev; try { ev = JSON.parse(m.data); } catch { return; } onEvent(s, ev); };
-      ws.onerror = () => fin(new Error('Connessione al servizio voce non riuscita'));
-      ws.onclose = () => { if (!done) fin(new Error('Connessione chiusa dal servizio voce')); else if (!s.closed) dropped(s); };
+      s.t0 = performance.now(); note('ws.connect', s.cfg.url);
+      ws.onopen = () => { s.openMs = Math.round(performance.now() - s.t0); note('ws.open', s.openMs + ' ms · ' + (ws.protocol ? 'sottoprotocollo accettato' : 'nessun sottoprotocollo')); };
+      ws.onerror = () => { note('ws.error'); setTimeout(() => fin(new Error('Connessione al servizio voce non riuscita' + (s.lastError ? ': ' + s.lastError : ''))), 400); }; // aspetta il codice di chiusura
+      ws.onclose = (e) => {
+        note('ws.close', `${e.code} ${e.reason || ''}`);
+        const why = `Connessione chiusa dal servizio voce (codice ${e.code}${e.reason ? ': ' + e.reason : ''}${s.lastError ? ' · ' + s.lastError : ''})`;
+        if (!done) fin(new Error(why)); else if (!s.closed) { s.closeWhy = why; dropped(s); }
+      };
     });
   }
   async function dropped(s) { // connessione persa a chiamata in corso: un nuovo tentativo, poi la chiamata classica
     if (s.closed || s.retrying) return; s.retrying = true; s.ready = false; stopPlayback(s);
     try { await open(s, 1); s.retrying = false; App.toast('🔄 Ricollegata', 1800); }
-    catch { s.retrying = false; if (App.call && App.call.fallback) App.call.fallback('Connessione persa'); }
+    catch (e) { s.retrying = false; if (App.call && App.call.fallback) App.call.fallback('Connessione persa: ' + ((e && e.message) || s.closeWhy || '')); }
   }
   async function open(s, tries = 3) {
     let last;
     for (let i = 0; i < tries && !s.closed; i++) {
       try {
         s.isReady = false; s.upd = 0; s.created = false;
+        const t = performance.now();
         s.cfg = await App.api('/api/realtime/session', { method: 'POST', body: { characterId: s.ch.id, mode: s.mode, voice: s.voice }, ai: true });
+        s.tokenMs = Math.round(performance.now() - t); note('token', s.tokenMs + ' ms');
         s.adult = s.cfg.adult; await connect(s); return;
-      } catch (e) { last = e; if (e.status && e.status < 500 && e.status !== 408) break; }
+      } catch (e) { last = e; note('tentativo ' + (i + 1), e.message); if (e.status && e.status < 500 && e.status !== 408) break; }
     }
     throw last || new Error('Tempo reale non disponibile');
   }
@@ -206,7 +252,8 @@
     async start(ch, mode, greet) {
       if (S) App.rt.stop();
       const s = S = { ch, mode: mode === 'voice' ? 'voice' : 'video', voice: ch.voice || App.ls.get('ttsVoice', 'ara') || 'ara', early: [], sources: [], playT: 0, saveQ: Promise.resolve(), turns: 0, lat: [], volume: 1, muted: false, phase: 'connecting', closed: false };
-      ctx();
+      App.audio.callSession && App.audio.callSession(true); // iOS: registra+riproduce per tutta la chiamata (niente cambi di sessione)
+      ctx(); LOG.length = 0; App.rt.lastError = '';
       const mic = startMic(s); mic.catch(() => {});
       try { await Promise.all([mic, open(s)]); }
       catch (e) { App.rt.stop(); throw e; }
@@ -231,7 +278,7 @@
       s.ws.send(JSON.stringify({ type: 'response.create' })); return true;
     },
     setMuted(v) { if (!S) return; S.muted = !!v; if (v && S.ws && S.ws.readyState === 1) S.ws.send(JSON.stringify({ type: 'input_audio_buffer.clear' })); },
-    setVolume(v) { if (!S) return; S.volume = v; if (S.out) S.out.g.gain.value = v; },
+    setVolume(v) { if (!S) return; S.volume = v; if (S.out) { const g = S.out.g.gain, t = ctx().currentTime; g.cancelScheduledValues(t); g.setTargetAtTime(v, t, 0.02); } },
     setMode(m) { if (!S) return; S.mode = m === 'voice' ? 'voice' : 'video'; refresh(S); },
     status() {
       if (!S) return null;
@@ -244,5 +291,8 @@
     speaking: () => !!(S && playing(S)),
     lat: () => (S ? S.lat.slice() : []),
     _s: () => S,
+    log: () => LOG.slice(),
+    lastError: '',
+    info: () => (S ? { tokenMs: S.tokenMs, openMs: S.openMs, cfgMs: S.cfgMs, partial: !!S.partial, lastError: S.lastError || '' } : null),
   };
 })();

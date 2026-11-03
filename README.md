@@ -172,6 +172,32 @@ Tutto in `data/` sul server (escluso da git e dallo zip): `pins.json`, `sessions
 - Le clip delle azioni suonano con il loro audio (se presente) solo con Lettura attiva e audio sbloccato; se iOS lo blocca, la clip parte muta.
 - Sul telefono: interruttore laterale (silenzioso) disattivato e volume alzato; su iPhone la sintesi vocale può restare muta in modalità silenziosa.
 
+## Novità v8.4.1 (chiamate senza "bip", tempo reale corretto, diagnostica, elimina/importa personaggio, avatar più lontano e fluido)
+
+- **Tempo reale corretto secondo la documentazione xAI** (`wss://api.x.ai/v1/realtime`, token da `POST /v1/realtime/client_secrets`,
+  sottoprotocollo `xai-client-secret.<token>`): la configurazione della sessione ora contiene solo campi previsti dallo schema
+  (`turn_detection: {type:'server_vad'}`, `audio.input/output.format {audio/pcm, 24000}`, `transcription {language_hint, keyterms}`).
+  In v8.4 c'erano campi non previsti (`threshold`, `silence_duration_ms`, `prefix_padding_ms`, `transcription.model`) e la voce `una`
+  (non esiste): il servizio rispondeva con un errore e il telefono passava alla chiamata classica. Ora gli errori non sono fatali,
+  la configurazione viene ritentata a passi e il motivo esatto (codice di chiusura, messaggio) viene mostrato. Token valido 5 minuti.
+- **Indicatore in chiamata**: in alto «⚡ Tempo reale» o «Classica» (toccalo per il motivo).
+- **Impostazioni → Voce → 🩺 Diagnostica voce**: prova chiave, token, WebSocket, configurazione, microfono, trascrizione e voce, con i tempi.
+- **Niente "suono di attacco e stacco"**: in chiamata il riconoscimento vocale del telefono non viene più fermato/riavviato a ogni frase.
+  La chiamata classica usa un microfono sempre aperto (cancellazione eco, riduzione rumore, guadagno automatico), un rilevatore del
+  parlato proprio e la trascrizione xAI (`POST /api/stt` → `/v1/stt`); la voce di lei suona sull'unico AudioContext con dissolvenze;
+  la sessione audio iOS resta «play-and-record» per tutta la chiamata. Funziona anche su Android Chrome.
+- **Chiamata classica più veloce**: modello senza ragionamento per le risposte in chiamata (`CALL_MODEL`, predefinito
+  `grok-4.20-0309-non-reasoning`, si torna a `CHAT_MODEL` se non disponibile), risposte brevi, voce con `optimize_streaming_latency`,
+  connessioni pre-aperte mentre stai ancora parlando.
+- **🗑️ Elimina personaggio** (solo Nicola, in fondo all'editor del personaggio): doppia conferma (scrivere il nome); prima una copia
+  di sicurezza completa e il cestino del personaggio; vengono tolti solo lui, la sua chat, i suoi ricordi di base e le sue foto.
+  Ripristinabile per 7 giorni da Impostazioni → Recupero personaggi → «Personaggi eliminati».
+- **📋 Importa personaggio da testo** (solo Nicola, editor di un nuovo personaggio): l'IA compila i campi da una descrizione libera,
+  da rivedere prima di salvare. Sempre adulti (25+) e inventati; le regole per adulti non cambiano.
+- **Avatar più lontano, fluido e naturale**: distanza dalla camera regolabile (predefinita «lontana», testa ≈ 21% dell'altezza),
+  60 fotogrammi al secondo costanti, smorzamenti indipendenti dal frame rate, cenni del capo mentre ascolta (vari), micro-movimenti
+  verticali a strati, geometria in cache; tempi dei fotogrammi misurabili (`App.avatarConv.perf()`).
+
 ## Novità v8.4 (aspetto iPhone, chiamate in tempo reale, Galleria, ruoli)
 
 **Conversazione in tempo reale (voce e videochiamata)**

@@ -17,13 +17,13 @@
       sync(ch, { ...ff, landmarks: { ...lm, auto: true, src: ff.url } });
     } catch (e) { console.warn('frame landmarks', e); } finally { delete busy['lm' + ff.url]; }
   }
-  async function extend(ch, auto) {
+  async function extend(ch, auto, farShot) {
     if (!ch || busy[ch.id]) return null; busy[ch.id] = 1;
     try {
-      if (!auto) App.toast('🖼️ Adatto la foto alla cornice 9:16…', 4000);
-      const r = await App.api(`/api/characters/${ch.id}/frame-extend`, { method: 'POST', ai: true, body: {} });
+      if (!auto) App.toast(farShot ? '🔭 La allontano (stessa foto, ripresa più da lontano)… può richiedere qualche secondo' : '🖼️ Adatto la foto alla cornice 9:16…', 5000);
+      const r = await App.api(`/api/characters/${ch.id}/frame-extend`, { method: 'POST', ai: true, body: farShot ? { far: true } : {} });
       sync(ch, r.frameFill); landmarks(ch);
-      App.toast(auto ? '🖼️ Foto adattata alla cornice 9:16 (nell\'editor puoi tornare all\'originale)' : '✅ Foto adattata alla cornice', 4000);
+      App.toast(auto ? '🖼️ Foto adattata alla cornice 9:16 (nell\'editor puoi tornare all\'originale)' : farShot ? '✅ Ora è più lontana (nell\'editor puoi tornare alla foto originale)' : '✅ Foto adattata alla cornice', 4500);
       return r.frameFill;
     } catch (e) { if (!auto) App.toast('⚠️ ' + e.message, 5000); return null; } finally { delete busy[ch.id]; }
   }

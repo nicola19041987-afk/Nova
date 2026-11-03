@@ -17,6 +17,11 @@ const CHAT_MODEL = process.env.CHAT_MODEL || 'grok-4';
 // con un token effimero (60 s, una sola sessione) creato qui con la chiave del dispositivo, che NON viene salvata.
 const REALTIME_URL = (process.env.REALTIME_URL || 'wss://api.x.ai/v1/realtime').replace(/\/+$/, '');
 const REALTIME_MODEL = process.env.REALTIME_MODEL || 'grok-voice-latest';
+// v8.4.1: in chiamata (percorso classico) un modello SENZA ragionamento: la prima parola arriva molto prima. Se non esiste, si usa CHAT_MODEL.
+const CALL_MODEL = process.env.CALL_MODEL || 'grok-4.20-0309-non-reasoning';
+let callModelOk = true;
+// voci integrate documentate da xAI (GET /v1/tts/voices); una voce sconosciuta farebbe rifiutare la configurazione della sessione
+const XAI_VOICES = ['ara', 'eve', 'leo', 'rex', 'sal', 'carina', 'zagan', 'helix', 'orion', 'luna', 'iris', 'altair', 'zenith', 'perseus', 'helios', 'lux', 'kepler', 'rigel', 'cosmo', 'celeste', 'ursa', 'sirius', 'lumen', 'castor', 'naksh', 'atlas'];
 const RT_ORIGIN = (() => { try { const u = new URL(REALTIME_URL); return `${u.protocol}//${u.host}`; } catch { return ''; } })();
 const IMAGE_MODEL = process.env.IMAGE_MODEL || 'grok-imagine-image-2.0';
 const IMAGE_EDIT_MODEL = process.env.IMAGE_EDIT_MODEL || IMAGE_MODEL;
@@ -202,6 +207,7 @@ const ADMIN_ONLY = [
   ['DELETE', /^\/api\/characters\/[^/]+\/(scene\/[^/]+|actions\/[^/]+)$/],
   ['PUT', /^\/api\/rules$/], ['PUT', /^\/api\/memory$/], ['DELETE', /^\/api\/memory(\/[^/]+)?$/], ['PATCH', /^\/api\/memory\/[^/]+$/],
   ['DELETE', /^\/api\/chats\/[^/]+$/], ['POST', /^\/api\/wipe$/], ['POST', /^\/api\/recovery$/],
+  ['POST', /^\/api\/characters-import$/], ['GET', /^\/api\/trash\/characters$/], ['POST', /^\/api\/trash\/characters\/[^/]+\/restore$/],
 ];
 const ADMIN_MSG = `Solo ${USERS[ADMIN_USER].name === 'Nico' ? 'Nicola' : USERS[ADMIN_USER].name} può modificare questa parte dell'app.`;
 function adminGuard(req, res, next) {
@@ -427,7 +433,9 @@ app.put('/api/memory', auth, async (req, res) => {
 app.post('/api/memory', auth, async (req, res) => {
   const text = cleanFact(req.body.text);
   if (!text) return res.status(400).json({ error: 'Testo vuoto' });
-  const f = { id: newId(), text, source: 'manuale', by: req.user, createdAt: new Date().toISOString() };
+  // v8.4.1: Nicola può aggiungere un ricordo "di base" a un personaggio (usato dall'importazione da testo)
+  const cid = isAdmin(req.user) && ID_RE.test(String(req.body.charId || '')) && getChars(req.user).some((c) => c.id === req.body.charId) ? req.body.charId : null;
+  const f = { id: newId(), text, source: cid ? 'base' : 'manuale', ...(cid ? { charId: cid } : {}), by: req.user, createdAt: new Date().toISOString() };
   await mutateJSON(MEM_FILE(), [], (list) => [...list, f].slice(-300));
   res.json(memView([f])[0]);
 });
@@ -581,7 +589,9 @@ function buildImagePrompt(ch, extra) {
     `Photorealistic, realistic photograph. Recurring invented adult character (identity anchor #${id.seed}): the SAME person in every image, same face, same facial features.`,
     `A fictional adult ${EN[a.gender]}, clearly ${a.age} years old (adult, at least 25), mature adult features; not a real or famous person.`,
     id.core && `Fixed face/identity: ${id.core}.`,
-    `${EN[a.framing]}, front-facing, looking at the camera, eyes open, mouth closed, neutral background, soft natural light.`,
+    (Number.isFinite(ch.frameDist) ? ch.frameDist : 0.75) >= 0.5
+      ? `${EN[a.framing === 'ritratto' ? 'mezzo busto' : a.framing]}, vertical 9:16 like a video call with the phone about 1.5 m away: her head about one fifth of the image height, upper body and the softly lit real home interior around her visible, space above her head; front-facing, looking at the camera, eyes open, mouth closed, soft natural light.` // v8.4.1: più lontana
+      : `${EN[a.framing]}, front-facing, looking at the camera, eyes open, mouth closed, neutral background, soft natural light.`,
     a.framing !== 'ritratto' && `Body: ${EN[a.build]} build, ${EN[a.shape]} body shape, ${EN[a.proportions]}, height about ${a.height} cm.`,
     `Hair: ${EN[l.length]} ${EN[l.hairColor]} hair, ${EN[l.cut]}, ${EN[l.hairStyle]}. Makeup: ${EN[l.makeup]}. Outfit: ${EN[l.outfit]}.`,
     l.custom && `Look details: ${l.custom}.`,
@@ -666,6 +676,7 @@ function cleanChar(u, b, prev = {}) {
     autoChanges: cleanAuto(b.autoChanges || prev.autoChanges, prev.autoChanges || {}),
     personality: String(b.personality || '').slice(0, 8000), style: String(b.style || '').slice(0, 2000),
     voice: /^[a-z0-9_-]{1,64}$/i.test(String(b.voice === undefined ? prev.voice || '' : b.voice || '')) ? String(b.voice === undefined ? prev.voice : b.voice) : '', // v8.4: voce del personaggio (vuota = quella scelta nelle Impostazioni)
+    frameDist: b.frameDist === undefined || b.frameDist === null ? (Number.isFinite(prev.frameDist) ? prev.frameDist : 0.75) : num(b.frameDist, 0, 1, 0.75), // v8.4.1: distanza dalla camera (1 = più lontana)
     preset: b.preset === undefined ? prev.preset || null : (/^[a-z]{2,20}$/.test(String(b.preset || '')) ? String(b.preset) : null),
     state: b.resetState ? defaultState() : (prev.state || defaultState()), // stato evolutivo: lo aggiorna solo il server
     memorySeededAt: prev.memorySeededAt || null,
@@ -817,19 +828,108 @@ app.put('/api/characters/:id', auth, async (req, res) => {
   try { res.json(await updateChar(req.user, req.params.id, req.body, req.body.reason === 'ripristino' ? 'prima del ripristino' : 'modifica')); }
   catch (e) { res.status(e.status || 400).json({ error: e.message }); }
 });
+// v8.4.1: «Elimina personaggio» (solo Nicola): prima una copia completa (backup protetto) e un "cestino" del personaggio
+// (scheda, conversazione, ricordi suoi, foto) ripristinabile per 7 giorni; poi vengono tolti SOLO lui, la sua chat, i suoi ricordi
+// di base e le sue foto. La memoria condivisa della coppia e gli altri personaggi non vengono toccati.
+const TRASH_DAYS = 7;
+const trashDir = () => sharedDir('trash-characters');
+const avatarRefs = (o) => [...new Set(((typeof o === 'string' ? o : JSON.stringify(o || {})).match(/\/api\/avatars\/[a-f0-9]{16}\.(?:png|jpg)/g) || []).map((u) => u.split('/').pop()))];
+function pruneCharTrash() {
+  try {
+    for (const d of fs.readdirSync(trashDir())) {
+      const m = path.join(trashDir(), d, 'meta.json'); let at = 0; try { at = Date.parse(JSON.parse(fs.readFileSync(m, 'utf8')).deletedAt) || 0; } catch {}
+      if (at && Date.now() - at > TRASH_DAYS * 86400e3) fs.rmSync(path.join(trashDir(), d), { recursive: true, force: true });
+    }
+  } catch {}
+}
 app.delete('/api/characters/:id', auth, async (req, res) => {
   try {
     const id = req.params.id;
     if (!ID_RE.test(id)) return res.status(400).json({ error: 'ID non valido' });
     const ch = getChars(req.user).find((c) => c.id === id);
     if (!ch) return res.status(404).json({ error: 'Personaggio non trovato' });
-    backupShared('prima-eliminazione'); // copia completa (personaggio + chat) prima di eliminare
+    const backup = backupShared('prima-eliminazione', { force: true }); // copia completa (personaggio + chat + foto) prima di eliminare
+    if (!backup) return res.status(500).json({ error: 'Backup non riuscito: per sicurezza non elimino nulla.' });
+    // cestino del personaggio (7 giorni)
+    const tid = `${Date.now()}-${id}`, td = path.join(trashDir(), tid); fs.mkdirSync(path.join(td, 'files'), { recursive: true });
+    const chat = readChat(id), mems = getMem().filter((m) => m.charId === id);
+    const others = getChars(req.user).filter((c) => c.id !== id), keepRefs = new Set(others.flatMap((c) => avatarRefs(c)));
+    // foto usate anche altrove (galleria, feed, altre chat): restano
+    const scan = (dir, skip) => { try { for (const f of fs.readdirSync(dir)) { const fp = path.join(dir, f); if (!f.endsWith('.json') || fp === skip || fp === CHARS_FILE()) continue; try { for (const x of avatarRefs(fs.readFileSync(fp, 'utf8'))) keepRefs.add(x); } catch {} } } catch {} };
+    scan(sharedDir(), null); scan(sharedDir('chats'), chatFile(id)); scan(sharedDir('feed'), null);
+    const files = avatarRefs(ch).filter((f) => !keepRefs.has(f) && fs.existsSync(path.join(avatarDir(), f)));
+    for (const f of files) linkOrCopy(path.join(avatarDir(), f), path.join(td, 'files', f));
+    fs.writeFileSync(path.join(td, 'character.json'), JSON.stringify(ch));
+    fs.writeFileSync(path.join(td, 'chat.json'), JSON.stringify(chat));
+    fs.writeFileSync(path.join(td, 'memory.json'), JSON.stringify(mems));
+    fs.writeFileSync(path.join(td, 'meta.json'), JSON.stringify({ id, name: ch.name, deletedAt: new Date().toISOString(), by: req.user, backup: path.basename(backup), messages: chat.messages.length, memories: mems.length, files }));
+    // eliminazione: solo questo personaggio
     await mutateJSON(CHARS_FILE(), [], (list) => list.filter((c) => c.id !== id), { removeId: id });
-    const msgs = readChat(id).messages.length;
     await withLock(chatFile(id), () => fs.rmSync(chatFile(id), { force: true }));
-    audit(req.user, 'elimina-personaggio', { id, name: ch.name, messages: msgs });
-    res.json({ ok: true });
+    if (mems.length) await mutateJSON(MEM_FILE(), [], (list) => list.filter((m) => m.charId !== id));
+    for (const f of files) fs.rmSync(path.join(avatarDir(), f), { force: true });
+    audit(req.user, 'elimina-personaggio', { id, name: ch.name, messages: chat.messages.length, memories: mems.length, files: files.length, backup: path.basename(backup) });
+    pruneCharTrash();
+    res.json({ ok: true, trash: tid, backup: path.basename(backup), messages: chat.messages.length, memories: mems.length, files: files.length, restoreDays: TRASH_DAYS });
   } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
+});
+// personaggi eliminati negli ultimi 7 giorni (ripristinabili)
+app.get('/api/trash/characters', auth, (req, res) => {
+  pruneCharTrash(); const out = [];
+  try { for (const d of fs.readdirSync(trashDir())) { try { const m = JSON.parse(fs.readFileSync(path.join(trashDir(), d, 'meta.json'), 'utf8')); out.push({ tid: d, ...m, until: new Date(Date.parse(m.deletedAt) + TRASH_DAYS * 86400e3).toISOString() }); } catch {} } } catch {}
+  res.json({ items: out.sort((a, b) => String(b.deletedAt).localeCompare(String(a.deletedAt))) });
+});
+app.post('/api/trash/characters/:tid/restore', auth, async (req, res) => {
+  const tid = path.basename(String(req.params.tid || '')), td = path.join(trashDir(), tid);
+  if (!/^\d+-[A-Za-z0-9_-]+$/.test(tid) || !fs.existsSync(path.join(td, 'character.json'))) return res.status(404).json({ error: 'Non trovato (oltre 7 giorni?)' });
+  try {
+    const ch = JSON.parse(fs.readFileSync(path.join(td, 'character.json'), 'utf8')), chat = JSON.parse(fs.readFileSync(path.join(td, 'chat.json'), 'utf8')), mems = JSON.parse(fs.readFileSync(path.join(td, 'memory.json'), 'utf8'));
+    if (getChars(req.user).some((c) => c.id === ch.id)) return res.status(409).json({ error: 'Questo personaggio esiste già' });
+    backupShared('prima-recupero', { force: true });
+    for (const f of fs.readdirSync(path.join(td, 'files'))) if (!fs.existsSync(path.join(avatarDir(), f))) linkOrCopy(path.join(td, 'files', f), path.join(avatarDir(), f));
+    await withLock(chatFile(ch.id), () => writeJSON(chatFile(ch.id), chat));
+    await mutateJSON(CHARS_FILE(), [], (list) => [...list, ch]);
+    if (mems.length) await mutateJSON(MEM_FILE(), [], (list) => { const have = new Set(list.map((m) => m.id)); return [...list, ...mems.filter((m) => !have.has(m.id))]; });
+    fs.rmSync(td, { recursive: true, force: true });
+    audit(req.user, 'ripristina-personaggio', { id: ch.id, name: ch.name });
+    res.json({ ok: true, character: ch });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// v8.4.1: «Importa personaggio da testo» (solo Nicola): l'IA legge una descrizione libera e propone i campi di un NUOVO personaggio,
+// da rivedere nell'editor prima di salvare (nulla viene salvato qui). Le regole per adulti NON vengono importate né cambiate.
+app.post('/api/characters-import', auth, requireActivated, requireKey, async (req, res) => {
+  const text = String((req.body && req.body.text) || '').trim().slice(0, 12000);
+  if (text.length < 20) return res.status(400).json({ error: 'Incolla una descrizione un po\' più lunga' });
+  const sys = `Estrai da una descrizione libera di un personaggio IMMAGINARIO i campi per un'app in italiano. Rispondi SOLO con JSON valido:
+{"name":"","age":30,"gender":"donna","personality":"","style":"","core":"","memories":[""],"rules":"","look":{"hairColor":"","length":"","hairStyle":"","build":"","outfit":"","makeup":""},"voice":"ara|eve|sal|rex|leo","notes":""}
+- personality: carattere e comportamento (italiano, 3-8 frasi). style: come parla (registro, ritmo, intercalari). core: aspetto fisico fisso del volto e del corpo per le immagini (italiano).
+- memories: 3-10 fatti brevi su chi è (passato, gusti, lavoro), senza dati di persone reali. rules: regole di comportamento NON sessuali indicate nel testo (le regole per adulti dell'app restano quelle esistenti: ignora qualsiasi contenuto esplicito o regola per adulti).
+- age: SEMPRE un'età adulta, minimo 25 (se il testo indica meno di 25 o un'età ambigua, usa 25). Mai minorenni, mai persone reali o famose: se il testo descrive una persona reale, crea un personaggio immaginario ispirato solo al carattere.
+- campi sconosciuti: stringa vuota.`;
+  try {
+    const r = await fetch(`${AI_BASE_URL}/chat/completions`, { method: 'POST', headers: aiHeaders(req.aiKey), signal: AbortSignal.timeout(60000),
+      body: JSON.stringify({ model: CHAT_MODEL, max_tokens: 1800, messages: [{ role: 'system', content: sys }, { role: 'user', content: text }] }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) return res.status(r.status === 401 ? 400 : 502).json({ error: aiErrorMsg(r.status, j) });
+    const out = String((j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || '');
+    let d; try { d = JSON.parse(out.slice(out.indexOf('{'), out.lastIndexOf('}') + 1)); } catch { return res.status(502).json({ error: 'Risposta dell\'IA non leggibile: riprova' }); }
+    const str = (v, n) => safeText(v, n); // filtro età/minori come ovunque
+    const opt = (k, v) => (OPT[k].includes(v) ? v : undefined);
+    const L = d.look || {}, rules = str(d.rules, 1500);
+    const draft = {
+      name: str(d.name, 40),
+      appearance: { gender: opt('gender', d.gender) || 'donna', age: Math.max(25, Math.min(80, Math.round(Number(d.age) || 30))), ...(opt('build', L.build || d.build) ? { build: opt('build', L.build || d.build) } : {}) },
+      look: Object.fromEntries(['hairColor', 'length', 'hairStyle', 'makeup', 'outfit', 'cut'].map((k) => [k, opt(k, L[k])]).filter(([, v]) => v)),
+      identity: { core: str(d.core, 600) },
+      personality: [str(d.personality, 6000), rules && `Regole di comportamento: ${rules}`].filter(Boolean).join('\n\n'),
+      style: str(d.style, 2000),
+      voice: XAI_VOICES.includes(String(d.voice || '').toLowerCase()) ? String(d.voice).toLowerCase() : '',
+      memories: (Array.isArray(d.memories) ? d.memories : []).map((m) => str(m, 300)).filter(Boolean).slice(0, 12),
+      notes: str(d.notes, 600),
+    };
+    if (!draft.name && !draft.personality) return res.status(502).json({ error: 'Non sono riuscita a ricavare un personaggio dal testo' });
+    res.json({ draft });
+  } catch (e) { res.status(502).json({ error: 'Servizio AI non raggiungibile' }); }
 });
 app.get('/api/avatars/:file', auth, (req, res) => {
   const f = path.basename(req.params.file);
@@ -964,6 +1064,8 @@ app.delete('/api/characters/:id/scene/:room', auth, async (req, res) => {
 
 // v8.4: «Adatta alla cornice» — versione 9:16 della foto dell'avatar (allargata dall'IA, stessa persona), usata SOLO per
 // la visualizzazione: l'avatar originale, le azioni e le regole restano legati alla foto originale. Annullabile (off).
+// v8.4.1: «Allontana con l'IA»: stessa persona ripresa più da lontano, come in una videochiamata col telefono appoggiato a ~1,5 m
+const FAR_PROMPT = 'Zoom out this exact photo into a vertical 9:16 frame, as if the camera were about 1.5 metres further away, like a video call with the phone resting on a table: the SAME person (identical face, identity, expression, hair, clothes, lighting and colours), now smaller in the frame, her head about one fifth of the image height, upper body down to the hips or thighs visible, more of the surrounding real home interior visible around her and above her head. Do not change the person, only show more of her body and of the room, photorealistic, seamless, natural perspective. Adult woman, not a real or famous person.';
 const FRAME_PROMPT = 'Extend this exact photo outward to a vertical 9:16 portrait frame (outpainting). Keep the person EXACTLY identical: same face, same identity, same expression, same hair, same clothes, same pose, same size and position in the frame, same lighting and colours. Do not crop, zoom, retouch or change anything that is already in the photo; only continue the existing background and, where needed, the body naturally into the new areas, photorealistic, seamless.';
 app.post('/api/characters/:id/frame-extend', auth, requireActivated, requireKey, async (req, res) => {
   const ch = getChars(req.user).find((c) => c.id === req.params.id);
@@ -971,10 +1073,11 @@ app.post('/api/characters/:id/frame-extend', auth, requireActivated, requireKey,
   const m = AV_RE.exec(String(ch.avatar || '')); const f = m && avatarPath(m[1]);
   if (!f || !fs.existsSync(f)) return res.status(400).json({ error: 'Serve una foto come avatar' });
   try {
-    const gen = await editImage(req.aiKey, FRAME_PROMPT, [fileToDataUrl(f)], false, '9:16');
+    const farShot = !!(req.body && req.body.far === true);
+    const gen = await editImage(req.aiKey, farShot ? FAR_PROMPT : FRAME_PROMPT, [fileToDataUrl(f)], false, '9:16');
     const url = saveAvatarBuffer(req.user, gen.buf);
     const src = ch.avatar;
-    const c = await patchChar(ch.id, (c) => { if (c.avatar !== src) return false; c.frameFill = { src, url, at: new Date().toISOString(), landmarks: null, off: false }; c.updatedAt = new Date().toISOString(); c.updatedBy = req.user; });
+    const c = await patchChar(ch.id, (c) => { if (c.avatar !== src) return false; c.frameFill = { src, url, at: new Date().toISOString(), landmarks: null, off: false, ...(farShot ? { far: true } : {}) }; c.updatedAt = new Date().toISOString(); c.updatedBy = req.user; });
     if (!c) return res.status(409).json({ error: 'L\'avatar è cambiato nel frattempo: riprova' });
     res.json({ frameFill: c.frameFill });
   } catch (e) { res.status(502).json({ error: e.message || 'Servizio AI non raggiungibile' }); }
@@ -1325,11 +1428,17 @@ app.post('/api/chats/:id', auth, requireActivated, (req, res, next) => (req.body
   typing.set(id, { by: req.user, at: Date.now() });
   let reply = '';
   const guard = new NameGuard(req.user, !nameUses(id, req.user).allow); // v8.1: niente nome ripetuto
+  const isCall = req.body.call === true;
+  const callBody = { model: isCall && callModelOk ? CALL_MODEL : CHAT_MODEL, messages, stream: true, ...(isCall ? { max_tokens: 260 } : {}) };
   try {
-    const r = await fetch(`${AI_BASE_URL}/chat/completions`, {
+    let r = await fetch(`${AI_BASE_URL}/chat/completions`, {
       method: 'POST', headers: aiHeaders(req.aiKey), signal: ctrl.signal,
-      body: JSON.stringify({ model: CHAT_MODEL, messages, stream: true }),
+      body: JSON.stringify(callBody),
     });
+    if ((r.status === 400 || r.status === 404) && callBody.model !== CHAT_MODEL) { // modello veloce non disponibile: si torna al solito
+      callModelOk = false; console.warn('Modello veloce per le chiamate non disponibile, uso', CHAT_MODEL);
+      r = await fetch(`${AI_BASE_URL}/chat/completions`, { method: 'POST', headers: aiHeaders(req.aiKey), signal: ctrl.signal, body: JSON.stringify({ ...callBody, model: CHAT_MODEL }) });
+    }
     if (!r.ok || !r.body) {
       console.error('Errore AI chat: HTTP', r.status); // mai loggare la chiave
       const msg = aiErrorMsg(r.status, await r.json().catch(() => ({})));
@@ -1430,13 +1539,17 @@ function rtInstructions(user, ch, mode) {
     recent.length && `ULTIMI MESSAGGI DELLA CHAT (contesto, continua da qui):\n${recent.join('\n')}`,
     `In questa chiamata parli solo con ${USERS[user].name} (la senti dal vivo: le sue parole non hanno il prefisso col nome).`, BASE_RULE].filter(Boolean).join('\n\n');
 }
+// v8.4.1: configurazione conforme allo schema ufficiale (docs.x.ai voice-realtime.ws.json): turn_detection accetta solo
+// type (+ idle_timeout_ms); la trascrizione solo language_hint/keyterms. Un campo non previsto fa rifiutare TUTTO l'aggiornamento
+// (istruzioni comprese) con un evento "error": in v8.4 il telefono lo trattava come guasto e passava alla chiamata classica.
+function rtVoice(v) { v = String(v || '').toLowerCase(); return XAI_VOICES.includes(v) ? v : (v === 'una' ? 'eve' : 'ara'); }
 function rtSession(user, ch, mode, voice) {
   return {
     instructions: rtInstructions(user, ch, mode),
-    voice,
-    turn_detection: { type: 'server_vad', threshold: 0.5, silence_duration_ms: 500, prefix_padding_ms: 300 },
+    voice: rtVoice(voice),
+    turn_detection: { type: 'server_vad' },
     audio: {
-      input: { format: { type: 'audio/pcm', rate: 24000 }, transcription: { model: 'grok-transcribe', language_hint: 'it', keyterms: [ch.name, 'Nico', 'Luisa'].filter(Boolean).slice(0, 10) } },
+      input: { format: { type: 'audio/pcm', rate: 24000 }, transcription: { language_hint: 'it', keyterms: [ch.name, 'Nico', 'Luisa'].filter(Boolean).map((k) => String(k).slice(0, 50)).slice(0, 10) } },
       output: { format: { type: 'audio/pcm', rate: 24000 } },
     },
     reasoning: { effort: 'none' }, // risposta più rapida: in una telefonata conta la prontezza
@@ -1451,13 +1564,15 @@ app.post('/api/realtime/session', auth, requireActivated, requireKey, async (req
   const mode = req.body.mode === 'voice' ? 'voice' : 'video';
   const v = String(req.body.voice || ch.voice || 'ara'); const voice = /^[a-z0-9_-]{1,64}$/i.test(v) ? v : 'ara';
   try {
-    const r = await fetch(`${AI_BASE_URL}/realtime/client_secrets`, { method: 'POST', headers: aiHeaders(req.aiKey), body: JSON.stringify({ expires_after: { seconds: 60 } }) });
+    const r = await fetch(`${AI_BASE_URL}/realtime/client_secrets`, { method: 'POST', headers: aiHeaders(req.aiKey), body: JSON.stringify({ expires_after: { seconds: 300 } }) });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) { console.error('Errore AI tempo reale: HTTP', r.status); return res.status(r.status === 401 ? 400 : 502).json({ error: aiErrorMsg(r.status, j), status: r.status }); }
     const token = j.value || (j.client_secret && (j.client_secret.value || j.client_secret)) || j.token || j.secret;
     if (!token || typeof token !== 'string') return res.status(502).json({ error: 'Token non ricevuto dal servizio voce' });
     res.setHeader('Cache-Control', 'no-store');
-    res.json({ token, expiresAt: j.expires_at || null, url: `${REALTIME_URL}?model=${encodeURIComponent(REALTIME_MODEL)}`, model: REALTIME_MODEL, session: rtSession(req.user, ch, mode, voice), adult: adultChat() });
+    const t1 = Date.now();
+    res.json({ token, expiresAt: j.expires_at || null, url: `${REALTIME_URL}?model=${encodeURIComponent(REALTIME_MODEL)}`, model: REALTIME_MODEL, session: rtSession(req.user, ch, mode, voice),
+      extra: { audio: { input: { transcription: { model: 'grok-transcribe', language_hint: 'it' } } } }, mintMs: t1 - now, adult: adultChat() });
   } catch (e) { console.error('Errore AI tempo reale:', e.message); res.status(502).json({ error: 'Servizio voce in tempo reale non raggiungibile' }); }
 });
 // istruzioni aggiornate durante la chiamata (es. modalità adulti cambiata, nuovi ricordi): nessuna chiamata a xAI
@@ -1486,19 +1601,33 @@ app.post('/api/chats/:id/voice-turn', auth, requireActivated, async (req, res) =
   res.json({ message: pubMsg(saved, ch), adult: adultChat() });
 });
 // connessione "calda" verso xAI all'inizio di una chiamata classica (DNS/TLS già pronti per la prima risposta)
+// v8.4.1: trascrizione della tua frase (chiamata classica): il telefono registra con il SUO rilevamento del parlato (microfono sempre
+// aperto, nessun riavvio del riconoscimento di iOS) e manda l'audio qui; inoltrato a xAI Speech to Text con la chiave del dispositivo.
+app.post('/api/stt', auth, requireActivated, requireKey, express.raw({ type: ['audio/*', 'application/octet-stream'], limit: '4mb' }), async (req, res) => {
+  const buf = req.body; if (!Buffer.isBuffer(buf) || buf.length < 200) return res.status(400).json({ error: 'Audio vuoto' });
+  try {
+    const fd = new FormData(); fd.append('language', 'it'); fd.append('file', new Blob([buf], { type: 'audio/wav' }), 'frase.wav');
+    const t0 = Date.now();
+    const r = await fetch(`${AI_BASE_URL}/stt`, { method: 'POST', headers: { Authorization: `Bearer ${req.aiKey}` }, body: fd, signal: AbortSignal.timeout(15000) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) { console.error('Errore AI trascrizione: HTTP', r.status); return res.status(r.status === 401 ? 400 : 502).json({ error: aiErrorMsg(r.status, j), status: r.status }); }
+    res.setHeader('Cache-Control', 'no-store'); res.json({ text: String(j.text || '').trim(), ms: Date.now() - t0 });
+  } catch (e) { console.error('Errore AI trascrizione:', e.message); res.status(502).json({ error: 'Trascrizione non raggiungibile' }); }
+});
 app.post('/api/ai-warm', auth, requireKey, async (req, res) => {
-  try { await fetch(`${AI_BASE_URL}/models`, { method: 'GET', headers: aiHeaders(req.aiKey), signal: AbortSignal.timeout(4000) }).then((r) => r.arrayBuffer()).catch(() => {}); } catch {}
-  res.json({ ok: true });
+  const t0 = Date.now(); let status = 0;
+  try { await fetch(`${AI_BASE_URL}/models`, { method: 'GET', headers: aiHeaders(req.aiKey), signal: AbortSignal.timeout(4000) }).then((r) => { status = r.status; return r.arrayBuffer(); }).catch(() => {}); } catch {}
+  res.json({ ok: true, status, ms: Date.now() - t0, callModel: callModelOk ? CALL_MODEL : CHAT_MODEL }); // v8.4.1: tempi per «Diagnostica voce»
 });
 
 // ---------- v8: voce naturale (xAI Text to Speech) ----------
 // La chiave arriva dal dispositivo (header X-AI-Key) e NON viene salvata; il testo non viene registrato nei log.
-const TTS_VOICES = ['eve', 'ara', 'una', 'rex', 'sal', 'leo'];
+const TTS_VOICES = ['eve', 'ara', 'rex', 'sal', 'leo']; // v8.4.1: 'una' non esiste nelle voci xAI (rifiutata): mappata su 'eve'
 const ttsHits = new Map(); // utente -> [timestamp] (limite morbido anti-raffica)
 app.post('/api/tts', auth, requireActivated, requireKey, async (req, res) => {
   const text = String((req.body && req.body.text) || '').replace(/\s+/g, ' ').trim().slice(0, 1500);
   if (!text) return res.status(400).json({ error: 'Testo vuoto' });
-  const voice = /^[a-z0-9_-]{1,64}$/i.test(String(req.body.voice || '')) ? String(req.body.voice) : 'eve';
+  const voice = /^[a-z0-9_-]{1,64}$/i.test(String(req.body.voice || '')) && String(req.body.voice).toLowerCase() !== 'una' ? String(req.body.voice) : 'eve';
   const speed = num(req.body.speed, 0.7, 1.5, 1);
   const now = Date.now(), hits = (ttsHits.get(req.user) || []).filter((t) => now - t < 60e3);
   if (hits.length >= 90) return res.status(429).json({ error: 'Troppe letture in poco tempo: riprova tra poco' });
@@ -1506,7 +1635,7 @@ app.post('/api/tts', auth, requireActivated, requireKey, async (req, res) => {
   try {
     const r = await fetch(`${AI_BASE_URL}/tts`, {
       method: 'POST', headers: aiHeaders(req.aiKey),
-      body: JSON.stringify({ text, voice_id: voice, language: 'it', speed, output_format: { codec: 'mp3', sample_rate: 24000, bit_rate: 64000 } }),
+      body: JSON.stringify({ text, voice_id: voice, language: 'it', speed, optimize_streaming_latency: '1', output_format: { codec: 'mp3', sample_rate: 24000, bit_rate: 64000 } }),
     });
     if (!r.ok) { console.error('Errore AI voce: HTTP', r.status); return res.status(r.status === 401 ? 400 : 502).json({ error: aiErrorMsg(r.status, await r.json().catch(() => ({}))), status: r.status }); }
     // v8.4: inoltrato a pezzi appena arriva (prima frase udibile prima)
@@ -2235,7 +2364,8 @@ function listBackups() {
 function pruneBackups() {
   const all = listBackups();
   const prot = all.filter((n) => PROTECTED.test(n)), normal = all.filter((n) => !PROTECTED.test(n));
-  for (const n of [...normal.slice(0, Math.max(0, normal.length - BACKUP_KEEP)), ...prot.slice(0, Math.max(0, prot.length - 10))]) fs.rmSync(path.join(BACKUP_DIR, n), { recursive: true, force: true });
+  const young = (n) => { const m = /^(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})/.exec(n); const t = m ? Date.parse(`${m[1]}T${m[2]}:${m[3]}:${m[4]}Z`) : 0; return t && Date.now() - t < 7 * 86400e3; }; // v8.4.1: copie di sicurezza delle eliminazioni tenute almeno 7 giorni
+  for (const n of [...normal.slice(0, Math.max(0, normal.length - BACKUP_KEEP)), ...prot.slice(0, Math.max(0, prot.length - 10)).filter((n) => !young(n))]) fs.rmSync(path.join(BACKUP_DIR, n), { recursive: true, force: true });
 }
 // File JSON illeggibile: lo mette da parte (mai sovrascritto) e ripristina l'ultima copia valida dai backup.
 function restoreCorrupt(f, txt) {

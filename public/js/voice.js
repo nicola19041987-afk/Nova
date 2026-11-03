@@ -5,6 +5,8 @@
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   let rec = null, on = false, pausedForTTS = false, ttsOn = false;
   let lastResAt = 0, eosT = 0, early = ''; // v8.4: fine del parlato anticipata (chiamate)
+  let ignoreUntil = 0; // v8.4.1: in chiamata il riconoscimento NON si ferma mentre lei parla (niente bip di iOS): i risultati vengono ignorati
+  const inCall = () => !!(App.call && App.call.active);
   const norm = (t) => String(t || '').toLowerCase().replace(/[^\p{L}\d ]+/gu, '').replace(/\s+/g, ' ').trim();
   // ---- v7.3: sblocco dell'audio su iPhone ----
   // iOS Safari/PWA: la sintesi vocale e l'audio Web restano muti finché non partono la prima volta DENTRO un tocco dell'utente.
@@ -15,7 +17,10 @@
   if (SS) { loadVoices(); try { SS.addEventListener('voiceschanged', loadVoices); } catch { SS.onvoiceschanged = loadVoices; } }
   const pickVoice = () => { if (!voices.length) loadVoices(); const v = voices.filter((x) => x.lang && x.lang.toLowerCase().replace('_', '-').startsWith('it')); return v.find((x) => /female|donna|alice|elsa|federica|paola/i.test(x.name)) || v[0] || null; };
   App.audio = {
-    unlocked: false, ctx: null,
+    unlocked: false, ctx: null, inCall: false,
+    // v8.4.1: per tutta la chiamata una sola sessione audio iOS "play-and-record" (microfono + voce insieme): cambiarla a ogni frase
+    // faceva sentire il "suono di attacco e stacco". A chiamata finita si torna a "playback" (suona anche col tasto silenzioso).
+    callSession(on) { this.inCall = !!on; try { if (navigator.audioSession) navigator.audioSession.type = on ? 'play-and-record' : 'playback'; } catch {} },
     unlock() {
       try {
         const AC = window.AudioContext || window.webkitAudioContext;
@@ -25,7 +30,7 @@
           const b = this.ctx.createBuffer(1, 1, 22050), src = this.ctx.createBufferSource(); src.buffer = b; src.connect(this.ctx.destination); src.start(0); // buffer muto
         }
       } catch {}
-      try { if (navigator.audioSession && navigator.audioSession.type !== 'playback') navigator.audioSession.type = 'playback'; } catch {} // iOS 17+: suona anche col tasto silenzioso
+      try { if (!this.inCall && navigator.audioSession && navigator.audioSession.type !== 'playback') navigator.audioSession.type = 'playback'; } catch {} // iOS 17+: suona anche col tasto silenzioso (mai durante una chiamata)
       try {
         const a = NX.audio();
         if (this.pending && this.pending.resume) { const p = this.pending; this.pending = null; this._warm = true; this._spokeAt = performance.now(); p.resume(); }
@@ -65,7 +70,18 @@
     let mx = 0;
     for (let i = 0; i < n; i++) { let s2 = 0; const e = Math.min(d.length, (i + 1) * win); for (let k = i * win; k < e; k += 2) s2 += d[k] * d[k]; env[i] = Math.sqrt(s2 / Math.max(1, (e - i * win) / 2)); if (env[i] > mx) mx = env[i]; }
     if (mx > 0) for (let i = 0; i < n; i++) { const v = env[i] / (mx * 0.75); env[i] = v < 0.06 ? 0 : Math.min(1, Math.pow(v, 0.8)); }
-    return env;
+    return { env, buf }; // v8.4.1: in chiamata la frase si suona dal buffer già decodificato (stesso AudioContext, dissolvenze)
+  }
+  // v8.4.1: riproduzione in chiamata sull'AudioContext unico, con dissolvenza in entrata/uscita (niente click, niente cambi di sessione)
+  function playBuffer(buf, vol) {
+    const c = App.audio.ctx; if (c.state !== 'running') c.resume().catch(() => {});
+    const g = c.createGain(), src = c.createBufferSource(); src.buffer = buf; src.connect(g); g.connect(c.destination);
+    const t = c.currentTime + 0.02, end = t + buf.duration, gg = g.gain;
+    gg.setValueAtTime(0, t); gg.linearRampToValueAtTime(vol, t + 0.012); gg.setValueAtTime(vol, Math.max(t + 0.013, end - 0.018)); gg.linearRampToValueAtTime(0, end);
+    src.start(t);
+    const el = { get currentTime() { return Math.max(0, c.currentTime - t); }, paused: false, ended: false }; // per il labiale (come un <audio>)
+    const h = { src, g, el, t0: t, stop() { if (el.ended) return; el.ended = true; const n = c.currentTime; try { gg.cancelScheduledValues(n); gg.setValueAtTime(gg.value, n); gg.linearRampToValueAtTime(0, n + 0.03); src.onended = null; src.stop(n + 0.035); } catch {} } };
+    return h;
   }
   const NX = {
     el: null, q: [], playing: null, buf: '', streaming: false, sent: 0, gen: 0, fails: 0, cache: new Map(), devBuf: '', degraded: false, blessed: false,
@@ -76,6 +92,7 @@
     stop() {
       this.gen++; this.q = []; this.buf = ''; this.streaming = false; this.sent = 0; this.devBuf = ''; this.degraded = false;
       if (this.playing) { try { this.el.pause(); } catch {} }
+      if (this.wa) { this.wa.stop(); this.wa = null; }
       this.playing = null; this.done();
     },
     begin() { this.stop(); this.streaming = true; },
@@ -105,7 +122,8 @@
       if (!r.ok) { const j = await r.json().catch(() => ({})); const e = new Error(j.error || 'Errore ' + r.status); e.status = r.status; throw e; }
       const blob = await r.blob();
       if (!blob.size) throw new Error('Audio vuoto');
-      const res = { url: URL.createObjectURL(blob), env: await envelope(blob).catch(() => null) };
+      const e = await envelope(blob).catch(() => null);
+      const res = { url: URL.createObjectURL(blob), env: e && e.env, buf: e && e.buf };
       this.cache.set(key, res);
       while (this.cache.size > 40) { const [k, v] = this.cache.entries().next().value; this.cache.delete(k); if (!this.playing || this.playing.res !== v) URL.revokeObjectURL(v.url); }
       return res;
@@ -117,6 +135,14 @@
       try { res = await item.p; } catch (e) { if (item.gen === this.gen) this.fail(e, item); return; }
       if (item.gen !== this.gen) return;
       this.fails = 0; item.res = res;
+      if (inCall() && res.buf && App.audio.ctx) { // v8.4.1: in chiamata, WebAudio con dissolvenze
+        if (!this.lipsOn) { const avs = [App.avatarConv, App.avatarPresence].filter((x) => x && x.breathM); avs.forEach((x) => x.breathM.preInhale(performance.now())); if (avs.length) { await new Promise((r) => setTimeout(r, 60)); if (item.gen !== this.gen) return; } }
+        const h = this.wa = playBuffer(res.buf, NX.volume == null ? 1 : NX.volume);
+        App.audio.unlocked = true; this.lips(h.el, res.env, item.text); pauseRec();
+        if (App.latency && App.latency.mark) { const ms = performance.now() + (h.t0 - App.audio.ctx.currentTime) * 1000 - App.latency.mark; App.latency.mark = 0; if (ms > 0 && ms < 30000) App.latency.add('classica', ms); }
+        h.src.onended = () => { h.el.ended = true; if (this.wa === h) this.wa = null; if (item.gen === this.gen) this.next(); };
+        return;
+      }
       const a = this.audio();
       a.onended = () => { if (item.gen === this.gen) this.next(); };
       a.onerror = () => { if (item.gen === this.gen && a.src === res.url) this.next(); };
@@ -151,8 +177,8 @@
   };
   App.tts = NX;
   // anti-eco: il riconoscimento vocale va in pausa mentre l'avatar parla
-  function pauseRec() { if (on && rec && !pausedForTTS) { pausedForTTS = true; try { rec.stop(); } catch {} } }
-  function resumeRec() { if (pausedForTTS) { pausedForTTS = false; if (on) try { rec.start(); } catch {} } }
+  function pauseRec() { if (on && rec && !pausedForTTS) { pausedForTTS = true; if (!inCall()) try { rec.stop(); } catch {} } } // in chiamata: niente stop (bip)
+  function resumeRec() { if (pausedForTTS) { pausedForTTS = false; ignoreUntil = performance.now() + 400; if (on && !inCall()) try { rec.start(); } catch {} } }
   function speakDevice(clean) {
     if (!SS || !clean) return;
     speakNow(clean, { before: (u) => {
@@ -187,6 +213,7 @@
   function build() {
     rec = new SR(); rec.lang = 'it-IT'; rec.continuous = true; rec.interimResults = true;
     rec.onresult = (e) => {
+      if (inCall() && (pausedForTTS || performance.now() < ignoreUntil)) return; // è la sua voce (eco), non la tua
       let interim = ''; lastResAt = performance.now(); clearTimeout(eosT);
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const r = e.results[i];
@@ -214,7 +241,7 @@
       if (e.error === 'not-allowed' || e.error === 'service-not-allowed') { on = false; setBtn(); status('Permesso microfono negato.'); }
       else if (e.error === 'network') status('Riconoscimento vocale non raggiungibile (serve connessione).');
     };
-    rec.onend = () => { if (on && !pausedForTTS) setTimeout(() => { try { rec.start(); } catch {} }, 250); }; // riavvio automatico
+    rec.onend = () => { if (on && (!pausedForTTS || inCall())) setTimeout(() => { try { rec.start(); } catch {} }, inCall() ? 0 : 250); }; // riavvio automatico
   }
   App.voice = {
     start() {
@@ -232,6 +259,7 @@
       speakNow(text, { before: (u) => App.avatarConv.speakUtterance(u, text) });
     },
     stop() { on = false; setBtn(); status(''); if (rec) try { rec.stop(); } catch {} },
+    isListening: () => on,
     speak(text) {
       if (!ttsOn) return;
       if (NX.enabled()) { NX.say(text); return; }

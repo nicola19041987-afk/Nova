@@ -512,3 +512,14 @@ dialog{background:#1c1c1e;border:0}
 #stage.call.voice{background:radial-gradient(120% 80% at 50% 20%,#23343d 0%,#0b141a 70%)!important}
 #stage.call.voice .av-backdrop{display:none!important}
 .av-backdrop>div{filter:none!important;inset:0!important}
+/* v8.4.1: indicatore del motore della chiamata + Diagnostica voce */
+.call-badge { font: 600 11px/1 system-ui, sans-serif; padding: 4px 8px; border-radius: 999px; border: 0; margin: 0 6px; background: rgba(255,255,255,.18); color: #fff; letter-spacing: .02em; cursor: pointer; -webkit-backdrop-filter: none; backdrop-filter: none; }
+.call-badge[data-kind="rt"] { background: rgba(255, 196, 0, .9); color: #1b1300; }
+.call-badge[data-kind="classic"] { background: rgba(120, 140, 160, .85); }
+.call-badge[data-kind="conn"] { background: rgba(255,255,255,.25); }
+.diag-out { margin-top: 10px; border: 1px solid var(--line, #3334); border-radius: 12px; padding: 10px; font-size: 13px; line-height: 1.35; background: var(--card2, rgba(127,127,127,.08)); }
+.diag-head { font-weight: 700; margin-bottom: 6px; }
+.diag-row { display: grid; grid-template-columns: 22px minmax(90px, 34%) 1fr; gap: 6px; padding: 4px 0; border-top: 1px solid rgba(127,127,127,.15); word-break: break-word; }
+.diag-row.err b, .diag-row.err span:last-child { color: #e5484d; }
+.diag-row.warn span:last-child { color: #d18b00; }
+#voice-diag-copy { margin-top: 8px; }
