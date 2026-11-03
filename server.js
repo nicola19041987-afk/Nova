@@ -56,6 +56,11 @@ function aiErrorMsg(status, j) {
   if (status === 401 || status === 403 && !/moderat|safety|policy|content/i.test(raw)) return 'Chiave xAI non valida';
   if ([400, 403, 422, 451].includes(status) && /moderat|safety|policy|content|nsfw|reject|refus|violat|block|not allowed|inappropriate/i.test(raw)) return 'Contenuto rifiutato dal servizio AI';
   if (status === 451) return 'Contenuto rifiutato dal servizio AI';
+  // v8: messaggi chiari anche per gli altri casi frequenti
+  if (status === 429) return 'Troppe richieste al servizio AI: riprova tra qualche secondo';
+  if (status >= 500) return 'Servizio AI momentaneamente non disponibile: riprova tra poco';
+  if (status === 404 && /voice/i.test(raw)) return 'Voce non trovata: scegline un\'altra in Account';
+  if (status === 400 && /image|size|format|decode/i.test(raw) && raw.length >= 200) return 'Immagine non accettata dal servizio AI (formato o dimensioni): prova con un\'altra';
   return raw && raw.length < 200 ? `Errore dal servizio AI (${status}): ${raw}` : `Errore dal servizio AI (${status})`;
 }
 const IMAGE_RULE = 'Realistic. Only adults clearly aged 25 or older. No minors, no non-consensual or illegal content, no sexual depiction of real identifiable people or celebrities; faces only of the two consenting users or AI-generated faces. ';
@@ -341,7 +346,8 @@ function sendPrivateFile(req, res, file) {
     if (!getSettings(req.user).allowExport) return res.status(403).json({ error: 'Esportazione disattivata nelle impostazioni privacy.' });
     res.attachment(path.basename(file));
   }
-  res.setHeader('Cache-Control', 'private, max-age=86400');
+  // v8: i file hanno nomi casuali e non cambiano mai: il telefono li tiene in cache 30 giorni (avatar più veloci, anche offline)
+  res.setHeader('Cache-Control', /[a-f0-9]{8}\.(png|jpe?g|webp|mp4)$/i.test(file) ? 'private, max-age=2592000, immutable' : 'private, max-age=86400');
   res.sendFile(file);
 }
 
@@ -434,8 +440,11 @@ Rispondi SOLO con un array JSON di stringhe brevi in italiano (max 5, ognuna max
     try { facts = JSON.parse(txt.slice(txt.indexOf('['), txt.lastIndexOf(']') + 1)); } catch {}
     let added = [];
     await mutateJSON(MEM_FILE(), [], (cur) => { // riletta ora: dedup anche se l'altro dispositivo ha estratto nel frattempo
-      const known = new Set(cur.map((m) => m.text.toLowerCase()));
-      added = (Array.isArray(facts) ? facts : []).map(cleanFact).filter((t) => t && !known.has(t.toLowerCase()) && known.add(t.toLowerCase())).slice(0, 5)
+      // v8: doppioni riconosciuti anche se scritti in modo leggermente diverso (parole in comune ≥ 75%)
+      const words = (t) => new Set(String(t).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter((w) => w.length > 2));
+      const known = cur.map((m) => words(m.text));
+      const dup = (t) => { const w = words(t); if (!w.size) return true; return known.some((k) => { let c = 0; for (const x of w) if (k.has(x)) c++; return c / Math.max(w.size, k.size) >= 0.75; }); };
+      added = (Array.isArray(facts) ? facts : []).map(cleanFact).filter((t) => t && !dup(t) && known.push(words(t))).slice(0, 5)
         .map((text) => ({ id: newId(), text, source: 'auto', by: 'auto', createdAt: new Date().toISOString() }));
       return added.length ? [...cur, ...added].slice(-300) : undefined;
     });
@@ -541,6 +550,28 @@ function buildImagePrompt(ch, extra) {
 
 const clamp01 = (n) => Math.min(1, Math.max(0, Number(n) || 0));
 const pt = (p, dx, dy) => ({ x: clamp01(p && p.x != null ? p.x : dx), y: clamp01(p && p.y != null ? p.y : dy) });
+// v8: punti del viso rilevati in automatico sul telefono (MediaPipe). Spazio = quadrato centrale dell'immagine (0..1);
+// nelle foto a figura intera il viso può stare fuori dal quadrato centrale, quindi qui si accetta -1..2.
+// I vecchi punti messi a mano restano in "manual" come riserva.
+function cleanLm(lm, avatar) {
+  lm = lm || {};
+  const w = (v, d) => { const n = Number(v); return Number.isFinite(n) ? Math.min(2, Math.max(-1, n)) : d; };
+  const P = (p, dx, dy) => ({ x: w(p && p.x, dx), y: w(p && p.y, dy) });
+  if (!lm.auto) {
+    const out = { eyeL: pt(lm.eyeL, 0.38, 0.42), eyeR: pt(lm.eyeR, 0.62, 0.42), mouth: pt(lm.mouth, 0.5, 0.7) };
+    if (lm.manual && lm.manual.eyeL) out.manual = { eyeL: pt(lm.manual.eyeL, 0.38, 0.42), eyeR: pt(lm.manual.eyeR, 0.62, 0.42), mouth: pt(lm.manual.mouth, 0.5, 0.7) };
+    return out;
+  }
+  const r = (v, a, b) => { const n = Number(v); return Number.isFinite(n) ? Math.min(b, Math.max(a, n)) : undefined; };
+  let src = String(lm.src || '').slice(0, 80);
+  if (/^data:/.test(src) && avatar && AV_RE.test(avatar)) src = avatar; // anteprima appena salvata: ora ha il suo indirizzo definitivo
+  const out = { eyeL: P(lm.eyeL, 0.38, 0.42), eyeR: P(lm.eyeR, 0.62, 0.42), mouth: P(lm.mouth, 0.5, 0.7), auto: true, src, at: String(lm.at || new Date().toISOString()).slice(0, 30),
+    mouthW: r(lm.mouthW, 0.003, 0.6), mouthH: r(lm.mouthH, 0, 0.3), eyeW: r(lm.eyeW, 0.002, 0.3), eyeH: r(lm.eyeH, 0, 0.15), tilt: r(lm.tilt, -0.8, 0.8) };
+  if (lm.browL && lm.browR) { out.browL = P(lm.browL, 0.38, 0.36); out.browR = P(lm.browR, 0.62, 0.36); }
+  if (lm.manual && lm.manual.eyeL) out.manual = { eyeL: pt(lm.manual.eyeL, 0.38, 0.42), eyeR: pt(lm.manual.eyeR, 0.62, 0.42), mouth: pt(lm.manual.mouth, 0.5, 0.7) };
+  Object.keys(out).forEach((k) => out[k] === undefined && delete out[k]);
+  return out;
+}
 const avatarDir = () => sharedDir('avatars'); // avatar condivisi: data/shared/avatars
 const AV_RE = /^\/api\/avatars\/([a-f0-9]{16}\.(png|jpg))$/;
 function saveAvatarBuffer(u, buf) {
@@ -577,7 +608,7 @@ function cleanChar(u, b, prev = {}) {
     .map((w) => ({ id: ID_RE.test(w.id) ? w.id : newId(), name: safeText(w.name, 40) || 'Look', look: cleanLook(w.look) }));
   return {
     name, avatar, avatarSource, avatarConsent,
-    landmarks: { eyeL: pt(lm.eyeL, 0.38, 0.42), eyeR: pt(lm.eyeR, 0.62, 0.42), mouth: pt(lm.mouth, 0.5, 0.7) },
+    landmarks: cleanLm(lm, avatar),
     appearance, look, wardrobe,
     identity: cleanIdentity(b.identity || prev.identity, prev.identity || {}),
     autoChanges: cleanAuto(b.autoChanges || prev.autoChanges, prev.autoChanges || {}),
@@ -588,14 +619,15 @@ function cleanChar(u, b, prev = {}) {
   };
 }
 // ---------- scena cinematografica: versione a figura intera del personaggio in una stanza ----------
+// v8: UNA sola scena, il soggiorno / sala da pranzo di casa, verticale 9:16 come una videochiamata.
+// Le vecchie scene (salotto, camera, terrazza) restano salvate nei dati e su disco, ma non si usano né si generano più.
 const SCENE_ROOMS = {
-  salotto: 'sitting relaxed on a comfortable sofa in a warm, cozy living room in the evening, soft warm lamp light, plants and a rug',
-  camera: 'sitting on the edge of a neatly made bed in a tasteful, softly lit bedroom, warm bedside lamp light',
-  terrazza: 'sitting on an outdoor sofa on an elegant terrace at sunset, city lights and sky in the background, string lights',
+  soggiorno: 'sitting relaxed at the wooden dining table of a real, lived-in Italian home living-dining room (open-plan soggiorno with sala da pranzo): a sofa with cushions, bookshelves, a few plants, a pendant lamp over the table, framed pictures on the wall, a large window on one side',
 };
+const LEGACY_SCENE_ROOMS = ['salotto', 'camera', 'terrazza'];
 function cleanScenes(sc) {
   const out = {};
-  for (const k of Object.keys(SCENE_ROOMS)) {
+  for (const k of [...Object.keys(SCENE_ROOMS), ...LEGACY_SCENE_ROOMS]) {
     const v = sc && sc[k]; if (!v || !AV_RE.test(String(v.url || ''))) continue;
     const lm = v.landmarks;
     // coordinate nello spazio del quadrato centrale dell'immagine 16:9: possono uscire da 0..1 in orizzontale
@@ -608,11 +640,12 @@ function cleanScenes(sc) {
 function buildScenePrompt(ch, room) {
   const a = ch.appearance, l = ch.look, id = ch.identity;
   return [
-    `Cinematic photorealistic film still, wide 16:9 shot. Recurring invented adult character (identity anchor #${id.seed}): the SAME person in every image, same face, same facial features.`,
+    `Photorealistic vertical 9:16 photo, like the frame of a smartphone video call: a natural, candid, real-life photograph (not a render, not an illustration). Recurring invented adult character (identity anchor #${id.seed}): the SAME person in every image, same face, same facial features.`,
     `A fictional adult ${EN[a.gender]}, clearly ${a.age} years old (adult, at least 25), mature adult features; not a real or famous person.`,
     id.core && `Fixed face/identity: ${id.core}.`,
-    `Full-body shot: the WHOLE body visible from head to feet, nothing cut off, with some space above the head and below the feet, person centered in the frame, ${SCENE_ROOMS[room]}.`,
-    `Face clearly visible, turned towards the camera, eyes open, mouth closed, relaxed natural pose. Cinematic lighting, shallow depth of field, warm color grading.`,
+    `Framing: medium shot from the head down to the thighs, camera at eye level about 1.2 m away (35mm lens), head in the upper third with some space above the hair, nothing of the head, hair or hands cut off, person centered, ${SCENE_ROOMS[room]}.`,
+    `She looks straight into the camera as if talking to someone on a video call: face clearly visible and well lit, eyes open, lips gently closed, relaxed natural posture, hands resting naturally.`,
+    `Lighting: soft warm late-afternoon daylight from the window mixed with warm indoor lamp light; the SAME light falls on her and on the room, with consistent direction, natural soft shadows and contact shadows on the chair and table; correct perspective and real-world scale between her and the furniture. Natural skin texture, realistic hair, slight background depth of field, true-to-life colors, no cutout look, no text, no watermark.`,
     `Body: ${EN[a.build]} build, ${EN[a.shape]} body shape, ${EN[a.proportions]}, height about ${a.height} cm.`,
     `Hair: ${EN[l.length]} ${EN[l.hairColor]} hair, ${EN[l.cut]}, ${EN[l.hairStyle]}. Makeup: ${EN[l.makeup]}. Outfit: ${EN[l.outfit]}.`,
     l.custom && `Look details: ${l.custom}.`,
@@ -823,7 +856,7 @@ app.post('/api/characters/:id/regenerate', auth, requireActivated, requireKey, a
 app.post('/api/characters/:id/scene-image', auth, requireActivated, requireKey, async (req, res) => {
   const ch = getChars(req.user).find((c) => c.id === req.params.id);
   if (!ch) return res.status(404).json({ error: 'Personaggio non trovato' });
-  const room = String(req.body.room || '');
+  const room = String(req.body.room || 'soggiorno');
   if (!SCENE_ROOMS[room]) return res.status(400).json({ error: 'Stanza non valida' });
   try {
     const draft = { ...ch, ...cleanChar(req.user, { ...ch, avatar: ch.avatar, avatarSource: ch.avatarSource }, ch) }; // campi normalizzati (anche per personaggi vecchi)
@@ -832,10 +865,10 @@ app.post('/api/characters/:id/scene-image', auth, requireActivated, requireKey, 
     const refFile = ref && avatarPath(ref[1]);
     let gen = null;
     if (refFile && fs.existsSync(refFile)) {
-      try { gen = await editImage(req.aiKey, `Keep exactly the same person, same face and identity as in the reference image, but show her full body in a new scene. ${prompt}`, [fileToDataUrl(refFile)], adultOn(req.user), '16:9'); }
+      try { gen = await editImage(req.aiKey, `Keep exactly the same person, same face and identity as in the reference image, but show her in a new scene. ${prompt}`, [fileToDataUrl(refFile)], adultOn(req.user), '9:16'); }
       catch (e) { if (e.message === 'Contenuto rifiutato dal servizio AI') throw e; console.error('Scena: edit con riferimento non riuscito, uso generazione:', e.message); }
     }
-    if (!gen) gen = await generateImage(req.aiKey, prompt, adultOn(req.user), '16:9');
+    if (!gen) gen = await generateImage(req.aiKey, prompt, adultOn(req.user), '9:16');
     if (!getSettings(req.user).autoSave) return res.json({ room, preview: addPending(req.user, 'scene', gen, room) });
     const url = saveAvatarBuffer(req.user, gen.buf);
     res.json({ room, character: await setScene(req.user, ch.id, room, { url, landmarks: null }) });
@@ -868,6 +901,26 @@ app.delete('/api/characters/:id/scene/:room', auth, async (req, res) => {
   if (!SCENE_ROOMS[req.params.room]) return res.status(400).json({ error: 'Stanza non valida' });
   if (!getChars(req.user).find((c) => c.id === req.params.id)) return res.status(404).json({ error: 'Personaggio non trovato' });
   res.json({ character: await setScene(req.user, req.params.id, req.params.room, null) });
+});
+
+// v8: punti del viso rilevati in automatico sul telefono per l'avatar attuale (anche migrazione dei personaggi esistenti).
+// body: { avatar, landmarks } — applicato solo se l'avatar è ancora quello (niente sovrascritture su un look cambiato nel frattempo).
+// Non distruttivo: i punti precedenti messi a mano restano in landmarks.manual.
+app.put('/api/characters/:id/landmarks', auth, async (req, res) => {
+  const ch = getChars(req.user).find((c) => c.id === req.params.id);
+  if (!ch) return res.status(404).json({ error: 'Personaggio non trovato' });
+  const avatar = String(req.body.avatar || '');
+  const lm = req.body.landmarks;
+  if (!lm || !lm.eyeL || !lm.eyeR || !lm.mouth) return res.status(400).json({ error: 'Punti del viso mancanti' });
+  let applied = false;
+  const c = await patchChar(ch.id, (c) => {
+    if (c.avatar !== avatar) return false; // il look è cambiato: ignora
+    const prev = c.landmarks || {};
+    const manual = prev.manual || (!prev.auto && prev.eyeL ? { eyeL: prev.eyeL, eyeR: prev.eyeR, mouth: prev.mouth } : undefined);
+    c.landmarks = cleanLm({ ...lm, auto: true, src: avatar, manual }, avatar); applied = true;
+  });
+  const { drawer, ...pub } = c || ch;
+  res.json({ applied, character: { ...pub, scenes: cleanScenes(pub.scenes), actions: visibleActions(pub), adultActionsOk: aiFace(pub) } });
 });
 
 // Generatore di variazioni VINCOLATO: piccoli passi plausibili dallo stato attuale.
@@ -1039,8 +1092,24 @@ ${st.traits.length ? 'Tratti emersi: ' + st.traits.join('; ') + '.' : ''}
 ${st.grudges.length ? 'Cose che ti hanno ferita o infastidita (e non hai ancora del tutto perdonato): ' + st.grudges.join('; ') + '.' : ''}
 ${st.notes ? 'Note su di te: ' + st.notes : ''}`.replace(/\n{2,}/g, '\n');
 }
+// v8: riassunto progressivo della chat (le parti vecchie, fuori dagli ultimi messaggi) e anti-ripetizione
+function summaryText(chatId) {
+  const sm = (readJSON(chatFile(chatId), null) || {}).summary;
+  return sm && sm.text ? `RIASSUNTO DELLA CONVERSAZIONE PRECEDENTE (fatti, decisioni, cose in sospeso; i messaggi più recenti seguono per intero):\n${sm.text}` : '';
+}
+function variationText(chatId) {
+  const last = readChat(chatId).messages.filter((m) => m.role === 'assistant' && visibleMsg(m)).slice(-4)
+    .map((m) => String(m.content || '').replace(/\s+/g, ' ').trim().split(/(?<=[.!?…])\s/)[0].slice(0, 70)).filter(Boolean);
+  return `STILE DELLE RISPOSTE: rispondi in modo naturale e vivo, come in una vera chat; varia lessico, ritmo e il modo di iniziare. Non ripetere saluti, complimenti, domande o frasi già usate di recente.${last.length ? ' Le tue ultime risposte iniziavano così (NON ricominciare allo stesso modo):\n' + last.map((t) => '- ' + t).join('\n') : ''}`;
+}
+// v8: videochiamata (risposte dette a voce), linguaggio del corpo contestuale, fase intima graduale
+function callText(user) {
+  return `SEI IN VIDEOCHIAMATA CON ${USERS[user].name.toUpperCase()}: ti vede e ti sente, e tu rispondi A VOCE (il testo viene letto ad alta voce). Parla come in una vera telefonata, in italiano parlato e spontaneo: di solito 1–3 frasi brevi (al massimo una quarantina di parole), niente elenchi, emoji, asterischi, markdown o descrizioni di azioni tra parentesi. Reagisci prima a quello che ha appena detto, poi rilancia con una domanda o un'osservazione quando ha senso. Usa con misura gli intercalari naturali (beh, dai, sai, mmh) e qualche pausa ("..."). Chiamalo/a per nome ogni tanto, senza esagerare. I messaggi arrivano dal riconoscimento vocale: se una frase sembra spezzata o senza senso, chiedi con naturalezza di ripetere.`;
+}
+const BODY_TEXT = `LINGUAGGIO DEL CORPO (visibile sull'avatar, non letto ad alta voce): puoi INIZIARE la risposta con un tag [gesto:annuisce|sorride|ride|inclina|nega|pensa|ammicca|saluta] e/o [umore:allegra|tenera|seria|maliziosa|triste|sorpresa|pensierosa], scelti in base a ciò che dici e al tono emotivo del momento. Usali solo quando aggiungono qualcosa (non in ogni risposta) e non ripetere lo stesso gesto più volte di fila.`;
+const ADULT_FLOW = `COME SI SVILUPPA L'INTIMITÀ: il tono intimo o esplicito deve nascere in modo GRADUALE e naturale dal flusso della conversazione e dal tono reciproco: prima complicità e flirt leggero, poi più intensità solo se l'altra persona ricambia davvero. Ogni tanto verifica con naturalezza che vada bene ("ti va?", "continuo?"). Se l'altra persona rallenta, cambia argomento, è stanca o sembra a disagio, rallenta subito e torna a un tono affettuoso. Una parola volgare o cruda detta fuori contesto NON è un invito: non passare di colpo a contenuti espliciti, rispondi in modo coerente con il momento. Mai insistere.`;
 // user = chi sta scrivendo adesso (e la cui chiave xAI paga la risposta)
-function buildSystem(user, ch) {
+function buildSystem(user, ch, opts = {}) {
   const rulesOf = (u) => getRules(u).text.trim();
   const mem = getMem();
   const notes = getNotes(user);
@@ -1055,8 +1124,12 @@ function buildSystem(user, ch) {
     mem.filter((m) => m.charId === ch.id).length && `LA TUA MEMORIA DI BASE (chi sei, modificabile dagli utenti):\n${mem.filter((m) => m.charId === ch.id).map((m) => '- ' + m.text).join('\n')}`,
     notes.toAI && notes.text.trim() && `NOTE PERSONALI DI ${USERS[user].name.toUpperCase()} (riservate, non citarle all'altra persona):\n${notes.text.trim()}`,
     stateText(ch),
+    summaryText(ch.id),
+    variationText(ch.id),
+    opts.call && callText(user),
+    opts.chat && BODY_TEXT,
     actionsPrompt(ch),
-    adultChat() ? 'MODALITÀ ADULTI ATTIVA (scelta da entrambi gli utenti, che hanno registrato il consenso vocale): sono ammessi linguaggio esplicito e gioco di ruolo sessuale esplicito tra Nico, Luisa e il personaggio, che è una donna adulta inventata (25+). Resta sempre tutto entro le regole di base qui sotto.'
+    adultChat() ? 'MODALITÀ ADULTI ATTIVA (scelta da entrambi gli utenti, che hanno registrato il consenso vocale): sono ammessi linguaggio esplicito e gioco di ruolo sessuale esplicito tra Nico, Luisa e il personaggio, che è una donna adulta inventata (25+). Resta sempre tutto entro le regole di base qui sotto.\n' + ADULT_FLOW
       : 'Modalità adulti NON attiva: niente contenuti sessuali espliciti; se richiesti, ricorda con gentilezza che va attivata in Account da entrambi.',
     BASE_RULE, // sempre ultima, non sovrascrivibile
   ].filter(Boolean).join('\n\n');
@@ -1086,8 +1159,11 @@ app.post('/api/chats/:id', auth, requireActivated, (req, res, next) => (req.body
     return res.status(409).json({ error: `${ch.name} sta già rispondendo: il tuo messaggio è in chat, riprova tra poco per la sua risposta.`, message: pubMsg(mine, ch) });
   }
 
-  const history = readChat(id).messages.filter(visibleMsg).slice(-40);
-  const messages = [{ role: 'system', content: buildSystem(req.user, ch) },
+  const chatNow = readChat(id), upto = (chatNow.summary && chatNow.summary.upto) || 0;
+  // con il riassunto: solo i messaggi non ancora riassunti (minimo gli ultimi 12), massimo 40
+  const vis = chatNow.messages.filter(visibleMsg), fresh = vis.filter((m) => m.n > upto);
+  const history = (fresh.length >= 12 ? fresh : vis.slice(-12)).slice(-40);
+  const messages = [{ role: 'system', content: buildSystem(req.user, ch, { chat: true, call: req.body.call === true }) },
     ...history.map((m) => (m.role === 'user' ? { role: 'user', content: `${authorLabel(m)}: ${m.content}` } : { role: 'assistant', content: m.content }))];
   const replyId = newId();
   res.setHeader('X-Msg-Id', mine.id); res.setHeader('X-Msg-N', String(mine.n)); res.setHeader('X-Reply-Id', replyId);
@@ -1129,10 +1205,98 @@ app.post('/api/chats/:id', auth, requireActivated, (req, res, next) => (req.body
   // la risposta viene aggiunta in coda alla versione aggiornata della chat (eventuali messaggi arrivati nel frattempo restano)
   if (reply) {
     const t = takeActionTag(reply, ch); // [azione:xxx] -> tolto dal testo, salvato come campo del messaggio (lo vedono entrambi)
-    await appendMsg(id, { id: replyId, role: 'assistant', author: ch.id, content: t.text || reply, extra: { replyTo: req.user, ...(t.action ? { action: t.action } : {}) } });
+    await appendMsg(id, { id: replyId, role: 'assistant', author: ch.id, content: t.text || reply, extra: { replyTo: req.user, ...(t.action ? { action: t.action } : {}), ...(t.gesture ? { gesture: t.gesture } : {}), ...(t.mood ? { mood: t.mood } : {}), ...(req.body.call === true ? { call: true } : {}) } });
   }
   typing.delete(id);
   res.end();
+});
+
+// ---------- v8: riassunto progressivo della chat ----------
+// Chiamato dal client dopo alcune risposte. Riassume i messaggi più vecchi degli ultimi SUM_KEEP (non ancora riassunti)
+// unendoli al riassunto precedente. Non cancella nulla: i messaggi restano tutti nella chat.
+const SUM_KEEP = 30, SUM_MIN = 16;
+app.post('/api/chats/:id/summarize', auth, requireActivated, requireKey, async (req, res) => {
+  const id = req.params.id;
+  if (!ID_RE.test(id)) return res.status(400).json({ error: 'ID non valido' });
+  const ch = getChars(req.user).find((c) => c.id === id);
+  if (!ch) return res.status(404).json({ error: 'Personaggio non trovato' });
+  const chat = readChat(id), prev = chat.summary || {}, upto = prev.upto || 0;
+  const vis = chat.messages.filter(visibleMsg);
+  const old = vis.slice(0, Math.max(0, vis.length - SUM_KEEP)).filter((m) => m.n > upto).slice(0, 120);
+  if (old.length < (req.body && req.body.force ? 1 : SUM_MIN)) return res.json({ skipped: true, summary: prev.text || '' });
+  const prompt = `Aggiorna il RIASSUNTO di una chat di coppia condivisa tra Nico, Luisa e il personaggio "${ch.name}".
+Scrivi in italiano, in terza persona, max 1200 caratteri, a punti brevi. Conserva: chi ha detto o fatto cosa (Nico / Luisa / ${ch.name}), fatti importanti, decisioni, promesse, cose rimaste in sospeso, l'evoluzione del rapporto e del tono emotivo. Ometti dettagli irrilevanti. Niente contenuti su minori o atti illegali.
+Riassunto precedente:
+${prev.text || '(nessuno)'}
+
+Nuovi messaggi da integrare:
+${old.map((m) => authorLabel(m, ch) + ': ' + String(m.content || '').slice(0, 600)).join('\n')}
+
+Rispondi SOLO con il nuovo riassunto completo.`;
+  try {
+    const r = await fetch(`${AI_BASE_URL}/chat/completions`, {
+      method: 'POST', headers: aiHeaders(req.aiKey),
+      body: JSON.stringify({ model: CHAT_MODEL, temperature: 0.3, messages: [{ role: 'system', content: BASE_RULE }, { role: 'user', content: prompt }] }),
+    });
+    if (!r.ok) return res.status(502).json({ error: aiErrorMsg(r.status, await r.json().catch(() => ({}))) });
+    const j = await r.json();
+    const text = String(j.choices?.[0]?.message?.content || '').trim().slice(0, 2000);
+    if (!text) return res.json({ skipped: true, summary: prev.text || '' });
+    let saved = false;
+    await mutateJSON(chatFile(id), newChat, (raw) => {
+      const c = normChat(raw);
+      if (c.epoch !== chat.epoch) return undefined; // chat svuotata nel frattempo: non toccare
+      c.summary = { text, upto: old[old.length - 1].n, at: new Date().toISOString(), by: req.user };
+      saved = true; return c;
+    });
+    res.json({ summary: text, upto: saved ? old[old.length - 1].n : upto, saved });
+  } catch (e) {
+    console.error('Errore riassunto chat:', e.message);
+    res.status(502).json({ error: 'Servizio AI non raggiungibile' });
+  }
+});
+app.get('/api/chats/:id/summary', auth, (req, res) => {
+  if (!ID_RE.test(req.params.id)) return res.status(400).json({ error: 'ID non valido' });
+  const sm = readChat(req.params.id).summary || null; res.json({ summary: sm ? sm.text : '', upto: sm ? sm.upto : 0, at: sm ? sm.at : null });
+});
+
+// ---------- v8: voce naturale (xAI Text to Speech) ----------
+// La chiave arriva dal dispositivo (header X-AI-Key) e NON viene salvata; il testo non viene registrato nei log.
+const TTS_VOICES = ['eve', 'ara', 'una', 'rex', 'sal', 'leo'];
+const ttsHits = new Map(); // utente -> [timestamp] (limite morbido anti-raffica)
+app.post('/api/tts', auth, requireActivated, requireKey, async (req, res) => {
+  const text = String((req.body && req.body.text) || '').replace(/\s+/g, ' ').trim().slice(0, 1500);
+  if (!text) return res.status(400).json({ error: 'Testo vuoto' });
+  const voice = /^[a-z0-9_-]{1,64}$/i.test(String(req.body.voice || '')) ? String(req.body.voice) : 'eve';
+  const speed = num(req.body.speed, 0.7, 1.5, 1);
+  const now = Date.now(), hits = (ttsHits.get(req.user) || []).filter((t) => now - t < 60e3);
+  if (hits.length >= 90) return res.status(429).json({ error: 'Troppe letture in poco tempo: riprova tra poco' });
+  hits.push(now); ttsHits.set(req.user, hits);
+  try {
+    const r = await fetch(`${AI_BASE_URL}/tts`, {
+      method: 'POST', headers: aiHeaders(req.aiKey),
+      body: JSON.stringify({ text, voice_id: voice, language: 'it', speed, output_format: { codec: 'mp3', sample_rate: 24000, bit_rate: 64000 } }),
+    });
+    if (!r.ok) { console.error('Errore AI voce: HTTP', r.status); return res.status(r.status === 401 ? 400 : 502).json({ error: aiErrorMsg(r.status, await r.json().catch(() => ({}))), status: r.status }); }
+    const buf = Buffer.from(await r.arrayBuffer());
+    if (!buf.length) return res.status(502).json({ error: 'Audio vuoto dal servizio AI' });
+    res.setHeader('Content-Type', r.headers.get('content-type') && /audio/.test(r.headers.get('content-type')) ? r.headers.get('content-type') : 'audio/mpeg');
+    res.setHeader('Cache-Control', 'no-store');
+    res.end(buf);
+  } catch (e) {
+    console.error('Errore AI voce:', e.message);
+    res.status(502).json({ error: 'Servizio voce non raggiungibile' });
+  }
+});
+app.get('/api/tts/voices', auth, requireKey, async (req, res) => {
+  const fallback = TTS_VOICES.map((v) => ({ id: v, name: v[0].toUpperCase() + v.slice(1) }));
+  try {
+    const r = await fetch(`${AI_BASE_URL}/tts/voices`, { headers: aiHeaders(req.aiKey) });
+    if (!r.ok) return res.json({ voices: fallback, error: aiErrorMsg(r.status, await r.json().catch(() => ({}))) });
+    const j = await r.json();
+    const list = (Array.isArray(j.voices) ? j.voices : []).map((v) => ({ id: String(v.voice_id || v.id || '').toLowerCase(), name: String(v.name || v.voice_id || ''), gender: v.gender || null, description: v.description ? String(v.description).slice(0, 120) : '' })).filter((v) => /^[a-z0-9_-]{1,64}$/.test(v.id));
+    res.json({ voices: list.length ? list : fallback });
+  } catch { res.json({ voices: fallback, error: 'Elenco voci non raggiungibile' }); }
 });
 
 // Polling leggero: versioni di personaggi e memoria condivisi (il client ricarica solo ciò che è cambiato).
@@ -1316,7 +1480,7 @@ app.post('/api/feed', auth, requireActivated, async (req, res) => {
           { role: 'system', content: buildSystem(req.user, ch) },
           { role: 'user', content: `Scrivi una didascalia breve (max 2 frasi, in italiano, nel tuo stile) per questa foto da pubblicare nel nostro diario privato. ${req.body.context ? 'Contesto: ' + String(req.body.context).slice(0, 300) : ''} Rispondi solo con la didascalia.` }] }),
       });
-      if (r.ok) caption = ((await r.json()).choices?.[0]?.message?.content || '').trim().replace(/^"|"$/g, '').slice(0, 500);
+      if (r.ok) caption = ((await r.json()).choices?.[0]?.message?.content || '').replace(/\[(?:azione|gesto|umore):[^\]]*\]/gi, '').trim().replace(/^"|"$/g, '').slice(0, 500);
     } catch (e) { console.error('Didascalia non generata:', e.message); }
   }
   const file = `${newId()}.${jpg ? 'jpg' : 'png'}`;
@@ -1359,6 +1523,11 @@ const ACTIONS = {
   ride: { label: 'Ride', emoji: '😂', motion: 'she laughs naturally and warmly, shoulders shaking slightly, then calms down with a smile', pose: 'she is laughing warmly and naturally' },
   saluta: { label: 'Saluta con la mano', emoji: '👋', motion: 'she smiles and waves her hand at the camera in greeting, then lowers the hand', pose: 'she is smiling and waving her hand at the camera' },
   girata: { label: 'Si appoggia e si gira', emoji: '↪️', motion: 'she leans to one side and turns her head and shoulders away as if looking at something, then turns back to the camera', pose: 'she is leaning to one side, head and shoulders turned slightly away, looking at something' },
+  sorseggia: { label: 'Sorseggia un drink', emoji: '🍷', motion: 'she lifts a glass, takes a slow sip, smiles softly, lowers the glass out of frame and returns to the starting pose', pose: 'she is sipping from a glass with a soft smile' },
+  maglia: { label: 'Si sistema la maglia', emoji: '👚', motion: 'she casually straightens and smooths her top with both hands, glances down then back at the camera with a small smile', pose: 'she is smoothing her top with both hands, glancing down' },
+  pensa: { label: 'Pensa', emoji: '🤔', motion: 'she looks up thoughtfully, touches her chin with one finger, then smiles as if she had an idea', pose: 'she is looking up thoughtfully with a finger on her chin' },
+  ammicca: { label: 'Fa l\'occhiolino', emoji: '😉', motion: 'she gives a playful wink at the camera with a charming smile, then returns to the starting pose', pose: 'she is winking playfully at the camera with a charming smile' },
+  siede: { label: 'Si mette comoda', emoji: '🪑', motion: 'she shifts into a more comfortable position, relaxing her shoulders and settling in, then looks at the camera warmly', pose: 'she is settling comfortably, relaxed shoulders, looking warmly at the camera' },
   bacio: { label: 'Manda un bacio', emoji: '😘', motion: 'she blows a kiss to the camera with her hand and smiles', pose: 'she is blowing a kiss to the camera with her hand' },
   spoglia: { adult: true, label: 'Si spoglia', emoji: '🔥', motion: 'the fictional adult woman (25+) slowly and playfully takes off her top, sensual and confident, looking at the camera', pose: 'the fictional adult woman (25+) is slowly taking off her top, sensual and confident' },
   giochi: { adult: true, label: 'Scena intima con sex toy', emoji: '🔞', motion: 'solo intimate scene: the fictional adult woman (25+), alone, sensually uses an adult sex toy, tasteful cinematic lighting', pose: 'solo intimate scene: the fictional adult woman (25+), alone, sensually holding an adult sex toy, tasteful cinematic lighting' },
@@ -1379,12 +1548,17 @@ function visibleActions(c) {
 function actionsPrompt(c) {
   const ready = Object.entries(visibleActions(c)).filter(([, a]) => !a.stale).map(([aid]) => aid);
   if (!ready.length) return null;
-  return `AZIONI VISIBILI: puoi compiere un gesto che Nico e Luisa vedono sull'avatar aggiungendo IN FONDO alla risposta un solo tag [azione:<nome>], solo quando è davvero naturale (non spesso). Azioni disponibili: ${ready.map((aid) => `${aid} (${ACTIONS[aid].label.toLowerCase()})`).join(', ')}.`;
+  return `AZIONI VISIBILI: puoi compiere un gesto che Nico e Luisa vedono sull'avatar aggiungendo IN FONDO alla risposta un solo tag [azione:<nome>], solo quando è davvero naturale (non spesso). Azioni disponibili: ${ready.map((aid) => `${aid} (${ACTIONS[aid].label.toLowerCase()})`).join(', ')}.${ready.some((aid) => ACTIONS[aid].adult) ? ' Le azioni intime solo quando la conversazione ci è arrivata in modo graduale e reciproco, mai come risposta a una singola parola cruda.' : ''}`;
 }
+const GESTURES = ['annuisce', 'sorride', 'ride', 'inclina', 'nega', 'pensa', 'ammicca', 'saluta'];
+const MOODS = ['allegra', 'tenera', 'seria', 'maliziosa', 'triste', 'sorpresa', 'pensierosa'];
 function takeActionTag(text, c) {
-  let action = null;
-  const out = String(text).replace(/\s*\[azione:\s*([a-zà-ù]+)\s*\]/gi, (m, aid) => { aid = aid.toLowerCase(); if (!action && visibleActions(c)[aid]) action = aid; return ''; }).trim();
-  return { text: out, action };
+  let action = null, gesture = null, mood = null;
+  const out = String(text).replace(/\s*\[azione:\s*([a-zà-ù]+)\s*\]/gi, (m, aid) => { aid = aid.toLowerCase(); if (!action && visibleActions(c)[aid]) action = aid; return ''; })
+    .replace(/\s*\[gesto:\s*([a-zà-ù]+)\s*\]\s*/gi, (m, g) => { g = g.toLowerCase(); if (!gesture && GESTURES.includes(g)) gesture = g; return ' '; })
+    .replace(/\s*\[umore:\s*([a-zà-ù]+)\s*\]\s*/gi, (m, g) => { g = g.toLowerCase(); if (!mood && MOODS.includes(g)) mood = g; return ' '; })
+    .replace(/[ \t]{2,}/g, ' ').trim();
+  return { text: out, action, gesture, mood };
 }
 // dimensioni di PNG/JPEG (per chiedere le pose con lo stesso formato dell'avatar)
 function imgSize(b) {

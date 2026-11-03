@@ -22,7 +22,7 @@ App.chat = {
   },
   close() {
     App.stageFs && App.stageFs.exit(); $('#scene-menu').hidden = true; $('#act-menu').hidden = true; App.avatarConv.stopAction(true);
-    App.current = null; App.voice && App.voice.stop(); window.speechSynthesis && window.speechSynthesis.cancel();
+    App.current = null; App.voice && App.voice.stop(); App.voice && App.voice.cancel ? App.voice.cancel() : window.speechSynthesis && window.speechSynthesis.cancel();
     $('#tab-conv').hidden = true; $('#tab-chat').hidden = false; $('#back-btn').hidden = true; $('#title').textContent = 'Chat';
     this.setTyping(null); this.renderList();
   },
@@ -66,7 +66,7 @@ App.chat = {
         if (!this.addMsg(m)) continue;
         added++;
         // risposta del personaggio arrivata col polling (es. chiesta dall'altro profilo): l'avatar "la dice" e reagisce
-        if (!full && !r.reset && m.role === 'assistant') { App.avatarConv.talkText(m.content.slice(0, 400)); App.avatarConv.emote(m.content); if (m.action && App.actions) App.actions.play(m.action, 'chat'); }
+        if (!full && !r.reset && m.role === 'assistant') { App.avatarConv.talkText(m.content.slice(0, 400)); if (m.gesture) App.avatarConv.react({ annuisce: 'nod', sorride: 'smile', ride: 'smile', inclina: 'tilt', nega: 'shake', pensa: 'tilt', ammicca: 'smile', saluta: 'wave' }[m.gesture] || 'nod'); else App.avatarConv.emote(m.content); if (m.action && App.actions) App.actions.play(m.action, 'chat'); }
       }
       this.setTyping(this.busy ? null : r.typing && r.typing.by !== App.me.user ? r.typing : null);
       if (added && (stick || r.reset)) this.scroll();
@@ -92,9 +92,10 @@ App.chat = {
     }
     const bubble = this.addMsg({ role: 'assistant', authorName: ch.name, content: '…' }); bubble.classList.add('typing'); this.scroll();
     const body = bubble.querySelector('.body');
-    let reply = '';
+    let reply = '', streamTTS = false;
+    const cue = App.chat.cues();
     try {
-      const r = await App.api(`/api/chats/${ch.id}`, { method: 'POST', body: { message: text }, ai: true, raw: true });
+      const r = await App.api(`/api/chats/${ch.id}`, { method: 'POST', body: { message: text, ...(App.call && App.call.active ? { call: true } : {}) }, ai: true, raw: true });
       if (!r.ok) {
         const j = await r.json().catch(() => ({}));
         if (j.message) this.claim(local, j.message.id); // il tuo messaggio è comunque salvato nella chat condivisa
@@ -108,20 +109,38 @@ App.chat = {
       this.claim(local, r.headers.get('X-Msg-Id')); this.claim(bubble, r.headers.get('X-Reply-Id'));
       const reader = r.body.getReader(); const dec = new TextDecoder();
       bubble.classList.remove('typing');
+      streamTTS = !!(App.voice && App.voice.streamStart && App.voice.streamStart()); // v8: voce naturale frase per frase
       for (;;) {
         const { done, value } = await reader.read(); if (done) break;
         const chunk = dec.decode(value, { stream: true });
         reply += chunk;
         body.textContent = App.actions ? App.actions.strip(reply) : reply; this.scroll();
-        if (!App.voice || !App.voice.ttsOn()) App.avatarConv.talkText(chunk); // labiale anche senza lettura vocale
+        if (!cue.done) cue.check(reply); // v8: gesto/umore scelti dall'IA in base a ciò che dice (tag a inizio risposta)
+        if (App.call && App.call.active) App.call.caption(App.actions ? App.actions.strip(reply) : reply);
+        if (streamTTS) App.voice.streamFeed(chunk);
+        else if (!App.voice || !App.voice.ttsOn()) App.avatarConv.talkText(chunk); // labiale anche senza lettura vocale
       }
     } catch (e) { body.textContent = '⚠️ ' + e.message; bubble.classList.remove('typing'); }
     this.busy = false;
     this.poll();
-    if (reply) App.avatarConv.emote(reply);
+    if (reply) { cue.check(reply, true); if (!cue.any) App.avatarConv.emote(reply); }
     if (reply && App.actions) App.actions.fromReply(reply);
-    if (reply && App.voice) App.voice.speak(App.actions ? App.actions.strip(reply) : reply);
+    if (streamTTS) App.voice.streamEnd();
+    else if (reply && App.voice) App.voice.speak(App.actions ? App.actions.strip(reply) : reply);
     if (reply) this.afterReply(ch);
+  },
+  // v8: linguaggio del corpo contestuale. L'IA può iniziare la risposta con [gesto:…] e/o [umore:…]:
+  // il gesto parte quando arriva (insieme alla voce), niente animazioni casuali.
+  cues() {
+    const G = { annuisce: 'nod', sorride: 'smile', ride: 'smile', inclina: 'tilt', nega: 'shake', pensa: 'tilt', ammicca: 'smile', saluta: 'wave' };
+    const M = { allegra: 'smile', tenera: 'smile', maliziosa: 'smile', sorpresa: 'tilt', pensierosa: 'tilt', triste: 'tilt', seria: null };
+    const c = { done: false, any: false, g: null, m: null,
+      check(t, final) {
+        if (!this.g) { const g = /\[gesto:\s*([a-zà-ù]+)\s*\]/i.exec(t); if (g) { this.g = g[1].toLowerCase(); this.any = true; if (G[this.g]) App.avatarConv.react(G[this.g], this.g === 'ride' ? '😄' : null); } }
+        if (!this.m) { const m = /\[umore:\s*([a-zà-ù]+)\s*\]/i.exec(t); if (m) { this.m = m[1].toLowerCase(); this.any = true; if (!this.g && M[this.m]) App.avatarConv.react(M[this.m]); } }
+        if ((this.g && this.m) || final || t.length > 160) this.done = true;
+      } };
+    return c;
   },
   // ---- modalità adulti con parola chiave: domanda a voce e conferma sì/no (solo su questo telefono) ----
   askAdult(token) {
@@ -156,6 +175,7 @@ App.chat = {
       }
       const s = await App.api(`/api/characters/${ch.id}/evolve`, { method: 'POST', body: {}, ai: true });
       ch.state = s.state;
+      if (n % 6 === 0) await App.api(`/api/chats/${ch.id}/summarize`, { method: 'POST', body: {}, ai: true }); // v8: riassunto delle parti vecchie (il server decide se serve)
     } catch { /* in background: ignora errori */ }
   },
 };

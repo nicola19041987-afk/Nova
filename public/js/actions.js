@@ -12,7 +12,7 @@
   const meta = (id) => info.catalog.find((c) => c.id === id) || { id, label: id, emoji: '🎭' };
 
   App.actions = {
-    strip(t) { return String(t || '').replace(TAG, '').replace(/\s*\[azione:[^\]]*$/i, '').trim(); }, // anche un tag a metà durante lo streaming
+    strip(t) { return String(t || '').replace(TAG, '').replace(/\s*\[(?:gesto|umore):\s*[a-zà-ù]*\s*\]\s*/gi, ' ').replace(/\s*\[(?:azione|gesto|umore):[^\]]*$/i, '').replace(/\s*\[[a-zà-ù]{0,6}$/i, '').trim(); }, // v8: anche i tag di gesto/umore // anche un tag a metà durante lo streaming
     tag(t) { const m = /\[azione:\s*([a-zà-ù]+)\s*\]/i.exec(String(t || '')); return m ? m[1].toLowerCase() : null; },
     fromReply(t) { const a = this.tag(t); if (a) this.play(a, 'chat'); },
     async load() {
@@ -104,14 +104,16 @@
     tick() {
       const ch = App.current, now = Date.now();
       if (!ch || !App.chat.visible() || App.chat.busy || App.ls.get('actAuto', true) === false) return;
+      if (App.call && App.call.active) return; // v8: in videochiamata solo gesti legati a ciò che si dice, niente azioni a caso
       const A = av(); if (A.speaking || A.actionBusy() || (A.sceneOn && A.sceneOn())) return;
       if (now - lastActivity < AUTO_IDLE || now - lastAuto < AUTO_MIN_GAP) return;
       autoLog = autoLog.filter((t) => now - t < 3600e3); if (autoLog.length >= AUTO_MAX_HOUR) return;
       if (Math.random() > 0.2) return;
       // le azioni per adulti possono partire da sole SOLO se la modalità adulti è attiva per entrambi (altrimenti non esistono)
-      const pool = ready(ch).filter(([id]) => !meta(id).adult || (info.adult && App.me && App.me.adultChat !== false)).map(([id]) => id);
+      // v8: le azioni per adulti NON partono mai da sole: solo dal filo della conversazione (tag dell'IA) o a mano
+      const pool = ready(ch).filter(([id]) => !meta(id).adult).map(([id]) => id);
       if (!pool.length) return;
-      const weighted = pool.flatMap((id) => (meta(id).adult ? [id] : [id, id, id]));
+      const weighted = pool;
       lastAuto = now; autoLog.push(now);
       this.play(weighted[Math.floor(Math.random() * weighted.length)], 'spontanea');
     },

@@ -177,7 +177,21 @@
         audioEl.addEventListener('ended', () => { this.speaking = false; });
       } catch (e) { console.warn('AnalyserNode non disponibile', e); }
     }
+    // v8: labiale guidato dall'ampiezza reale dell'audio (inviluppo RMS precalcolato, a 60 punti/secondo)
+    speakAudio(el, env, text, rate = 60) {
+      this._env = env && env.length ? { el, env, rate } : null;
+      this.kf = []; this.simUntil = 0; this.speaking = true;
+      if (!this._env && text) this.simulateText(text, 1); // inviluppo non disponibile: labiale stimato dal testo
+    }
+    stopAudio() { this._env = null; this.speaking = false; this.kf = [{ t: performance.now() + 60, v: 0 }]; }
     target(now) {
+      if (this._env && this.speaking) {
+        const { el, env, rate } = this._env;
+        if (el.paused || el.ended) return 0;
+        const x = el.currentTime * rate + 2, i = Math.floor(x), f = x - i; // +2: anticipo di ~30 ms (la bocca si apre un filo prima del suono)
+        const a = env[Math.min(env.length - 1, i)] || 0, b = env[Math.min(env.length - 1, i + 1)] || 0;
+        return a + (b - a) * f;
+      }
       if (this.analyser && this.speaking) {
         this.analyser.getByteTimeDomainData(this.buf);
         let sum = 0; for (const b of this.buf) { const v = (b - 128) / 128; sum += v * v; }
@@ -197,9 +211,12 @@
       // non visibile: risparmia batteria (getClientRects funziona anche dentro contenitori position:fixed su iOS)
       if (!this.c.isConnected || this.c.getClientRects().length === 0) return;
       if (++this._frame % 30 === 0) this.resize();
+      // v8: a riposo (nessuna voce, azione o dissolvenza) bastano ~30 fotogrammi al secondo: meno batteria e niente scatti
+      if (!this.speaking && !this.act && !this._snap && this.mouth < 0.01 && now - (this._drawn || 0) < 30) return;
+      this._drawn = now;
       if (this.simUntil && now > this.simUntil) { this.simUntil = 0; this.speaking = false; }
       const ctx = this.ctx, S = VS; // spazio virtuale; la trasformazione porta tutto alle dimensioni reali del canvas
-      this.mouth += (this.target(now) - this.mouth) * 0.4;
+      { const tg = this.target(now); this.mouth += (tg - this.mouth) * (tg > this.mouth ? 0.5 : 0.28); } // apertura rapida, chiusura morbida
       const dt = Math.min(100, now - (this._last || now)); this._last = now;
       // ritmo: se l'utente si muove a tempo, l'oscillazione segue il suo periodo (fase continua, niente scatti)
       const sens = this.sensual;
@@ -490,36 +507,50 @@
     paintFace(ctx, img, lm, A, fs, lids) {
       const S = VS, { mc, smile, blink } = A;
       const m = lm.mouth, open = Math.max(0, this.mouth), F = S * fs;
+      // v8: geometria reale rilevata in automatico (larghezza bocca, occhi, sopracciglia), se disponibile
+      const MW = lm.mouthW ? lm.mouthW * S : F * 0.2, EW = lm.eyeW ? lm.eyeW * S : F * 0.072, EH = lm.eyeH ? Math.max(lm.eyeH * S, EW * 0.22) : F * 0.026;
       if (smile > 0.05 && open < 0.2) {
-        const w = F * 0.2, h = F * 0.09;
+        const w = Math.max(F * 0.12, MW * 1.0), h = w * 0.45;
         ctx.save(); ctx.beginPath(); ctx.ellipse(m.x * S, m.y * S, w / 2, h / 2, 0, 0, Math.PI * 2); ctx.clip();
         ctx.translate(m.x * S, m.y * S); ctx.scale(1 + smile * 0.07, 1 - smile * 0.02); ctx.translate(-m.x * S, -m.y * S - smile * F * 0.004);
         drawCover(ctx, img, S, { sx: m.x * S - w / 2, sy: m.y * S - h / 2, sw: w, sh: h }); ctx.restore();
       }
       if (open > 0.03) {
-        const jw = F * 0.34, jh = F * 0.26, jx = m.x * S - jw / 2, jy = m.y * S, drop = open * F * 0.028;
-        ctx.save(); ctx.beginPath(); ctx.ellipse(m.x * S, jy + jh * 0.45, jw / 2, jh * 0.6, 0, 0, Math.PI * 2); ctx.clip();
-        ctx.translate(0, drop); drawCover(ctx, img, S, { sx: jx, sy: jy, sw: jw, sh: jh }); ctx.restore();
-        ctx.fillStyle = 'rgba(45,8,14,0.88)';
-        ctx.beginPath(); ctx.ellipse(m.x * S, m.y * S + drop * 0.5, F * 0.045 * (0.8 + open * 0.3), Math.max(F * 0.002, drop * 0.75), 0, 0, Math.PI * 2); ctx.fill();
+        // v8: mandibola e labbro inferiore scendono in modo graduale (ellissi annidate: il bordo si sposta poco, il centro di più)
+        // così non ci sono "gradini" ai lati; sopra la linea delle labbra non si muove nulla.
+        const jw = Math.max(F * 0.2, MW * 1.7), jh = jw * 0.76, cx = m.x * S, ly = m.y * S, drop = open * Math.max(F * 0.018, MW * 0.14);
+        const cy = ly + jh * 0.3, LV = [[1, 0.12], [0.86, 0.32], [0.72, 0.55], [0.58, 0.8], [0.45, 1]];
+        for (const [k, f] of LV) {
+          const rx = jw / 2 * k, ry = jh * 0.62 * k;
+          ctx.save(); ctx.beginPath(); ctx.rect(cx - rx, ly, rx * 2, cy + ry - ly); ctx.clip();
+          ctx.beginPath(); ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2); ctx.clip();
+          ctx.translate(0, drop * f); drawCover(ctx, img, S, { sx: cx - rx, sy: ly - drop, sw: rx * 2, sh: cy + ry - ly + drop }); ctx.restore();
+        }
+        // interno della bocca: ombra morbida (niente ovale pieno dal bordo netto), larga quanto la bocca vera
+        const iw = MW * 0.44, ih = Math.max(F * 0.002, drop * 0.6);
+        ctx.save(); ctx.translate(cx, ly + drop * 0.5); ctx.scale(1, ih / iw);
+        const g = ctx.createRadialGradient(0, 0, 0, 0, 0, iw);
+        g.addColorStop(0, 'rgba(38,6,12,0.95)'); g.addColorStop(0.6, 'rgba(52,10,16,0.88)'); g.addColorStop(0.85, 'rgba(85,28,34,0.45)'); g.addColorStop(1, 'rgba(110,45,50,0)');
+        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, iw, 0, Math.PI * 2); ctx.fill(); ctx.restore();
       }
       const gxp = mc.gx * F * 0.0045, gyp = mc.gy * F * 0.0025, bup = mc.brow * F * 0.007, px = F * 0.0006;
-      [lm.eyeL, lm.eyeR].forEach((e) => {
+      [lm.eyeL, lm.eyeR].forEach((e, ei) => {
         if (Math.abs(gxp) > px || Math.abs(gyp) > px) {
-          const w = F * 0.075, h = F * 0.036, b = F * 0.006;
+          const w = EW * 1.04, h = Math.max(EH * 1.4, EW * 0.45), b = F * 0.006;
           ctx.save(); ctx.beginPath(); ctx.ellipse(e.x * S, e.y * S, w / 2, h / 2, 0, 0, Math.PI * 2); ctx.clip();
           ctx.translate(gxp, gyp); drawCover(ctx, img, S, { sx: e.x * S - w / 2 - b, sy: e.y * S - h / 2 - b, sw: w + 2 * b, sh: h + 2 * b }); ctx.restore();
         }
         if (bup > px) {
-          const w = F * 0.12, h = F * 0.045, cy = e.y * S - F * 0.075; // sopra la palpebra, senza toccare l'occhio
-          ctx.save(); ctx.beginPath(); ctx.ellipse(e.x * S, cy, w / 2, h / 2, 0, 0, Math.PI * 2); ctx.clip();
-          ctx.translate(0, -bup); drawCover(ctx, img, S, { sx: e.x * S - w / 2, sy: cy - h / 2, sw: w, sh: h + bup + F * 0.006 }); ctx.restore();
+          const br = ei ? lm.browR : lm.browL; // v8: posizione vera del sopracciglio, se rilevata
+          const w = Math.max(F * 0.1, EW * 1.6), h = w * 0.37, cx = br ? br.x * S : e.x * S, cy = br ? br.y * S : e.y * S - F * 0.075; // sopra la palpebra, senza toccare l'occhio
+          ctx.save(); ctx.beginPath(); ctx.ellipse(cx, cy, w / 2, h / 2, 0, 0, Math.PI * 2); ctx.clip();
+          ctx.translate(0, -bup); drawCover(ctx, img, S, { sx: cx - w / 2, sy: cy - h / 2, sw: w, sh: h + bup + F * 0.006 }); ctx.restore();
         }
       });
       if (blink > 0.05) {
         [lm.eyeL, lm.eyeR].forEach((e, i) => {
           // la palpebra scende dall'alto; v7.2: bordo sfumato (gradiente) invece di un ovale pieno dal contorno netto
-          const rx = F * 0.045, ry = Math.max(F * 0.004, F * 0.026 * blink), cy = e.y * S - F * 0.026 * (1 - blink);
+          const rx = EW * 0.62, ry = Math.max(F * 0.004, EH * blink), cy = e.y * S - EH * (1 - blink);
           const m = /^rgb\((\d+),(\d+),(\d+)\)$/.exec(String(lids[i]).replace(/\s/g, ''));
           ctx.save(); ctx.translate(e.x * S, cy); ctx.scale(1, ry / rx);
           if (m) { const g = ctx.createRadialGradient(0, 0, 0, 0, 0, rx); g.addColorStop(0, `rgba(${m[1]},${m[2]},${m[3]},1)`); g.addColorStop(0.7, `rgba(${m[1]},${m[2]},${m[3]},0.9)`); g.addColorStop(1, `rgba(${m[1]},${m[2]},${m[3]},0)`); ctx.fillStyle = g; } else ctx.fillStyle = lids[i];
@@ -531,14 +562,15 @@
     // ---- scena cinematografica: figura intera in una stanza ----
     // cfg: { on, room: 'salotto'|'camera'|'terrazza', url: immagine scena (16:9) o null, landmarks: punti del viso sulla scena o null }
     setSceneMode(cfg) {
-      const c = cfg && cfg.on ? { on: true, room: ROOMS[cfg.room] ? cfg.room : 'salotto', url: cfg.url || null, landmarks: cfg.landmarks || null } : { on: false };
+      const c = cfg && cfg.on ? { on: true, room: 'soggiorno', url: cfg.url || null, landmarks: cfg.landmarks || null } : { on: false };
       const prev = this.sceneCfg || {};
       this.sceneCfg = { ...c, img: c.url && prev.url === c.url ? prev.img : null, lids: prev.url === c.url ? prev.lids : null };
       if (c.url && prev.url !== c.url) {
         const im = new Image(); im.onload = () => { if (this.sceneCfg.url === c.url) { this.sceneCfg.img = im; this.sceneCfg.lids = c.landmarks ? lidsFor(im, c.landmarks) : null; } }; im.src = c.url;
       } else if (c.url && c.landmarks && this.sceneCfg.img && JSON.stringify(c.landmarks) !== JSON.stringify(prev.landmarks)) this.sceneCfg.lids = lidsFor(this.sceneCfg.img, c.landmarks);
     }
-    sceneOn() { return this.sceneCfg && this.sceneCfg.on && !this.transparent ? this.sceneCfg : null; }
+    // v8: la scena si vede solo quando la foto del soggiorno è caricata; altrimenti l'avatar normale (niente stanze disegnate, niente effetto ritaglio)
+    sceneOn() { return this.sceneCfg && this.sceneCfg.on && this.sceneCfg.img && !this.transparent ? this.sceneCfg : null; }
     paintScene(ctx, CW, CH, A, sc) {
       ctx.fillStyle = '#000'; ctx.fillRect(0, 0, CW, CH);
       const img = sc.img, S = VS;
@@ -575,22 +607,6 @@
         vignette(ctx, F); ctx.restore();
         return;
       }
-      // nessuna immagine scena: stanza illustrata (locale) + avatar attuale sfumato sul divano/letto/panchina
-      const F = fr(Math.max(0.75, Math.min(2.39, CW / CH)));
-      const key = `${sc.room}:${Math.round(F.w)}x${Math.round(F.h)}`;
-      if (!this._room || this._room.key !== key) { const rc = document.createElement('canvas'); rc.width = Math.max(1, Math.round(F.w)); rc.height = Math.max(1, Math.round(F.h)); ROOMS[sc.room](rc.getContext('2d'), rc.width, rc.height); this._room = { key, c: rc }; }
-      ctx.drawImage(this._room.c, F.x, F.y);
-      const reg = { x: F.x + F.w * 0.12, y: F.y + F.h * 0.08, w: F.w * 0.76, h: F.h * (sc.room === 'terrazza' ? 0.84 : 0.82) };
-      const ls = Math.min(1, Math.sqrt(1.2e6 / Math.max(1, reg.w * reg.h)));
-      const L = this._layer || (this._layer = document.createElement('canvas'));
-      const lw = Math.max(1, Math.round(reg.w * ls)), lh = Math.max(1, Math.round(reg.h * ls));
-      if (L.width !== lw || L.height !== lh) { L.width = lw; L.height = lh; }
-      const lc = L.getContext('2d'); lc.setTransform(1, 0, 0, 1, 0, 0); lc.clearRect(0, 0, lw, lh);
-      const r = this.paintAvatar(lc, { x: 0, y: 0, w: lw, h: lh }, A, false, true);
-      if (this.img) feather(lc, r, 0.8); // bordi appena sfumati: la figura resta intera
-      ctx.drawImage(L, reg.x, reg.y, reg.w, reg.h);
-      this._bounds = { frame: F, cw: CW, ch: CH, region: reg, img: { x: reg.x + r.x / ls, y: reg.y + r.y / ls, w: r.w / ls, h: r.h / ls } };
-      vignette(ctx, F);
     }
   }
 
@@ -631,79 +647,8 @@
     } catch { return ['#c99', '#c99']; }
   }
 
-  // ---------- stanze illustrate (solo canvas, nessuna immagine esterna) ----------
-  const rr = (c, x, y, w, h, r) => { c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath(); };
-  const lin = (c, x0, y0, x1, y1, stops) => { const g = c.createLinearGradient(x0, y0, x1, y1); stops.forEach(([o, col]) => g.addColorStop(o, col)); return g; };
-  const glow = (c, x, y, r, col) => { const g = c.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, col); g.addColorStop(1, 'rgba(0,0,0,0)'); c.fillStyle = g; c.fillRect(x - r, y - r, r * 2, r * 2); };
-  function sofa(c, W, H, x, y, w, h, colA, colB) {
-    c.fillStyle = 'rgba(0,0,0,0.35)'; c.beginPath(); c.ellipse(x + w / 2, y + h * 1.02, w * 0.55, h * 0.08, 0, 0, Math.PI * 2); c.fill();
-    c.fillStyle = lin(c, 0, y - h * 0.55, 0, y + h * 0.4, [[0, colA], [1, colB]]); rr(c, x + w * 0.04, y - h * 0.55, w * 0.92, h * 0.8, h * 0.18); c.fill(); // schienale
-    c.fillStyle = lin(c, 0, y + h * 0.1, 0, y + h, [[0, colA], [1, colB]]); rr(c, x, y + h * 0.15, w, h * 0.7, h * 0.14); c.fill(); // seduta
-    c.fillStyle = colB; rr(c, x - w * 0.03, y - h * 0.15, w * 0.1, h * 0.95, h * 0.1); c.fill(); rr(c, x + w * 0.93, y - h * 0.15, w * 0.1, h * 0.95, h * 0.1); c.fill(); // braccioli
-    c.fillStyle = 'rgba(255,255,255,0.06)'; rr(c, x + w * 0.1, y + h * 0.12, w * 0.38, h * 0.14, h * 0.06); c.fill(); rr(c, x + w * 0.52, y + h * 0.12, w * 0.38, h * 0.14, h * 0.06); c.fill();
-  }
-  const ROOMS = {
-    salotto(c, W, H) {
-      c.fillStyle = lin(c, 0, 0, 0, H, [[0, '#4a2c28'], [0.7, '#2d1a19'], [1, '#1d1110']]); c.fillRect(0, 0, W, H);
-      // finestra serale
-      const wx = W * 0.07, wy = H * 0.12, ww = W * 0.22, wh = H * 0.42;
-      c.fillStyle = lin(c, 0, wy, 0, wy + wh, [[0, '#24315e'], [0.6, '#7a4a6a'], [1, '#e08a5a']]); c.fillRect(wx, wy, ww, wh);
-      c.strokeStyle = '#1a0f0e'; c.lineWidth = Math.max(2, W * 0.008); c.strokeRect(wx, wy, ww, wh); c.beginPath(); c.moveTo(wx + ww / 2, wy); c.lineTo(wx + ww / 2, wy + wh); c.moveTo(wx, wy + wh * 0.5); c.lineTo(wx + ww, wy + wh * 0.5); c.stroke();
-      c.fillStyle = 'rgba(120,40,50,0.55)'; c.fillRect(wx - W * 0.03, wy - H * 0.03, W * 0.035, wh + H * 0.1); c.fillRect(wx + ww, wy - H * 0.03, W * 0.035, wh + H * 0.1); // tende
-      // quadro
-      c.fillStyle = '#20120f'; c.fillRect(W * 0.42, H * 0.13, W * 0.18, H * 0.2); c.fillStyle = lin(c, W * 0.43, 0, W * 0.59, 0, [[0, '#a0574a'], [1, '#d9a066']]); c.fillRect(W * 0.43, H * 0.145, W * 0.16, H * 0.17);
-      // pavimento + tappeto
-      c.fillStyle = lin(c, 0, H * 0.74, 0, H, [[0, '#3b2416'], [1, '#22140c']]); c.fillRect(0, H * 0.74, W, H * 0.26);
-      c.fillStyle = 'rgba(160,70,90,0.35)'; c.beginPath(); c.ellipse(W * 0.5, H * 0.92, W * 0.36, H * 0.07, 0, 0, Math.PI * 2); c.fill();
-      // lampada da terra
-      glow(c, W * 0.86, H * 0.3, Math.max(W, H) * 0.35, 'rgba(255,190,110,0.35)');
-      c.fillStyle = '#1a0f0e'; c.fillRect(W * 0.858, H * 0.33, W * 0.006, H * 0.47); c.fillStyle = '#e8c08a'; c.beginPath(); c.moveTo(W * 0.82, H * 0.34); c.lineTo(W * 0.9, H * 0.34); c.lineTo(W * 0.88, H * 0.24); c.lineTo(W * 0.84, H * 0.24); c.closePath(); c.fill();
-      // pianta
-      c.fillStyle = '#3a2a22'; rr(c, W * 0.06, H * 0.7, W * 0.07, H * 0.1, 4); c.fill(); c.fillStyle = '#2f5a3a'; for (let i = 0; i < 7; i++) { c.beginPath(); c.ellipse(W * (0.07 + (i % 3) * 0.02), H * (0.6 + (i % 2) * 0.05), W * 0.02, H * 0.07, (i - 3) * 0.35, 0, Math.PI * 2); c.fill(); }
-      sofa(c, W, H, W * 0.2, H * 0.62, W * 0.6, H * 0.2, '#7c3b4a', '#4e2230');
-      glow(c, W * 0.5, H * 0.55, Math.max(W, H) * 0.5, 'rgba(255,170,120,0.08)');
-    },
-    camera(c, W, H) {
-      c.fillStyle = lin(c, 0, 0, 0, H, [[0, '#2f2140'], [0.7, '#1f1630'], [1, '#140e1f']]); c.fillRect(0, 0, W, H);
-      // finestra con luna
-      const wx = W * 0.72, wy = H * 0.12, ww = W * 0.2, wh = H * 0.36;
-      c.fillStyle = lin(c, 0, wy, 0, wy + wh, [[0, '#0d1430'], [1, '#2a3566']]); c.fillRect(wx, wy, ww, wh); glow(c, wx + ww * 0.65, wy + wh * 0.3, ww * 0.35, 'rgba(230,235,255,0.6)');
-      c.fillStyle = '#f2f0e6'; c.beginPath(); c.arc(wx + ww * 0.65, wy + wh * 0.3, ww * 0.08, 0, Math.PI * 2); c.fill();
-      c.strokeStyle = '#0c0814'; c.lineWidth = Math.max(2, W * 0.007); c.strokeRect(wx, wy, ww, wh);
-      c.fillStyle = 'rgba(180,150,210,0.25)'; c.fillRect(wx - W * 0.04, wy - H * 0.04, W * 0.05, wh + H * 0.14); c.fillRect(wx + ww - W * 0.01, wy - H * 0.04, W * 0.05, wh + H * 0.14);
-      // applique calde
-      glow(c, W * 0.14, H * 0.32, Math.max(W, H) * 0.25, 'rgba(255,190,120,0.35)'); glow(c, W * 0.58, H * 0.32, Math.max(W, H) * 0.18, 'rgba(255,190,120,0.18)');
-      c.fillStyle = '#e8c08a'; rr(c, W * 0.125, H * 0.29, W * 0.03, H * 0.05, 3); c.fill();
-      // pavimento
-      c.fillStyle = lin(c, 0, H * 0.78, 0, H, [[0, '#2a1d18'], [1, '#160e0b']]); c.fillRect(0, H * 0.78, W, H * 0.22);
-      // letto: testiera imbottita, materasso, piumone, cuscini
-      c.fillStyle = lin(c, 0, H * 0.3, 0, H * 0.6, [[0, '#5b4470'], [1, '#3b2b4c']]); rr(c, W * 0.2, H * 0.33, W * 0.6, H * 0.3, H * 0.04); c.fill();
-      c.strokeStyle = 'rgba(0,0,0,0.25)'; c.lineWidth = Math.max(1, W * 0.003); for (let i = 1; i < 6; i++) { c.beginPath(); c.moveTo(W * (0.2 + i * 0.1), H * 0.35); c.lineTo(W * (0.2 + i * 0.1), H * 0.6); c.stroke(); }
-      c.fillStyle = 'rgba(0,0,0,0.35)'; c.beginPath(); c.ellipse(W * 0.5, H * 0.95, W * 0.38, H * 0.05, 0, 0, Math.PI * 2); c.fill();
-      c.fillStyle = lin(c, 0, H * 0.6, 0, H * 0.95, [[0, '#ece6ef'], [1, '#b9aec4']]); rr(c, W * 0.16, H * 0.62, W * 0.68, H * 0.3, H * 0.05); c.fill();
-      c.fillStyle = '#d8cfe0'; rr(c, W * 0.24, H * 0.56, W * 0.22, H * 0.09, H * 0.04); c.fill(); rr(c, W * 0.54, H * 0.56, W * 0.22, H * 0.09, H * 0.04); c.fill();
-      c.fillStyle = 'rgba(120,60,110,0.55)'; rr(c, W * 0.16, H * 0.74, W * 0.68, H * 0.1, H * 0.03); c.fill();
-    },
-    terrazza(c, W, H) {
-      c.fillStyle = lin(c, 0, 0, 0, H * 0.7, [[0, '#2b2a5c'], [0.45, '#b4587a'], [0.8, '#f2a25c'], [1, '#f7c87a']]); c.fillRect(0, 0, W, H);
-      glow(c, W * 0.7, H * 0.6, Math.max(W, H) * 0.35, 'rgba(255,210,140,0.65)');
-      // skyline
-      c.fillStyle = '#2a1830'; let x = 0; let i = 0; while (x < W) { const bw = W * (0.04 + ((i * 37) % 5) * 0.012), bh = H * (0.08 + ((i * 53) % 7) * 0.025); c.fillRect(x, H * 0.62 - bh, bw, bh + H * 0.1); x += bw + W * 0.004; i++; }
-      c.fillStyle = 'rgba(255,220,150,0.8)'; for (let j = 0; j < 60; j++) { const px = ((j * 97) % 100) / 100 * W, py = H * (0.5 + ((j * 31) % 12) / 100); c.fillRect(px, py, Math.max(1, W * 0.003), Math.max(1, H * 0.004)); }
-      // pavimento in cotto
-      c.fillStyle = lin(c, 0, H * 0.7, 0, H, [[0, '#7a3f2c'], [1, '#4a2418']]); c.fillRect(0, H * 0.7, W, H * 0.3);
-      // ringhiera
-      c.strokeStyle = '#1b1015'; c.lineWidth = Math.max(2, W * 0.006); c.beginPath(); c.moveTo(0, H * 0.6); c.lineTo(W, H * 0.6); c.moveTo(0, H * 0.7); c.lineTo(W, H * 0.7); c.stroke();
-      c.lineWidth = Math.max(1, W * 0.003); for (let k = 0; k <= 30; k++) { c.beginPath(); c.moveTo(k * W / 30, H * 0.6); c.lineTo(k * W / 30, H * 0.7); c.stroke(); }
-      // lucine
-      c.strokeStyle = 'rgba(30,20,20,0.8)'; c.lineWidth = 1; c.beginPath(); c.moveTo(0, H * 0.08); c.quadraticCurveTo(W * 0.5, H * 0.24, W, H * 0.08); c.stroke();
-      for (let k = 1; k < 16; k++) { const t = k / 16, px = t * W, py = H * 0.08 + Math.sin(t * Math.PI) * H * 0.08; glow(c, px, py, Math.max(W, H) * 0.02, 'rgba(255,220,150,0.9)'); }
-      // piante in vaso
-      [[0.08, 0.74], [0.9, 0.74]].forEach(([px, py]) => { c.fillStyle = '#5a2c1e'; rr(c, W * (px - 0.035), H * py, W * 0.07, H * 0.1, 4); c.fill(); c.fillStyle = '#2f5a3a'; for (let k = 0; k < 6; k++) { c.beginPath(); c.ellipse(W * (px + (k - 2.5) * 0.012), H * (py - 0.05), W * 0.015, H * 0.06, (k - 2.5) * 0.4, 0, Math.PI * 2); c.fill(); } });
-      sofa(c, W, H, W * 0.22, H * 0.66, W * 0.56, H * 0.18, '#d9c9b0', '#a8957a');
-    },
-  };
-  TalkingAvatar.ROOMS = Object.keys(ROOMS);
+  // v8: niente più stanze disegnate: una sola scena, il soggiorno fotografico generato con l'IA (9:16).
+  TalkingAvatar.ROOMS = ['soggiorno'];
 
 
   // Disegna l'immagine ritagliata a quadrato (center crop); opzionalmente solo una regione (in coord. del quadrato)

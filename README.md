@@ -172,6 +172,17 @@ Tutto in `data/` sul server (escluso da git e dallo zip): `pins.json`, `sessions
 - Le clip delle azioni suonano con il loro audio (se presente) solo con Lettura attiva e audio sbloccato; se iOS lo blocca, la clip parte muta.
 - Sul telefono: interruttore laterale (silenzioso) disattivato e volume alzato; su iPhone la sintesi vocale può restare muta in modalità silenziosa.
 
+## Novità v8 (videochiamata, voce naturale, memoria)
+
+- **📹 Videochiamata**: pulsante verde in chat. Lei a tutto schermo nel riquadro 9:16 fisso, timer, microfono, fotocamera (riquadrino, resta sul telefono), sottotitoli (CC) e riaggancia. Ascolto continuo con invio automatico; mentre lei parla l'ascolto è in pausa (niente eco); tocca il suo viso per interromperla. Se il riconoscimento vocale non è disponibile (alcune versioni di iPhone/PWA) compare una casella per scrivere o dettare con la tastiera.
+- **Voce naturale xAI** (`POST /api/tts`, `GET /api/tts/voices`): la chiave resta sul dispositivo e viene solo inoltrata; il testo non viene registrato. Lettura frase per frase mentre la risposta arriva, labiale guidato dall'ampiezza reale dell'audio, un solo elemento audio sbloccato al primo tocco (su iPhone suona anche col tasto silenzioso, iOS 17+). Se xAI non risponde si passa da soli alla voce del telefono. Impostazioni in Account → "Voce dell'avatar" (motore, voce, velocità, prova).
+- **Chat più naturale**: riassunto progressivo delle parti vecchie della chat (`POST /api/chats/:id/summarize`, campo `summary` nel file della chat, nessun messaggio cancellato), anti-ripetizione (inizi delle ultime risposte), stile da telefonata in videochiamata, ricordi automatici senza doppioni.
+- **Linguaggio del corpo contestuale**: l'IA può iniziare la risposta con `[gesto:…]`/`[umore:…]`; i tag vengono tolti dal testo e salvati nel messaggio (`gesture`, `mood`). Niente azioni spontanee a caso in videochiamata; le azioni per adulti non partono mai da sole.
+- **Intimità graduale** (solo con modalità adulti attiva per entrambi, regole invariate): istruzioni esplicite per un'escalation lenta e reciproca, verifiche, de-escalation e nessuno scatto da una parola cruda fuori contesto.
+- **Occhi e bocca automatici**: MediaPipe (locale) trova occhi, sopracciglia e bocca sulla foto (anche a figura intera, riprovando sulla parte alta ingrandita). Salvati in `landmarks` con `auto: true`; i vecchi segni a mano restano in `landmarks.manual`. Migrazione una tantum in background per gli avatar esistenti (`PUT /api/characters/:id/landmarks`, applicato solo se l'avatar è ancora quello). I segni manuali sono sotto "Correggi a mano".
+- **Una sola scena: il soggiorno** (foto realistica 9:16 generata con lei dentro, stessa luce). Le vecchie scene (salotto, camera, terrazza) restano nei dati e su disco ma non si usano più; le stanze disegnate sono state tolte.
+- **Velocità/stabilità**: a riposo l'avatar disegna ~30 fps, avatar e clip in cache 30 giorni (nomi immutabili), service worker con riserva offline più sicura (cache `app-privata-v8`), messaggi d'errore xAI più chiari (429, 5xx, voce, immagine).
+
 ## Gesti e imitazione con la fotocamera (sul telefono)
 In **📷 Presenza**: **✋ Gesti** fa reagire l'avatar alle tue mani (👋 saluto → saluta, ✋ mano aperta / ✌️ → sorride, 👍 / 👌 → annuisce,
 👉 → inclina la testa); **🪞 Imita i miei movimenti** riprende inclinazione e cenni della testa, braccia alzate e il ritmo con cui ti muovi,

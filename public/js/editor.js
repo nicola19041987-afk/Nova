@@ -44,6 +44,27 @@
     $('#landmark-wrap').hidden = !img;
     if (img) lmEditor.set(E.avatar, E.landmarks);
     if (App.current && App.current.id === E.id) App.avatarConv.setCharacter({ ...E, avatar: shownAvatar() }); // cambio dal vivo
+    if (img) detectFace(false);
+  }
+  // v8: occhi e bocca trovati in automatico sulla foto (MediaPipe sul telefono). I segni a mano restano come riserva in "manual".
+  async function detectFace(force) {
+    const src = E.avatar, key = App.faceKey ? App.faceKey(src) : src, st = $('#face-status');
+    if (!force && E.landmarks && E.landmarks.auto && E.landmarks.src === key) { st.textContent = 'Viso rilevato ✓ (occhi e bocca in automatico)'; st.className = 'small face-status ok'; return; }
+    if (!App.autoFace) return;
+    st.textContent = '🔎 Cerco occhi e bocca…'; st.className = 'muted small face-status';
+    let lm = null; try { lm = await App.autoFace(src); } catch (e) { console.warn(e); }
+    if (E.avatar !== src) return; // nel frattempo è cambiata la foto
+    if (lm) {
+      const prev = E.landmarks || {};
+      lm.manual = prev.manual || (!prev.auto && prev.eyeL ? { eyeL: prev.eyeL, eyeR: prev.eyeR, mouth: prev.mouth } : undefined);
+      E.landmarks = lm; dirty = true; lmEditor.set(E.avatar, E.landmarks); App.avatarEditor.setLandmarks(lm);
+      if (App.current && App.current.id === E.id) App.avatarConv.setLandmarks(lm);
+      st.textContent = 'Viso rilevato ✓ (occhi e bocca in automatico)'; st.className = 'small face-status ok';
+      $('#lm-manual').open = false;
+    } else {
+      st.textContent = '⚠️ Non trovo il viso in questa foto (troppo piccolo, girato o coperto). Il viso resta fermo: puoi posizionare occhi e bocca a mano qui sotto.'; st.className = 'small face-status warn';
+      $('#lm-manual').open = true;
+    }
   }
   function toForm() {
     form.name.value = E.name; form.personality.value = E.personality; form.style.value = E.style;
@@ -115,18 +136,19 @@
         toForm(); refreshAvatar(); App.chat.renderList();
         $('#avatar-status').textContent = '👀 Anteprima (solo in memoria). Premi Salva per tenerla.';
       }
-      if (framingChanged) App.toast('Controlla i segni di occhi e bocca nella sezione Avatar');
+      // v8: occhi e bocca vengono rilevati in automatico sulla nuova immagine (refreshAvatar)
     } catch (e) { if (e.message !== 'NO_KEY') $('#avatar-status').textContent = '⚠️ ' + e.message; }
   }
 
   App.editor = {
     init() {
       fillSelects();
-      lmEditor = window.LandmarkEditor($('#landmark-canvas'), (lm) => { E.landmarks = lm; App.avatarEditor.setLandmarks(lm); if (App.current && App.current.id === E.id) App.avatarConv.setLandmarks(lm); });
+      lmEditor = window.LandmarkEditor($('#landmark-canvas'), (lm) => { lm.auto = false; delete lm.src; E.landmarks = lm; $('#face-status').textContent = '✋ Occhi e bocca posizionati a mano'; $('#face-status').className = 'muted small face-status'; App.avatarEditor.setLandmarks(lm); if (App.current && App.current.id === E.id) App.avatarConv.setLandmarks(lm); });
     },
     open(id) {
       const ch = id ? App.charById(id) : null;
       E = ch ? { ...clone(ch), pendingId: null } : defaults();
+      { const D = defaults(); for (const k of ['appearance', 'look', 'identity', 'autoChanges']) E[k] = { ...D[k], ...(E[k] || {}) }; if (!E.wardrobe) E.wardrobe = []; if (!E.landmarks) E.landmarks = D.landmarks; } // v8: personaggi vecchi con campi mancanti
       E.appearance.colors = E.appearance.colors || defaults().appearance.colors;
       const pv = ch && App.previews[ch.id];
       if (pv) Object.assign(E, { avatar: pv.dataUrl, avatarSource: 'ai', pendingId: pv.pending, appearance: pv.appearance || E.appearance, look: pv.look || E.look });
@@ -167,8 +189,9 @@
     E.avatar = await App.fileToDataUrl(f, 768); E.avatarSource = 'upload'; E.pendingId = null;
     $('#avatar-consent').checked = false; $('#avatar-consent-wrap').hidden = false;
     E.landmarks = clone(LM_DEFAULT.ritratto); refreshAvatar(); e.target.value = '';
-    App.toast('Spunta la dichiarazione e posiziona occhi e bocca');
+    App.toast('Spunta la dichiarazione per usare la foto');
   });
+  $('#lm-redetect').addEventListener('click', () => detectFace(true));
   $('#avatar-remove').addEventListener('click', () => { E.avatar = '💫'; E.avatarSource = 'emoji'; E.pendingId = null; toForm(); refreshAvatar(); });
   // colori: istantanei
   $$('[data-col]', form).forEach((el) => el.addEventListener('input', () => {

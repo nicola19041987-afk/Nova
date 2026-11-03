@@ -214,3 +214,35 @@ details.card summary{font-weight:600}
 /* v7.3: avviso audio bloccato (iPhone) */
 .audio-unlock{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(132px + env(safe-area-inset-bottom));z-index:80;border:0;border-radius:22px;padding:10px 16px;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;font-size:15px;white-space:nowrap;box-shadow:0 6px 20px #0008}
 .audio-unlock[hidden]{display:none}
+
+/* ---------- v8: videochiamata ---------- */
+.voicebar .call-start-wide{background:linear-gradient(135deg,#25b25b,#1a8f48);border:0;color:#fff;font-weight:600}
+.stage-tools .call-start{background:#1f9d55e6}
+#stage.call .stage-tools,#stage.call #act-menu,#stage.call #scene-menu{display:none!important}
+#stage.call{background:#000}
+#stage.call .av-backdrop{left:0!important;top:0!important;width:100%!important;height:100%!important;border-radius:0!important}
+#stage.call #avatar-canvas{border-radius:0;box-shadow:none!important}
+.call-ui{position:absolute;inset:0;z-index:5;display:flex;flex-direction:column;justify-content:space-between;pointer-events:auto;color:#fff;
+  padding:calc(env(safe-area-inset-top) + 10px) calc(env(safe-area-inset-right) + 12px) calc(env(safe-area-inset-bottom) + 16px) calc(env(safe-area-inset-left) + 12px)}
+.call-top{display:flex;flex-direction:column;align-items:center;gap:2px;text-shadow:0 1px 6px #000c;pointer-events:none}
+.call-top b{font-size:1.25em;font-weight:600}
+.call-timer{font-variant-numeric:tabular-nums;font-size:.9em;opacity:.9}
+.call-state{font-size:.8em;opacity:.85;background:#0006;border-radius:12px;padding:2px 10px;margin-top:2px}
+.call-ui.speaking .call-state{background:#1f9d5599}
+.call-ui.thinking .call-state{background:#7b2cbf99}
+.call-self{position:absolute;top:calc(env(safe-area-inset-top) + 12px);right:calc(env(safe-area-inset-right) + 12px);width:24%;max-width:130px;aspect-ratio:3/4;object-fit:cover;border-radius:12px;border:2px solid #fff8;box-shadow:0 4px 16px #0008;transform:scaleX(-1);background:#111}
+.call-caption{align-self:center;max-width:min(92%,560px);margin:auto 0 10px;padding:6px 12px;border-radius:12px;background:#000a;font-size:.95em;line-height:1.35;text-align:center;pointer-events:none}
+.call-text{display:flex;gap:6px;margin:0 auto 10px;width:min(100%,520px)}
+.call-text input{margin:0;background:#000b;border-color:#fff4}
+.call-text button{border-radius:12px;padding:0 14px}
+.call-bar{display:flex;justify-content:center;align-items:center;gap:18px}
+.call-btn{width:58px;height:58px;border-radius:50%;border:0;padding:0;background:#ffffff2e;color:#fff;font-size:24px;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+.call-btn.small{width:46px;height:46px;font-size:14px;font-weight:700}
+.call-btn.on{background:#fff;color:#111}
+.call-btn.off{background:#fff;color:#c00}
+.call-btn.end{background:#e0303f;transform:rotate(135deg);font-size:26px}
+@media (orientation:landscape){.call-self{width:auto;height:30%;max-width:none}.call-bar{gap:14px}.call-btn{width:50px;height:50px;font-size:21px}}
+/* v8: occhi e bocca automatici */
+.face-status.ok{color:#7be0a0}
+.face-status.warn{color:#ffb86b}
+.lm-manual summary{cursor:pointer;color:var(--muted);font-size:.9em;margin:4px 0}

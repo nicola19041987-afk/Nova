@@ -19,6 +19,7 @@ App.boot = async function () {
   App.actions && App.actions.load();
   App.sync();
   App.autoChanges();
+  setTimeout(() => App.faceMigrate && App.faceMigrate(), 6000); // v8: occhi e bocca automatici sugli avatar esistenti (una volta, in background)
 };
 // Modalità adulti (per utente): solo effetti locali sull'avatar (espressioni/movimenti più sensuali, canvas).
 App.applyAdult = function () {

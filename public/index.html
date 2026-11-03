@@ -74,9 +74,22 @@
       <div id="tab-conv" class="tab conv" hidden>
         <div class="stage" id="stage">
           <canvas id="avatar-canvas" width="300" height="300"></canvas>
+          <div id="call-ui" class="call-ui" hidden>
+            <div class="call-top"><b id="call-name"></b><span id="call-timer" class="call-timer">00:00</span><span id="call-state" class="call-state">…</span></div>
+            <video id="call-self" class="call-self" playsinline muted autoplay hidden></video>
+            <p id="call-caption" class="call-caption" hidden></p>
+            <form id="call-text" class="call-text" hidden><input id="call-input" placeholder="Scrivile…" autocomplete="off"><button class="primary" aria-label="Invia">➤</button></form>
+            <div class="call-bar">
+              <button type="button" id="call-cc" class="call-btn small" title="Sottotitoli" aria-label="Sottotitoli">CC</button>
+              <button type="button" id="call-cam" class="call-btn" title="La tua fotocamera" aria-label="Fotocamera">📷</button>
+              <button type="button" id="call-mute" class="call-btn" title="Microfono" aria-label="Microfono">🎙️</button>
+              <button type="button" id="call-end" class="call-btn end" title="Chiudi la chiamata" aria-label="Chiudi la chiamata">📞</button>
+            </div>
+          </div>
           <div class="stage-tools">
+            <button type="button" id="call-btn" class="call-start" title="Videochiamata" aria-label="Videochiamata">📹</button>
             <button type="button" id="act-btn" title="Azioni" aria-label="Azioni">🎭</button>
-            <button type="button" id="scene-btn" title="Scena cinematografica" aria-label="Scena">🎬</button>
+            <button type="button" id="scene-btn" title="Soggiorno" aria-label="Soggiorno">🏠</button>
             <button type="button" id="fs-btn" title="Schermo intero" aria-label="Schermo intero">⛶</button>
           </div>
           <div id="act-menu" class="scene-menu" hidden>
@@ -86,15 +99,13 @@
             <p id="act-info"></p>
           </div>
           <div id="scene-menu" class="scene-menu" hidden>
-            <button type="button" data-room="">Nessuna scena</button>
-            <button type="button" data-room="salotto">🛋️ Divano / salotto</button>
-            <button type="button" data-room="camera">🛏️ Camera da letto</button>
-            <button type="button" data-room="terrazza">🌇 Terrazza</button>
-            <button type="button" id="scene-gen">✨ Genera figura intera con l'IA</button>
+            <button type="button" id="scene-toggle">🏠 Mostrala nel soggiorno</button>
+            <button type="button" id="scene-gen">✨ Crea il soggiorno con l'IA</button>
             <p id="scene-info"></p>
           </div>
         </div>
         <div class="voicebar">
+          <button type="button" id="call-btn2" class="call-start-wide" title="Videochiamata a voce">📹 <span>Videochiamata</span></button>
           <button type="button" id="mic-btn" title="Ascolto continuo">🎙️ <span>Voce: off</span></button>
           <button type="button" id="tts-btn" title="Leggi le risposte ad alta voce">🔇 <span>Lettura: off</span></button>
           <label class="switch small"><input type="checkbox" id="auto-send" checked> Invio automatico</label>
@@ -182,6 +193,22 @@
             <button id="key-clear">Rimuovi</button>
           </div>
           <p id="key-status" class="muted small"></p>
+        </div>
+
+        <div class="card" id="voice-card">
+          <h3>🗣️ Voce dell'avatar</h3>
+          <p class="muted small">La <b>voce naturale</b> usa xAI con la tua chiave (costo minimo, legge frase per frase mentre lei scrive). Senza chiave o se non risponde, si usa in automatico la voce del telefono.</p>
+          <label>Motore
+            <select id="voice-engine">
+              <option value="xai">✨ Naturale (xAI)</option>
+              <option value="device">📱 Voce del telefono</option>
+            </select></label>
+          <label>Voce
+            <select id="voice-id"><option value="ara">Ara</option><option value="eve">Eve</option><option value="una">Una</option><option value="sal">Sal</option><option value="rex">Rex</option><option value="leo">Leo</option></select></label>
+          <label>Velocità <span id="voice-speed-val" class="muted small"></span>
+            <input type="range" id="voice-speed" min="0.8" max="1.3" step="0.05"></label>
+          <button id="voice-test" type="button" class="block">▶️ Prova la voce</button>
+          <p id="voice-info" class="muted small"></p>
         </div>
 
         <div class="card">
@@ -330,8 +357,12 @@
         </label>
         <p class="muted small">…oppure genera un volto inventato con l'IA dalle sezioni <b>Aspetto</b> e <b>Identità</b> (pulsante ✨ Rigenera).</p>
         <div id="landmark-wrap" hidden>
-          <p class="muted small">Trascina i segni su <b>occhi</b> (👁) e <b>bocca</b> (👄) per animare il viso.</p>
-          <div class="landmark-editor"><canvas id="landmark-canvas" width="320" height="320"></canvas></div>
+          <p id="face-status" class="muted small face-status">Occhi e bocca vengono trovati in automatico.</p>
+          <details id="lm-manual" class="lm-manual"><summary>Correggi a mano</summary>
+            <p class="muted small">Trascina i segni su <b>occhi</b> (👁) e <b>bocca</b> (👄) solo se il rilevamento automatico ha sbagliato.</p>
+            <div class="landmark-editor"><canvas id="landmark-canvas" width="320" height="320"></canvas></div>
+            <button type="button" id="lm-redetect" class="link">↻ Rileva di nuovo in automatico</button>
+          </details>
           <button type="button" id="avatar-remove" class="link">Rimuovi immagine (torna all'emoji)</button>
         </div>
       </details>
@@ -467,6 +498,7 @@
   <script src="/js/motion.js"></script>
   <script src="/js/stage.js"></script>
   <script src="/js/actions.js"></script>
+  <script src="/js/call.js"></script>
   <script src="/js/live.js" type="module"></script>
   <script src="/js/main.js"></script>
 </body>
