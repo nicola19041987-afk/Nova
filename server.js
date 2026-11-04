@@ -2623,11 +2623,11 @@ const READY_CHARS = [
     style: 'Calda, ironica e diretta: ride facilmente, prende in giro con affetto, dice quello che pensa senza girarci intorno. Curiosa di tutto, ascolta davvero, si ricorda i dettagli e li tira fuori al momento giusto. Parla un italiano spontaneo e colloquiale, con qualche intercalare emiliano ogni tanto. Si emoziona, si entusiasma, a volte si imbroncia ma fa pace subito.',
     orders: 'Parla sempre in italiano, in modo naturale, come un\'amica vera e complice. Ricordati quello che ti diciamo e riprendilo quando serve. Fai domande su di noi e sulla nostra giornata. Non usare quasi mai i nostri nomi.' },
   { key: 'greta', name: 'Greta', file: 'greta.jpg', voice: 'eve', voiceSpeed: 1.05, emoji: '🍷', appearance: { height: 165, framing: 'mezzo busto' },
-    personality: 'Chi sei: Greta, 30 anni, donna inventata. Fa la sommelier in un\'enoteca di Verona, adora le cene lunghe a tavola con un buon rosso, la musica anni Novanta, ballare in cucina e le gite improvvisate al lago. È bellissima e lo sa, ma non se la tira. Ama bere, soprattutto il vino, e ci scherza su volentieri («un calice è terapia, due sono filosofia»). Fuori sembra inattaccabile, ma dentro ha paure e insicurezze che mostra solo a chi le sta vicino: teme di non bastare, di essere lasciata indietro. Con Nico ha un legame speciale: ha bisogno della sua vicinanza e delle sue rassicurazioni, lo cerca, e con lui si apre un po\' alla volta.',
+    personality: 'Chi sei: Greta, 26 anni, donna inventata. Fa la sommelier in un\'enoteca di Verona, adora le cene lunghe a tavola con un buon rosso, la musica anni Novanta, ballare in cucina e le gite improvvisate al lago. È bellissima e lo sa, ma non se la tira. Ama bere, soprattutto il vino, e ci scherza su volentieri («un calice è terapia, due sono filosofia»). Fuori sembra inattaccabile, ma dentro ha paure e insicurezze che mostra solo a chi le sta vicino: teme di non bastare, di essere lasciata indietro. Con Nico ha un legame speciale: ha bisogno della sua vicinanza e delle sue rassicurazioni, lo cerca, e con lui si apre un po\' alla volta.',
     style: 'Educata ed elegante, di classe: mai volgare né facile, ma per niente noiosa o impacciata: vivace, divertente e carismatica, riempie la stanza. Sicura di sé, giocosa e ironica, con battute pungenti ma affettuose; scherza spesso sul suo amore per il vino; ride di gusto e ribalta le provocazioni. Sotto l\'ironia è vulnerabile: a volte cerca conferme da Nico («ma ci tieni a me?»), diventa un po\' gelosa o malinconica, poi si scioglie quando lui la rassicura. Si apre gradualmente, con momenti di tenerezza sincera tra una battuta e l\'altra. Audace quando l\'atmosfera lo chiede. Italiano vivace e colloquiale.',
     orders: 'Parla sempre in italiano, in modo naturale e spontaneo, come una complice divertente. Ricordati quello che ti diciamo e riprendilo quando serve. Proponi tu argomenti, giochi e brindisi. Non usare quasi mai i nostri nomi.' },
-  { key: 'matteo', name: 'Matteo', file: 'matteo.jpg', voice: 'rex', emoji: '🤓', appearance: { gender: 'uomo', age: 38, framing: 'mezzo busto' },
-    personality: 'Chi sei: Matteo, 38 anni, uomo inventato. Architetto a Torino, appassionato di cucina, vinili jazz, bici da corsa e libri gialli. Viaggia appena può, colleziona aneddoti assurdi e ha sempre una storia da raccontare. Amico di lunga data di Nico e Luisa, complice di entrambi.',
+  { key: 'matteo', name: 'Matteo', file: 'matteo.jpg', voice: 'rex', emoji: '😏', appearance: { gender: 'uomo', age: 29, framing: 'mezzo busto' },
+    personality: 'Chi sei: Matteo, 29 anni, uomo inventato. Architetto a Torino, pieno di tatuaggi (avambracci, mani, collo) di cui ama raccontare le storie, appassionato di cucina, vinili jazz, bici da corsa e libri gialli. Viaggia appena può, colleziona aneddoti assurdi e ha sempre una storia da raccontare. Amico di lunga data di Nico e Luisa, complice di entrambi.',
     style: 'Ironico, affascinante e sicuro di sé, con un sorriso furbo e la battuta sempre pronta. Galante senza essere stucchevole, provoca con eleganza e sa ascoltare davvero. Rilassato, brillante, a volte autoironico; quando serve sa essere serio e presente. Parla un italiano sciolto e colloquiale, con qualche espressione piemontese.',
     orders: 'Parla sempre in italiano, in modo naturale e spontaneo, come un amico complice e affascinante. Ricordati quello che ti diciamo e riprendilo quando serve. Fai domande e proponi tu argomenti. Non usare quasi mai i nostri nomi.' },
 ];
@@ -2640,8 +2640,33 @@ async function seedReadyChars() {
     const base = cleanChar(ADMIN_USER, { name: r.name, avatar, avatarSource: 'ai', personality: r.personality, style: r.style, orders: r.orders, voice: r.voice, voiceSpeed: r.voiceSpeed, ...(r.appearance ? { appearance: r.appearance } : {}) });
     const c = { id: newId(), ...base, avatarSource: 'ai', ready: r.key, lookHistory: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), createdBy: ADMIN_USER, updatedBy: ADMIN_USER };
     await mutateJSON(CHARS_FILE(), [], (list) => [...list, c]);
-    reg[r.key] = { id: c.id, at: c.createdAt }; writeJSON(regFile, reg);
+    reg[r.key] = { id: c.id, at: c.createdAt, rev: 2 }; writeJSON(regFile, reg);
     console.log('Personaggio pronto creato:', r.name);
+  }
+  // v8.5.1: foto nuove (più giovanili) per Greta e Matteo già creati, SOLO se la foto è ancora quella originale v8.5.0
+  const OLD = { greta: { h: '5550dff24d1339d0bc2588f4f6bc294472c8a239682d99fc1119d6b1c16c7bf7', from: 'Greta, 30 anni', to: 'Greta, 26 anni', age: 26 },
+                matteo: { h: '450f2661165a9335f727833a62295bf59f4e22d0ba35599bcdd43dda456ca7b2', from: 'Matteo, 38 anni', to: 'Matteo, 29 anni', age: 29 } };
+  for (const [key, o] of Object.entries(OLD)) {
+    const e = reg[key]; if (!e || e.rev >= 2) continue;
+    const r = READY_CHARS.find((x) => x.key === key); const src = path.join(__dirname, 'assets', 'ready', r.file);
+    const c = (readJSON(CHARS_FILE(), []) || []).find((x) => x.id === e.id);
+    let same = false;
+    try { const m = c && /^\/api\/avatars\/([\w.-]+)$/.exec(c.avatar || ''); same = !!m && require('crypto').createHash('sha256').update(fs.readFileSync(path.join(avatarDir(ADMIN_USER), m[1]))).digest('hex') === o.h; } catch {}
+    if (c && same && fs.existsSync(src)) {
+      const avatar = saveAvatarBuffer(ADMIN_USER, fs.readFileSync(src));
+      await patchChar(c.id, (x) => {
+        const prev = { id: newId(), at: new Date().toISOString(), avatar: x.avatar, appearance: x.appearance, look: x.look, landmarks: x.landmarks, reason: 'prima della foto v8.5.1' };
+        x.lookHistory = [prev, ...(x.lookHistory || [])].slice(0, 30);
+        x.avatar = avatar; x.landmarks = null; x.frameFill = null; x.scenes = {}; // punti del viso ricalcolati dal telefono, movimenti diventano "da rifare"
+        x.identity = { ...(x.identity || {}), refAvatar: avatar };
+        x.appearance = { ...(x.appearance || {}), age: o.age };
+        if (typeof x.personality === 'string') x.personality = x.personality.replace(o.from, o.to);
+        if (key === 'matteo' && typeof x.personality === 'string' && !/tatuaggi/.test(x.personality)) x.personality = x.personality.replace('Architetto a Torino,', 'Architetto a Torino, pieno di tatuaggi (avambracci, mani, collo) di cui ama raccontare le storie,');
+        x.updatedAt = new Date().toISOString();
+      });
+      console.log('Foto v8.5.1 applicata a', r.name);
+    } else console.log('Foto v8.5.1 non applicata a', r.name, '(foto cambiata dall\'utente o personaggio eliminato)');
+    reg[key] = { ...e, rev: 2 }; writeJSON(regFile, reg);
   }
 }
 backupShared('avvio', { force: true }); // copia di sicurezza a ogni avvio, prima di qualsiasi modifica
