@@ -6,7 +6,7 @@
   const TAG = /\s*\[azione:\s*([a-zà-ù]+)\s*\]/gi;
   const GESTURE_IDS = ['capelli', 'tosse', 'starnuto', 'ride', 'sorriso', 'annuisce', 'inclina', 'guarda', 'sbatte'];
   const AUTO_MIN_GAP = 150e3, AUTO_IDLE = 45e3, AUTO_MAX_HOUR = 8;
-  let info = { catalog: [], adult: false, video: true }, lastActivity = Date.now(), autoLog = [], lastAuto = 0, running = null, autoQ = [], autoBusy = new Set(), autoDone = 0, autoTotal = 0, autoFail = 0, prepLog = [];
+  let info = { catalog: [], adult: false, video: true }, lastActivity = Date.now(), autoLog = [], lastAuto = 0, running = null, autoQ = [], autoBusy = new Set(), autoDone = 0, autoTotal = 0, autoFail = 0, prepLog = [], lastWhy = '', failToast = 0;
   const poseLm = new Map(); // url -> punti del viso trovati sul telefono
 
   const ready = (ch) => Object.entries((ch && ch.actions) || {}).filter(([, a]) => !a.stale);
@@ -23,6 +23,17 @@
   const refKey = (ch, base, id) => `${ch.id}|${base}|${id}|${base === 'seated' ? (ch.seated && ch.seated.src) || '' : ch.avatar || ''}`;
   const refused = () => App.ls.get('actRefused', {}) || {};
   const setRefused = (k, v) => { const r = refused(); if (v) r[k] = Date.now(); else delete r[k]; App.ls.set('actRefused', r); };
+  // v8.4.7: motivo dell'errore in italiano (mai un generico «errore nelle azioni»)
+  const actWhy = (e) => {
+    const m = String((e && e.message) || e || '');
+    if (/Failed to fetch|NetworkError|Load failed|network/i.test(m)) return 'connessione persa durante la preparazione (riprovo più tardi)';
+    if (/tempo scaduto/i.test(m)) return 'xAI non ha finito la clip entro 6 minuti';
+    if (/Chiave xAI non valida|401/.test(m)) return 'chiave xAI non valida o scaduta (Impostazioni → Chiave API xAI)';
+    if (/credit|crediti|402|quota|billing/i.test(m)) return 'crediti xAI esauriti';
+    if (/Troppe richieste|429/.test(m)) return 'troppe richieste a xAI in poco tempo (riprovo più tardi)';
+    if (/non disponibile|50\d/.test(m)) return 'servizio video xAI momentaneamente non disponibile';
+    return m.slice(0, 160) || 'motivo sconosciuto';
+  };
   const meta = (id) => info.catalog.find((c) => c.id === id) || { id, label: id, emoji: '🎭' };
 
   App.actions = {
@@ -50,6 +61,7 @@
       autoTotal = Math.max(autoTotal, autoDone + autoQ.length + autoBusy.size); this.autoPump();
     },
     autoPump() {
+      if (running) { this.autoPill(); return; } // v8.4.7: «Prepara» a mano ha la precedenza: la coda automatica aspetta
       while (autoBusy.size < 2 && autoQ.length) { const q = autoQ.shift(); autoBusy.add(q.k); this.autoOne(q).finally(() => { autoBusy.delete(q.k); autoDone++; this.autoPill(); this.autoPump(); }); }
       this.autoPill();
     },
@@ -70,11 +82,11 @@
         prepLog.push({ at: Date.now(), id: q.id, ok: true });
       } catch (e) {
         if (/Limite di|già in preparazione/i.test(e.message || '')) { // limite orario o già in corso: si riprova più tardi, non è un rifiuto
-          autoQ.length = 0; if (!this._retryT) this._retryT = setTimeout(() => { this._retryT = 0; this.autoAll(); }, 12 * 60e3); return;
+          autoQ.length = 0; if (!this._retryT) { const mins = (e.data && e.data.retryMin) || +((/tra (\d+) min/.exec(e.message || '') || [])[1]) || 10; lastWhy = `limite orario di xAI raggiunto: riprovo da sola tra ${mins} min`; this._retryT = setTimeout(() => { this._retryT = 0; this.autoAll(); }, mins * 60e3 + 5000); } return;
         }
         const isRef = !!(e.refused || /rifiutat/i.test(e.message || ''));
         if (isRef) setRefused(refKey(ch, 'avatar', q.id), true); // rifiutata: segnata, mai ritentata in automatico
-        else autoFail++;
+        else { autoFail++; lastWhy = actWhy(e); console.warn('Azione', q.id, 'non preparata:', lastWhy); }
         prepLog.push({ at: Date.now(), id: q.id, ok: false, refused: isRef, err: String(e.message || e).slice(0, 120) });
         if (/chiave|401|403|crediti|402/i.test(e.message || '')) { autoQ.length = 0; } // chiave o crediti: si ferma la coda
       }
@@ -85,7 +97,7 @@
       let el = document.getElementById('auto-prep');
       const left = autoQ.length + autoBusy.size;
       if (!el) { el = document.createElement('div'); el.id = 'auto-prep'; el.className = 'auto-prep'; document.body.appendChild(el); }
-      el.hidden = !left; if (!left) { autoTotal = 0; autoDone = 0; return; }
+      el.hidden = !left; if (!left) { if (autoFail && autoFail !== failToast) { failToast = autoFail; App.toast(`⚠️ Movimenti: ${autoFail} non preparati · motivo: ${lastWhy}`, 6000); } autoTotal = 0; autoDone = 0; return; }
       el.innerHTML = `<i style="width:${Math.round((autoDone / Math.max(1, autoTotal)) * 100)}%"></i><span>🎭 Movimenti ${autoDone}/${autoTotal}</span>`;
     },
     refresh() { this.load(); },
@@ -133,6 +145,7 @@
       // v8.3.1: modalità adulti attiva solo per uno dei due -> spiega cosa manca (le azioni per adulti restano nascoste)
       if (App.me && App.settings && App.settings.adultMode && !info.adult && App.adultStatus && !App.adultStatus.chat) $('#act-info').textContent += ' · 🔞 ' + App.adultText(App.adultStatus, false);
       if (autoQ.length + autoBusy.size) $('#act-info').textContent += ' · ' + this.queueText(); // v8.5.0
+      if (lastWhy) $('#act-info').textContent += ` · ⚠️ ultimo errore: ${lastWhy}`; // v8.4.7
       $('#act-btn').classList.toggle('on', !!n);
       $('#act-auto').checked = App.ls.get('actAuto', true) !== false;
     },
@@ -171,11 +184,13 @@
       const ids = $$('#act-dialog [data-prep]').filter((x) => x.checked).map((x) => x.dataset.prep).sort((a, b) => (meta(a).adult ? 1 : 0) - (meta(b).adult ? 1 : 0));
       if (!ids.length) return App.toast('Scegli almeno un\'azione');
       running = { stop: false }; const run = running;
+      for (let i = autoQ.length - 1; i >= 0; i--) if (autoQ[i].cid === ch.id && ids.includes(autoQ[i].id)) autoQ.splice(i, 1); // v8.4.7: mai la stessa azione due volte
       $('#act-go').disabled = true; $('#act-stop').hidden = false; const bar = $('#act-progress'); bar.hidden = false; bar.max = ids.length; bar.value = 0;
       let ok = 0, nRef = 0, nErr = 0, k = 0;
       for (const id of ids) {
         if (run.stop) { this.log('Interrotto.'); break; }
         k++; const m = meta(id), li = this.log(`(${k}/${ids.length}) ${m.emoji} ${m.label}: avvio…`);
+        if ([...autoBusy].some((x) => x.startsWith(ch.id + '|' + id + '|'))) { li.textContent = `(${k}/${ids.length}) ${m.emoji} ${m.label}: già in preparazione automatica, la salto`; bar.value++; continue; }
         try {
           const base = prepBase;
           let r = await App.api(`/api/characters/${ch.id}/actions/${id}`, { method: 'POST', ai: true, body: base === 'seated' ? { base } : {} });
@@ -196,12 +211,14 @@
           li.className = 'err';
           const isRef = !!(e.refused || /rifiutato/i.test(e.message || ''));
           if (isRef) { nRef++; setRefused(refKey(ch, prepBase, id), true); } else if (!/interrotto/.test(e.message || '')) nErr++;
-          li.textContent = `(${k}/${ids.length}) ${m.emoji} ${m.label}: ${isRef ? 'rifiutata da xAI — resta l\'avatar normale (nessun nuovo tentativo automatico)' : e.message}`;
+          li.textContent = `(${k}/${ids.length}) ${m.emoji} ${m.label}: ${isRef ? 'rifiutata da xAI — resta l\'avatar normale (nessun nuovo tentativo automatico)' : actWhy(e)}`;
         }
         bar.value++;
+        if (/Limite di \d+ preparazioni/.test(li.textContent)) { this.log('⏳ Limite orario raggiunto: le altre azioni restano in coda, riprova all\'ora indicata.'); break; } // v8.4.7
       }
       this.log(`Fatto: ${ok}/${ids.length} azioni pronte${nRef ? ` · ${nRef} rifiutate da xAI` : ''}${nErr ? ` · ${nErr} non riuscite (riprova più tardi)` : ''}.`);
       running = null; $('#act-go').disabled = false; $('#act-stop').hidden = true;
+      setTimeout(() => this.autoAll(), 1500); // v8.4.7: la coda automatica riprende
       await App.loadChars(); if (App.current) { App.current = App.charById(App.current.id) || App.current; } this.render();
     },
     // ---- azioni spontanee: solo a chat aperta, lei inattiva da un po', al massimo AUTO_MAX_HOUR l'ora ----

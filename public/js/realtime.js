@@ -26,14 +26,18 @@
 
   // ---------- microfono -> 24 kHz PCM16, blocchi da 100 ms ----------
   async function startMic(s) {
-    const c = ctx();
     s.stream = await App.audio.mic(); // v8.4.4: microfono condiviso della chiamata (mai fermato qui)
     if (s.closed) return;
+    const c = ctx(); // v8.4.7: contesto audio DOPO il microfono (iPhone: con la sessione 'play-and-record')
+    if (s.out && s.out.c !== c) { s.out = null; s.playT = 0; } // contesto rinnovato: la catena della sua voce si rifà
+    s.micT0 = performance.now(); s.micPeak = 0;
     try { s.src && s.src.disconnect(); s.node && s.node.disconnect(); } catch {}
     s.src = c.createMediaStreamSource(s.stream);
     if (!s.offLost) s.offLost = App.audio.onMicLost(() => { if (!s.closed) startMic(s).catch((e) => console.warn('Microfono non riaperto', e)); });
     const onChunk = (pcm, rms) => {
       if (rms > 0.012 && !playing(s)) s.lastVoiceAt = performance.now(); // fine del parlato (per misurare la latenza)
+      if (rms > s.micPeak) s.micPeak = rms; // v8.4.7: microfono «muto» -> riaperto una volta
+      if (!s.reacq && !App.audio._reacq) { const tr = s.stream && s.stream.getAudioTracks()[0], mt = !!(tr && (tr.muted || tr.readyState !== 'live')); if (mt || (performance.now() - s.micT0 > 4000 && s.micPeak < 0.0012)) { s.reacq = true; note('microfono muto: riapro', mt ? 'traccia muta' : 'livello ' + s.micPeak.toFixed(4)); App.audio.reacquire(mt ? 'traccia muta' : 'livello quasi zero').catch(() => {}); return; } }
       if (s.muted) return;
       if (s.ready && s.ws && s.ws.readyState === 1) s.ws.send(JSON.stringify({ type: 'input_audio_buffer.append', audio: b64(pcm) }));
       else { s.early.push(pcm); if (s.early.length > 15) s.early.shift(); } // tiene ~1,5 s finché la sessione non è pronta
@@ -60,7 +64,7 @@
     if (s.out) return s.out;
     const c = ctx(), g = c.createGain(), an = c.createAnalyser(); an.fftSize = 1024; an.smoothingTimeConstant = 0.2;
     g.gain.value = s.volume; g.connect(an); an.connect(c.destination);
-    s.out = { g, an, td: new Float32Array(an.fftSize), fd: new Uint8Array(an.frequencyBinCount) }; return s.out;
+    s.out = { c, g, an, td: new Float32Array(an.fftSize), fd: new Uint8Array(an.frequencyBinCount) }; return s.out;
   }
   const playing = (s) => s && s.playT > ctx().currentTime + 0.005;
   function play(s, buf) {

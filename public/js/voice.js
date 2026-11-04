@@ -25,7 +25,7 @@
     unlocked: false, ctx: null, inCall: false,
     // v8.4.1: per tutta la chiamata una sola sessione audio iOS "play-and-record" (microfono + voce insieme): cambiarla a ogni frase
     // faceva sentire il "suono di attacco e stacco". A chiamata finita si torna a "playback" (suona anche col tasto silenzioso).
-    callSession(on) { this.inCall = !!on; try { if (navigator.audioSession) navigator.audioSession.type = (on || this.micLive() || this._micP || (App.micAnyLive && App.micAnyLive())) ? 'play-and-record' : 'playback'; } catch {} }, // v8.5.0: mai 'playback' col microfono aperto
+    callSession(on) { this.inCall = !!on; if (!on) this._reacq = false; try { if (navigator.audioSession) navigator.audioSession.type = (on || this.micLive() || this._micP || (App.micAnyLive && App.micAnyLive())) ? 'play-and-record' : 'playback'; } catch {} }, // v8.5.0: mai 'playback' col microfono aperto
     // v8.4.4: UN solo microfono per tutta la chiamata (vocale e video, tempo reale e classica): un solo getUserMedia, mai fermato
     // fra un turno e l'altro né passando da vocale a video; si chiude solo riattaccando (releaseMic). Su iPhone ogni start/stop
     // del microfono è il "suono di attacco e stacco". Se il sistema lo chiude da solo (traccia «ended»), lo si riapre e si avvisa chi ascolta.
@@ -35,13 +35,37 @@
       if (this.micLive()) return this._mic;
       if (this._micP) return this._micP;
       this.micStats.gum++;
+      // v8.4.7 (iPhone): la sessione audio diventa 'play-and-record' UNA volta, PRIMA del microfono. Un AudioContext nato in
+      // 'playback' (sblocco audio) dopo il cambio di sessione riceve solo silenzio (livello 0,1%): lo si ricrea DOPO getUserMedia.
+      let prevType = null;
+      try { if (navigator.audioSession) { prevType = navigator.audioSession.type; if (prevType !== 'play-and-record') navigator.audioSession.type = 'play-and-record'; } } catch { /* */ }
+      this.micStats.session = prevType;
       this._micP = navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } })
         .then((st) => {
+          if (navigator.audioSession && prevType !== 'play-and-record' && this.ctx) this.renewCtx('sessione cambiata');
           this._mic = st;
+          st.getAudioTracks().forEach((t) => { t.onmute = () => { this.micStats.muted = (this.micStats.muted || 0) + 1; }; });
           st.getAudioTracks().forEach((t) => { t.onended = () => { if (this._mic !== st) return; this._mic = null; this.micStats.lost++; if (this.inCall) this._micL.forEach((f) => { try { f(); } catch {} }); }; });
           return st;
         }).finally(() => { this._micP = null; });
       return this._micP;
+    },
+    // v8.4.7: nuovo AudioContext (dopo il microfono, con la sessione giusta); chi lo usa lo rilegge da App.audio.ctx
+    renewCtx(why) {
+      const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return null;
+      const old = this.ctx; this.ctx = new AC(); this.ctx.resume().catch(() => {}); this.micStats.renew = (this.micStats.renew || 0) + 1; this.micStats.renewWhy = why;
+      if (old) setTimeout(() => { try { old.close(); } catch { /* */ } }, 300);
+      return this.ctx;
+    },
+    // v8.4.7: microfono «muto» (traccia muted, o livello quasi zero): lo si riapre UNA volta con un contesto audio nuovo
+    async reacquire(why) {
+      if (this._reacq) return this._mic; this._reacq = true; this.micStats.reacq = (this.micStats.reacq || 0) + 1; this.micStats.reacqWhy = why;
+      const old = this._mic; this._mic = null;
+      if (old) old.getTracks().forEach((t) => { try { t.stop(); } catch { /* */ } });
+      try { if (navigator.audioSession) navigator.audioSession.type = 'play-and-record'; } catch { /* */ }
+      const st = await this.mic(); this.renewCtx('microfono riaperto');
+      this._micL.forEach((f) => { try { f(); } catch { /* */ } });
+      return st;
     },
     onMicLost(f) { this._micL.add(f); return () => this._micL.delete(f); },
     releaseMic() { const s = this._mic; this._mic = null; this._micL.clear(); if (s) s.getTracks().forEach((t) => { this.micStats.stops++; t.onended = null; t.stop(); }); },

@@ -24,6 +24,12 @@
   function onChunk(m, pcm, rms) {
     if (m.closed) return;
     m.level = rms;
+    // v8.4.7: microfono che consegna solo silenzio (iPhone: sessione audio sbagliata / traccia muta) -> riaperto UNA volta da solo
+    if (rms > m.peak2) m.peak2 = rms;
+    if (!m.reacq && !App.audio._reacq && m.t0) {
+      const tr = m.stream && m.stream.getAudioTracks()[0], mutedT = !!(tr && (tr.muted || tr.readyState !== 'live'));
+      if (mutedT || (performance.now() - m.t0 > 4000 && m.peak2 < 0.0012)) { m.reacq = true; App.audio.reacquire(mutedT ? 'traccia muta' : 'livello quasi zero').catch(() => {}); return; }
+    }
     if (m.muted) { m.pre = []; m.speech = null; return; }
     const her = herVoice(), now = performance.now();
     if (her && m.noBarge && !m.speech) { m.pre = []; m.hot = 0; return; } // v8.4.5: fuori chiamata non la interrompe il suo stesso eco
@@ -80,11 +86,11 @@
     async start(opts = {}) {
       App.callMic.stop();
       const m = M = { onText: opts.onText, noBarge: !!opts.noBarge, dropped: 0, closed: false, muted: false, floor: 0.008, hot: 0, pre: [], speech: null, sttMs: [], fails: 0, barges: 0, level: 0, onFail: opts.onFail, onState: opts.onState };
-      const c = ctx();
       m.stream = await App.audio.mic(); // v8.4.4: lo stesso microfono per tutta la chiamata (anche dopo il tempo reale)
       if (m.closed) return;
+      const c = ctx(); m.c = c; m.t0 = performance.now(); m.peak2 = 0; // v8.4.7: contesto audio DOPO il microfono (iPhone)
       m.src = c.createMediaStreamSource(m.stream);
-      m.offLost = App.audio.onMicLost(async () => { if (m.closed) return; try { const st = await App.audio.mic(); if (m.closed) return; try { m.src.disconnect(); } catch {} m.stream = st; m.src = c.createMediaStreamSource(st); m.src.connect(m.node); } catch (e) { console.warn('Microfono non riaperto', e); } });
+      m.offLost = App.audio.onMicLost(() => { if (m.closed) return; App.callMic.start(opts).catch((e) => { if (m.onFail) m.onFail(e); }); }); // v8.4.7: microfono riaperto -> catena audio ricostruita sul contesto nuovo
       await c.audioWorklet.addModule('/js/rt-worklet.js');
       m.node = new AudioWorkletNode(c, 'rt-capture'); m.node.port.onmessage = (e) => onChunk(m, e.data.pcm, e.data.rms);
       m.sink = c.createGain(); m.sink.gain.value = 0; m.src.connect(m.node); m.node.connect(m.sink); m.sink.connect(c.destination);

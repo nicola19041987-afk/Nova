@@ -15,7 +15,7 @@
   async function run() {
     const rows = []; let fatal = false;
     const row = (st, k, v) => { rows.push({ st, k, v }); draw(); };
-    const draw = () => { out.hidden = false; out.innerHTML = `<div class="diag-head">🩺 Diagnostica voce · v8.4.6 · ${new Date().toLocaleString('it-IT')}</div>` + rows.map((r) => `<div class="diag-row ${r.st}"><span>${r.st === 'ok' ? '✅' : r.st === 'warn' ? '⚠️' : r.st === 'run' ? '⏳' : '❌'}</span><b>${esc(r.k)}</b><span>${esc(r.v)}</span></div>`).join('') + (btn.disabled ? '' : '<button type="button" id="voice-diag-copy" class="small">📋 Copia il risultato</button>'); const c = document.getElementById('voice-diag-copy'); if (c) c.onclick = () => { const t = rows.map((r) => `${r.st.toUpperCase()} ${r.k}: ${r.v}`).join('\n'); (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(() => App.toast('Copiato'), () => App.toast('Fai uno screenshot')); }; };
+    const draw = () => { out.hidden = false; out.innerHTML = `<div class="diag-head">🩺 Diagnostica voce · v8.4.7 · ${new Date().toLocaleString('it-IT')}</div>` + rows.map((r) => `<div class="diag-row ${r.st}"><span>${r.st === 'ok' ? '✅' : r.st === 'warn' ? '⚠️' : r.st === 'run' ? '⏳' : '❌'}</span><b>${esc(r.k)}</b><span>${esc(r.v)}</span></div>`).join('') + (btn.disabled ? '' : '<button type="button" id="voice-diag-copy" class="small">📋 Copia il risultato</button>'); const c = document.getElementById('voice-diag-copy'); if (c) c.onclick = () => { const t = rows.map((r) => `${r.st.toUpperCase()} ${r.k}: ${r.v}`).join('\n'); (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(() => App.toast('Copiato'), () => App.toast('Fai uno screenshot')); }; };
     btn.disabled = true; btn.textContent = '⏳ Diagnostica in corso…';
     const AC = window.AudioContext || window.webkitAudioContext;
     const standalone = (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone;
@@ -53,16 +53,21 @@
     // 4) microfono (1,5 s) + trascrizione
     let clip = null;
     try {
-      row('run', 'Microfono', 'parla per 2 secondi…');
-      try { if (navigator.audioSession) navigator.audioSession.type = 'play-and-record'; } catch { /* */ } // v8.5.0: prima del microfono (iPhone)
-      const c = App.audio.ctx || (App.audio.ctx = new AC()); if (c.state !== 'running') await c.resume().catch(() => {});
+      // v8.4.7: sessione 'play-and-record' PRIMA del microfono, contesto audio creato/rinnovato DOPO (iPhone), 3 s con conto alla rovescia
+      row('run', 'Microfono', 'apro il microfono…');
+      let prevType = null; try { if (navigator.audioSession) { prevType = navigator.audioSession.type; navigator.audioSession.type = 'play-and-record'; } } catch { /* */ }
       const st = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } });
+      let c = App.audio.ctx;
+      if (!c || (navigator.audioSession && prevType !== 'play-and-record')) c = App.audio.renewCtx ? App.audio.renewCtx('diagnostica') : (App.audio.ctx = new AC());
+      if (c.state !== 'running') await c.resume().catch(() => {});
       const src = c.createMediaStreamSource(st); await c.audioWorklet.addModule('/js/rt-worklet.js');
       const node = new AudioWorkletNode(c, 'rt-capture'), sink = c.createGain(); sink.gain.value = 0; src.connect(node); node.connect(sink); sink.connect(c.destination);
       const chunks = []; let peak = 0; node.port.onmessage = (e) => { chunks.push(e.data.pcm); peak = Math.max(peak, e.data.rms); };
-      await new Promise((r) => setTimeout(r, 2000));
+      const tr = st.getAudioTracks()[0]; let mutedSeen = tr.muted; tr.onmute = () => { mutedSeen = true; };
+      for (let k = 3; k > 0; k--) { rows.pop(); row('run', 'Microfono', `🎙️ Parla ora… ${k}  · livello ${(peak * 100).toFixed(1)}%`); await new Promise((r) => setTimeout(r, 1000)); }
+      const info = `traccia ${tr.readyState}${mutedSeen ? ' MUTA' : ''} · contesto ${c.state} ${c.sampleRate} Hz · sessione iOS ${navigator.audioSession ? navigator.audioSession.type + (prevType && prevType !== navigator.audioSession.type ? ' (era ' + prevType + ')' : '') : 'n/d'}`;
       try { node.disconnect(); src.disconnect(); sink.disconnect(); } catch {} st.getTracks().forEach((x) => x.stop());
-      rows.pop(); row(peak > 0.01 ? 'ok' : 'warn', 'Microfono', `livello massimo ${(peak * 100).toFixed(1)}%${peak > 0.01 ? '' : ' (molto basso: hai parlato?)'} · ${c.sampleRate} Hz`);
+      rows.pop(); row(peak > 0.01 ? 'ok' : 'warn', 'Microfono', `livello massimo ${(peak * 100).toFixed(1)}%${peak > 0.01 ? '' : ' (molto basso: hai parlato?)'} · ${info}`);
       clip = chunks;
     } catch (e) { rows.pop(); row('err', 'Microfono', e.name === 'NotAllowedError' ? 'permesso negato (Impostazioni del telefono → Safari/Chrome → Microfono)' : e.message); }
     if (clip && App.callMic) try { const t = performance.now(); const r = await App.api('/api/stt', { method: 'POST', body: App.callMic._wav(clip), headers: { 'Content-Type': 'audio/wav' }, ai: true }); row('ok', 'Trascrizione xAI', `${ms(t)} · "${(r.text || '').slice(0, 60) || '(silenzio)'}"`); } catch (e) { row('warn', 'Trascrizione xAI', why(e) + ' (la chiamata classica userà il riconoscimento del telefono)'); }

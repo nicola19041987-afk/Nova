@@ -1986,7 +1986,8 @@ function closestAspect(sz) {
 const actionJobs = new Map(); // request_id -> { user, charId, aid, avatar, at }
 const actionBusy = new Set(); // charId:aid in preparazione
 const actionSpend = new Map(); // utente -> [timestamp] (al massimo ACTION_MAX_HOUR preparazioni l'ora)
-const ACTION_MAX_HOUR = Math.max(1, Number(process.env.ACTION_MAX_HOUR) || 40) // v8.5.0: tutti i movimenti normali si preparano da soli;
+const ACTION_MAX_HOUR = Math.max(1, Number(process.env.ACTION_MAX_HOUR) || 40) // v8.5.0: tutti i movimenti normali si preparano da soli
+const actionMax = (u) => (isAdmin(u) ? Math.max(ACTION_MAX_HOUR, 60) : ACTION_MAX_HOUR); // v8.4.7: 60/h per l'amministratore;
 async function saveAction(u, ch, aid, buf, kind, srcAvatar, ext, base) {
   const file = `${ch.id}-${aid}-${crypto.randomBytes(4).toString('hex')}.${ext}`;
   fs.writeFileSync(path.join(ACT_DIR(), file), buf);
@@ -2028,9 +2029,13 @@ app.post('/api/characters/:id/actions/:aid', auth, requireActivated, requireKey,
   if (!m || !fs.existsSync(avatarPath(m[1]))) return res.status(400).json({ error: 'Serve un avatar immagine (non emoji) per preparare le azioni.' });
   const key = `${ch.id}:${aid}:${base}`;
   if (actionBusy.has(key)) return res.status(409).json({ error: 'Questa azione è già in preparazione' });
-  const now = Date.now(), spent = (actionSpend.get(req.user) || []).filter((t) => now - t < 3600e3);
-  if (spent.length >= ACTION_MAX_HOUR) return res.status(429).json({ error: `Limite di ${ACTION_MAX_HOUR} preparazioni l'ora raggiunto: riprova più tardi.` });
-  spent.push(now); actionSpend.set(req.user, spent);
+  // v8.4.7: un'azione già pronta (stesso avatar) non si rifà mai
+  { const cur = (base === 'seated' ? visibleSeated(ch) : visibleActions(ch))[aid]; if (cur && cur.url && !cur.stale) return res.json({ status: 'done', kind: cur.kind || 'video', action: cur, already: true }); }
+  // v8.4.7: nel limite orario contano SOLO le generazioni riuscite (avviate da xAI); errori, rifiuti e limiti non consumano nulla
+  const now = Date.now(), spent = (actionSpend.get(req.user) || []).filter((t) => now - t < 3600e3); actionSpend.set(req.user, spent);
+  const maxH = actionMax(req.user);
+  if (spent.length >= maxH) { const mins = Math.max(1, Math.ceil((spent[0] + 3600e3 - now) / 60e3)); return res.status(429).json({ error: `Limite di ${maxH} preparazioni l'ora raggiunto: riprova tra ${mins} min.`, retryMin: mins, limit: true }); }
+  const charge = () => { spent.push(now); };
   const buf = fs.readFileSync(avatarPath(m[1]));
   const dataUrl = `data:image/${buf[0] === 0xff ? 'jpeg' : 'png'};base64,${buf.toString('base64')}`;
   actionBusy.add(key);
@@ -2043,14 +2048,14 @@ app.post('/api/characters/:id/actions/:aid', auth, requireActivated, requireKey,
       if (!r.ok && body.last_frame && r.status === 400 && /last_frame/i.test(JSON.stringify(j))) { // modello senza ultimo fotogramma fissato
         delete body.last_frame; r = await fetch(AI_BASE_URL + VIDEO_PATH, { method: 'POST', headers: aiHeaders(req.aiKey), body: JSON.stringify(body) }); j = await r.json().catch(() => ({}));
       }
-      if (r.ok && j.request_id) { actionJobs.set(j.request_id, { user: req.user, charId: ch.id, aid, avatar: srcUrl, base, at: now }); return res.json({ status: 'pending', rid: j.request_id, kind: 'video' }); }
+      if (r.ok && j.request_id) { charge(); actionJobs.set(j.request_id, { user: req.user, charId: ch.id, aid, avatar: srcUrl, base, at: now }); return res.json({ status: 'pending', rid: j.request_id, kind: 'video' }); }
       const msg = aiErrorMsg(r.status, j);
       console.error(`Azione ${aid}: video non avviato (HTTP ${r.status})`);
       if (msg === 'Contenuto rifiutato dal servizio AI' || r.status === 401) return res.status(r.status === 401 ? 400 : 422).json({ error: msg, refused: msg === 'Contenuto rifiutato dal servizio AI' }); // 400: mai 401 (farebbe uscire dall'app)
       if (![404, 405, 501].includes(r.status)) return res.status(502).json({ error: msg });
       // video non disponibile con questa chiave/servizio: ripiego sulle pose (immagini)
     }
-    const action = await poseFallback(req.user, req.aiKey, ch, aid, srcUrl, buf, base);
+    const action = await poseFallback(req.user, req.aiKey, ch, aid, srcUrl, buf, base); charge();
     res.json({ status: 'done', kind: 'pose', action });
   } catch (e) {
     const refused = e.message === 'Contenuto rifiutato dal servizio AI';
@@ -2066,9 +2071,10 @@ app.get('/api/characters/:id/actions/:aid/status/:rid', auth, requireKey, async 
     if (!r.ok) { const msg = aiErrorMsg(r.status, j); if (r.status !== 429 && r.status < 500) actionJobs.delete(req.params.rid); return res.status(r.status === 429 || r.status >= 500 ? 502 : 422).json({ error: msg, refused: msg === 'Contenuto rifiutato dal servizio AI' }); }
     if (j.status === 'failed' || j.status === 'expired') {
       actionJobs.delete(req.params.rid);
+      { const sp = actionSpend.get(job.user) || []; const i = sp.indexOf(job.at); if (i >= 0) sp.splice(i, 1); } // v8.4.7: clip fallita: non conta nel limite
       const raw = JSON.stringify(j.error || j);
       const refused = /moderat|safety|policy|content|nsfw|reject|refus|violat|block/i.test(raw);
-      return res.json({ status: 'failed', refused, error: refused ? 'Contenuto rifiutato dal servizio AI' : `Video non riuscito (${j.status})` });
+      return res.json({ status: 'failed', refused, error: refused ? 'Contenuto rifiutato dal servizio AI' : `Clip video non riuscita da xAI (${j.status === 'expired' ? 'scaduta' : 'fallita'})${raw && raw.length < 300 && raw !== '{}' ? ': ' + scrubSecrets(raw).slice(0, 160) : ''}` }); // v8.4.7: motivo vero
     }
     if (j.status !== 'done' || !j.video || !j.video.url) return res.json({ status: j.status || 'pending' });
     actionJobs.delete(req.params.rid);
