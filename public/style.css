@@ -528,7 +528,7 @@ dialog{background:#1c1c1e;border:0}
    respiro (scala ancorata in basso), leggero ondeggiamento e "bob" mentre parla. Funziona anche se iOS (Risparmio energetico)
    rallenta i fotogrammi, se WebGL non c'è o se il disegno si blocca. Proprietà singole (scale/rotate/translate): si sommano alla
    transform già usata per centrare il canvas. */
-@keyframes nv-breathe{0%,100%{scale:1 1}50%{scale:1.005 1.012}}
+@keyframes nv-breathe{0%,100%{scale:1 1}50%{scale:1.006 1.016}}
 @keyframes nv-sway{0%,100%{rotate:-.18deg}50%{rotate:.18deg}}
 @keyframes nv-talk{0%,100%{translate:0 0}35%{translate:0 -.32%}70%{translate:0 .08%}}
 @keyframes nv-breathe2{0%,100%{scale:1 1}50%{scale:1.008 1.02}}
@@ -554,3 +554,69 @@ body.in-call #act-menu,body.in-call #scene-menu{display:none!important}
 #act-choices .st.refused{color:#ff9f0a;font-weight:600}
 #act-choices .act-all{border-bottom:1px solid var(--line);padding-bottom:6px;margin-bottom:4px}
 body.voice-live #stage:fullscreen #act-btn,body.voice-live #stage:fullscreen #scene-btn,body.voice-live #stage:fullscreen #act-menu,body.voice-live #stage:fullscreen #scene-menu{display:none!important}
+
+/* ===================== v8.5.0 — stile WhatsApp classico (niente telefono finto) ===================== */
+:root{--bg:#0b141a;--card:#111b21;--card2:#202c33;--line:#222d34;--text:#e9edef;--muted:#8696a0;--accent:#00a884;--accent2:#00a884;--green:#00a884;--danger:#f15c6d;--bar:#202c33;--sb:0px}
+html,body{background:#0b141a;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;letter-spacing:0}
+.ios-status,.home,.home-ind,#home-link,.home-link{display:none!important}
+body.sb-on{--sb:0px}
+/* intestazione verde-scura come WhatsApp */
+.topbar{background:#202c33;-webkit-backdrop-filter:none;backdrop-filter:none;border-bottom:0;padding:calc(env(safe-area-inset-top) + 8px) 14px 8px;min-height:56px;box-shadow:0 1px 3px #0006}
+body:not(.wa-conv) .topbar h2{position:static;opacity:1;text-align:left;font-size:21px;font-weight:700;color:#e9edef;margin:0}
+body:not(.wa-conv) .wa-title{flex:1}
+body:not(.wa-conv) .wa-status{display:none}
+body:not(.wa-conv) #who{color:var(--muted);font-size:13px}
+.large-title{display:none!important}
+main{padding:0 0 calc(80px + env(safe-area-inset-bottom))}
+#tab-chat,#tab-calls,#tab-images,#tab-account,#tab-feed{padding:8px 12px 0}
+body[data-tab=conv] main{padding:0}
+/* elenco chat */
+#char-list{background:none;border-radius:0;margin:0 -12px}
+#char-list li{padding:10px 16px;gap:14px;background:none}
+#char-list li:active{background:#202c33}
+#char-list li+li::before{left:82px;border-top:1px solid #222d34}
+#char-list li .avatar{width:52px;height:52px;border-radius:50%}
+#char-list li .grow b{font-size:17px;font-weight:500;color:#e9edef}
+#char-list li .grow span{color:#8696a0;font-size:14px}
+#char-list li [data-edit]{opacity:.55;font-size:16px}
+.new-row{position:fixed;right:16px;bottom:calc(76px + env(safe-area-inset-bottom));z-index:6;margin:0}
+#new-char{width:auto;border-radius:16px;padding:15px 18px;background:#00a884;color:#0b141a;font-weight:700;box-shadow:0 4px 12px #0008}
+.preset-chip,.admin-note,.card{background:#111b21}
+.card{border:1px solid #1f2c33}
+.preset-row>span{color:#00a884;font-weight:600;font-size:13px;text-transform:uppercase;letter-spacing:.04em}
+/* barra schede in basso: icona attiva su pillola verde */
+.tabbar{background:#111b21;-webkit-backdrop-filter:none;backdrop-filter:none;border-top:1px solid #222d34}
+.tabbar button{color:#aebac1;padding:8px 0 6px;gap:4px}
+.tabbar button svg{width:24px;height:24px;padding:4px 18px;border-radius:16px;box-sizing:content-box;transition:background .2s}
+.tabbar button span{font-size:12px;font-weight:500}
+.tabbar button.active{color:#e9edef}
+.tabbar button.active svg{background:#103529;color:#00d9a6}
+/* controlli */
+button.primary{background:#00a884;color:#0b141a}
+button.link{color:#00a884}
+input:focus,select:focus,textarea:focus{outline:2px solid #00a88466}
+input,select,textarea{background:#202c33}
+.seg{background:#111b21}
+.seg button.on{background:#103529;color:#00d9a6}
+.switch input[type=checkbox]:checked{background:#00a884}
+.chips button.sel,.scene-menu button.on,.voicebar button.on,.post .actions .liked{background:#00a884;color:#0b141a}
+/* conversazione */
+#tab-conv .msg.user{background:#005c4b}
+#tab-conv .msg.assistant{background:#202c33}
+#stage.speaking #avatar-canvas,body.wa-conv #stage.speaking #avatar-canvas{box-shadow:0 0 18px #00a88440}
+body.wa-conv #avatar-canvas{box-shadow:none}
+/* chiamate */
+.call-btn.green{background:#00a884!important}
+.call-btn.end{background:#f15c6d!important}
+/* v8.5.0: tasto 🔥 Hot */
+.stage-tools .hot-btn{width:auto!important;padding:0 12px!important;border-radius:20px!important;background:linear-gradient(135deg,#ff5f3a,#d6246e)!important;font-size:16px!important;display:flex;align-items:center;gap:3px}
+.stage-tools .hot-btn span{font-size:13px;font-weight:700}
+.call-btn.hot{background:linear-gradient(135deg,#ff5f3a,#d6246e)!important}
+body.voice-live #stage.fs #hot-btn,body.voice-live #stage:fullscreen #hot-btn{display:flex!important}
+.sheet{z-index:200}
+.auto-prep{position:fixed;left:12px;bottom:calc(80px + env(safe-area-inset-bottom));z-index:7;background:#202c33;color:#e9edef;border-radius:14px;padding:6px 12px;font-size:12.5px;overflow:hidden;box-shadow:0 2px 8px #0007;pointer-events:none}
+.auto-prep i{position:absolute;left:0;bottom:0;height:3px;background:#00a884;transition:width .4s}
+.auto-prep span{position:relative}
+body[data-tab=conv] .auto-prep{bottom:calc(70px + env(safe-area-inset-bottom));opacity:.85}
+body.in-call .auto-prep{display:none}
+body[data-tab=conv] .auto-prep{top:calc(env(safe-area-inset-top) + 64px);bottom:auto}

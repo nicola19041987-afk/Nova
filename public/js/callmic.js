@@ -8,7 +8,7 @@
 (function () {
   const RATE = 24000, CH_MS = 100;
   const AC = window.AudioContext || window.webkitAudioContext;
-  const P = { pre: 3, startN: 2, endMs: 600, minMs: 450, maxMs: 25000, bargeN: 3 }; // v8.4.5: frasi < 0,45 s di voce scartate
+  const P = { pre: 3, startN: 2, endMs: 550, minMs: 450, maxMs: 25000, bargeN: 3 }; // v8.4.5: frasi < 0,45 s di voce scartate
   let M = null;
   const SHORT_OK = /^(s[iì]|no|ok|okay|ciao|grazie|certo|dai|boh|forse|esatto|perfetto|brava|bravo|bene|male|cosa|come|chi|perch[eé]|dove|quando|aspetta|basta|stop|ehi|ehm|allora|vero|davvero|sicuro|infatti|appunto|giusto|ecco|tranquilla|scusa|buonanotte|buongiorno|buonasera|benissimo|ottimo|figurati|magari|mai|sempre|prego|pronto|oddio|wow|mh+|ah+|oh+|eh+)$/i;
   const ctx = () => { if (!App.audio.ctx) App.audio.ctx = new AC(); if (App.audio.ctx.state !== 'running') App.audio.ctx.resume().catch(() => {}); return App.audio.ctx; };

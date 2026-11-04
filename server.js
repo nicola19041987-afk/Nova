@@ -1416,7 +1416,7 @@ app.post('/api/chats/:id', auth, requireActivated, (req, res, next) => (req.body
   // parola chiave della modalità adulti: confrontata qui sul server (hash), MAI salvata in chat né inviata a xAI
   const kw = text && !photo ? await keywordMatch(req.user, text) : null;
   if (kw) return res.json({ keyword: true, token: kw, question: 'Vuoi attivare la modalità adulti? Rispondi sì o no', activated: isActivated(req.user) });
-  if (!ch.memorySeededAt) await seedBaseMemory(ch).catch(() => {});
+  if (!ch.memorySeededAt) seedBaseMemory(ch).catch(() => {}); // v8.5.0: in background, mai prima della risposta
   const mine = await appendMsg(id, { role: 'user', author: req.user, content: text, extra: { ...(req.body.noAI === true ? { noAI: true } : {}), ...(photo ? { photo } : {}) } });
   if (req.body.noAI === true) return res.json({ message: pubMsg(mine, ch) });
   if (typing.has(id) && Date.now() - typing.get(id).at < 120e3) {
@@ -1914,12 +1914,20 @@ const ACTIONS = {
   tosse: { label: 'Tossisce', emoji: '😮‍💨', gesture: true, motion: 'she turns her head slightly to one side and gives a small natural cough into her loosely closed hand, once or twice, then lowers the hand and looks back at the camera with a small apologetic smile', pose: 'she is coughing softly into her hand, head turned slightly aside' },
   starnuto: { label: 'Starnutisce', emoji: '🤧', gesture: true, motion: 'she feels a sneeze coming, her eyes half close and she takes a short breath, then she sneezes softly into the crook of her elbow turned slightly aside, then looks back at the camera with an embarrassed little smile', pose: 'she is about to sneeze, eyes half closed, hand near her face' },
   bacio: { label: 'Manda un bacio', emoji: '😘', motion: 'she blows a kiss to the camera with her hand and smiles', pose: 'she is blowing a kiss to the camera with her hand' },
+  // v8.5.0: altri movimenti naturali (si preparano da soli in background)
+  sorriso: { label: 'Sorride', emoji: '😊', gesture: true, motion: 'she breaks into a warm genuine smile that reaches her eyes, holds it softly for a moment, then relaxes back to a gentle expression', pose: 'she is smiling warmly and genuinely at the camera' },
+  annuisce: { label: 'Annuisce', emoji: '🙂‍↕️', gesture: true, motion: 'she nods gently two or three times while listening, with an attentive soft smile, then holds still looking at the camera', pose: 'she is nodding attentively with a soft smile' },
+  inclina: { label: 'Inclina la testa', emoji: '🤨', gesture: true, motion: 'she tilts her head slightly to one side with a curious, amused look, holds it for a moment, then straightens up', pose: 'she is tilting her head slightly to one side with a curious amused look' },
+  guarda: { label: 'Guarda altrove e torna', emoji: '👀', gesture: true, motion: 'her eyes and head drift away to the side as if something caught her attention for a second, then she looks back at the camera with a small smile', pose: 'she is glancing to the side for a moment' },
+  sbatte: { label: 'Sbatte le ciglia', emoji: '😌', gesture: true, motion: 'she blinks naturally a few times with varied rhythm, one slow soft blink and two quick ones, keeping a relaxed expression and looking at the camera', pose: 'she is mid-blink with a relaxed soft expression' },
+  avvicina: { label: 'Si avvicina', emoji: '🫣', motion: 'she leans forward toward the camera with interest, as if to listen more closely, smiles, then slowly leans back to the starting pose', pose: 'she is leaning forward toward the camera with interest and a smile' },
+  ciao: { label: 'Saluta per andare', emoji: '🙋‍♀️', motion: 'she smiles a little wistfully and waves goodbye with her hand at the camera, then lowers the hand', pose: 'she is waving goodbye at the camera with a soft smile' },
   spoglia: { adult: true, label: 'Si spoglia', emoji: '🔥', motion: 'the fictional adult woman (25+) slowly and playfully takes off her top, sensual and confident, looking at the camera', pose: 'the fictional adult woman (25+) is slowly taking off her top, sensual and confident' },
   giochi: { adult: true, label: 'Scena intima con sex toy', emoji: '🔞', motion: 'solo intimate scene: the fictional adult woman (25+), alone, sensually uses an adult sex toy, tasteful cinematic lighting', pose: 'solo intimate scene: the fictional adult woman (25+), alone, sensually holding an adult sex toy, tasteful cinematic lighting' },
 };
 const ACT_DIR = () => sharedDir('actions');
 // v8.3: gesti spontanei (anche nella scena seduta al tavolo): pochi, naturali, mai per adulti
-const GESTURE_IDS = ['capelli', 'tosse', 'starnuto', 'ride'];
+const GESTURE_IDS = ['capelli', 'tosse', 'starnuto', 'ride', 'sorriso', 'annuisce', 'inclina', 'guarda', 'sbatte'];
 ACTIONS.capelli.gesture = true; ACTIONS.ride.gesture = true;
 const SEATED_ROOM = 'soggiorno';
 const seatedUrl = (c) => { const v = c && c.scenes && c.scenes[SEATED_ROOM]; return v && AV_RE.test(String(v.url || '')) ? v.url : null; };
@@ -1978,7 +1986,7 @@ function closestAspect(sz) {
 const actionJobs = new Map(); // request_id -> { user, charId, aid, avatar, at }
 const actionBusy = new Set(); // charId:aid in preparazione
 const actionSpend = new Map(); // utente -> [timestamp] (al massimo ACTION_MAX_HOUR preparazioni l'ora)
-const ACTION_MAX_HOUR = Math.max(1, Number(process.env.ACTION_MAX_HOUR) || 24);
+const ACTION_MAX_HOUR = Math.max(1, Number(process.env.ACTION_MAX_HOUR) || 40) // v8.5.0: tutti i movimenti normali si preparano da soli;
 async function saveAction(u, ch, aid, buf, kind, srcAvatar, ext, base) {
   const file = `${ch.id}-${aid}-${crypto.randomBytes(4).toString('hex')}.${ext}`;
   fs.writeFileSync(path.join(ACT_DIR(), file), buf);

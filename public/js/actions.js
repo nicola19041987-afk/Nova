@@ -4,9 +4,9 @@
 (function () {
   const av = () => App.avatarConv;
   const TAG = /\s*\[azione:\s*([a-zà-ù]+)\s*\]/gi;
-  const GESTURE_IDS = ['capelli', 'tosse', 'starnuto', 'ride'];
+  const GESTURE_IDS = ['capelli', 'tosse', 'starnuto', 'ride', 'sorriso', 'annuisce', 'inclina', 'guarda', 'sbatte'];
   const AUTO_MIN_GAP = 150e3, AUTO_IDLE = 45e3, AUTO_MAX_HOUR = 8;
-  let info = { catalog: [], adult: false, video: true }, lastActivity = Date.now(), autoLog = [], lastAuto = 0, running = null;
+  let info = { catalog: [], adult: false, video: true }, lastActivity = Date.now(), autoLog = [], lastAuto = 0, running = null, autoQ = [], autoBusy = new Set(), autoDone = 0, autoTotal = 0, autoFail = 0, prepLog = [];
   const poseLm = new Map(); // url -> punti del viso trovati sul telefono
 
   const ready = (ch) => Object.entries((ch && ch.actions) || {}).filter(([, a]) => !a.stale);
@@ -32,7 +32,61 @@
     async load() {
       try { info = await App.api('/api/actions'); } catch { /* offline */ }
       const A = av(); if (!info.adult && A.act && A.act.adult) A.stopAction(true); // modalità adulti spenta: via subito
-      this.render();
+      this.render(); this.autoAll();
+    },
+    // ---- v8.5.0: preparazione AUTOMATICA in background di tutti i movimenti normali ----
+    // Dopo la creazione di un personaggio, il cambio foto e alla prima apertura: coda (2 alla volta), progressi nella
+    // pillola in basso, rifiuti di xAI segnati e mai ritentati, nulla blocca l'interfaccia. Le azioni per adulti NON
+    // partono da sole: restano esattamente come prima (solo a mano, solo se sbloccate per entrambi).
+    autoMissing(ch) {
+      if (!ch || !/^\/api\/avatars\//.test(ch.avatar || '') || !info.catalog.length) return [];
+      return info.catalog.filter((c) => !c.adult).map((c) => c.id).filter((id) => { const a = ch.actions && ch.actions[id]; return (!a || a.stale || !a.url) && !refused()[refKey(ch, 'avatar', id)]; });
+    },
+    autoAll() {
+      if (App.ls.get('autoPrep', true) === false || !App.key() || (App.isAdmin && !App.isAdmin())) return;
+      (App.chars || []).forEach((ch) => this.autoMissing(ch).forEach((id) => { const k = ch.id + '|' + id + '|' + ch.avatar; if (!autoQ.some((q) => q.k === k) && !autoBusy.has(k)) autoQ.push({ k, cid: ch.id, id }); }));
+      // il personaggio aperto ha la precedenza
+      if (App.current) autoQ.sort((a, b) => (b.cid === App.current.id) - (a.cid === App.current.id));
+      autoTotal = Math.max(autoTotal, autoDone + autoQ.length + autoBusy.size); this.autoPump();
+    },
+    autoPump() {
+      while (autoBusy.size < 2 && autoQ.length) { const q = autoQ.shift(); autoBusy.add(q.k); this.autoOne(q).finally(() => { autoBusy.delete(q.k); autoDone++; this.autoPill(); this.autoPump(); }); }
+      this.autoPill();
+    },
+    async autoOne(q) {
+      const ch = App.charById(q.cid); if (!ch) return;
+      const m = meta(q.id);
+      try {
+        let r = await App.api(`/api/characters/${ch.id}/actions/${q.id}`, { method: 'POST', ai: true, body: {} });
+        const t0 = Date.now();
+        while (r.status === 'pending') {
+          if (Date.now() - t0 > 6 * 60e3) throw new Error('tempo scaduto');
+          await new Promise((z) => setTimeout(z, 5000));
+          r = await App.api(`/api/characters/${ch.id}/actions/${q.id}/status/${encodeURIComponent(r.rid)}`, { ai: true });
+          if (r.status === 'failed') throw Object.assign(new Error(r.error || 'non riuscita'), { refused: r.refused });
+        }
+        setRefused(refKey(ch, 'avatar', q.id), false);
+        if (r.action) { ch.actions = { ...(ch.actions || {}), [q.id]: r.action }; if (App.current && App.current.id === ch.id) { App.current.actions = { ...(App.current.actions || {}), [q.id]: r.action }; this.render(); } }
+        prepLog.push({ at: Date.now(), id: q.id, ok: true });
+      } catch (e) {
+        if (/Limite di|già in preparazione/i.test(e.message || '')) { // limite orario o già in corso: si riprova più tardi, non è un rifiuto
+          autoQ.length = 0; if (!this._retryT) this._retryT = setTimeout(() => { this._retryT = 0; this.autoAll(); }, 12 * 60e3); return;
+        }
+        const isRef = !!(e.refused || /rifiutat/i.test(e.message || ''));
+        if (isRef) setRefused(refKey(ch, 'avatar', q.id), true); // rifiutata: segnata, mai ritentata in automatico
+        else autoFail++;
+        prepLog.push({ at: Date.now(), id: q.id, ok: false, refused: isRef, err: String(e.message || e).slice(0, 120) });
+        if (/chiave|401|403|crediti|402/i.test(e.message || '')) { autoQ.length = 0; } // chiave o crediti: si ferma la coda
+      }
+    },
+    queueText() { const left = autoQ.length + autoBusy.size; return left ? `🎭 Preparo i movimenti in background: ${autoDone}/${autoTotal}…` : '🎭 Nessuna azione pronta: si preparano da sole appena c\'è la chiave xAI'; },
+    autoState() { return { queued: autoQ.length, busy: autoBusy.size, done: autoDone, total: autoTotal, fail: autoFail, log: prepLog.slice(-20) }; },
+    autoPill() {
+      let el = document.getElementById('auto-prep');
+      const left = autoQ.length + autoBusy.size;
+      if (!el) { el = document.createElement('div'); el.id = 'auto-prep'; el.className = 'auto-prep'; document.body.appendChild(el); }
+      el.hidden = !left; if (!left) { autoTotal = 0; autoDone = 0; return; }
+      el.innerHTML = `<i style="width:${Math.round((autoDone / Math.max(1, autoTotal)) * 100)}%"></i><span>🎭 Movimenti ${autoDone}/${autoTotal}</span>`;
     },
     refresh() { this.load(); },
     // riproduce un'azione pronta del personaggio aperto (mai durante la scena cinematografica o se ne sta già facendo una)
@@ -78,6 +132,7 @@
       $('#act-info').textContent = !ch ? '' : !/^\/api\/avatars\//.test(ch.avatar || '') ? 'Serve un avatar immagine per le azioni.' : n ? `${n} azioni pronte${acts.length > n ? ` · ${acts.length - n} da rifare (avatar cambiato)` : ''}` : 'Nessuna azione pronta: usa «Prepara azioni».';
       // v8.3.1: modalità adulti attiva solo per uno dei due -> spiega cosa manca (le azioni per adulti restano nascoste)
       if (App.me && App.settings && App.settings.adultMode && !info.adult && App.adultStatus && !App.adultStatus.chat) $('#act-info').textContent += ' · 🔞 ' + App.adultText(App.adultStatus, false);
+      if (autoQ.length + autoBusy.size) $('#act-info').textContent += ' · ' + this.queueText(); // v8.5.0
       $('#act-btn').classList.toggle('on', !!n);
       $('#act-auto').checked = App.ls.get('actAuto', true) !== false;
     },
@@ -189,6 +244,18 @@
     e.stopPropagation();
     const b = e.target.closest('[data-act]'); if (b) { $('#act-menu').hidden = true; App.actions.play(b.dataset.act); }
   });
+  // v8.5.0: tasto 🔥 Hot di nuovo visibile (anche a schermo intero e in videochiamata): apre le azioni pronte.
+  // Non cambia nulla della modalità adulti: elenca solo le azioni che esistono già (quelle per adulti esistono solo se sbloccate per entrambi).
+  async function hot(e) {
+    if (e) e.stopPropagation(); App.actions.activity();
+    const ch = App.current; if (!ch) return;
+    const list = (seatedOn() ? readySeated(ch) : ready(ch).filter(([, a]) => a && a.url)).sort(([a], [b]) => (meta(b).adult ? 1 : 0) - (meta(a).adult ? 1 : 0));
+    if (!list.length) { App.toast(App.actions.queueText ? App.actions.queueText() : '🎭 Le azioni si stanno preparando da sole…', 3000); return; }
+    const v = await App.sheet('🔥 Hot', list.map(([id]) => { const m = meta(id); return { label: `${m.emoji} ${m.label}`, value: id }; }));
+    if (v) App.actions.play(v);
+  }
+  $('#hot-btn').addEventListener('click', hot);
+  $('#call-hot').addEventListener('click', hot);
   $('#act-auto').addEventListener('change', (e) => App.ls.set('actAuto', e.target.checked));
   $('#act-prepare').addEventListener('click', () => { $('#act-menu').hidden = true; App.actions.openPrepare(); });
   $('#act-go').addEventListener('click', () => App.actions.prepare());
@@ -200,3 +267,6 @@
   setInterval(() => App.actions.tick(), 5000);
   setInterval(() => App.actions.cueTick(), 400);
 })();
+
+// v8.5.0: dopo ogni ricarica dei personaggi (creazione, nuova foto, ripristino) la coda riparte da sola
+(function () { const orig = App.loadChars; App.loadChars = async (...a) => { const r = await orig(...a); try { App.actions && App.actions.autoAll(); } catch { /* */ } return r; }; })();

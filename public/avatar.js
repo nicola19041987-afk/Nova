@@ -531,12 +531,12 @@
         let src = img, headDy = 0; const trust = this.faceTrusted();
         if (trust && !this._safe && this.breathOn !== false && img.naturalWidth) {
           if (!this.breather) this.breather = new Breather();
-          if (this.breather.ok && this.breather.setup(img, this.lm)) { const amp = this.breathAmp || 1; src = this.breather.render(A.vol, amp, A.nod || 0); headDy = this.breather.headDy(A.vol, amp, A.nod || 0); }
+          if (this.breather.ok && this.breather.setup(img, this.lm)) { const amp = this.breathAmp || 1.35; src = this.breather.render(A.vol, amp, A.nod || 0); headDy = this.breather.headDy(A.vol, amp, A.nod || 0); }
         }
         // v8.4.3: senza respiro WebGL (o con punti incerti) il respiro dell'immagine intera è VISIBILE (prima 0,25%: sembrava ferma),
         // più un leggero "sollevarsi" mentre parla; solo verticale, ancorato in basso: la cornice resta ferma, niente ondeggiamento laterale
         const br = Math.max(-1, Math.min(1, A.breath)), talk = this.speaking ? Math.min(1, this.mouth) : 0;
-        const Y1b = E.y0 + E.h, bs = src === img ? 1 + (trust ? 0.003 : 0.0045) * (1 + br) + talk * 0.003 : 1; // sempre ≥ 1 e ritagliato: nessun bordo vuoto
+        const Y1b = E.y0 + E.h, bs = src === img ? 1 + (trust ? 0.005 : 0.0065) * (1 + br) + talk * 0.003 : 1; // v8.5.0: più visibile // sempre ≥ 1 e ritagliato: nessun bordo vuoto
         ctx.save(); ctx.beginPath(); ctx.rect(E.x0, E.y0, E.w, E.h); ctx.clip();
         const cxb = E.x0 + E.w / 2; ctx.translate(cxb, Y1b); ctx.scale(src === img ? 1 + (bs - 1) * 0.25 : 1, bs); ctx.translate(-cxb, -Y1b);
         ctx.drawImage(src, E.x0, E.y0, E.w, E.h);
@@ -1044,7 +1044,7 @@ vec2 src=(p-vec2(0.0,dy)-dc)/uR;vec4 c=texture2D(uI,clamp(src,vec2(0.0),vec2(1.0
       if (b.table && Number.isFinite(b.table.y)) { const ty = (b.table.y * s + oy) * gs; if (ty > shY + 0.8 * ed) wY = Math.min(wY, ty); }
       const cY = shY + Math.min(1.1 * ed, (wY - shY) * 0.35);
       this.g = { W, H, gs, ed, fx, chinY, shY, shHW, shX, wY, cX: shX, cY, cRx: shHW * 0.8, cRy: shHW * 0.62,
-        rise: Math.max(0.055 * ed, 0.0016 * H), exp: 0.011, k: (s * gs) / 1000 };
+        rise: Math.max(0.095 * ed, 0.0032 * H), exp: 0.016, /* v8.5.0: respiro ben visibile (petto e spalle) */ k: (s * gs) / 1000 };
       // maschera della persona (facoltativa): ferma lo sfondo
       const m = b.mask;
       if (m !== this.maskSrc) {

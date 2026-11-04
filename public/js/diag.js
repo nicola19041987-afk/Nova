@@ -15,7 +15,7 @@
   async function run() {
     const rows = []; let fatal = false;
     const row = (st, k, v) => { rows.push({ st, k, v }); draw(); };
-    const draw = () => { out.hidden = false; out.innerHTML = `<div class="diag-head">🩺 Diagnostica voce · v8.4.5 · ${new Date().toLocaleString('it-IT')}</div>` + rows.map((r) => `<div class="diag-row ${r.st}"><span>${r.st === 'ok' ? '✅' : r.st === 'warn' ? '⚠️' : r.st === 'run' ? '⏳' : '❌'}</span><b>${esc(r.k)}</b><span>${esc(r.v)}</span></div>`).join('') + (btn.disabled ? '' : '<button type="button" id="voice-diag-copy" class="small">📋 Copia il risultato</button>'); const c = document.getElementById('voice-diag-copy'); if (c) c.onclick = () => { const t = rows.map((r) => `${r.st.toUpperCase()} ${r.k}: ${r.v}`).join('\n'); (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(() => App.toast('Copiato'), () => App.toast('Fai uno screenshot')); }; };
+    const draw = () => { out.hidden = false; out.innerHTML = `<div class="diag-head">🩺 Diagnostica voce · v8.4.6 · ${new Date().toLocaleString('it-IT')}</div>` + rows.map((r) => `<div class="diag-row ${r.st}"><span>${r.st === 'ok' ? '✅' : r.st === 'warn' ? '⚠️' : r.st === 'run' ? '⏳' : '❌'}</span><b>${esc(r.k)}</b><span>${esc(r.v)}</span></div>`).join('') + (btn.disabled ? '' : '<button type="button" id="voice-diag-copy" class="small">📋 Copia il risultato</button>'); const c = document.getElementById('voice-diag-copy'); if (c) c.onclick = () => { const t = rows.map((r) => `${r.st.toUpperCase()} ${r.k}: ${r.v}`).join('\n'); (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(() => App.toast('Copiato'), () => App.toast('Fai uno screenshot')); }; };
     btn.disabled = true; btn.textContent = '⏳ Diagnostica in corso…';
     const AC = window.AudioContext || window.webkitAudioContext;
     const standalone = (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone;
@@ -54,6 +54,7 @@
     let clip = null;
     try {
       row('run', 'Microfono', 'parla per 2 secondi…');
+      try { if (navigator.audioSession) navigator.audioSession.type = 'play-and-record'; } catch { /* */ } // v8.5.0: prima del microfono (iPhone)
       const c = App.audio.ctx || (App.audio.ctx = new AC()); if (c.state !== 'running') await c.resume().catch(() => {});
       const st = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } });
       const src = c.createMediaStreamSource(st); await c.audioWorklet.addModule('/js/rt-worklet.js');

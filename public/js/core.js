@@ -82,3 +82,24 @@ App.avatarHtml = (ch, cls = 'avatar') => {
 };
 App.charById = (id) => App.chars.find((c) => c.id === id);
 App.loadChars = async () => { App.chars = await App.api('/api/characters'); };
+
+// v8.5.0: iPhone — «AudioSession category is not compatible with audio capture». Prima di OGNI getUserMedia con audio la sessione
+// audio diventa 'play-and-record' (e resta così finché il microfono è aperto); se l'errore arriva comunque, si reimposta e si riprova una volta.
+(function () {
+  App.micTracks = new Set();
+  App.micAnyLive = () => { for (const t of App.micTracks) { if (t.readyState === 'live') return true; App.micTracks.delete(t); } return false; };
+  const md = navigator.mediaDevices; if (!md || !md.getUserMedia || md._nvPatched) return;
+  const orig = md.getUserMedia.bind(md); md._nvPatched = true;
+  const rec = () => { try { if (navigator.audioSession && navigator.audioSession.type !== 'play-and-record') navigator.audioSession.type = 'play-and-record'; } catch { /* browser senza audioSession */ } };
+  md.getUserMedia = async function (c) {
+    const wantsAudio = !!(c && c.audio);
+    if (wantsAudio) { rec(); App.micOpen = (App.micOpen || 0) + 1; }
+    try {
+      const track = (st) => { if (wantsAudio && st) st.getAudioTracks().forEach((t) => App.micTracks.add(t)); return st; };
+      try { return track(await orig(c)); } catch (e) {
+        if (wantsAudio && /AudioSession|category/i.test(String((e && e.message) || e))) { rec(); await new Promise((z) => setTimeout(z, 150)); return track(await orig(c)); }
+        throw e;
+      }
+    } finally { if (wantsAudio) App.micOpen = Math.max(0, App.micOpen - 1); }
+  };
+})();

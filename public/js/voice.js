@@ -25,7 +25,7 @@
     unlocked: false, ctx: null, inCall: false,
     // v8.4.1: per tutta la chiamata una sola sessione audio iOS "play-and-record" (microfono + voce insieme): cambiarla a ogni frase
     // faceva sentire il "suono di attacco e stacco". A chiamata finita si torna a "playback" (suona anche col tasto silenzioso).
-    callSession(on) { this.inCall = !!on; try { if (navigator.audioSession) navigator.audioSession.type = on ? 'play-and-record' : 'playback'; } catch {} },
+    callSession(on) { this.inCall = !!on; try { if (navigator.audioSession) navigator.audioSession.type = (on || this.micLive() || this._micP || (App.micAnyLive && App.micAnyLive())) ? 'play-and-record' : 'playback'; } catch {} }, // v8.5.0: mai 'playback' col microfono aperto
     // v8.4.4: UN solo microfono per tutta la chiamata (vocale e video, tempo reale e classica): un solo getUserMedia, mai fermato
     // fra un turno e l'altro né passando da vocale a video; si chiude solo riattaccando (releaseMic). Su iPhone ogni start/stop
     // del microfono è il "suono di attacco e stacco". Se il sistema lo chiude da solo (traccia «ended»), lo si riapre e si avvisa chi ascolta.
@@ -54,7 +54,7 @@
           const b = this.ctx.createBuffer(1, 1, 22050), src = this.ctx.createBufferSource(); src.buffer = b; src.connect(this.ctx.destination); src.start(0); // buffer muto
         }
       } catch {}
-      try { if (!this.inCall && navigator.audioSession && navigator.audioSession.type !== 'playback') navigator.audioSession.type = 'playback'; } catch {} // iOS 17+: suona anche col tasto silenzioso (mai durante una chiamata)
+      try { if (!this.inCall && !this.micLive() && !this._micP && !App.micOpen && !(App.micAnyLive && App.micAnyLive()) && navigator.audioSession && navigator.audioSession.type !== 'playback') navigator.audioSession.type = 'playback'; } catch {} // iOS 17+: suona anche col tasto silenzioso (mai durante una chiamata)
       if (this.inCall) { this.unlocked = true; App.audio.hint(false); return; } // v8.4.4: in chiamata solo l'AudioContext condiviso
       try {
         const a = NX.audio();

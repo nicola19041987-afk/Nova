@@ -5,7 +5,8 @@
   const pad = (n) => String(n).padStart(2, '0');
   // ---------- barra di stato ----------
   function statusBar() {
-    const on = !standalone(); document.body.classList.toggle('sb-on', on); // nell'app installata si vede quella vera di iOS
+    const on = false; document.body.classList.remove('sb-on'); // v8.5.0: niente barra di stato finta (stile WhatsApp, senza telefono)
+    return; // nell'app installata si vede quella vera di iOS
     const tick = () => {
       const d = new Date(); $('#sb-time').textContent = `${d.getHours()}:${pad(d.getMinutes())}`;
       $('#sb-wifi').classList.toggle('off', !navigator.onLine);
@@ -29,10 +30,10 @@
     $('#wc-sub').textContent = (h < 6 ? 'Buonanotte' : h < 13 ? 'Buongiorno' : h < 18 ? 'Buon pomeriggio' : 'Buonasera') + (who ? `, ${who}` : '');
   }
   App.home = {
-    show() { const h = $('#home'); clock(); h.hidden = false; document.body.classList.add('home-on'); },
+    show() { if (App.openTab) App.openTab('chat'); }, // v8.5.0: Home finta rimossa
     hide() { const h = $('#home'); if (!h || h.hidden) return; h.hidden = true; document.body.classList.remove('home-on'); },
     // all'avvio si parte dalla Home (i test automatici partono direttamente da Chat)
-    boot() { if (!navigator.webdriver && !App.ls.get('skipHome', false)) App.home.show(); },
+    boot() { /* v8.5.0: niente Home finta, si parte direttamente dalle Chat */ },
   };
   $('#home').addEventListener('click', (e) => {
     const b = e.target.closest('.app-ic'); if (!b) return;

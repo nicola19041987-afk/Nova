@@ -44,7 +44,7 @@
     $('#call-kind').textContent = mode === 'voice' ? 'Chiamata vocale' : 'Videochiamata';
     $('#call-portrait').hidden = mode !== 'voice';
     $('#call-tovideo').hidden = mode !== 'voice'; $('#call-speaker').hidden = mode !== 'voice';
-    $('#call-cam').hidden = mode === 'voice'; $('#call-cc').hidden = mode === 'voice';
+    $('#call-cam').hidden = mode === 'voice'; $('#call-cc').hidden = mode === 'voice'; $('#call-hot').hidden = mode === 'voice';
     if (mode === 'voice') { stopCam(); $('#call-caption').hidden = true; }
     else if (on && !cam) startCam(); // v8.4.4: passando a video (o iniziando in video) chiede la fotocamera, dentro il tocco
     App.call.mode = mode; if (mode === 'video') everVideo = true;
