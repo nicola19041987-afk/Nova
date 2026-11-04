@@ -116,6 +116,14 @@
   }
   // Migrazione una tantum (non distruttiva): rileva il viso sugli avatar dei personaggi esistenti che non l'hanno ancora.
   // Gira in background, uno alla volta; i vecchi segni a mano restano salvati come riserva.
+  // v8.4.3: punti del viso trovati dall'avatar animato su una foto che non li aveva (o li aveva di un'altra foto): salvali
+  App.faceFound = async function (src, lm) {
+    try {
+      const c = (App.chars || []).find((x) => x.avatar === src), f = !c && (App.chars || []).find((x) => x.frameFill && x.frameFill.url === src);
+      if (c) { const r = await App.api(`/api/characters/${c.id}/landmarks`, { method: 'PUT', body: { avatar: src, landmarks: lm } }); if (r.applied) adopt(r.character); }
+      else if (f) { await App.api(`/api/characters/${f.id}/frame-fill/landmarks`, { method: 'PUT', body: { url: src, landmarks: lm } }); f.frameFill = { ...f.frameFill, landmarks: { ...lm, auto: true, src } }; }
+    } catch (e) { console.warn('Punti del viso non salvati:', e.message); }
+  };
   App.faceMigrate = async function () {
     if (App._faceMig || !window.Motion) return; App._faceMig = true;
     const todo = (App.chars || []).filter((c) => /^\/api\/avatars\//.test(c.avatar || '') && !(c.landmarks && c.landmarks.auto && c.landmarks.src === c.avatar && c.landmarks.v >= 2) && !App.ls.get('faceTried2:' + c.avatar, false)); // v8.1: v2 = anche corpo e maschera
@@ -123,8 +131,9 @@
       await new Promise((ok) => (window.requestIdleCallback ? requestIdleCallback(ok, { timeout: 3000 }) : setTimeout(ok, 500)));
       try {
         const lm = await autoFace(c.avatar);
+        // v8.4.3: un rilevamento fallito (es. modello non ancora pronto su iPhone) non blocca più per sempre: fino a 3 tentativi
+        if (!lm) { const n = Number(App.ls.get('faceTry3:' + c.avatar, 0)) + 1; App.ls.set('faceTry3:' + c.avatar, n); if (n >= 3) App.ls.set('faceTried2:' + c.avatar, true); continue; }
         App.ls.set('faceTried2:' + c.avatar, true);
-        if (!lm) continue;
         const r = await App.api(`/api/characters/${c.id}/landmarks`, { method: 'PUT', body: { avatar: c.avatar, landmarks: lm } });
         if (r.applied) { adopt(r.character); if (App.current && App.current.id === c.id) App.avatarConv.setLandmarks(r.character.landmarks); }
       } catch (e) { console.warn('Migrazione viso:', e.message); }

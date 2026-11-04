@@ -90,7 +90,8 @@
     }
     setCharacter(ch) {
       if (!ch) return;
-      this.lm = JSON.parse(JSON.stringify(ch.landmarks || this.lm));
+      // v8.4.3: senza punti del viso propri NON si ereditano quelli del personaggio precedente (occhi/bocca storti): predefiniti «incerti»
+      this.lm = JSON.parse(JSON.stringify(ch.landmarks && ch.landmarks.eyeL ? ch.landmarks : DEF_LM));
       if (ch.appearance && ch.appearance.colors) this.setColors(ch.appearance.colors);
       this.framing = (ch.appearance && ch.appearance.framing) || 'ritratto';
       this.setDistance(ch.frameDist == null ? 0.75 : ch.frameDist, true);
@@ -141,7 +142,37 @@
     debugState() { return { lag: Math.round(this.lag), gain: +this.gain.toFixed(3), m: { ...this.m, lift: [...this.m.lift] }, brow: +this.micro.brow.toFixed(3), gaze: [+this.micro.gx.toFixed(3), +this.micro.gy.toFixed(3)], smile: +this.micro.smile.toFixed(3), look: +this.micro.look.toFixed(3), blinkDur: Math.round(this.blinkDur), blinkAmp: this.blinkAmp, style: { ...this.style }, swayPeriod: Math.round(this.swayPeriod) }; }
     // ---- ritmo: periodo (ms) stimato dai movimenti dell'utente; l'oscillazione a riposo si sincronizza ----
     setRhythm(period, strength) { this.rhythm = period ? { period: Math.min(2400, Math.max(330, period)), strength: Math.min(1, strength || 0.5) } : null; }
-    setLandmarks(lm) { this.lm = JSON.parse(JSON.stringify(lm)); this.sampleLids(); }
+    setLandmarks(lm) { this.lm = JSON.parse(JSON.stringify(lm)); this.sampleLids(); this._trustKey = ''; }
+    // v8.4.3: i punti del viso valgono per QUESTA foto? (rilevati in automatico su questa immagine, o messi a mano e plausibili)
+    // Se no: niente deformazioni locali di occhi/bocca/testa (venivano storte), solo respiro e movimento dell'immagine intera,
+    // e si rilevano i punti giusti in background (MediaPipe sul telefono).
+    faceTrusted() {
+      const img = this.img, lm = this.lm; if (!img || !lm) return false;
+      const key = (img._src || '') + '|' + JSON.stringify([lm.eyeL, lm.eyeR, lm.mouth, lm.auto, lm.src]);
+      if (this._trustKey === key) return this._trust;
+      const fk = (x) => (window.App && App.faceKey ? App.faceKey(x) : String(x));
+      let ok = !!(lm.eyeL && lm.eyeR && lm.mouth);
+      if (ok) {
+        const mine = lm.auto === true ? (!lm.src || lm.src === fk(img._src)) : lm.auto === false; // predefiniti (senza «auto») = incerti
+        const ed = Math.hypot(lm.eyeR.x - lm.eyeL.x, lm.eyeR.y - lm.eyeL.y), ang = Math.atan2(lm.eyeR.y - lm.eyeL.y, lm.eyeR.x - lm.eyeL.x);
+        const my = (lm.eyeL.y + lm.eyeR.y) / 2, mx = (lm.eyeL.x + lm.eyeR.x) / 2;
+        const sane = ed > 0.006 && ed < 0.7 && Math.abs(ang) < 0.45 && lm.mouth.y > my + ed * 0.45 && lm.mouth.y < my + ed * 2.2 && Math.abs(lm.mouth.x - mx) < ed * 0.6;
+        ok = mine && sane;
+      }
+      this._trustKey = key; this._trust = ok;
+      if (!ok) this.detectFace();
+      return ok;
+    }
+    detectFace() {
+      const src = this.img && this.img._src; if (!src || !(window.App && App.autoFace) || this._det === src) return;
+      this._det = src; this._detTries = this._detTries || {}; const n = (this._detTries[src] || 0) + 1; this._detTries[src] = n; if (n > 2) return;
+      setTimeout(() => {
+        App.autoFace(src).then((lm) => {
+          if (!lm || !this.img || this.img._src !== src) { this._det = null; return; }
+          this.setLandmarks(lm); if (App.faceFound) App.faceFound(src, lm, this);
+        }).catch((e) => { console.warn('Viso non rilevato', e); this._det = null; });
+      }, 600);
+    }
     setColors(c) { this.colors = { ...this.colors, ...c }; if (!this.transparent) { this.c.style.background = this.colors.background; this._bdKey = ''; } }
 
     // colore della palpebra: campiona la pelle sopra ciascun occhio
@@ -466,14 +497,17 @@
         // v7.2: foto disegnata in un colpo solo (niente strisce: su iPhone Safari lasciavano giunture orizzontali).
         // Respiro: compressione verticale minima ancorata in basso (≤ 0,25%), sempre dentro il riquadro.
         // v8.1: respiro realistico con deformazione morbida WebGL (spalle/petto/testa, sfondo fermo); se WebGL manca, il vecchio respiro.
-        let src = img, headDy = 0;
-        if (this.breathOn !== false && img.naturalWidth) {
+        let src = img, headDy = 0; const trust = this.faceTrusted();
+        if (trust && this.breathOn !== false && img.naturalWidth) {
           if (!this.breather) this.breather = new Breather();
           if (this.breather.ok && this.breather.setup(img, this.lm)) { const amp = this.breathAmp || 1; src = this.breather.render(A.vol, amp, A.nod || 0); headDy = this.breather.headDy(A.vol, amp, A.nod || 0); }
         }
-        const Y1b = E.y0 + E.h, bs = src === img ? 1 - 0.00125 * (1 + Math.max(-1, Math.min(1, A.breath))) : 1;
+        // v8.4.3: senza respiro WebGL (o con punti incerti) il respiro dell'immagine intera è VISIBILE (prima 0,25%: sembrava ferma),
+        // più un leggero "sollevarsi" mentre parla; solo verticale, ancorato in basso: la cornice resta ferma, niente ondeggiamento laterale
+        const br = Math.max(-1, Math.min(1, A.breath)), talk = this.speaking ? Math.min(1, this.mouth) : 0;
+        const Y1b = E.y0 + E.h, bs = src === img ? 1 + (trust ? 0.003 : 0.0045) * (1 + br) + talk * 0.003 : 1; // sempre ≥ 1 e ritagliato: nessun bordo vuoto
         ctx.save(); ctx.beginPath(); ctx.rect(E.x0, E.y0, E.w, E.h); ctx.clip();
-        ctx.translate(0, Y1b); ctx.scale(1, bs); ctx.translate(0, -Y1b);
+        const cxb = E.x0 + E.w / 2; ctx.translate(cxb, Y1b); ctx.scale(src === img ? 1 + (bs - 1) * 0.25 : 1, bs); ctx.translate(-cxb, -Y1b);
         ctx.drawImage(src, E.x0, E.y0, E.w, E.h);
         // Gesti (mezzo busto / figura intera): braccia che si muovono col ritmo e l'intensità del parlato.
         const tgt = (this.speaking ? 0.35 + this.mouth * 0.7 + (now - this.emph < 700 ? 0.6 : 0) : 0) + M.energy * 0.6 + wave * 0.8;
@@ -499,7 +533,7 @@
         // dimensionate per un primo piano, e su una figura intera la toppa delle sopracciglia diventava una striscia scura sulla fronte)
         // la testa è salita col respiro: le espressioni usano i punti spostati di quanto (nella foto deformata il viso è lì)
         const lmF = headDy ? shiftLm(this.lm, headDy / S) : this.lm;
-        this.paintFace(ctx, src, lmF, A, faceScale(this.lm), this.lidColor);
+        if (trust) this.paintFace(ctx, src, lmF, A, faceScale(this.lm), this.lidColor); // v8.4.3: occhi/bocca solo con punti certi
         ctx.restore();
       } else {
         ctx.font = `${S * 0.6}px system-ui, "Apple Color Emoji", "Segoe UI Emoji", sans-serif`;
@@ -786,6 +820,7 @@
   function faceScale(lm) { try { const ed = Math.hypot(lm.eyeR.x - lm.eyeL.x, lm.eyeR.y - lm.eyeL.y); return Math.max(0.12, Math.min(1.6, ed / 0.24)); } catch { return 1; } }
   const GESTURE_REGIONS = false; // v7.1: niente rotazione di pezzi di braccio sulla foto: solo respiro e viso
   const WARP_MAX = 0.03, WARP_STRIPS = 40, EDGE_SIDE = 0.07, EDGE_TB = 0.1; // v7.1: deformazione interna max (frazione della larghezza) e bande sfumate
+  const DEF_LM = { eyeL: { x: 0.38, y: 0.42 }, eyeR: { x: 0.62, y: 0.42 }, mouth: { x: 0.5, y: 0.7 } }; // v8.4.3: predefiniti (incerti)
   const VS = 1000; // unità virtuale dello spazio del viso (il canvas reale scala con una trasformazione)
   const ROT_MAX = 0.075; const SHIFT_MAX = 0.042 * 1000; const SKEW_MAX = 0.018; // v7: movimenti più ampi (spalle comprese), sempre dentro il riquadro // rotazione massima della testa/busto (radianti): l'ingombro è calcolato su questo valore
   // Bordi sfumati (Presenza e scena senza immagine): ellisse sull'area dell'immagine

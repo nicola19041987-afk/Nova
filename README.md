@@ -172,6 +172,12 @@ Tutto in `data/` sul server (escluso da git e dallo zip): `pins.json`, `sessions
 - Le clip delle azioni suonano con il loro audio (se presente) solo con Lettura attiva e audio sbloccato; se iOS lo blocca, la clip parte muta.
 - Sul telefono: interruttore laterale (silenzioso) disattivato e volume alzato; su iPhone la sintesi vocale può restare muta in modalità silenziosa.
 
+## Novità v8.4.3 (avatar: occhi e bocca allineati, sempre in movimento)
+
+- **Causa** di «bocche storte, occhi pure e nessun movimento»: l'avatar usava punti del viso che non appartenevano alla foto mostrata — quelli di un look/foto precedente, quelli del personaggio aperto prima (se il nuovo non li aveva) o quelli predefiniti quando il rilevamento sul telefono falliva (e dopo un fallimento non veniva più ritentato). Le «toppe» di occhi e bocca finivano su collo/petto e il viso vero restava fermo.
+- **Correzione**: i punti si usano solo se sono stati rilevati su QUELLA foto (o messi a mano) e sono plausibili; altrimenti niente deformazioni locali, solo respiro e lieve movimento dell'immagine intera (sempre visibile, mai ferma), mentre il viso viene rilevato in background e salvato. Il rilevamento fallito viene ritentato (fino a 3 volte).
+- Cache dell'app: `app-privata-v8-4-3`; icone 🤫 e `?v=843` invariate.
+
 ## Novità v8.4.2 (correzione «Errore 422» sulle voci)
 
 - **Causa**: dalla v8.4.1 la richiesta di sintesi vocale a xAI (`POST /v1/tts`) inviava `optimize_streaming_latency` come stringa (`"1"`), mentre lo schema ufficiale vuole un intero (0/1/2): xAI rispondeva 422 a ogni «Prova la voce» e a ogni frase letta. Ora è l'intero `1`; tutti gli altri campi (`voice_id`, `language: "it"`, `speed` 0,7–1,5, `output_format` mp3/24000/64000) sono stati verificati sulla documentazione.
