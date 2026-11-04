@@ -18,6 +18,7 @@ App.chat = {
     document.body.dataset.tab = 'conv'; $('#large-title').hidden = true;
     const shown = App.previews[ch.id] ? { ...ch, avatar: App.previews[ch.id].dataUrl } : ch;
     App.avatarConv.setCharacter(shown);
+    if (App.rt && App.rt.prewarm) setTimeout(() => App.rt.prewarm(ch), 600); // v8.5.0
     App.scene && App.scene.apply();
     App.avatarConv.stopAction(true); App.actions && App.actions.render();
     $('#messages').innerHTML = ''; this.epoch = null; this.last = 0; this.ids = new Set();

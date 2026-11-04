@@ -34,6 +34,23 @@
     if (/non disponibile|50\d/.test(m)) return 'servizio video xAI momentaneamente non disponibile';
     return m.slice(0, 160) || 'motivo sconosciuto';
   };
+  // v8.5.0: clip dei movimenti scaricate sul telefono (Cache Storage, sopravvive agli aggiornamenti dell'app): partono subito, anche offline
+  App.actionCache = (() => {
+    const NAME = 'nova-actions', urls = new Map();
+    const open = () => (window.caches ? caches.open(NAME) : Promise.reject(new Error('no cache')));
+    return {
+      async has(url) { try { return !!(await (await open()).match(url)); } catch { return false; } },
+      async save(url) { try { const c = await open(); if (await c.match(url)) return true; const r = await fetch(url, { credentials: 'same-origin' }); if (!r.ok) return false; await c.put(url, r); return true; } catch { return false; } },
+      async local(url) {
+        if (urls.has(url)) return urls.get(url);
+        try { const r = await (await open()).match(url); if (r) { const u = URL.createObjectURL(await r.blob()); urls.set(url, u); return u; } } catch { /* */ }
+        this.save(url); return url; // la prima volta dalla rete, intanto si scarica
+      },
+      async syncAll() { // scarica tutte le clip pronte dei personaggi (in background, una alla volta)
+        for (const ch of App.chars || []) for (const a of [...Object.values(ch.actions || {}), ...Object.values(ch.seated || {})]) if (a && a.url && !a.stale) await this.save(a.url);
+      },
+    };
+  })();
   const meta = (id) => info.catalog.find((c) => c.id === id) || { id, label: id, emoji: '🎭' };
 
   App.actions = {
@@ -43,7 +60,7 @@
     async load() {
       try { info = await App.api('/api/actions'); } catch { /* offline */ }
       const A = av(); if (!info.adult && A.act && A.act.adult) A.stopAction(true); // modalità adulti spenta: via subito
-      this.render(); this.autoAll();
+      this.render(); this.autoAll(); setTimeout(() => App.actionCache.syncAll(), 4000);
     },
     // ---- v8.5.0: preparazione AUTOMATICA in background di tutti i movimenti normali ----
     // Dopo la creazione di un personaggio, il cambio foto e alla prima apertura: coda (2 alla volta), progressi nella
@@ -61,7 +78,7 @@
       autoTotal = Math.max(autoTotal, autoDone + autoQ.length + autoBusy.size); this.autoPump();
     },
     autoPump() {
-      if (running) { this.autoPill(); return; } // v8.4.7: «Prepara» a mano ha la precedenza: la coda automatica aspetta
+      if (running || (this._paused && Date.now() < this._paused)) { this.autoPill(); return; } // v8.4.7: «Prepara» a mano ha la precedenza: la coda automatica aspetta
       while (autoBusy.size < 2 && autoQ.length) { const q = autoQ.shift(); autoBusy.add(q.k); this.autoOne(q).finally(() => { autoBusy.delete(q.k); autoDone++; this.autoPill(); this.autoPump(); }); }
       this.autoPill();
     },
@@ -77,10 +94,14 @@
           r = await App.api(`/api/characters/${ch.id}/actions/${q.id}/status/${encodeURIComponent(r.rid)}`, { ai: true });
           if (r.status === 'failed') throw Object.assign(new Error(r.error || 'non riuscita'), { refused: r.refused });
         }
-        setRefused(refKey(ch, 'avatar', q.id), false);
+        setRefused(refKey(ch, 'avatar', q.id), false); this._back = 0;
+        if (r.action && r.action.url) App.actionCache.save(r.action.url);
         if (r.action) { ch.actions = { ...(ch.actions || {}), [q.id]: r.action }; if (App.current && App.current.id === ch.id) { App.current.actions = { ...(App.current.actions || {}), [q.id]: r.action }; this.render(); } }
         prepLog.push({ at: Date.now(), id: q.id, ok: true });
       } catch (e) {
+        if (/Troppe richieste|429/i.test(e.message || '')) { // v8.5.0: xAI chiede di rallentare -> attesa crescente, poi si riprova (non è un rifiuto)
+          autoQ.unshift(q); this._back = Math.min(15 * 60e3, (this._back || 30e3) * 2); lastWhy = `xAI chiede di rallentare: riprovo tra ${Math.round(this._back / 60e3) || 1} min`; this._paused = Date.now() + this._back; setTimeout(() => { this._paused = 0; this.autoPump(); }, this._back); return;
+        }
         if (/Limite di|già in preparazione/i.test(e.message || '')) { // limite orario o già in corso: si riprova più tardi, non è un rifiuto
           autoQ.length = 0; if (!this._retryT) { const mins = (e.data && e.data.retryMin) || +((/tra (\d+) min/.exec(e.message || '') || [])[1]) || 10; lastWhy = `limite orario di xAI raggiunto: riprovo da sola tra ${mins} min`; this._retryT = setTimeout(() => { this._retryT = 0; this.autoAll(); }, mins * 60e3 + 5000); } return;
         }
@@ -109,13 +130,14 @@
       const seat = seatedOn();
       if (!seat && A.sceneOn && A.sceneOn()) return false;
       const a = seat ? ch.seated && ch.seated[aid] : ch.actions && ch.actions[aid]; if (!a || a.stale || !a.url) return false;
+      const src = await App.actionCache.local(a.url); // v8.5.0: dal telefono (scaricata), parte subito anche offline
       if (GESTURE_IDS.includes(aid)) { lastGest = Date.now(); lastGestId = aid; gestLog.push(lastGest); A.breathM && A.breathM.gestureStart(aid, performance.now()); }
       try {
         if (a.kind === 'pose') {
-          const p = A.playAction({ kind: 'pose', url: a.url, lm: poseLm.get(a.url) || null }); if (A.act) A.act.adult = !!meta(aid).adult;
+          const p = A.playAction({ kind: 'pose', url: src, lm: poseLm.get(a.url) || null }); if (A.act) A.act.adult = !!meta(aid).adult;
           if (!poseLm.has(a.url) && App.findFace) App.findFace(a.url).then((lm) => { poseLm.set(a.url, lm); if (lm) A.setActionLandmarks(lm); });
           await p;
-        } else { const p = A.playAction({ kind: 'video', url: a.url }); if (A.act) A.act.adult = !!meta(aid).adult; await p; }
+        } else { const p = A.playAction({ kind: 'video', url: src }); if (A.act) A.act.adult = !!meta(aid).adult; await p; }
         return true;
       } catch (e) { console.warn('Azione non riprodotta', aid, why, e && e.message); return false; }
       finally { if (GESTURE_IDS.includes(aid) && A.breathM) A.breathM.gestureEnd(aid, performance.now()); }

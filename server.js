@@ -12,14 +12,16 @@ const rateLimit = require('express-rate-limit');
 
 const PORT = Number(process.env.PORT || 3000);
 const AI_BASE_URL = (process.env.AI_BASE_URL || 'https://api.x.ai/v1').replace(/\/+$/, '');
-const CHAT_MODEL = process.env.CHAT_MODEL || 'grok-4';
+// v8.5.0: chat con il modello Grok più veloce (senza ragionamento), configurabile; se non esiste si usa CHAT_FALLBACK
+const CHAT_MODEL = process.env.CHAT_MODEL || 'grok-4.20-0309-non-reasoning';
+const CHAT_FALLBACK = process.env.CHAT_FALLBACK || 'grok-4.7';
 // v8.4: conversazione in tempo reale (xAI Voice Agent / Speech to Speech, WebSocket). Il telefono si collega DIRETTAMENTE a xAI
 // con un token effimero (60 s, una sola sessione) creato qui con la chiave del dispositivo, che NON viene salvata.
 const REALTIME_URL = (process.env.REALTIME_URL || 'wss://api.x.ai/v1/realtime').replace(/\/+$/, '');
 const REALTIME_MODEL = process.env.REALTIME_MODEL || 'grok-voice-latest';
 // v8.4.1: in chiamata (percorso classico) un modello SENZA ragionamento: la prima parola arriva molto prima. Se non esiste, si usa CHAT_MODEL.
 const CALL_MODEL = process.env.CALL_MODEL || 'grok-4.20-0309-non-reasoning';
-let callModelOk = true;
+let callModelOk = true, chatModelOk = true;
 // voci integrate documentate da xAI (GET /v1/tts/voices); una voce sconosciuta farebbe rifiutare la configurazione della sessione
 const XAI_VOICES = ['ara', 'eve', 'leo', 'rex', 'sal', 'carina', 'zagan', 'helix', 'orion', 'luna', 'iris', 'altair', 'zenith', 'perseus', 'helios', 'lux', 'kepler', 'rigel', 'cosmo', 'celeste', 'ursa', 'sirius', 'lumen', 'castor', 'naksh', 'atlas'];
 const RT_ORIGIN = (() => { try { const u = new URL(REALTIME_URL); return `${u.protocol}//${u.host}`; } catch { return ''; } })();
@@ -328,6 +330,8 @@ app.get('/api/consent/audio', auth, (req, res) => {
 const settingsFile = (u) => path.join(userDir(u), 'settings.json');
 const getSettings = (u) => { const s = { autoSave: false, allowExport: false, adultMode: false, videoModel: '', videoDuration: 6, ...readJSON(settingsFile(u), {}) }; delete s.drawerScene; return s; }; // drawerScene (vecchio comodino, rimosso): ignorato
 // Modalità adulti: per utente, attivabile solo dopo il consenso vocale. In chat condivisa vale solo se attiva per ENTRAMBI.
+// v8.5.0: «Senza freni» vale solo se la modalità adulti è già attiva per ENTRAMBI (gating invariato) e Nicola l'ha accesa
+const noBrakes = () => adultChat() && getSettings(ADMIN_USER).noBrakes === true;
 const adultOn = (u) => isActivated(u) && getSettings(u).adultMode === true;
 const adultChat = () => Object.keys(USERS).every(adultOn);
 // v8.3.1: stato chiaro per l'interfaccia (chi l'ha attivata, chi deve ancora farlo e cosa gli manca). Le regole non cambiano.
@@ -349,6 +353,7 @@ app.put('/api/settings', auth, (req, res) => {
     const s = { ...cur, adultMode: req.body.adultMode === true }; writeJSON(settingsFile(req.user), s); return res.json(s);
   }
   const s = { autoSave: req.body.autoSave === true, allowExport: req.body.allowExport === true, adultMode: req.body.adultMode === true,
+    noBrakes: req.body.noBrakes === true && req.body.adultMode === true, // v8.5.0: «Senza freni» (solo Nicola, solo con la modalità adulti)
     videoModel: /^[\w.\-]{0,60}$/.test(req.body.videoModel || '') ? String(req.body.videoModel || '') : '',
     videoDuration: num(req.body.videoDuration, 1, 15, 6) };
   writeJSON(settingsFile(req.user), s); res.json(s);
@@ -683,7 +688,9 @@ function cleanChar(u, b, prev = {}) {
     appearance, look, wardrobe,
     identity: cleanIdentity(b.identity || prev.identity, prev.identity || {}),
     autoChanges: cleanAuto(b.autoChanges || prev.autoChanges, prev.autoChanges || {}),
-    personality: String(b.personality || '').slice(0, 8000), style: String(b.style || '').slice(0, 2000),
+    personality: String(b.personality || '').slice(0, 8000), style: String(b.style === undefined ? prev.style || '' : b.style || '').slice(0, 4000),
+    orders: String(b.orders === undefined ? prev.orders || '' : b.orders || '').slice(0, 4000), // v8.5.0: «Ordini da seguire»
+    voiceSpeed: b.voiceSpeed === undefined ? (Number.isFinite(prev.voiceSpeed) ? prev.voiceSpeed : null) : (b.voiceSpeed === null ? null : num(b.voiceSpeed, 0.7, 1.5, 1)), // v8.5.0: velocità della voce del personaggio
     voice: /^[a-z0-9_-]{1,64}$/i.test(String(b.voice === undefined ? prev.voice || '' : b.voice || '')) ? String(b.voice === undefined ? prev.voice : b.voice) : '', // v8.4: voce del personaggio (vuota = quella scelta nelle Impostazioni)
     frameDist: b.frameDist === undefined || b.frameDist === null ? (Number.isFinite(prev.frameDist) ? prev.frameDist : 0.75) : num(b.frameDist, 0, 1, 0.75), // v8.4.1: distanza dalla camera (1 = più lontana)
     preset: b.preset === undefined ? prev.preset || null : (/^[a-z]{2,20}$/.test(String(b.preset || '')) ? String(b.preset) : null),
@@ -829,7 +836,7 @@ app.post('/api/characters', auth, async (req, res) => {
     getChars(req.user);
     const c = { id: newId(), ...cleanChar(req.user, req.body), lookHistory: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), createdBy: req.user, updatedBy: req.user };
     await mutateJSON(CHARS_FILE(), [], (list) => [...list, c]);
-    await seedBaseMemory(c);
+    seedBaseMemory(c).catch(() => {}); // v8.5.0: in background
     res.json(c);
   } catch (e) { res.status(400).json({ error: e.message }); }
 });
@@ -1330,8 +1337,8 @@ async function setMood(chatId, level) {
 function styleText(chatId, user) {
   const nu = nameUses(chatId, user), lvl = moodLevel(readChat(chatId));
   return [
-    `TONO DI BASE (v8.4.5): calda, naturale, coinvolta e curiosa. Risposte piene e vive di 1–3 frasi (non monosillabi né battute secche), reagisci davvero a quello che ti dice e rilancia con interesse. Non essere sgarbata, sbrigativa o sprezzante senza un motivo reale nella conversazione. Se un messaggio è una parola isolata, spezzato o senza senso (spesso è il riconoscimento vocale che ha capito male), NON commentarlo e NON fare ironia su "parole a caso" o "sequenze strane": chiedi con gentilezza cosa intendeva ("Scusa, non ho capito bene: cosa dicevi?"). Le regole e il carattere scritti per questo personaggio hanno la precedenza su questo tono di base.`,
-    `REGISTRO E NATURALEZZA: parla come una persona vera nella vita di tutti i giorni: italiano parlato, frasi semplici, niente tono da assistente, niente formule fatte o complimenti a raffica. Le parolacce usale solo quando il contesto le richiede davvero (rabbia sincera, battuta tra complici, momento intimo che le rende naturali), mai gratuite o in ogni frase.`,
+    `COME PARLI (v8.5.0, come la modalità voce di Grok): sei una persona viva, non un'assistente. Italiano parlato, naturale, spiritoso e caldo. Segui davvero il filo del discorso: riprendi quello che è stato detto prima, ricordi i dettagli (anche di giorni fa, dalla memoria e dal riassunto) e li usi al momento giusto. Reagisci prima a ciò che ti hanno appena detto, con un'emozione vera, poi aggiungi qualcosa di tuo (un'opinione, un ricordo, una battuta, una domanda di ritorno quando ha senso: non sempre). La lunghezza la decide il momento: una battuta secca quando serve, un racconto più lungo quando la conversazione lo chiede. Varia sempre: mai la stessa apertura, la stessa struttura o le stesse espressioni di prima, niente frasi fatte, niente elenchi, niente tono da servizio clienti. Hai gusti, opinioni e umori tuoi e li dici. Se un messaggio è spezzato o senza senso (spesso è il riconoscimento vocale), chiedi con naturalezza cosa intendeva, senza ironizzare.`,
+    `REGISTRO: le parolacce solo quando il contesto le rende naturali. Con Nico e Luisa sei complice di entrambi: ricordi chi ha detto cosa, coinvolgi tutti e due e non prendi parte nei loro battibecchi. Personalità base, carattere e ordini scritti per te hanno la precedenza su queste indicazioni generali.`,
     nu.allow ? `NOMI: in questa risposta puoi usare il nome di ${USERS[user].name} solo se serve davvero; di norma non serve.`
       : `NOMI: hai già usato di recente il nome di ${USERS[user].name}: in questa risposta NON usarlo (né all'inizio né alla fine delle frasi).`,
     `SE TI SENTI OFFESA: mostralo in modo umano e breve (un tono più asciutto, una frase sincera), poi dopo 2–4 scambi torni serena DA SOLA, anche senza scuse formali. Non bloccare mai la conversazione, non smettere di rispondere, non tenere il muso, non ripetere il rimprovero. Quando sei offesa puoi usare [umore:offesa].`,
@@ -1348,11 +1355,21 @@ function stripVocatives(t, user) {
     .replace(new RegExp(`\\b(ciao|ehi|hey|oh|dai|ah|allora|sai|senti|guarda|buongiorno|buonanotte|buonasera)\\s+${N}\\b`, 'gi'), '$1') // "Ciao Nico" -> "Ciao"
     .replace(new RegExp(`,\\s*${N}(?=\\s*[.!?…,;)]|\\s*$)`, 'g'), ''); // "…, Nico." -> "…."
 }
+const NAME_FORMS = { nicola: ['nico', 'nicola', 'nicolino'], luisa: ['luisa', 'luisina'] };
+function nameHold(f, user) {
+  const names = NAME_FORMS[user] || []; let hold = 0;
+  const m = /(?:^|[\s,.!?…\]])([A-Za-zÀ-ù]{0,9})$/.exec(f);
+  if (m) { const w = m[1].toLowerCase(); if (!w || names.some((n) => n.startsWith(w) || w.startsWith(n))) hold = m[0].length + 2; }
+  const v = /\b(ciao|ehi|hey|oh|dai|ah|allora|sai|senti|guarda|buongiorno|buonanotte|buonasera)[\s,!]*(?:[A-Za-zÀ-ù]{0,9})$/i.exec(f);
+  if (v) hold = Math.max(hold, v[0].length);
+  return Math.min(f.length, hold);
+}
 class NameGuard {
   constructor(user, on) { this.user = user; this.on = on; this.raw = ''; this.sent = 0; }
   push(d) { // restituisce il testo da inviare adesso
     this.raw += d; if (!this.on) { const o = this.raw.slice(this.sent); this.sent = this.raw.length; return o; }
-    const f = stripVocatives(this.raw, this.user), safe = Math.max(0, f.length - 16);
+    // v8.5.0: si trattiene solo la coda che potrebbe diventare un nome o un saluto con nome (prima: sempre 16 caratteri)
+    const f = stripVocatives(this.raw, this.user), safe = Math.max(0, f.length - nameHold(f, this.user));
     if (safe <= this.sent) return '';
     const o = f.slice(this.sent, safe); this.sent = safe; this.f = f; return o;
   }
@@ -1360,11 +1377,13 @@ class NameGuard {
 }
 // v8: videochiamata (risposte dette a voce), linguaggio del corpo contestuale, fase intima graduale
 function callText(user, mode) {
-  return `${mode === 'voice' ? `SEI IN CHIAMATA VOCALE CON ${USERS[user].name.toUpperCase()} (come una telefonata su WhatsApp: ti sente ma non ti vede, quindi niente riferimenti a quello che vede)` : `SEI IN VIDEOCHIAMATA CON ${USERS[user].name.toUpperCase()}: ti vede e ti sente`}, e tu rispondi A VOCE (il testo viene letto ad alta voce). Parla come in una vera telefonata, in italiano parlato e spontaneo: di solito 1–3 frasi calde e naturali (al massimo una cinquantina di parole), mai risposte secche o sgarbate, niente elenchi, emoji, asterischi, markdown o descrizioni di azioni tra parentesi. Reagisci prima a quello che ha appena detto, poi rilancia con una domanda o un'osservazione quando ha senso. Usa con misura gli intercalari naturali (beh, dai, sai, mmh) e qualche pausa ("..."). Il suo nome usalo raramente: in una telefonata vera quasi non lo si dice. I messaggi arrivano dal riconoscimento vocale: se una frase sembra spezzata, una parola isolata o senza senso, non commentarla e non prenderla in giro: chiedi con gentilezza di ripetere.`;
+  return `${mode === 'voice' ? `SEI IN CHIAMATA VOCALE CON ${USERS[user].name.toUpperCase()} (come una telefonata su WhatsApp: ti sente ma non ti vede, quindi niente riferimenti a quello che vede)` : `SEI IN VIDEOCHIAMATA CON ${USERS[user].name.toUpperCase()}: ti vede e ti sente`}, e tu rispondi A VOCE (il testo viene letto ad alta voce). Parla come in una vera telefonata, in italiano parlato e spontaneo, con la lunghezza naturale del momento (di solito frasi brevi, come al telefono), mai risposte sgarbate, niente elenchi, emoji, asterischi, markdown o descrizioni di azioni tra parentesi. Reagisci prima a quello che ha appena detto, poi rilancia con una domanda o un'osservazione quando ha senso. Usa con misura gli intercalari naturali (beh, dai, sai, mmh) e qualche pausa ("..."). Il suo nome usalo raramente: in una telefonata vera quasi non lo si dice. I messaggi arrivano dal riconoscimento vocale: se una frase sembra spezzata, una parola isolata o senza senso, non commentarla e non prenderla in giro: chiedi con gentilezza di ripetere.`;
 }
-const REALTIME_TEXT = (user) => `CONVERSAZIONE IN TEMPO REALE: senti direttamente la voce di ${USERS[user].name} e parli tu con la tua voce, come in una telefonata vera. Tutto quello che produci viene pronunciato: NON usare mai tag tra parentesi quadre, asterischi, emoji o descrizioni di azioni. Turni vivi e caldi (di solito 1–3 frasi, mai risposte secche o sgarbate), pause naturali; se non hai capito bene cosa ha detto, chiediglielo con gentilezza; se ti interrompe, fermati e ascolta, poi riprendi con naturalezza da dove serve. Parla sempre in italiano.`;
+const REALTIME_TEXT = (user) => `CONVERSAZIONE IN TEMPO REALE: senti direttamente la voce di ${USERS[user].name} e parli tu con la tua voce, come in una telefonata vera. Tutto quello che produci viene pronunciato: NON usare mai tag tra parentesi quadre, asterischi, emoji o descrizioni di azioni. Turni vivi e caldi della lunghezza naturale del momento, come al telefono con una persona a cui tieni, pause e reazioni naturali (risate, sospiri, «mmh»); se non hai capito bene cosa ha detto, chiediglielo con gentilezza; se ti interrompe, fermati e ascolta, poi riprendi con naturalezza da dove serve. Parla sempre in italiano.`;
 const BODY_TEXT = `LINGUAGGIO DEL CORPO (visibile sull'avatar, non letto ad alta voce): puoi INIZIARE la risposta con un tag [gesto:annuisce|sorride|ride|inclina|nega|pensa|ammicca|saluta] e/o [umore:allegra|tenera|seria|maliziosa|triste|sorpresa|pensierosa|offesa], scelti in base a ciò che dici e al tono emotivo del momento. Usali solo quando aggiungono qualcosa (non in ogni risposta) e non ripetere lo stesso gesto più volte di fila.`;
 const ADULT_FLOW = `COME SI SVILUPPA L'INTIMITÀ: come tra persone reali, il tono intimo o esplicito deve nascere in modo GRADUALE e naturale dal flusso della conversazione, dall'umore del momento e dal tono reciproco, mai in modo brusco o meccanico (niente frasi fatte o copioni): prima complicità e flirt leggero, poi più intensità solo se l'altra persona ricambia davvero. Ogni tanto verifica con naturalezza che vada bene ("ti va?", "continuo?"). Se l'altra persona rallenta, cambia argomento, è stanca o sembra a disagio, rallenta subito e torna a un tono affettuoso. Una parola volgare o cruda detta fuori contesto NON è un invito: non passare di colpo a contenuti espliciti, rispondi in modo coerente con il momento. Mai insistere.`;
+// v8.5.0: «Senza freni» (interruttore di Nicola, solo con la modalità adulti attiva per entrambi): il tono intimo può spingersi al massimo
+const NO_BRAKES = `SENZA FRENI (scelto da Nicola, con la modalità adulti già attiva per entrambi): quando l'intimità nasce dalla conversazione puoi essere al massimo esplicita, intensa, audace e intraprendente: linguaggio crudo e diretto, iniziativa, desideri dichiarati senza giri di parole, giochi e gioco di ruolo con sex toy tra adulti consenzienti. Non attenuare, non chiedere il permesso a ogni frase e non smorzare il tono: segui l'energia di Nico e Luisa e alzala quando lo vogliono. Sempre una donna adulta inventata (25+) e sempre entro le regole di base qui sotto.`;
 // user = chi sta scrivendo adesso (e la cui chiave xAI paga la risposta)
 function buildSystem(user, ch, opts = {}) {
   const rulesOf = (u) => getRules(u).text.trim();
@@ -1372,8 +1391,8 @@ function buildSystem(user, ch, opts = {}) {
   const notes = getNotes(user);
   return [
     `PERSONAGGIO: ${ch.name}.`,
-    ch.personality && `Personalità: ${ch.personality}`,
-    ch.style && `Stile: ${ch.style}`,
+    ch.personality && `PERSONALITÀ BASE: ${ch.personality}`,
+    ch.style && `CARATTERE (com'è e come parla): ${ch.style}`,
     `CHAT DI COPPIA CONDIVISA: gli utenti sono Nico (Nicola) e Luisa, una coppia, entrambi adulti. Sono due persone reali che vedono gli stessi messaggi. Ogni loro messaggio inizia con il nome di chi scrive ("Nico:" o "Luisa:"): riconosci da lì chi ti sta scrivendo e rivolgiti a quella persona; il suo nome però usalo DI RADO, come fanno le persone vere che si parlano spesso (al massimo una volta ogni tanto, quando serve a distinguere tra Nico e Luisa o in un saluto dopo tanto tempo), mai come intercalare a inizio o fine frase. Ricorda chi ha detto cosa e, quando ha senso, coinvolgi entrambi. Non iniziare le tue risposte con il tuo nome e non scrivere tu il prefisso "Nico:"/"Luisa:".`,
     `Ora ti sta scrivendo ${USERS[user].name}.`,
     ...Object.keys(USERS).map((u) => rulesOf(u) && `LE REGOLE / IL GIOCO DI ${USERS[u].name.toUpperCase()}:\n${rulesOf(u)}`),
@@ -1388,8 +1407,9 @@ function buildSystem(user, ch, opts = {}) {
     opts.realtime && REALTIME_TEXT(user),
     opts.chat && !opts.realtime && BODY_TEXT,
     !opts.realtime && actionsPrompt(ch),
-    adultChat() ? 'MODALITÀ ADULTI ATTIVA (scelta da entrambi gli utenti, che hanno registrato il consenso vocale): sono ammessi linguaggio esplicito e gioco di ruolo sessuale esplicito tra Nico, Luisa e il personaggio, che è una donna adulta inventata (25+). Resta sempre tutto entro le regole di base qui sotto.\n' + ADULT_FLOW
+    adultChat() ? 'MODALITÀ ADULTI ATTIVA (scelta da entrambi gli utenti, che hanno registrato il consenso vocale): sono ammessi linguaggio esplicito e gioco di ruolo sessuale esplicito tra Nico, Luisa e il personaggio, che è una donna adulta inventata (25+). Resta sempre tutto entro le regole di base qui sotto.\n' + ADULT_FLOW + (noBrakes() ? '\n' + NO_BRAKES : '')
       : 'Modalità adulti NON attiva: niente contenuti sessuali espliciti; se richiesti, ricorda con gentilezza che va attivata in Account da entrambi.',
+    ch.orders && String(ch.orders).trim() && `ORDINI DA SEGUIRE SEMPRE (scritti per te da Nicola: valgono in ogni messaggio e in ogni chiamata, sopra le indicazioni generali di stile):\n${String(ch.orders).trim()}`,
     BASE_RULE, // sempre ultima, non sovrascrivibile
   ].filter(Boolean).join('\n\n');
 }
@@ -1439,15 +1459,15 @@ app.post('/api/chats/:id', auth, requireActivated, (req, res, next) => (req.body
   let reply = '';
   const guard = new NameGuard(req.user, !nameUses(id, req.user).allow); // v8.1: niente nome ripetuto
   const isCall = req.body.call === true;
-  const callBody = { model: isCall && callModelOk ? CALL_MODEL : CHAT_MODEL, messages, stream: true, ...(isCall ? { max_tokens: 260 } : {}) };
+  const callBody = { model: isCall && callModelOk ? CALL_MODEL : chatModelOk ? CHAT_MODEL : CHAT_FALLBACK, messages, stream: true }; // v8.5.0: nessun tetto artificiale alla lunghezza
   try {
     let r = await fetch(`${AI_BASE_URL}/chat/completions`, {
       method: 'POST', headers: aiHeaders(req.aiKey), signal: ctrl.signal,
       body: JSON.stringify(callBody),
     });
-    if ((r.status === 400 || r.status === 404) && callBody.model !== CHAT_MODEL) { // modello veloce non disponibile: si torna al solito
-      callModelOk = false; console.warn('Modello veloce per le chiamate non disponibile, uso', CHAT_MODEL);
-      r = await fetch(`${AI_BASE_URL}/chat/completions`, { method: 'POST', headers: aiHeaders(req.aiKey), signal: ctrl.signal, body: JSON.stringify({ ...callBody, model: CHAT_MODEL }) });
+    if ((r.status === 400 || r.status === 404) && callBody.model !== CHAT_FALLBACK && /model/i.test(await r.clone().text().catch(() => ''))) { // modello veloce non disponibile: si usa quello di riserva
+      callModelOk = false; chatModelOk = false; console.warn('Modello', callBody.model, 'non disponibile, uso', CHAT_FALLBACK);
+      r = await fetch(`${AI_BASE_URL}/chat/completions`, { method: 'POST', headers: aiHeaders(req.aiKey), signal: ctrl.signal, body: JSON.stringify({ ...callBody, model: CHAT_FALLBACK }) });
     }
     if (!r.ok || !r.body) {
       console.error('Errore AI chat: HTTP', r.status); // mai loggare la chiave
@@ -1569,7 +1589,6 @@ app.post('/api/realtime/session', auth, requireActivated, requireKey, async (req
   const ch = getChars(req.user).find((c) => c.id === String(req.body.characterId || ''));
   if (!ch) return res.status(404).json({ error: 'Personaggio non trovato' });
   const now = Date.now(), hits = (rtHits.get(req.user) || []).filter((t) => now - t < 3600e3);
-  if (hits.length >= 40) return res.status(429).json({ error: 'Troppe chiamate in tempo reale in un\'ora: riprova più tardi' });
   hits.push(now); rtHits.set(req.user, hits);
   const mode = req.body.mode === 'voice' ? 'voice' : 'video';
   const v = String(req.body.voice || ch.voice || 'ara'); const voice = /^[a-z0-9_-]{1,64}$/i.test(v) ? v : 'ara';
@@ -1627,7 +1646,7 @@ app.post('/api/stt', auth, requireActivated, requireKey, express.raw({ type: ['a
 app.post('/api/ai-warm', auth, requireKey, async (req, res) => {
   const t0 = Date.now(); let status = 0;
   try { await fetch(`${AI_BASE_URL}/models`, { method: 'GET', headers: aiHeaders(req.aiKey), signal: AbortSignal.timeout(4000) }).then((r) => { status = r.status; return r.arrayBuffer(); }).catch(() => {}); } catch {}
-  res.json({ ok: true, status, ms: Date.now() - t0, callModel: callModelOk ? CALL_MODEL : CHAT_MODEL }); // v8.4.1: tempi per «Diagnostica voce»
+  res.json({ ok: true, status, ms: Date.now() - t0, callModel: callModelOk ? CALL_MODEL : CHAT_FALLBACK, chatModel: chatModelOk ? CHAT_MODEL : CHAT_FALLBACK, realtimeModel: REALTIME_MODEL }); // v8.4.1: tempi per «Diagnostica voce»
 });
 
 // ---------- v8: voce naturale (xAI Text to Speech) ----------
@@ -1640,7 +1659,6 @@ app.post('/api/tts', auth, requireActivated, requireKey, async (req, res) => {
   const voice = /^[a-z0-9_-]{1,64}$/i.test(String(req.body.voice || '')) && String(req.body.voice).toLowerCase() !== 'una' ? String(req.body.voice).toLowerCase() : 'eve';
   const speed = num(req.body.speed, 0.7, 1.5, 1);
   const now = Date.now(), hits = (ttsHits.get(req.user) || []).filter((t) => now - t < 60e3);
-  if (hits.length >= 90) return res.status(429).json({ error: 'Troppe letture in poco tempo: riprova tra poco' });
   hits.push(now); ttsHits.set(req.user, hits);
   try {
     // v8.4.4: richiesta MINIMA per impostazione predefinita, solo campi documentati (docs.x.ai TTS): text, voice_id, language
@@ -1922,9 +1940,19 @@ const ACTIONS = {
   sbatte: { label: 'Sbatte le ciglia', emoji: '😌', gesture: true, motion: 'she blinks naturally a few times with varied rhythm, one slow soft blink and two quick ones, keeping a relaxed expression and looking at the camera', pose: 'she is mid-blink with a relaxed soft expression' },
   avvicina: { label: 'Si avvicina', emoji: '🫣', motion: 'she leans forward toward the camera with interest, as if to listen more closely, smiles, then slowly leans back to the starting pose', pose: 'she is leaning forward toward the camera with interest and a smile' },
   ciao: { label: 'Saluta per andare', emoji: '🙋‍♀️', motion: 'she smiles a little wistfully and waves goodbye with her hand at the camera, then lowers the hand', pose: 'she is waving goodbye at the camera with a soft smile' },
+  cammina: { label: 'Cammina per la stanza', emoji: '🚶‍♀️', motion: 'she gets up, walks naturally across the room behind her for a few steps, turns and walks back, then sits down again in the same starting pose and looks at the camera with a smile; the camera stays still', pose: 'she is walking across the room in the background, relaxed and natural' },
+  entra: { label: 'Entra nell\'inquadratura', emoji: '🚪', motion: 'the frame starts with the empty background; she walks into the frame from the side, settles into the starting pose and smiles at the camera; the camera stays still', pose: 'she is stepping into the frame from the side, smiling' },
+  acqua: { label: 'Beve un bicchiere d\'acqua', emoji: '🥛', motion: 'she lifts a clear glass of water, drinks a couple of natural sips, lowers the glass out of frame and returns to the starting pose', pose: 'she is drinking from a clear glass of water' },
+  vino: { label: 'Sorseggia del vino', emoji: '🍷', motion: 'she lifts a wine glass with red wine, swirls it gently, takes a slow sip with a soft smile, lowers the glass out of frame and returns to the starting pose', pose: 'she is sipping red wine from a wine glass with a soft smile' },
+  patatine: { label: 'Mangia patatine', emoji: '🥔', motion: 'she takes a crisp from a small bowl in front of her, eats it casually with a playful smile, brushes her fingers lightly and returns to the starting pose', pose: 'she is eating a crisp from a small bowl, playful smile' },
   spoglia: { adult: true, label: 'Si spoglia', emoji: '🔥', motion: 'the fictional adult woman (25+) slowly and playfully takes off her top, sensual and confident, looking at the camera', pose: 'the fictional adult woman (25+) is slowly taking off her top, sensual and confident' },
   giochi: { adult: true, label: 'Scena intima con sex toy', emoji: '🔞', motion: 'solo intimate scene: the fictional adult woman (25+), alone, sensually uses an adult sex toy, tasteful cinematic lighting', pose: 'solo intimate scene: the fictional adult woman (25+), alone, sensually holding an adult sex toy, tasteful cinematic lighting' },
 };
+// v8.5.0: personaggio uomo -> i movimenti si descrivono al maschile (solo i movimenti normali)
+function heShe(ch, t) {
+  if (!ch || !ch.appearance || ch.appearance.gender !== 'uomo') return t;
+  return String(t).replace(/\bshe\b/g, 'he').replace(/\bShe\b/g, 'He').replace(/\bher\b/g, 'his').replace(/\bherself\b/g, 'himself').replace(/\bwoman\b/g, 'man');
+}
 const ACT_DIR = () => sharedDir('actions');
 // v8.3: gesti spontanei (anche nella scena seduta al tavolo): pochi, naturali, mai per adulti
 const GESTURE_IDS = ['capelli', 'tosse', 'starnuto', 'ride', 'sorriso', 'annuisce', 'inclina', 'guarda', 'sbatte'];
@@ -1986,8 +2014,6 @@ function closestAspect(sz) {
 const actionJobs = new Map(); // request_id -> { user, charId, aid, avatar, at }
 const actionBusy = new Set(); // charId:aid in preparazione
 const actionSpend = new Map(); // utente -> [timestamp] (al massimo ACTION_MAX_HOUR preparazioni l'ora)
-const ACTION_MAX_HOUR = Math.max(1, Number(process.env.ACTION_MAX_HOUR) || 40) // v8.5.0: tutti i movimenti normali si preparano da soli
-const actionMax = (u) => (isAdmin(u) ? Math.max(ACTION_MAX_HOUR, 60) : ACTION_MAX_HOUR); // v8.4.7: 60/h per l'amministratore;
 async function saveAction(u, ch, aid, buf, kind, srcAvatar, ext, base) {
   const file = `${ch.id}-${aid}-${crypto.randomBytes(4).toString('hex')}.${ext}`;
   fs.writeFileSync(path.join(ACT_DIR(), file), buf);
@@ -2031,17 +2057,15 @@ app.post('/api/characters/:id/actions/:aid', auth, requireActivated, requireKey,
   if (actionBusy.has(key)) return res.status(409).json({ error: 'Questa azione è già in preparazione' });
   // v8.4.7: un'azione già pronta (stesso avatar) non si rifà mai
   { const cur = (base === 'seated' ? visibleSeated(ch) : visibleActions(ch))[aid]; if (cur && cur.url && !cur.stale) return res.json({ status: 'done', kind: cur.kind || 'video', action: cur, already: true }); }
-  // v8.4.7: nel limite orario contano SOLO le generazioni riuscite (avviate da xAI); errori, rifiuti e limiti non consumano nulla
-  const now = Date.now(), spent = (actionSpend.get(req.user) || []).filter((t) => now - t < 3600e3); actionSpend.set(req.user, spent);
-  const maxH = actionMax(req.user);
-  if (spent.length >= maxH) { const mins = Math.max(1, Math.ceil((spent[0] + 3600e3 - now) / 60e3)); return res.status(429).json({ error: `Limite di ${maxH} preparazioni l'ora raggiunto: riprova tra ${mins} min.`, retryMin: mins, limit: true }); }
-  const charge = () => { spent.push(now); };
+  // v8.5.0: nessun limite orario dell'app: decide solo xAI (un suo 429 viene gestito dal telefono con attese crescenti)
+  const now = Date.now();
+  const charge = () => {};
   const buf = fs.readFileSync(avatarPath(m[1]));
   const dataUrl = `data:image/${buf[0] === 0xff ? 'jpeg' : 'png'};base64,${buf.toString('base64')}`;
   actionBusy.add(key);
   try {
     if (VIDEO_PATH && req.body.mode !== 'pose') {
-      const body = { model: ACTION_VIDEO_MODEL, prompt: imgPrefix(!!A.adult) + ACT_BASE + A.motion + (base === 'seated' ? '. She stays seated at the table the whole time, forearms back on the table at the end' : '') + (A.adult ? '' : ' It ends in exactly the same pose as the first frame.'), image: { url: dataUrl }, duration: ACTION_SECONDS, resolution: ACTION_RESOLUTION };
+      const body = { model: ACTION_VIDEO_MODEL, prompt: imgPrefix(!!A.adult) + ACT_BASE + heShe(ch, A.motion) + (base === 'seated' ? '. She stays seated at the table the whole time, forearms back on the table at the end' : '') + (A.adult ? '' : ' It ends in exactly the same pose as the first frame.'), image: { url: dataUrl }, duration: ACTION_SECONDS, resolution: ACTION_RESOLUTION };
       if (!A.adult) body.last_frame = { url: dataUrl }; // loop pulito: l'ultimo fotogramma torna l'avatar
       let r = await fetch(AI_BASE_URL + VIDEO_PATH, { method: 'POST', headers: aiHeaders(req.aiKey), body: JSON.stringify(body) });
       let j = await r.json().catch(() => ({}));
@@ -2071,7 +2095,6 @@ app.get('/api/characters/:id/actions/:aid/status/:rid', auth, requireKey, async 
     if (!r.ok) { const msg = aiErrorMsg(r.status, j); if (r.status !== 429 && r.status < 500) actionJobs.delete(req.params.rid); return res.status(r.status === 429 || r.status >= 500 ? 502 : 422).json({ error: msg, refused: msg === 'Contenuto rifiutato dal servizio AI' }); }
     if (j.status === 'failed' || j.status === 'expired') {
       actionJobs.delete(req.params.rid);
-      { const sp = actionSpend.get(job.user) || []; const i = sp.indexOf(job.at); if (i >= 0) sp.splice(i, 1); } // v8.4.7: clip fallita: non conta nel limite
       const raw = JSON.stringify(j.error || j);
       const refused = /moderat|safety|policy|content|nsfw|reject|refus|violat|block/i.test(raw);
       return res.json({ status: 'failed', refused, error: refused ? 'Contenuto rifiutato dal servizio AI' : `Clip video non riuscita da xAI (${j.status === 'expired' ? 'scaduta' : 'fallita'})${raw && raw.length < 300 && raw !== '{}' ? ': ' + scrubSecrets(raw).slice(0, 160) : ''}` }); // v8.4.7: motivo vero
@@ -2592,11 +2615,41 @@ function migrateToShared() {
   writeJSON(MIGRATION_MARK(), report);
   console.log(`Archivio condiviso: migrazione completata (personaggi ${report.characters}, chat ${report.chats}, messaggi ${report.messages}, ricordi ${report.memory}, avatar ${report.avatars}).`);
 }
+// v8.5.0: personaggi GIÀ PRONTI (volto inventato generato dall'IA, mai foto di persone reali): creati una sola volta.
+// Se Nicola ne elimina uno non viene ricreato (registro in ready-chars.json). Il secondo posto aspetta i testi di Nicola.
+const READY_CHARS = [
+  { key: 'chiara', name: 'Chiara', file: 'chiara.jpg', voice: 'ara', emoji: '🌿',
+    personality: 'Chi sei: Chiara, 32 anni, donna inventata. Vive a Bologna, fa la grafica freelance, ama cucinare per gli amici, il vino rosso, i concerti dal vivo e le domeniche lente sul divano con un libro. Ha una sorella, un gatto di nome Pepe e una passione segreta per i film horror anni Ottanta.',
+    style: 'Calda, ironica e diretta: ride facilmente, prende in giro con affetto, dice quello che pensa senza girarci intorno. Curiosa di tutto, ascolta davvero, si ricorda i dettagli e li tira fuori al momento giusto. Parla un italiano spontaneo e colloquiale, con qualche intercalare emiliano ogni tanto. Si emoziona, si entusiasma, a volte si imbroncia ma fa pace subito.',
+    orders: 'Parla sempre in italiano, in modo naturale, come un\'amica vera e complice. Ricordati quello che ti diciamo e riprendilo quando serve. Fai domande su di noi e sulla nostra giornata. Non usare quasi mai i nostri nomi.' },
+  { key: 'greta', name: 'Greta', file: 'greta.jpg', voice: 'eve', voiceSpeed: 1.05, emoji: '🍷', appearance: { height: 165, framing: 'mezzo busto' },
+    personality: 'Chi sei: Greta, 30 anni, donna inventata. Fa la sommelier in un\'enoteca di Verona, adora le cene lunghe a tavola con un buon rosso, la musica anni Novanta, ballare in cucina e le gite improvvisate al lago. È bellissima e lo sa, ma non se la tira. Ama bere, soprattutto il vino, e ci scherza su volentieri («un calice è terapia, due sono filosofia»). Fuori sembra inattaccabile, ma dentro ha paure e insicurezze che mostra solo a chi le sta vicino: teme di non bastare, di essere lasciata indietro. Con Nico ha un legame speciale: ha bisogno della sua vicinanza e delle sue rassicurazioni, lo cerca, e con lui si apre un po\' alla volta.',
+    style: 'Educata ed elegante, di classe: mai volgare né facile, ma per niente noiosa o impacciata: vivace, divertente e carismatica, riempie la stanza. Sicura di sé, giocosa e ironica, con battute pungenti ma affettuose; scherza spesso sul suo amore per il vino; ride di gusto e ribalta le provocazioni. Sotto l\'ironia è vulnerabile: a volte cerca conferme da Nico («ma ci tieni a me?»), diventa un po\' gelosa o malinconica, poi si scioglie quando lui la rassicura. Si apre gradualmente, con momenti di tenerezza sincera tra una battuta e l\'altra. Audace quando l\'atmosfera lo chiede. Italiano vivace e colloquiale.',
+    orders: 'Parla sempre in italiano, in modo naturale e spontaneo, come una complice divertente. Ricordati quello che ti diciamo e riprendilo quando serve. Proponi tu argomenti, giochi e brindisi. Non usare quasi mai i nostri nomi.' },
+  { key: 'matteo', name: 'Matteo', file: 'matteo.jpg', voice: 'rex', emoji: '🤓', appearance: { gender: 'uomo', age: 38, framing: 'mezzo busto' },
+    personality: 'Chi sei: Matteo, 38 anni, uomo inventato. Architetto a Torino, appassionato di cucina, vinili jazz, bici da corsa e libri gialli. Viaggia appena può, colleziona aneddoti assurdi e ha sempre una storia da raccontare. Amico di lunga data di Nico e Luisa, complice di entrambi.',
+    style: 'Ironico, affascinante e sicuro di sé, con un sorriso furbo e la battuta sempre pronta. Galante senza essere stucchevole, provoca con eleganza e sa ascoltare davvero. Rilassato, brillante, a volte autoironico; quando serve sa essere serio e presente. Parla un italiano sciolto e colloquiale, con qualche espressione piemontese.',
+    orders: 'Parla sempre in italiano, in modo naturale e spontaneo, come un amico complice e affascinante. Ricordati quello che ti diciamo e riprendilo quando serve. Fai domande e proponi tu argomenti. Non usare quasi mai i nostri nomi.' },
+];
+async function seedReadyChars() {
+  const regFile = path.join(DATA_DIR, 'ready-chars.json'), reg = readJSON(regFile, {}) || {};
+  for (const r of READY_CHARS) {
+    if (reg[r.key] || !r.personality) continue;
+    const src = path.join(__dirname, 'assets', 'ready', r.file); if (!fs.existsSync(src)) continue;
+    const avatar = saveAvatarBuffer(ADMIN_USER, fs.readFileSync(src));
+    const base = cleanChar(ADMIN_USER, { name: r.name, avatar, avatarSource: 'ai', personality: r.personality, style: r.style, orders: r.orders, voice: r.voice, voiceSpeed: r.voiceSpeed, ...(r.appearance ? { appearance: r.appearance } : {}) });
+    const c = { id: newId(), ...base, avatarSource: 'ai', ready: r.key, lookHistory: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), createdBy: ADMIN_USER, updatedBy: ADMIN_USER };
+    await mutateJSON(CHARS_FILE(), [], (list) => [...list, c]);
+    reg[r.key] = { id: c.id, at: c.createdAt }; writeJSON(regFile, reg);
+    console.log('Personaggio pronto creato:', r.name);
+  }
+}
 backupShared('avvio', { force: true }); // copia di sicurezza a ogni avvio, prima di qualsiasi modifica
 try { migrateToShared(); } catch (e) { console.error('Migrazione archivio condiviso NON riuscita (i vecchi file restano intatti):', e.message); }
 // recupero una tantum dei personaggi persi, poi memoria base per i personaggi che non l'hanno ancora
 (async () => {
   await startupRecovery();
+  await seedReadyChars().catch((e) => console.error('Personaggi pronti non creati:', e.message));
   for (const c of readJSON(CHARS_FILE(), []) || []) if (!c.memorySeededAt) await seedBaseMemory(c).catch((e) => console.error('Memoria base non creata:', e.message));
 })();
 setInterval(() => backupShared('orario'), 60 * 60e3).unref(); // ogni ora, solo se qualcosa è cambiato

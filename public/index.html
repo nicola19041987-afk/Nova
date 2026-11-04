@@ -291,6 +291,8 @@
           <label class="switch"><input type="checkbox" id="set-export"> Consenti esportazione/condivisione</label>
           <label class="switch"><input type="checkbox" id="set-adult"> Modalità adulti (18+)</label>
           <p class="muted small" id="adult-info">Disattivata.</p>
+          <label class="switch" id="nobrakes-row" hidden><input type="checkbox" id="set-nobrakes"> Senza freni (solo Nicola)</label>
+          <p class="muted small" id="nobrakes-info" hidden>Con la modalità adulti attiva per entrambi: dialogo intimo al massimo esplicito, intenso e audace, che nasce dalla conversazione. Spento = comportamento adulti di sempre.</p>
           <label>Parola chiave per attivarla a voce o per iscritto (facoltativa)
             <input id="kw-input" type="password" autocomplete="off" placeholder="vuoto = funzione spenta"></label>
           <button id="kw-save" class="block">Salva parola chiave</button>
@@ -442,8 +444,11 @@
 
       <details open><summary>Base</summary>
         <label>Nome <input name="name" required maxlength="60"></label>
-        <label>Personalità / istruzioni <textarea name="personality" rows="4" placeholder="Chi è, come si comporta, cosa le/gli piace…"></textarea></label>
-        <label>Stile <textarea name="style" rows="2" placeholder="Tono, lunghezza delle risposte, emoji…"></textarea></label>
+        <!-- v8.5.0: solo tre campi; regole, stile e indicazioni di comportamento sono integrati in automatico nel prompt -->
+        <label>Personalità base <textarea name="personality" rows="4" placeholder="Chi è: età, lavoro, passioni, la sua vita…"></textarea></label>
+        <label>Carattere <textarea name="style" rows="3" placeholder="Com'è e come parla: ironica, dolce, diretta, curiosa…"></textarea></label>
+        <label>Ordini da seguire <textarea name="orders" rows="3" maxlength="4000" placeholder="Istruzioni fisse che segue sempre. Es. «Chiamami amore», «Parlami sempre del tuo lavoro», «Niente emoji»"></textarea></label>
+        <p class="muted small">Tutto il resto (regole, stile della conversazione, voce in chiamata, linguaggio del corpo) è già integrato in automatico.</p>
         <button type="button" id="fill-base" class="link fill-base" hidden>✍️ Riempi con base (solo i campi vuoti)</button>
         <label>Voce <select name="voice" id="char-voice"><option value="">Come nelle Impostazioni</option><option value="ara">Ara — calda</option><option value="eve">Eve — vivace</option><option value="sal">Sal — pacata</option></select></label>
         <p id="preset-hint" class="notice small" hidden></p>

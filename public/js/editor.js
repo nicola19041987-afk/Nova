@@ -24,7 +24,7 @@
 
   function defaults() {
     const T = App.DEF_TEXTS || {}; // v8.4: testi di partenza (modificabili) coerenti con le regole di comportamento
-    return { id: null, name: '', avatar: '💫', avatarSource: 'emoji', personality: T.personality || '', style: T.style || '', voice: '', preset: null, landmarks: clone(LM_DEFAULT.ritratto),
+    return { id: null, name: '', avatar: '💫', avatarSource: 'emoji', personality: T.personality || '', style: T.style || '', orders: T.orders || '', voice: '', preset: null, landmarks: clone(LM_DEFAULT.ritratto),
       appearance: { gender: 'donna', age: 30, build: 'snella', shape: 'clessidra', proportions: 'equilibrate', height: 168, framing: 'ritratto', colors: { hue: 0, saturation: 100, brightness: 100, background: '#2b1530', glow: '#d14b8f' } },
       look: { cut: 'scalato', length: 'lunghi', hairColor: 'castano', hairStyle: 'mosse morbide', makeup: 'naturale', outfit: 'casual', custom: '' },
       identity: { core: T.core || '', locked: false }, wardrobe: [], autoChanges: { enabled: false, everyDays: 1, bodyDrift: false, buildMin: 'esile', buildMax: 'robusta' }, lookHistory: [], state: null };
@@ -68,7 +68,7 @@
     }
   }
   function toForm() {
-    form.name.value = E.name; form.personality.value = E.personality; form.style.value = E.style;
+    form.name.value = E.name; form.personality.value = E.personality; form.style.value = E.style; form.orders.value = E.orders || '';
     form.voice.value = E.voice || ''; if (form.voice.value !== (E.voice || '')) { const o = document.createElement('option'); o.value = o.textContent = E.voice; form.voice.appendChild(o); form.voice.value = E.voice; }
     $('#fill-base').hidden = !E.id || !!(String(E.personality || '').trim() && String(E.style || '').trim() && String((E.identity && E.identity.core) || '').trim());
     form.avatarEmoji.value = E.avatarSource === 'emoji' ? E.avatar : '';
@@ -93,7 +93,7 @@
     $('#doc-canvas').hidden = true; $('#doc-actions').hidden = true;
   }
   function fromForm() {
-    E.name = form.name.value.trim(); E.personality = form.personality.value; E.style = form.style.value; E.voice = form.voice.value;
+    E.name = form.name.value.trim(); E.personality = form.personality.value; E.style = form.style.value; E.orders = form.orders.value; E.voice = form.voice.value;
     if (E.avatarSource === 'emoji') E.avatar = form.avatarEmoji.value.trim() || '💫';
     $$('[data-ap]', form).forEach((el) => { E.appearance[el.dataset.ap] = el.type === 'range' ? Number(el.value) : el.value; });
     $$('[data-look]', form).forEach((el) => { E.look[el.dataset.look] = el.value; });
@@ -103,7 +103,7 @@
   }
   function body(extra = {}) {
     return { name: E.name, avatar: E.avatar, avatarSource: E.avatarSource, avatarConsent: $('#avatar-consent').checked, pendingId: E.pendingId,
-      personality: E.personality, style: E.style, voice: E.voice || '', ...(E.preset ? { preset: E.preset } : {}), landmarks: E.landmarks, appearance: E.appearance, look: E.look, identity: E.identity,
+      personality: E.personality, style: E.style, orders: E.orders || '', voice: E.voice || '', ...(E.preset ? { preset: E.preset } : {}), landmarks: E.landmarks, appearance: E.appearance, look: E.look, identity: E.identity,
       wardrobe: E.wardrobe, autoChanges: E.autoChanges, frameDist: E.frameDist == null ? 0.75 : E.frameDist, ...extra };
   }
   function store(ch) {
@@ -181,7 +181,7 @@
     openPreset(key) {
       const p = App.PRESETS && App.PRESETS[key]; if (!p) return;
       App.editor.open(null);
-      Object.assign(E, { name: p.name, avatar: p.emoji, avatarSource: 'emoji', personality: p.personality, style: p.style, voice: p.voice, preset: key });
+      Object.assign(E, { name: p.name, avatar: p.emoji, avatarSource: 'emoji', personality: p.personality, style: p.style, orders: p.orders || '', voice: p.voice, preset: key });
       E.identity.core = p.core; E.appearance.age = p.age; E.appearance.gender = 'donna'; Object.assign(E.look, p.look || {});
       if (p.ap) Object.assign(E.appearance, p.ap); if (p.colors) E.appearance.colors = { ...E.appearance.colors, ...p.colors }; // v8.4.2: modello completo
       if (p.ward) E.wardrobe = [{ id: null, name: p.ward.name, look: { ...E.look, ...p.ward.look } }];

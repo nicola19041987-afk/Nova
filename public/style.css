@@ -620,3 +620,20 @@ body.voice-live #stage.fs #hot-btn,body.voice-live #stage:fullscreen #hot-btn{di
 body[data-tab=conv] .auto-prep{bottom:calc(70px + env(safe-area-inset-bottom));opacity:.85}
 body.in-call .auto-prep{display:none}
 body[data-tab=conv] .auto-prep{top:calc(env(safe-area-inset-top) + 64px);bottom:auto}
+/* v8.5.0: rifiniture per smartphone (iPhone 390/430): aree sicure, tocchi ≥44 px, niente sovrapposizioni */
+.auto-prep,body[data-tab=conv] .auto-prep{top:calc(env(safe-area-inset-top) + 62px);bottom:auto;left:auto;right:10px;font-size:11.5px;padding:4px 10px;opacity:.9}
+body[data-tab=conv] .auto-prep{top:auto;bottom:calc(env(safe-area-inset-bottom) + 64px);left:10px;right:auto}
+#tab-conv .voicebar{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;padding:0 6px 6px}
+#tab-conv .voicebar::-webkit-scrollbar{display:none}
+#tab-conv .voicebar button{flex:0 0 auto;min-height:36px;white-space:nowrap}
+.stage-tools button{width:44px;height:44px;line-height:44px}
+.tabbar button{min-height:52px}
+.topbar button,.wa-ic,#back-btn{min-width:44px;min-height:44px}
+main,.messages,dialog{-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
+html{-webkit-text-size-adjust:100%}
+input,select,textarea{font-size:16px} /* niente zoom automatico di iOS */
+dialog{padding-bottom:calc(16px + env(safe-area-inset-bottom))}
+.call-bar{padding-bottom:calc(10px + env(safe-area-inset-bottom))}
+.call-btn{min-width:48px;min-height:48px}
+.preset-chip{min-height:64px}
+body[data-tab=conv] .auto-prep{top:calc(env(safe-area-inset-top) + 64px);bottom:auto;left:10px;right:auto}

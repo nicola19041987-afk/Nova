@@ -135,8 +135,8 @@
   const NX = {
     el: null, q: [], playing: null, buf: '', streaming: false, sent: 0, gen: 0, fails: 0, cache: new Map(), devBuf: '', degraded: false, blessed: false,
     enabled() { return App.ls.get('voiceEngine', 'xai') === 'xai' && !!App.key() && this.fails < 3; },
-    voice() { return App.ls.get('ttsVoice', 'ara') || 'ara'; },
-    speed() { return Number(App.ls.get('ttsSpeed', 1)) || 1; },
+    voice() { const c = App.current; return (c && c.voice) || App.ls.get('ttsVoice', 'ara') || 'ara'; }, // v8.5.0: voce del personaggio anche nella lettura
+    speed() { const c = App.current; if (c && Number.isFinite(c.voiceSpeed) && c.voiceSpeed) return c.voiceSpeed; return Number(App.ls.get('ttsSpeed', 1)) || 1; }, // v8.5.0: velocità del personaggio
     audio() { if (!this.el) { const a = new Audio(); a.preload = 'auto'; a.setAttribute('playsinline', ''); this.el = a; } return this.el; },
     stop() {
       this.gen++; this.q = []; this.buf = ''; this.streaming = false; this.sent = 0; this.devBuf = ''; this.degraded = false;
@@ -150,10 +150,10 @@
     say(text) { this.begin(); this.feed(text); this.end(); },
     split(force) { // frasi intere; la prima corta (si sente subito), le altre più lunghe (meno richieste, intonazione migliore)
       const re = /[.!?…]+["»”')]*\s+|\n+/g; let m, last = 0, acc = '';
-      while ((m = re.exec(this.buf))) { acc += this.buf.slice(last, m.index + m[0].length); last = m.index + m[0].length; if (acc.trim().length >= (this.sent === 0 ? 16 : 80)) { this.enqueue(acc); acc = ''; } }
+      while ((m = re.exec(this.buf))) { acc += this.buf.slice(last, m.index + m[0].length); last = m.index + m[0].length; if (acc.trim().length >= (this.sent === 0 ? 8 : 60)) { this.enqueue(acc); acc = ''; } }
       this.buf = acc + this.buf.slice(last);
       // v8.4: la prima frase parte anche a una virgola (dopo ~5 parole), così la voce inizia prima
-      if (!force && this.sent === 0) { const c = this.buf.search(/[,;:]\s/); if (c >= 28 && c < 160) { this.enqueue(this.buf.slice(0, c + 1)); this.buf = this.buf.slice(c + 2); } }
+      if (!force && this.sent === 0) { const c = this.buf.search(/[,;:]\s/); if (c >= 14 && c < 160) { this.enqueue(this.buf.slice(0, c + 1)); this.buf = this.buf.slice(c + 2); } }
       if (!force && this.buf.length > 420) { const cut = Math.max(this.buf.lastIndexOf(', ', 400), this.buf.lastIndexOf(' ', 400)); if (cut > 40) { this.enqueue(this.buf.slice(0, cut + 1)); this.buf = this.buf.slice(cut + 1); } }
       if (force && this.buf.trim()) { this.enqueue(this.buf); this.buf = ''; }
     },

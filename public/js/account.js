@@ -38,7 +38,9 @@ App.account = {
   // v8.3.1: stato della modalità adulti di ENTRAMBI, con cosa manca e a chi (le regole non cambiano: servono tutti e due)
   async adultStatus() {
     let st = null; try { st = await App.api('/api/adult-status'); } catch { /* offline */ }
-    App.adultStatus = st; const el = $('#adult-info'); if (!el) return st;
+    App.adultStatus = st;
+    { const ok = !!(App.me && App.me.admin && st && st.chat); $('#nobrakes-row').hidden = !ok; $('#nobrakes-info').hidden = !ok; $('#set-nobrakes').checked = !!(App.settings && App.settings.noBrakes); } // v8.5.0
+    const el = $('#adult-info'); if (!el) return st;
     if (!st) { el.textContent = App.settings.adultMode ? 'Attiva per te.' : 'Disattivata.'; return st; }
     el.innerHTML = App.adultText(st, true); el.classList.toggle('ok', st.chat);
     return st;
@@ -82,7 +84,7 @@ $('#key-save').addEventListener('click', () => {
 $('#key-clear').addEventListener('click', () => { App.ls.del('key'); $('#key-input').value = ''; App.account.load(); });
 
 async function saveSettings() {
-  App.settings = await App.api('/api/settings', { method: 'PUT', body: { ...App.settings, adultMode: $('#set-adult').checked, autoSave: $('#set-autosave').checked, allowExport: $('#set-export').checked, videoModel: $('#set-video-model').value.trim(), videoDuration: Number($('#set-video-duration').value) } });
+  App.settings = await App.api('/api/settings', { method: 'PUT', body: { ...App.settings, adultMode: $('#set-adult').checked, noBrakes: $('#set-adult').checked && $('#set-nobrakes').checked, autoSave: $('#set-autosave').checked, allowExport: $('#set-export').checked, videoModel: $('#set-video-model').value.trim(), videoDuration: Number($('#set-video-duration').value) } });
   App.ls.set('settings', App.settings); App.media && App.media.renderAll(); App.feed && App.feed.render();
 }
 $('#set-autosave').addEventListener('change', saveSettings);
@@ -199,3 +201,8 @@ App.adultText = function (st, html) {
   if (!html) return head.replace(/<[^>]+>/g, '');
   return `<span class="adult-head">${head}</span><span class="adult-rows">${st.users.map(row).join('<br>')}</span>`;
 };
+
+// v8.5.0: «Senza freni» (solo Nicola, visibile solo con la modalità adulti attiva per entrambi)
+$('#set-nobrakes').addEventListener('change', async (e) => {
+  try { await saveSettings(); App.toast(e.target.checked ? '🔥 Senza freni: attivo' : 'Senza freni: spento'); } catch (err) { e.target.checked = !e.target.checked; App.toast(err.message); }
+});

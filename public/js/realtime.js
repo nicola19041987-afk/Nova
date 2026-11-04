@@ -18,6 +18,7 @@
   const b64 = (buf) => { const u = new Uint8Array(buf); let s = ''; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(s); };
   const unb64 = (s) => { const bin = atob(s), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return u.buffer; };
   let S = null; // sessione attiva
+  let PRE = null; // v8.5.0: token effimero preparato in anticipo (una sola sessione, scade in 300 s)
   const LOG = []; // ultimi eventi (per «Diagnostica voce»)
   const note = (t, d) => { LOG.push({ at: Math.round(performance.now()), t, d: d == null ? undefined : String(d).slice(0, 200) }); if (LOG.length > 60) LOG.shift(); };
   const errText = (ev) => { const e = (ev && ev.error) || ev || {}; return [e.message || e.code || 'errore', e.param && `(${e.param})`].filter(Boolean).join(' '); };
@@ -243,7 +244,10 @@
       try {
         s.isReady = false; s.upd = 0; s.created = false;
         const t = performance.now();
-        s.cfg = await App.api('/api/realtime/session', { method: 'POST', body: { characterId: s.ch.id, mode: s.mode, voice: s.voice }, ai: true });
+        // v8.5.0: token già pronto (preparato all'apertura della chat) -> la chiamata si collega subito
+        const w = PRE && PRE.ch === s.ch.id && PRE.vid === s.voice && Date.now() - PRE.at < 200e3 ? PRE.modes[s.mode] : null; PRE = null;
+        s.cfg = (w && await w.p.catch(() => null)) || await App.api('/api/realtime/session', { method: 'POST', body: { characterId: s.ch.id, mode: s.mode, voice: s.voice }, ai: true });
+        if (w) note('token pronto in anticipo');
         s.tokenMs = Math.round(performance.now() - t); note('token', s.tokenMs + ' ms');
         s.adult = s.cfg.adult; await connect(s); return;
       } catch (e) { last = e; note('tentativo ' + (i + 1), e.message); if (e.status && e.status < 500 && e.status !== 408) break; }
@@ -253,6 +257,13 @@
 
   App.rt = {
     supported,
+    // v8.5.0: all'apertura della chat prepara i token (vocale e video) e scalda la connessione: la chiamata parte subito
+    prewarm(ch) {
+      if (!ch || !App.rt.enabled() || S) return; const voice = ch.voice || App.ls.get('ttsVoice', 'ara') || 'ara';
+      if (PRE && PRE.ch === ch.id && Date.now() - PRE.at < 150e3) return;
+      const mk = (mode) => { const p = App.api('/api/realtime/session', { method: 'POST', body: { characterId: ch.id, mode, voice }, ai: true }); p.catch(() => {}); return { p }; };
+      PRE = { ch: ch.id, vid: voice, at: Date.now(), modes: { voice: mk('voice'), video: mk('video') } };
+    },
     enabled: () => App.ls.get('callEngine', 'realtime') === 'realtime' && supported() && !!App.key(),
     get active() { return !!(S && !S.closed && S.isReady); },
     // da chiamare DENTRO il tocco che avvia la chiamata (sblocco audio + microfono in parallelo alla connessione)
