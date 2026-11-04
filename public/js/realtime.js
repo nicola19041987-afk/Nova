@@ -27,9 +27,11 @@
   // ---------- microfono -> 24 kHz PCM16, blocchi da 100 ms ----------
   async function startMic(s) {
     const c = ctx();
-    s.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } });
-    if (s.closed) { s.stream.getTracks().forEach((t) => t.stop()); return; }
+    s.stream = await App.audio.mic(); // v8.4.4: microfono condiviso della chiamata (mai fermato qui)
+    if (s.closed) return;
+    try { s.src && s.src.disconnect(); s.node && s.node.disconnect(); } catch {}
     s.src = c.createMediaStreamSource(s.stream);
+    if (!s.offLost) s.offLost = App.audio.onMicLost(() => { if (!s.closed) startMic(s).catch((e) => console.warn('Microfono non riaperto', e)); });
     const onChunk = (pcm, rms) => {
       if (rms > 0.012 && !playing(s)) s.lastVoiceAt = performance.now(); // fine del parlato (per misurare la latenza)
       if (s.muted) return;
@@ -266,7 +268,7 @@
       try { s.ws && s.ws.close(); } catch {}
       stopPlayback(s);
       try { s.node && s.node.disconnect(); s.src && s.src.disconnect(); } catch {}
-      if (s.stream) s.stream.getTracks().forEach((t) => t.stop());
+      if (s.offLost) s.offLost(); // v8.4.4: il microfono resta aperto (lo chiude solo la fine della chiamata)
       if (s.resp && s.resp.text && !s.resp.saved) { s.resp.saved = true; save(s, 'assistant', s.resp.text + '…', { interrupted: true }); }
       return { lat: s.lat };
     },

@@ -172,6 +172,15 @@ Tutto in `data/` sul server (escluso da git e dallo zip): `pins.json`, `sessions
 - Le clip delle azioni suonano con il loro audio (se presente) solo con Lettura attiva e audio sbloccato; se iOS lo blocca, la clip parte muta.
 - Sul telefono: interruttore laterale (silenzioso) disattivato e volume alzato; su iPhone la sintesi vocale può restare muta in modalità silenziosa.
 
+## Novità v8.4.4 (microfono senza "attacca/stacca", video senza spegnere il microfono, fotocamera in videochiamata)
+
+- **Voce (TTS) richiesta minima:** `POST /v1/tts` ora invia solo i campi documentati `text`, `voice_id`, `language: "it"` (+ `speed` 0,7–1,5 solo se ≠ 1). Rimossi `output_format` (predefinito MP3 24 kHz) e `optimize_streaming_latency`. Retry: 429/5xx → un nuovo tentativo; 400/422 → senza velocità; 404 → voce «eve». Risposta JSON con audio base64 gestita.
+
+- **Un solo microfono per chiamata**: un unico getUserMedia all'inizio (dentro il tocco), condiviso da tempo reale e chiamata classica e mai fermato fra i turni, passando da vocale a video, accendendo/spegnendo la fotocamera o se il tempo reale ricade sulla classica; si chiude solo riattaccando. Eco e interruzioni sono gestite via software (l'ingresso viene ignorato mentre lei parla), muto compreso. Un solo AudioContext, mai chiuso o sospeso.
+- **Niente suoni di sistema in chiamata**: mai il riconoscimento vocale del telefono (se la trascrizione xAI non va si continua scrivendo), niente «riscaldamento» con `<audio>`/sintesi vocale né conferma «Lettura attiva» durante la chiamata (cambiavano la sessione audio di iOS).
+- **Passa a video**: il microfono resta lo stesso e la conversazione continua; la fotocamera viene chiesta (solo video) e la tua anteprima compare piccola in alto (playsinline, muta, autoplay: funziona su iPhone). Se è negata, istruzioni: Impostazioni → Safari → Fotocamera → Consenti, oppure «aA» → Impostazioni sito web → Fotocamera. Spegnere/accendere la fotocamera non tocca il microfono.
+- Cache dell'app: `app-privata-v8-4-4`; icone 🤫 e `?v=843` invariate.
+
 ## Novità v8.4.3 (avatar: occhi e bocca allineati, sempre in movimento)
 
 - **Causa** di «bocche storte, occhi pure e nessun movimento»: l'avatar usava punti del viso che non appartenevano alla foto mostrata — quelli di un look/foto precedente, quelli del personaggio aperto prima (se il nuovo non li aveva) o quelli predefiniti quando il rilevamento sul telefono falliva (e dopo un fallimento non veniva più ritentato). Le «toppe» di occhi e bocca finivano su collo/petto e il viso vero restava fermo.

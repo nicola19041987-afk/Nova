@@ -46,6 +46,7 @@
     $('#call-tovideo').hidden = mode !== 'voice'; $('#call-speaker').hidden = mode !== 'voice';
     $('#call-cam').hidden = mode === 'voice'; $('#call-cc').hidden = mode === 'voice';
     if (mode === 'voice') { stopCam(); $('#call-caption').hidden = true; }
+    else if (on && !cam) startCam(); // v8.4.4: passando a video (o iniziando in video) chiede la fotocamera, dentro il tocco
     App.call.mode = mode; if (mode === 'video') everVideo = true;
     if (on && rt) App.rt.setMode(mode);
     cancelAnimationFrame(raf); if (mode === 'voice') raf = requestAnimationFrame(portrait);
@@ -89,9 +90,11 @@
       if (!confirm('La videochiamata usa il microfono per ascoltarti (il riconoscimento resta sul telefono / nel browser). Attivarlo?')) return;
       App.ls.set('micOn', true); const cb = $('#set-mic'); if (cb) cb.checked = true; App.applyDevicePrefs && App.applyDevicePrefs();
     }
-    on = true; t0 = Date.now(); muted = false; everVideo = false; rt = false;
-    App.audio.unlock(); // dentro il tocco: sblocca l'audio su iPhone
+    on = true; t0 = Date.now(); muted = false; everVideo = false; rt = false; camAsked = false;
+    App.call.active = true; if (App.voice.isListening && App.voice.isListening()) App.voice.stop(); // v8.4.4: niente riconoscimento vocale del telefono in chiamata (suoni di attacco/stacco)
     App.audio.callSession(true); // v8.4.1: una sola sessione audio (registra + riproduce) per tutta la chiamata
+    App.audio.unlock(); // dentro il tocco: sblocca l'AudioContext condiviso (in chiamata nessun <audio>/sintesi di "riscaldamento")
+    App.audio.mic().catch(() => {}); // v8.4.4: il microfono si apre UNA volta, subito, dentro il tocco
     App.stageFs.exit(); stage.classList.add('fs', 'call'); document.body.classList.add('avatar-fs-on', 'in-call');
     ui.hidden = false; $('#call-name').textContent = ch.name; $('#call-caption').hidden = true;
     setMode(m || 'video'); speaker = true; $('#call-speaker').classList.add('on'); $('#call-speaker').textContent = '🔊'; if (App.tts) App.tts.volume = 1;
@@ -118,20 +121,23 @@
     App.api('/api/ai-warm', { method: 'POST', ai: true }).catch(() => {}); // connessione calda verso xAI
     clearInterval(warm); warm = setInterval(() => { if (on && !rt) App.api('/api/ai-warm', { method: 'POST', ai: true }).catch(() => {}); }, 25000);
     if (greet) setTimeout(() => { if (on) App.voice.sayNow(greet); }, 350);
-    const useSR = () => { micMode = 'sr'; badge('classic', reason); if (SR && on && !muted) App.voice.start(); };
+    // v8.4.4: mai il riconoscimento vocale del telefono in chiamata (su iPhone suona a ogni avvio/arresto): se la trascrizione xAI
+    // non va, si continua scrivendo (il microfono resta aperto e la chiamata pure)
+    const useSR = () => { micMode = ''; badge('classic', reason); state(); };
     if (App.callMic && App.callMic.supported() && App.ls.get('callMicVad', true)) {
-      App.callMic.start({ onFail: (e) => { if (!on || rt) return; App.callMic.stop(); App.toast('🎙️ Trascrizione xAI non disponibile (' + e.message + '): uso il riconoscimento del telefono', 4500); useSR(); } })
+      App.callMic.start({ onFail: (e) => { if (!on || rt) return; App.callMic.stop(); App.toast('🎙️ Trascrizione xAI non disponibile (' + e.message + '): scrivi qui sotto, la chiamata continua', 5000); useSR(); } })
         .then(() => { if (!on || rt) { App.callMic.stop(); return; } micMode = 'vad'; badge('classic', reason); if (muted) App.callMic.setMuted(true); state(); })
         .catch((e) => { console.warn('Microfono continuo non disponibile:', e.message); if (on && !rt) useSR(); });
-    } else if (SR) setTimeout(useSR, greet ? 600 : 50);
+    } else useSR();
   }
   function end() {
     if (!on) return; on = false; App.call.active = false; cancelAnimationFrame(raf);
     stage.classList.remove('voice'); ui.classList.remove('voice'); App.call.mode = null;
     if (App.tts) App.tts.volume = 1;
-    clearInterval(tick); clearInterval(warm); App.voice.stop(); App.voice.cancel(); if (App.callMic) App.callMic.stop(); micMode = ''; badge('');
-    App.audio.callSession(false);
+    clearInterval(tick); clearInterval(warm); App.voice.cancel(); if (App.callMic) App.callMic.stop(); micMode = ''; badge('');
     if (rt) { App.rt.stop(); rt = false; } connecting = false; ui.classList.remove('rt');
+    App.audio.releaseMic(); // v8.4.4: il microfono si chiude solo qui, riattaccando
+    App.audio.callSession(false);
     const ch = App.current, secs = Math.round((Date.now() - t0) / 1000); // v8.4: registro chiamate (scheda Chiamate)
     if (ch) App.api('/api/calls', { method: 'POST', body: { characterId: ch.id, mode: everVideo ? 'video' : 'voice', startedAt: new Date(t0).toISOString(), seconds: secs } }).catch(() => {});
     stopCam(); ui.hidden = true; stage.classList.remove('fs', 'call'); document.body.classList.remove('avatar-fs-on', 'in-call');
@@ -140,18 +146,34 @@
     App.toast((mode === 'voice' ? '📞 Chiamata vocale terminata · ' : '📹 Videochiamata terminata · ') + fmt(Date.now() - t0));
     requestAnimationFrame(() => App.fitFrame && App.fitFrame()); App.chat.header && App.chat.header();
   }
-  async function toggleCam() {
-    if (cam) return stopCam();
-    if (!App.ls.get('camOn', false)) {
-      if (!confirm('Mostrare la tua fotocamera nel riquadrino? Il video resta sul telefono e non viene inviato a nessuno.')) return;
-      App.ls.set('camOn', true); const cb = $('#set-cam'); if (cb) cb.checked = true; App.applyDevicePrefs && App.applyDevicePrefs();
-    }
-    try {
-      cam = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 480 }, height: { ideal: 640 } }, audio: false });
-      const v = $('#call-self'); v.srcObject = cam; v.hidden = false; v.play().catch(() => {}); $('#call-cam').classList.add('on');
-    } catch { cam = null; App.toast('Fotocamera non disponibile o permesso negato'); }
+  // v8.4.4: fotocamera nella videochiamata (anche Safari/iPhone): chiesta passando a video (getUserMedia SOLO video: il microfono
+  // della chiamata resta quello, mai fermato), anteprima piccola in alto (playsinline + muted + autoplay). Se negata: istruzioni chiare.
+  let camAsked = false;
+  function camHelp(e) {
+    const n = (e && e.name) || '';
+    if (!window.isSecureContext) return '📷 La fotocamera richiede una connessione sicura (https).';
+    if (n === 'NotAllowedError' || n === 'SecurityError') return (window.Motion && Motion.isIOS ? Motion.isIOS() : /iP(hone|ad|od)/.test(navigator.userAgent))
+      ? '📷 Fotocamera non consentita. Su iPhone: Impostazioni → Safari → Fotocamera → Consenti (oppure in Safari tocca «aA» → Impostazioni sito web → Fotocamera → Consenti), poi tocca 📷.'
+      : '📷 Fotocamera non consentita: consentila nelle impostazioni del sito (icona accanto all\'indirizzo → Fotocamera → Consenti), poi tocca 📷.';
+    if (n === 'NotFoundError' || n === 'OverconstrainedError') return '📷 Nessuna fotocamera trovata su questo dispositivo.';
+    if (n === 'NotReadableError' || n === 'AbortError') return '📷 La fotocamera è usata da un\'altra app: chiudila e tocca 📷.';
+    return '📷 Fotocamera non disponibile (' + (e && e.message || n || 'errore') + ').';
   }
-  function stopCam() { if (cam) cam.getTracks().forEach((t) => t.stop()); cam = null; const v = $('#call-self'); v.srcObject = null; v.hidden = true; $('#call-cam').classList.remove('on'); }
+  async function startCam() {
+    if (cam || !on || mode !== 'video') return;
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { App.toast(camHelp({ name: 'NotFoundError' }), 6000); return; }
+    camAsked = true;
+    try {
+      const st = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 480 }, height: { ideal: 640 } }, audio: false });
+      if (!on || mode !== 'video') { st.getVideoTracks().forEach((t) => t.stop()); return; }
+      cam = st; App.ls.set('camOn', true);
+      const v = $('#call-self'); v.muted = true; v.defaultMuted = true; v.playsInline = true; v.setAttribute('playsinline', ''); v.setAttribute('muted', ''); v.autoplay = true;
+      v.srcObject = cam; v.hidden = false; v.play().catch(() => {}); $('#call-cam').classList.add('on');
+      if (!App.audio.micLive()) App.audio.mic().catch(() => {}); // se il sistema avesse chiuso il microfono, si riapre (chi ascolta si ricollega)
+    } catch (e) { cam = null; console.warn('Fotocamera:', e && e.name, e && e.message); App.toast(camHelp(e), 9000); }
+  }
+  function toggleCam() { if (cam) return stopCam(); return startCam(); }
+  function stopCam() { if (cam) cam.getVideoTracks().forEach((t) => t.stop()); cam = null; /* solo video: il microfono non si tocca */ const v = $('#call-self'); v.srcObject = null; v.hidden = true; $('#call-cam').classList.remove('on'); }
   App.call = {
     active: false, mode: null, start, end, setMode,
     get realtime() { return rt; },
@@ -171,7 +193,7 @@
   $('#call-tovideo').addEventListener('click', (e) => { e.stopPropagation(); setMode('video'); });
   $('#call-speaker').addEventListener('click', (e) => { e.stopPropagation(); setSpeaker(!speaker); });
   $('#call-end').addEventListener('click', (e) => { e.stopPropagation(); end(); });
-  $('#call-mute').addEventListener('click', (e) => { e.stopPropagation(); muted = !muted; if (rt) App.rt.setMuted(muted); else if (micMode === 'vad') App.callMic.setMuted(muted); else if (muted) App.voice.stop(); else if (SR) App.voice.start(); state(); });
+  $('#call-mute').addEventListener('click', (e) => { e.stopPropagation(); muted = !muted; if (rt) App.rt.setMuted(muted); else if (micMode === 'vad') App.callMic.setMuted(muted); state(); }); // v8.4.4: muto via software (il microfono resta aperto)
   const eb = $('#call-badge'); if (eb) eb.addEventListener('click', (e) => { e.stopPropagation(); App.toast(eb.title || eb.textContent, 5000); });
   $('#call-cam').addEventListener('click', (e) => { e.stopPropagation(); toggleCam(); });
   $('#call-cc').addEventListener('click', (e) => { e.stopPropagation(); const v = !App.ls.get('callCaptions', true); App.ls.set('callCaptions', v); $('#call-cc').classList.toggle('on', v); if (!v) $('#call-caption').hidden = true; });
@@ -180,7 +202,7 @@
   ui.addEventListener('click', (e) => {
     if (e.target.closest('button,form,input,video')) return;
     if (rt) { if (App.rt.speaking()) App.rt.interrupt(); return; }
-    if ((App.tts && App.tts.playing) || App.avatarConv.speaking) { App.voice.cancel(); App.avatarConv.stopAudio(); if (micMode === 'sr' && SR && !muted && !App.voice.isListening()) setTimeout(() => App.voice.start(), 200); }
+    if ((App.tts && App.tts.playing) || App.avatarConv.speaking) { App.voice.cancel(); App.avatarConv.stopAudio(); }
   });
   $('#call-text').addEventListener('submit', (e) => { e.preventDefault(); e.stopPropagation(); const i = $('#call-input'); const t = i.value.trim(); i.value = ''; if (t && !(rt && App.rt.sendText(t))) App.chat.send(t); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && on) end(); });

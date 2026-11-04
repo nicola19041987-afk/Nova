@@ -21,6 +21,25 @@
     // v8.4.1: per tutta la chiamata una sola sessione audio iOS "play-and-record" (microfono + voce insieme): cambiarla a ogni frase
     // faceva sentire il "suono di attacco e stacco". A chiamata finita si torna a "playback" (suona anche col tasto silenzioso).
     callSession(on) { this.inCall = !!on; try { if (navigator.audioSession) navigator.audioSession.type = on ? 'play-and-record' : 'playback'; } catch {} },
+    // v8.4.4: UN solo microfono per tutta la chiamata (vocale e video, tempo reale e classica): un solo getUserMedia, mai fermato
+    // fra un turno e l'altro né passando da vocale a video; si chiude solo riattaccando (releaseMic). Su iPhone ogni start/stop
+    // del microfono è il "suono di attacco e stacco". Se il sistema lo chiude da solo (traccia «ended»), lo si riapre e si avvisa chi ascolta.
+    _mic: null, _micP: null, _micL: new Set(), micStats: { gum: 0, stops: 0, lost: 0 },
+    micLive() { const s = this._mic; return !!(s && s.getAudioTracks().some((t) => t.readyState === 'live')); },
+    async mic() {
+      if (this.micLive()) return this._mic;
+      if (this._micP) return this._micP;
+      this.micStats.gum++;
+      this._micP = navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } })
+        .then((st) => {
+          this._mic = st;
+          st.getAudioTracks().forEach((t) => { t.onended = () => { if (this._mic !== st) return; this._mic = null; this.micStats.lost++; if (this.inCall) this._micL.forEach((f) => { try { f(); } catch {} }); }; });
+          return st;
+        }).finally(() => { this._micP = null; });
+      return this._micP;
+    },
+    onMicLost(f) { this._micL.add(f); return () => this._micL.delete(f); },
+    releaseMic() { const s = this._mic; this._mic = null; this._micL.clear(); if (s) s.getTracks().forEach((t) => { this.micStats.stops++; t.onended = null; t.stop(); }); },
     unlock() {
       try {
         const AC = window.AudioContext || window.webkitAudioContext;
@@ -31,6 +50,7 @@
         }
       } catch {}
       try { if (!this.inCall && navigator.audioSession && navigator.audioSession.type !== 'playback') navigator.audioSession.type = 'playback'; } catch {} // iOS 17+: suona anche col tasto silenzioso (mai durante una chiamata)
+      if (this.inCall) { this.unlocked = true; App.audio.hint(false); return; } // v8.4.4: in chiamata solo l'AudioContext condiviso
       try {
         const a = NX.audio();
         if (this.pending && this.pending.resume) { const p = this.pending; this.pending = null; this._warm = true; this._spokeAt = performance.now(); p.resume(); }
@@ -277,7 +297,7 @@
     ttsOn = !ttsOn; App.ls.set('tts', ttsOn); setBtn();
     if (!SS && !NX.enabled()) { ttsOn = false; setBtn(); App.toast('Lettura vocale non supportata'); return; }
     if (!ttsOn) { NX.stop(); if (SS) SS.cancel(); App.audio.hint(false); App.audio.pending = null; }
-    else { App.audio.unlock(); if (NX.enabled()) NX.say('Lettura attiva.'); else speakNow('Lettura attiva.', { sync: true }); } // conferma udibile, detta dentro il tocco (sblocca iOS)
+    else { App.audio.unlock(); if (inCall()) {} else if (NX.enabled()) NX.say('Lettura attiva.'); else speakNow('Lettura attiva.', { sync: true }); } // v8.4.4: in chiamata nessuna conferma a voce // conferma udibile, detta dentro il tocco (sblocca iOS)
   });
   // v7.3: lettura ACCESA di default (chi l'ha spenta a mano resta spenta). Sull'app installata (PWA) le preferenze sono separate da Safari.
   App.voice.init = () => { ttsOn = App.ls.get('tts', true) && (!!SS || NX.enabled()); setBtn(); loadVoices(); };

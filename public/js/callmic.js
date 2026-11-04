@@ -72,9 +72,10 @@
       App.callMic.stop();
       const m = M = { closed: false, muted: false, floor: 0.008, hot: 0, pre: [], speech: null, sttMs: [], fails: 0, barges: 0, level: 0, onFail: opts.onFail, onState: opts.onState };
       const c = ctx();
-      m.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } });
-      if (m.closed) { m.stream.getTracks().forEach((t) => t.stop()); return; }
+      m.stream = await App.audio.mic(); // v8.4.4: lo stesso microfono per tutta la chiamata (anche dopo il tempo reale)
+      if (m.closed) return;
       m.src = c.createMediaStreamSource(m.stream);
+      m.offLost = App.audio.onMicLost(async () => { if (m.closed) return; try { const st = await App.audio.mic(); if (m.closed) return; try { m.src.disconnect(); } catch {} m.stream = st; m.src = c.createMediaStreamSource(st); m.src.connect(m.node); } catch (e) { console.warn('Microfono non riaperto', e); } });
       await c.audioWorklet.addModule('/js/rt-worklet.js');
       m.node = new AudioWorkletNode(c, 'rt-capture'); m.node.port.onmessage = (e) => onChunk(m, e.data.pcm, e.data.rms);
       m.sink = c.createGain(); m.sink.gain.value = 0; m.src.connect(m.node); m.node.connect(m.sink); m.sink.connect(c.destination);
@@ -83,7 +84,7 @@
     stop() {
       const m = M; if (!m) return; M = null; m.closed = true;
       try { m.node && m.node.disconnect(); m.src && m.src.disconnect(); m.sink && m.sink.disconnect(); } catch {}
-      if (m.stream) m.stream.getTracks().forEach((t) => t.stop());
+      if (m.offLost) m.offLost(); // v8.4.4: niente stop delle tracce: il microfono condiviso si chiude solo riattaccando
     },
     setMuted(v) { if (M) { M.muted = !!v; M.speech = null; M.pre = []; } },
     get active() { return !!(M && !M.closed); },

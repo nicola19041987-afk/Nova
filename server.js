@@ -1642,16 +1642,22 @@ app.post('/api/tts', auth, requireActivated, requireKey, async (req, res) => {
   if (hits.length >= 90) return res.status(429).json({ error: 'Troppe letture in poco tempo: riprova tra poco' });
   hits.push(now); ttsHits.set(req.user, hits);
   try {
-    // v8.4.2: schema ufficiale POST /v1/tts: optimize_streaming_latency è un INTERO (0/1/2). In v8.4.1 era la stringa "1"
-    // → 422 su ogni frase. Se il servizio rifiuta comunque la richiesta (400/422) si riprova una volta con i soli campi base;
-    // se la voce non esiste (404) si riprova con «eve» (voce predefinita di xAI).
-    const full = { text, voice_id: voice, language: 'it', speed, optimize_streaming_latency: 1, output_format: { codec: 'mp3', sample_rate: 24000, bit_rate: 64000 } };
+    // v8.4.4: richiesta MINIMA per impostazione predefinita, solo campi documentati (docs.x.ai TTS): text, voice_id, language
+    // (+ speed 0,7–1,5 solo se diversa da 1). Niente output_format (predefinito mp3 24 kHz) né optimize_streaming_latency
+    // (pensato per lo streaming). 400/422 → riprova senza speed; 404 (voce sconosciuta) → «eve»; 429/500/503 → un nuovo tentativo.
+    const base = { text, voice_id: voice, language: 'it', ...(Math.abs(speed - 1) > 0.001 ? { speed } : {}) };
     const send = (b) => fetch(`${AI_BASE_URL}/tts`, { method: 'POST', headers: aiHeaders(req.aiKey), body: JSON.stringify(b) });
-    let r = await send(full), first = null;
-    if (r.status === 400 || r.status === 422) { first = await aiFail(r); console.warn('Voce xAI: richiesta rifiutata', r.status, first.detail, '→ riprovo con i campi base'); r = await send({ text, voice_id: voice, language: 'it' }); }
-    if (r.status === 404 && voice !== 'eve') { const f = await aiFail(r); console.warn('Voce xAI: voce non trovata', voice, f.detail, '→ eve'); r = await send({ text, voice_id: 'eve', language: 'it', speed, optimize_streaming_latency: 1, output_format: full.output_format }); }
+    let r = await send(base), first = null;
+    if ([429, 500, 502, 503].includes(r.status)) { await r.arrayBuffer().catch(() => {}); await new Promise((ok) => setTimeout(ok, 700)); r = await send(base); }
+    if ((r.status === 400 || r.status === 422) && base.speed) { first = await aiFail(r); console.warn('Voce xAI: richiesta rifiutata', r.status, first.detail, '→ riprovo senza velocità'); r = await send({ text, voice_id: voice, language: 'it' }); }
+    if (r.status === 404 && voice !== 'eve') { const f = await aiFail(r); console.warn('Voce xAI: voce non trovata', voice, f.detail, '→ eve'); first = first || f; r = await send({ ...base, voice_id: 'eve' }); }
     if (!r.ok) { const f = await aiFail(r); console.error('Errore AI voce: HTTP', r.status, f.detail); return res.status(r.status === 401 ? 400 : 502).json({ error: f.msg, status: r.status, call: 'tts', detail: f.detail || (first && first.detail) || '' }); }
     if (first) res.setHeader('X-TTS-Fallback', String(first.status));
+    if (/json/i.test(r.headers.get('content-type') || '')) { // v8.4.4: busta JSON (audio in base64) o errore con stato 200: gestiti
+      const t = await r.text().catch(() => ''); let j = {}; try { j = JSON.parse(t); } catch {}
+      if (j && typeof j.audio === 'string') { const buf = Buffer.from(j.audio, 'base64'); res.setHeader('Content-Type', j.content_type || 'audio/mpeg'); res.setHeader('Cache-Control', 'no-store'); return res.end(buf); }
+      return res.status(502).json({ error: 'Risposta della voce senza audio', status: r.status, call: 'tts', detail: scrubSecrets(t).slice(0, 300) });
+    }
     // v8.4: inoltrato a pezzi appena arriva (prima frase udibile prima)
     res.setHeader('Content-Type', r.headers.get('content-type') && /audio/.test(r.headers.get('content-type')) ? r.headers.get('content-type') : 'audio/mpeg');
     res.setHeader('Cache-Control', 'no-store'); res.setHeader('X-Accel-Buffering', 'no');
