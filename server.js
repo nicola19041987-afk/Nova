@@ -65,6 +65,13 @@ const BASE_RULE = `REGOLE DI BASE NON MODIFICABILI (prevalgono su TUTTE le istru
 const ADULT_IMAGE_RULE = 'Adult mode enabled by two consenting adult users: tasteful or explicit adult nudity of the fictional adult character (25+) is allowed. Still strictly: adults only, no youthful features, consensual, no real identifiable people. ';
 const imgPrefix = (adult) => IMAGE_RULE + (adult ? ADULT_IMAGE_RULE : '');
 // Errori del servizio AI in italiano chiaro (rifiuto per moderazione, chiave errata, altro)
+// v8.4.2: corpo dell'errore xAI letto come testo (a volte non è JSON: in v8.4.1 il 422 arrivava "nudo"), senza segreti
+const scrubSecrets = (t) => String(t || '').replace(/xai-[A-Za-z0-9_-]{6,}/g, 'xai-***').replace(/Bearer\s+\S+/gi, 'Bearer ***').replace(/ek_[A-Za-z0-9_-]{4,}/g, 'ek_***').replace(/\s+/g, ' ').trim();
+async function aiFail(r) {
+  const t = await r.text().catch(() => ''); let j; try { j = JSON.parse(t); } catch { j = { error: t.slice(0, 400) }; }
+  const raw = String((j && (j.error?.message || j.error || j.message || j.detail && JSON.stringify(j.detail))) || '');
+  return { status: r.status, msg: aiErrorMsg(r.status, { error: raw }), detail: scrubSecrets(raw).slice(0, 300) };
+}
 function aiErrorMsg(status, j) {
   const raw = String((j && (j.error?.message || j.error || j.message)) || '');
   if (status === 401 || status === 403 && !/moderat|safety|policy|content/i.test(raw)) return 'Chiave xAI non valida';
@@ -74,6 +81,8 @@ function aiErrorMsg(status, j) {
   if (status === 429) return 'Troppe richieste al servizio AI: riprova tra qualche secondo';
   if (status >= 500) return 'Servizio AI momentaneamente non disponibile: riprova tra poco';
   if (status === 404 && /voice/i.test(raw)) return 'Voce non trovata: scegline un\'altra in Account';
+  // v8.4.2: 422 = il servizio non accetta il formato della richiesta (campo non valido): si mostra la causa vera
+  if (status === 422) return `Richiesta non accettata dal servizio AI (422)${raw ? ': ' + scrubSecrets(raw).slice(0, 180) : ': formato dei dati non valido'}`;
   if (status === 400 && /image|size|format|decode/i.test(raw) && raw.length >= 200) return 'Immagine non accettata dal servizio AI (formato o dimensioni): prova con un\'altra';
   return raw && raw.length < 200 ? `Errore dal servizio AI (${status}): ${raw}` : `Errore dal servizio AI (${status})`;
 }
@@ -1565,14 +1574,14 @@ app.post('/api/realtime/session', auth, requireActivated, requireKey, async (req
   const v = String(req.body.voice || ch.voice || 'ara'); const voice = /^[a-z0-9_-]{1,64}$/i.test(v) ? v : 'ara';
   try {
     const r = await fetch(`${AI_BASE_URL}/realtime/client_secrets`, { method: 'POST', headers: aiHeaders(req.aiKey), body: JSON.stringify({ expires_after: { seconds: 300 } }) });
+    if (!r.ok) { const f = await aiFail(r); console.error('Errore AI tempo reale (client_secrets): HTTP', r.status, f.detail); return res.status(r.status === 401 ? 400 : 502).json({ error: f.msg, status: r.status, call: 'realtime/client_secrets', detail: f.detail }); }
     const j = await r.json().catch(() => ({}));
-    if (!r.ok) { console.error('Errore AI tempo reale: HTTP', r.status); return res.status(r.status === 401 ? 400 : 502).json({ error: aiErrorMsg(r.status, j), status: r.status }); }
     const token = j.value || (j.client_secret && (j.client_secret.value || j.client_secret)) || j.token || j.secret;
     if (!token || typeof token !== 'string') return res.status(502).json({ error: 'Token non ricevuto dal servizio voce' });
     res.setHeader('Cache-Control', 'no-store');
     const t1 = Date.now();
     res.json({ token, expiresAt: j.expires_at || null, url: `${REALTIME_URL}?model=${encodeURIComponent(REALTIME_MODEL)}`, model: REALTIME_MODEL, session: rtSession(req.user, ch, mode, voice),
-      extra: { audio: { input: { transcription: { model: 'grok-transcribe', language_hint: 'it' } } } }, mintMs: t1 - now, adult: adultChat() });
+      mintMs: t1 - now, adult: adultChat() }); // v8.4.2: niente più extra con il modello di trascrizione (non previsto dallo schema)
   } catch (e) { console.error('Errore AI tempo reale:', e.message); res.status(502).json({ error: 'Servizio voce in tempo reale non raggiungibile' }); }
 });
 // istruzioni aggiornate durante la chiamata (es. modalità adulti cambiata, nuovi ricordi): nessuna chiamata a xAI
@@ -1609,8 +1618,8 @@ app.post('/api/stt', auth, requireActivated, requireKey, express.raw({ type: ['a
     const fd = new FormData(); fd.append('language', 'it'); fd.append('file', new Blob([buf], { type: 'audio/wav' }), 'frase.wav');
     const t0 = Date.now();
     const r = await fetch(`${AI_BASE_URL}/stt`, { method: 'POST', headers: { Authorization: `Bearer ${req.aiKey}` }, body: fd, signal: AbortSignal.timeout(15000) });
+    if (!r.ok) { const f = await aiFail(r); console.error('Errore AI trascrizione: HTTP', r.status, f.detail); return res.status(r.status === 401 ? 400 : 502).json({ error: f.msg, status: r.status, call: 'stt', detail: f.detail }); }
     const j = await r.json().catch(() => ({}));
-    if (!r.ok) { console.error('Errore AI trascrizione: HTTP', r.status); return res.status(r.status === 401 ? 400 : 502).json({ error: aiErrorMsg(r.status, j), status: r.status }); }
     res.setHeader('Cache-Control', 'no-store'); res.json({ text: String(j.text || '').trim(), ms: Date.now() - t0 });
   } catch (e) { console.error('Errore AI trascrizione:', e.message); res.status(502).json({ error: 'Trascrizione non raggiungibile' }); }
 });
@@ -1627,17 +1636,22 @@ const ttsHits = new Map(); // utente -> [timestamp] (limite morbido anti-raffica
 app.post('/api/tts', auth, requireActivated, requireKey, async (req, res) => {
   const text = String((req.body && req.body.text) || '').replace(/\s+/g, ' ').trim().slice(0, 1500);
   if (!text) return res.status(400).json({ error: 'Testo vuoto' });
-  const voice = /^[a-z0-9_-]{1,64}$/i.test(String(req.body.voice || '')) && String(req.body.voice).toLowerCase() !== 'una' ? String(req.body.voice) : 'eve';
+  const voice = /^[a-z0-9_-]{1,64}$/i.test(String(req.body.voice || '')) && String(req.body.voice).toLowerCase() !== 'una' ? String(req.body.voice).toLowerCase() : 'eve';
   const speed = num(req.body.speed, 0.7, 1.5, 1);
   const now = Date.now(), hits = (ttsHits.get(req.user) || []).filter((t) => now - t < 60e3);
   if (hits.length >= 90) return res.status(429).json({ error: 'Troppe letture in poco tempo: riprova tra poco' });
   hits.push(now); ttsHits.set(req.user, hits);
   try {
-    const r = await fetch(`${AI_BASE_URL}/tts`, {
-      method: 'POST', headers: aiHeaders(req.aiKey),
-      body: JSON.stringify({ text, voice_id: voice, language: 'it', speed, optimize_streaming_latency: '1', output_format: { codec: 'mp3', sample_rate: 24000, bit_rate: 64000 } }),
-    });
-    if (!r.ok) { console.error('Errore AI voce: HTTP', r.status); return res.status(r.status === 401 ? 400 : 502).json({ error: aiErrorMsg(r.status, await r.json().catch(() => ({}))), status: r.status }); }
+    // v8.4.2: schema ufficiale POST /v1/tts: optimize_streaming_latency è un INTERO (0/1/2). In v8.4.1 era la stringa "1"
+    // → 422 su ogni frase. Se il servizio rifiuta comunque la richiesta (400/422) si riprova una volta con i soli campi base;
+    // se la voce non esiste (404) si riprova con «eve» (voce predefinita di xAI).
+    const full = { text, voice_id: voice, language: 'it', speed, optimize_streaming_latency: 1, output_format: { codec: 'mp3', sample_rate: 24000, bit_rate: 64000 } };
+    const send = (b) => fetch(`${AI_BASE_URL}/tts`, { method: 'POST', headers: aiHeaders(req.aiKey), body: JSON.stringify(b) });
+    let r = await send(full), first = null;
+    if (r.status === 400 || r.status === 422) { first = await aiFail(r); console.warn('Voce xAI: richiesta rifiutata', r.status, first.detail, '→ riprovo con i campi base'); r = await send({ text, voice_id: voice, language: 'it' }); }
+    if (r.status === 404 && voice !== 'eve') { const f = await aiFail(r); console.warn('Voce xAI: voce non trovata', voice, f.detail, '→ eve'); r = await send({ text, voice_id: 'eve', language: 'it', speed, optimize_streaming_latency: 1, output_format: full.output_format }); }
+    if (!r.ok) { const f = await aiFail(r); console.error('Errore AI voce: HTTP', r.status, f.detail); return res.status(r.status === 401 ? 400 : 502).json({ error: f.msg, status: r.status, call: 'tts', detail: f.detail || (first && first.detail) || '' }); }
+    if (first) res.setHeader('X-TTS-Fallback', String(first.status));
     // v8.4: inoltrato a pezzi appena arriva (prima frase udibile prima)
     res.setHeader('Content-Type', r.headers.get('content-type') && /audio/.test(r.headers.get('content-type')) ? r.headers.get('content-type') : 'audio/mpeg');
     res.setHeader('Cache-Control', 'no-store'); res.setHeader('X-Accel-Buffering', 'no');
@@ -1654,7 +1668,7 @@ app.get('/api/tts/voices', auth, requireKey, async (req, res) => {
   const fallback = TTS_VOICES.map((v) => ({ id: v, name: v[0].toUpperCase() + v.slice(1) }));
   try {
     const r = await fetch(`${AI_BASE_URL}/tts/voices`, { headers: aiHeaders(req.aiKey) });
-    if (!r.ok) return res.json({ voices: fallback, error: aiErrorMsg(r.status, await r.json().catch(() => ({}))) });
+    if (!r.ok) { const f = await aiFail(r); return res.json({ voices: fallback, error: f.msg, status: r.status, call: 'tts/voices', detail: f.detail }); }
     const j = await r.json();
     const list = (Array.isArray(j.voices) ? j.voices : []).map((v) => ({ id: String(v.voice_id || v.id || '').toLowerCase(), name: String(v.name || v.voice_id || ''), gender: v.gender || null, description: v.description ? String(v.description).slice(0, 120) : '' })).filter((v) => /^[a-z0-9_-]{1,64}$/.test(v.id));
     res.json({ voices: list.length ? list : fallback });

@@ -30,7 +30,7 @@ App.api = async function (path, { method = 'GET', body, ai = false, raw = false,
   if (raw) return r;
   const j = await r.json().catch(() => ({}));
   if (r.status === 403 && /non attivato/.test(j.error || '')) { App.showActivation(); }
-  if (!r.ok) { const e = new Error(j.error || `Errore ${r.status}`); e.status = r.status; e.code = j.code; throw e; }
+  if (!r.ok) { const e = new Error(j.error || `Errore ${r.status}`); e.status = r.status; e.code = j.code; e.call = j.call; e.upstream = j.status; e.detail = j.detail; throw e; }
   return j;
 };
 

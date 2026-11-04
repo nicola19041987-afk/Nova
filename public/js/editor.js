@@ -183,6 +183,8 @@
       App.editor.open(null);
       Object.assign(E, { name: p.name, avatar: p.emoji, avatarSource: 'emoji', personality: p.personality, style: p.style, voice: p.voice, preset: key });
       E.identity.core = p.core; E.appearance.age = p.age; E.appearance.gender = 'donna'; Object.assign(E.look, p.look || {});
+      if (p.ap) Object.assign(E.appearance, p.ap); if (p.colors) E.appearance.colors = { ...E.appearance.colors, ...p.colors }; // v8.4.2: modello completo
+      if (p.ward) E.wardrobe = [{ id: null, name: p.ward.name, look: { ...E.look, ...p.ward.look } }];
       toForm(); refreshAvatar();
       $('#regen-extra').value = p.photo;
       const h = $('#preset-hint'); h.hidden = false;

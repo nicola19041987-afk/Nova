@@ -119,7 +119,7 @@
       const key = this.voice() + '|' + this.speed() + '|' + t;
       if (this.cache.has(key)) { const c = this.cache.get(key); this.cache.delete(key); this.cache.set(key, c); return c; }
       const r = await App.api('/api/tts', { method: 'POST', body: { text: t, voice: this.voice(), speed: this.speed() }, ai: true, raw: true });
-      if (!r.ok) { const j = await r.json().catch(() => ({})); const e = new Error(j.error || 'Errore ' + r.status); e.status = r.status; throw e; }
+      if (!r.ok) { const j = await r.json().catch(() => ({})); const e = new Error(j.error || (r.status === 422 ? 'Richiesta voce non accettata (422)' : 'Errore ' + r.status)); e.status = r.status; e.call = j.call; e.upstream = j.status; e.detail = j.detail; throw e; }
       const blob = await r.blob();
       if (!blob.size) throw new Error('Audio vuoto');
       const e = await envelope(blob).catch(() => null);

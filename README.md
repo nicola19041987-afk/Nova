@@ -172,6 +172,17 @@ Tutto in `data/` sul server (escluso da git e dallo zip): `pins.json`, `sessions
 - Le clip delle azioni suonano con il loro audio (se presente) solo con Lettura attiva e audio sbloccato; se iOS lo blocca, la clip parte muta.
 - Sul telefono: interruttore laterale (silenzioso) disattivato e volume alzato; su iPhone la sintesi vocale può restare muta in modalità silenziosa.
 
+## Novità v8.4.2 (correzione «Errore 422» sulle voci)
+
+- **Causa**: dalla v8.4.1 la richiesta di sintesi vocale a xAI (`POST /v1/tts`) inviava `optimize_streaming_latency` come stringa (`"1"`), mentre lo schema ufficiale vuole un intero (0/1/2): xAI rispondeva 422 a ogni «Prova la voce» e a ogni frase letta. Ora è l'intero `1`; tutti gli altri campi (`voice_id`, `language: "it"`, `speed` 0,7–1,5, `output_format` mp3/24000/64000) sono stati verificati sulla documentazione.
+- **Più robusto**: se xAI rifiuta comunque la richiesta (400/422) il server riprova una volta con i soli campi base (testo, voce, lingua); se la voce non esiste (404) riprova con «eve». Le voci non valide (es. «una») diventano «eve»; l'id voce è inviato in minuscolo.
+- **Errori leggibili**: al posto di un 422 «nudo» compare il motivo vero in italiano (es. «Richiesta non accettata dal servizio AI (422): …campo…»). Le risposte di errore di voce, elenco voci, trascrizione e token del tempo reale indicano la chiamata fallita, lo stato HTTP di xAI e il corpo della risposta, ripulito da chiavi e token.
+- **Diagnostica voce**: per ogni riga in errore mostra la chiamata, lo stato HTTP e la risposta di xAI; c'è una nuova riga «Elenco voci xAI», che controlla anche se la voce scelta esiste.
+- Tempo reale: tolto l'aggiornamento extra con un modello di trascrizione non previsto dallo schema (si usa quello predefinito).
+- **Nuova icona** «Nova» (monogramma N con stella a quattro punte su sfondo blu notte → viola, opaca come vuole iOS): `public/icons/icon-1024.png`, `icon-512.png`, `icon-192.png`, `icon-180.png` (apple-touch-icon), `icon-maskable-512.png` (margine di sicurezza per Android), `favicon.svg`/`favicon-32.png`. Su iPhone l'icona resta in cache: per vederla bisogna togliere l'app dalla schermata Home e aggiungerla di nuovo (Safari → Condividi → Aggiungi alla schermata Home).
+- **Modelli pronti completi**: Giada, Elena, Vera e Marta compilano ora tutti i campi dell'editor (anche corporatura, altezza, inquadratura, colori dell'avatar, trucco, dettagli del look e un look alternativo nel guardaroba); tutto resta modificabile.
+- Cache dell'app: `app-privata-v8-4-2`.
+
 ## Novità v8.4.1 (chiamate senza "bip", tempo reale corretto, diagnostica, elimina/importa personaggio, avatar più lontano e fluido)
 
 - **Tempo reale corretto secondo la documentazione xAI** (`wss://api.x.ai/v1/realtime`, token da `POST /v1/realtime/client_secrets`,
