@@ -19,6 +19,10 @@
   const pick = (ids) => { // a pesi, mai lo stesso gesto due volte di fila
     const pool = ids.filter((id) => ids.length < 2 || id !== lastGestId); const w = pool.map((id) => (id in GEST_W ? GEST_W[id] : 1));
     let r = Math.random() * w.reduce((a, b) => a + b, 0); for (let i = 0; i < pool.length; i++) { r -= w[i]; if (r <= 0 && w[i] > 0) return pool[i]; } return null; };
+  // v8.4.5: azioni rifiutate da xAI (per questo avatar): segnate chiaramente e mai ritentate in automatico
+  const refKey = (ch, base, id) => `${ch.id}|${base}|${id}|${base === 'seated' ? (ch.seated && ch.seated.src) || '' : ch.avatar || ''}`;
+  const refused = () => App.ls.get('actRefused', {}) || {};
+  const setRefused = (k, v) => { const r = refused(); if (v) r[k] = Date.now(); else delete r[k]; App.ls.set('actRefused', r); };
   const meta = (id) => info.catalog.find((c) => c.id === id) || { id, label: id, emoji: '🎭' };
 
   App.actions = {
@@ -82,10 +86,14 @@
       const ch = App.current; if (!ch) return;
       prepBase = base === 'seated' ? 'seated' : 'avatar';
       const src = prepBase === 'seated' ? ch.seated || {} : ch.actions || {};
-      const row = (c) => { const a = src[c.id]; const st = !a ? 'da preparare' : a.stale ? (prepBase === 'seated' ? 'da rifare (scena cambiata)' : 'da rifare (avatar cambiato)') : `pronta (${a.kind === 'pose' ? 'posa' : 'clip'})`;
-        return `<label><input type="checkbox" data-prep="${c.id}" ${!a || a.stale ? 'checked' : ''}> ${c.emoji} ${esc(c.label)} <span class="st">${st}</span></label>`; };
+      const row = (c) => { const a = src[c.id], rf = !a && refused()[refKey(ch, prepBase, c.id)]; const st = rf ? 'rifiutata da xAI' : !a ? 'da preparare' : a.stale ? (prepBase === 'seated' ? 'da rifare (scena cambiata)' : 'da rifare (avatar cambiato)') : `pronta (${a.kind === 'pose' ? 'posa' : 'clip'})`;
+        return `<label><input type="checkbox" data-prep="${c.id}" ${(!a && !rf) || (a && a.stale) ? 'checked' : ''}> ${c.emoji} ${esc(c.label)} <span class="st${rf ? ' refused' : ''}">${st}</span></label>`; };
       $('#act-dialog h3').textContent = prepBase === 'seated' ? '🎬 Gesti al tavolo' : '🎭 Prepara azioni';
-      $('#act-choices').innerHTML = info.catalog.filter((c) => !c.adult && (prepBase !== 'seated' || c.gesture)).map(row).join('');
+      // v8.4.5: tutte le azioni normali da preparare sono già selezionate (+ «Tutte» per selezionarle/deselezionarle in un colpo)
+      const normal = info.catalog.filter((c) => !c.adult && (prepBase !== 'seated' || c.gesture));
+      $('#act-choices').innerHTML = (normal.length > 1 ? `<label class="act-all"><input type="checkbox" id="act-all"> <b>Tutte le azioni normali</b></label>` : '') + normal.map(row).join('');
+      const all = $('#act-all'), boxes = () => $$('#act-choices [data-prep]');
+      if (all) { const sync = () => { all.checked = boxes().every((x) => x.checked); }; sync(); all.addEventListener('change', () => boxes().forEach((x) => { x.checked = all.checked; })); boxes().forEach((x) => x.addEventListener('change', sync)); }
       const adult = info.catalog.filter((c) => c.adult);
       $('#act-adult').hidden = !info.adult || prepBase === 'seated'; // a modalità adulti spenta queste azioni non esistono nemmeno nell'elenco
       if (info.adult && prepBase !== 'seated') {
@@ -104,14 +112,15 @@
     async prepare() {
       const ch = App.current; if (!ch || running) return;
       if (!App.key()) return App.toast('🔑 Inserisci la chiave xAI in Impostazioni');
-      const ids = $$('#act-dialog [data-prep]').filter((x) => x.checked).map((x) => x.dataset.prep);
+      // v8.4.5: prima tutte le azioni normali, poi (se scelte) quelle per adulti; un rifiuto non ferma le altre
+      const ids = $$('#act-dialog [data-prep]').filter((x) => x.checked).map((x) => x.dataset.prep).sort((a, b) => (meta(a).adult ? 1 : 0) - (meta(b).adult ? 1 : 0));
       if (!ids.length) return App.toast('Scegli almeno un\'azione');
       running = { stop: false }; const run = running;
       $('#act-go').disabled = true; $('#act-stop').hidden = false; const bar = $('#act-progress'); bar.hidden = false; bar.max = ids.length; bar.value = 0;
-      let ok = 0;
+      let ok = 0, nRef = 0, nErr = 0, k = 0;
       for (const id of ids) {
         if (run.stop) { this.log('Interrotto.'); break; }
-        const m = meta(id), li = this.log(`${m.emoji} ${m.label}: avvio…`);
+        k++; const m = meta(id), li = this.log(`(${k}/${ids.length}) ${m.emoji} ${m.label}: avvio…`);
         try {
           const base = prepBase;
           let r = await App.api(`/api/characters/${ch.id}/actions/${id}`, { method: 'POST', ai: true, body: base === 'seated' ? { base } : {} });
@@ -120,21 +129,23 @@
             while (r.status !== 'done') {
               if (run.stop) throw new Error('interrotto');
               if (Date.now() - t0 > 6 * 60e3) throw new Error('tempo scaduto');
-              li.textContent = `${m.emoji} ${m.label}: generazione clip… ${Math.round((Date.now() - t0) / 1000)} s`;
+              li.textContent = `(${k}/${ids.length}) ${m.emoji} ${m.label}: generazione clip… ${Math.round((Date.now() - t0) / 1000)} s`;
               await new Promise((z) => setTimeout(z, 5000));
               r = await App.api(`/api/characters/${ch.id}/actions/${id}/status/${encodeURIComponent(rid)}`, { ai: true });
               if (r.status === 'failed') throw Object.assign(new Error(r.error || 'non riuscita'), { refused: r.refused });
             }
           }
-          ok++; li.textContent = `${m.emoji} ${m.label}: pronta ✓${r.kind === 'pose' ? ' (posa)' : ''}`; li.className = 'ok';
+          ok++; li.textContent = `(${k}/${ids.length}) ${m.emoji} ${m.label}: pronta ✓${r.kind === 'pose' ? ' (posa)' : ''}`; li.className = 'ok'; setRefused(refKey(ch, base, id), false);
           if (r.action && App.current && App.current.id === ch.id) { const k = base === 'seated' ? 'seated' : 'actions'; App.current[k] = { ...(App.current[k] || {}), [id]: r.action }; this.render(); }
         } catch (e) {
           li.className = 'err';
-          li.textContent = `${m.emoji} ${m.label}: ${e.refused || /rifiutato/i.test(e.message) ? 'Contenuto rifiutato dal servizio AI — resta l\'avatar normale' : e.message}`;
+          const isRef = !!(e.refused || /rifiutato/i.test(e.message || ''));
+          if (isRef) { nRef++; setRefused(refKey(ch, prepBase, id), true); } else if (!/interrotto/.test(e.message || '')) nErr++;
+          li.textContent = `(${k}/${ids.length}) ${m.emoji} ${m.label}: ${isRef ? 'rifiutata da xAI — resta l\'avatar normale (nessun nuovo tentativo automatico)' : e.message}`;
         }
         bar.value++;
       }
-      this.log(`Fatto: ${ok}/${ids.length} azioni pronte.`);
+      this.log(`Fatto: ${ok}/${ids.length} azioni pronte${nRef ? ` · ${nRef} rifiutate da xAI` : ''}${nErr ? ` · ${nErr} non riuscite (riprova più tardi)` : ''}.`);
       running = null; $('#act-go').disabled = false; $('#act-stop').hidden = true;
       await App.loadChars(); if (App.current) { App.current = App.charById(App.current.id) || App.current; } this.render();
     },
@@ -142,7 +153,13 @@
     tick() {
       const ch = App.current, now = Date.now();
       if (!ch || !App.chat.visible() || App.chat.busy || App.ls.get('actAuto', true) === false) return;
-      if (App.call && App.call.active) return; // v8: in videochiamata solo gesti legati a ciò che si dice, niente azioni a caso
+      // v8.4.5: in videochiamata anche gesti spontanei, ma solo nei silenzi (nessuno dei due parla da 12 s), senza audio, mai per adulti
+      const inCall = !!(App.call && App.call.active);
+      if (inCall) {
+        if (App.call.mode === 'voice') return; // chiamata vocale: lei non si vede
+        const quiet = !(App.tts && (App.tts.playing || App.tts.q.length)) && !(App.rt && App.rt.speaking && App.rt.speaking()) && !(App.callMic && App.callMic.speaking && App.callMic.speaking());
+        if (!quiet) { lastActivity = Math.max(lastActivity, now - AUTO_IDLE + 12e3); return; }
+      }
       const A = av(); if (A.speaking || A.actionBusy()) return;
       const seat = seatedOn(); if (!seat && A.sceneOn && A.sceneOn()) return;
       if (now - lastActivity < AUTO_IDLE || now - lastAuto < AUTO_MIN_GAP || now - lastGest < GEST_GAP) return;

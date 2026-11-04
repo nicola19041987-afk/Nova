@@ -158,6 +158,7 @@ App.chat = {
         const { done, value } = await reader.read(); if (done) break;
         const chunk = dec.decode(value, { stream: true });
         reply += chunk;
+        { const L = App.latency && App.latency.cur; if (L && !L.tok && chunk.trim()) L.tok = Math.round(performance.now() - L.end); } // v8.4.5: tempo alla prima parola
         body.textContent = App.actions ? App.actions.strip(reply) : reply; this.scroll();
         if (!cue.done) cue.check(reply); // v8: gesto/umore scelti dall'IA in base a ciò che dice (tag a inizio risposta)
         if (App.call && App.call.active) App.call.caption(App.actions ? App.actions.strip(reply) : reply);

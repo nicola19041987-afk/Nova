@@ -1,10 +1,13 @@
 // Service worker: mette in cache solo la "scocca" dell'app (nessun dato privato).
-const CACHE = 'app-privata-v8-4-4';
+const CACHE = 'app-privata-v8-4-5';
 const SHELL = ['/', '/index.html', '/style.css', '/avatar.js', '/js/core.js', '/js/auth.js', '/js/account.js', '/js/chat.js', '/js/voice.js', '/js/editor.js', '/js/docs.js', '/js/media.js', '/js/feed.js', '/js/motion.js', '/js/stage.js', '/js/actions.js', '/js/realtime.js', '/js/rt-worklet.js', '/js/callmic.js', '/js/diag.js', '/js/call.js', '/js/ios.js', '/js/gallery.js', '/js/presets.js', '/js/frame.js', '/js/live.js', '/js/main.js', '/manifest.json', '/icons/icon-192.png', '/icons/icon-512.png', '/icons/icon-180.png'];
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  // v8.4.5: la nuova versione si attiva subito SOLO alla prima installazione; negli aggiornamenti aspetta che la pagina
+  // dica che è libera (nessuna chiamata, nessuna voce in corso). La pagina non viene MAI ricaricata da sola.
+  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => { if (!self.registration.active) return self.skipWaiting(); }));
 });
+self.addEventListener('message', (e) => { if (e.data && e.data.type === 'SKIP_WAITING') self.skipWaiting(); });
 self.addEventListener('activate', (e) => {
   e.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim()));
 });

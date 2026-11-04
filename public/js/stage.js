@@ -192,6 +192,10 @@
     },
   };
   $('#scene-btn').addEventListener('click', (e) => { e.stopPropagation(); menu.hidden = !menu.hidden; if (!menu.hidden) App.scene.apply(); });
+  // v8.4.5: i menu dell'avatar si chiudono da soli dopo 8 s senza tocchi, e sempre quando parte una chiamata o il parlato
+  { let t = 0; const arm = () => { clearTimeout(t); t = setTimeout(() => { $('#scene-menu').hidden = true; $('#act-menu').hidden = true; }, 8000); };
+    new MutationObserver(() => { if (!$('#scene-menu').hidden || !$('#act-menu').hidden) arm(); }).observe(document.getElementById('stage'), { subtree: true, attributes: true, attributeFilter: ['hidden'] });
+    ['#scene-menu', '#act-menu'].forEach((q) => { const el = $(q); if (el) ['pointerdown', 'input', 'change'].forEach((ev) => el.addEventListener(ev, arm)); }); }
   menu.addEventListener('click', (e) => e.stopPropagation());
   $('#scene-toggle').addEventListener('click', () => App.scene.toggle());
   $('#scene-gen').addEventListener('click', () => App.scene.gen());

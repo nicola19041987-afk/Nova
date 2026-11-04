@@ -70,7 +70,15 @@ App.openTab = function (t) {
   window.scrollTo(0, 0);
 };
 
-if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+// v8.4.5: aggiornamento dell'app SENZA ricaricare e mai durante una chiamata o mentre parlate: la nuova versione resta in
+// attesa e si attiva quando l'app è libera (verrà usata al prossimo avvio). Nessun location.reload() automatico.
+App.swBusy = () => !!((App.call && App.call.active) || (App.voice && App.voice.isListening && App.voice.isListening()) || (App.tts && App.tts.playing) || (App.chat && App.chat.busy));
+if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').then((reg) => {
+  const tryActivate = () => { const w = reg.waiting; if (!w) return; if (App.swBusy()) { App.swPending = true; return; } App.swPending = false; w.postMessage({ type: 'SKIP_WAITING' }); };
+  reg.addEventListener('updatefound', () => { const w = reg.installing; if (w) w.addEventListener('statechange', () => { if (w.state === 'installed') tryActivate(); }); });
+  tryActivate(); setInterval(tryActivate, 20000);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') tryActivate(); });
+}).catch(() => {}));
 App.boot();
 
 // v7.1: cornice dell'avatar FISSA e verticale (9:16, come lo schermo del telefono), la più grande possibile nello spazio del palco.

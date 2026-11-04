@@ -523,3 +523,34 @@ dialog{background:#1c1c1e;border:0}
 .diag-row.err b, .diag-row.err span:last-child { color: #e5484d; }
 .diag-row.warn span:last-child { color: #d18b00; }
 #voice-diag-copy { margin-top: 8px; }
+
+/* v8.4.5: movimento GARANTITO dell'avatar, fatto dal compositore del browser (CSS), indipendente dal canvas/WebGL:
+   respiro (scala ancorata in basso), leggero ondeggiamento e "bob" mentre parla. Funziona anche se iOS (Risparmio energetico)
+   rallenta i fotogrammi, se WebGL non c'è o se il disegno si blocca. Proprietà singole (scale/rotate/translate): si sommano alla
+   transform già usata per centrare il canvas. */
+@keyframes nv-breathe{0%,100%{scale:1 1}50%{scale:1.005 1.012}}
+@keyframes nv-sway{0%,100%{rotate:-.18deg}50%{rotate:.18deg}}
+@keyframes nv-talk{0%,100%{translate:0 0}35%{translate:0 -.32%}70%{translate:0 .08%}}
+@keyframes nv-breathe2{0%,100%{scale:1 1}50%{scale:1.008 1.02}}
+@keyframes nv-sway2{0%,100%{rotate:-.35deg;translate:-.4% 0}50%{rotate:.35deg;translate:.4% 0}}
+#avatar-canvas{transform-origin:50% 100%;animation:nv-breathe 4.4s ease-in-out infinite,nv-sway 9.5s ease-in-out infinite}
+#stage.speaking #avatar-canvas{animation:nv-breathe 3.4s ease-in-out infinite,nv-sway 9.5s ease-in-out infinite,nv-talk .5s ease-in-out infinite}
+#stage.av-stalled #avatar-canvas{animation:nv-breathe2 4s ease-in-out infinite,nv-sway2 7s ease-in-out infinite}
+#stage.av-stalled.speaking #avatar-canvas{animation:nv-breathe2 3.2s ease-in-out infinite,nv-talk .45s ease-in-out infinite}
+@media (prefers-reduced-motion:reduce){
+  #avatar-canvas,#stage.av-stalled #avatar-canvas{animation:nv-breathe 5s ease-in-out infinite}
+  #stage.speaking #avatar-canvas{animation:nv-breathe 4s ease-in-out infinite,nv-talk .6s ease-in-out infinite}
+}
+/* niente contorno colorato a schermo intero o in chiamata (era l'anello "sta parlando" del personaggio: sembrava un bordo rosso) */
+#stage.fs #avatar-canvas,#stage:fullscreen #avatar-canvas,#stage.call #avatar-canvas{box-shadow:none!important}
+#stage.speaking #avatar-canvas{box-shadow:0 0 18px #d14b8f55}
+body.wa-conv #stage.speaking #avatar-canvas{box-shadow:0 0 18px #00a88455}
+/* v8.4.5: a schermo intero mentre parli a voce niente menu a tendina sopra di lei (Azioni / Soggiorno) */
+body.voice-live #stage.fs #act-btn,body.voice-live #stage.fs #scene-btn,body.voice-live #stage.fs #act-menu,body.voice-live #stage.fs #scene-menu,
+body.in-call #act-menu,body.in-call #scene-menu{display:none!important}
+.stage-voice{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom) + 12px);z-index:3;font:600 11px/1 system-ui,sans-serif;padding:5px 9px;border-radius:999px;background:rgba(120,140,160,.85);color:#fff;pointer-events:none;white-space:nowrap}
+.stage-voice[data-kind="sr"]{background:rgba(255,159,10,.88);color:#1b1300}
+#stage.call .stage-voice{display:none!important}
+#act-choices .st.refused{color:#ff9f0a;font-weight:600}
+#act-choices .act-all{border-bottom:1px solid var(--line);padding-bottom:6px;margin-bottom:4px}
+body.voice-live #stage:fullscreen #act-btn,body.voice-live #stage:fullscreen #scene-btn,body.voice-live #stage:fullscreen #act-menu,body.voice-live #stage:fullscreen #scene-menu{display:none!important}

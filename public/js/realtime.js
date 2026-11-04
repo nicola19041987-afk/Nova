@@ -12,7 +12,7 @@
   const supported = () => !!(window.WebSocket && AC && navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
   App.latency = App.latency || {
     log: App.ls.get('latencyLog', []) || [],
-    add(path, ms) { const e = { path, ms: Math.round(ms), at: Date.now() }; this.log.push(e); this.log = this.log.slice(-40); App.ls.set('latencyLog', this.log); console.info(`[latenza] ${path}: ${e.ms} ms`); },
+    add(path, ms) { const e = { path, ms: Math.round(ms), at: Date.now() }; if (path === 'classica' && this.cur) { e.stt = this.cur.stt; e.tok = this.cur.tok; } this.cur = null; this.log.push(e); this.log = this.log.slice(-40); App.ls.set('latencyLog', this.log); console.info(`[latenza] ${path}: ${e.ms} ms`); },
     median(path) { const v = this.log.filter((x) => x.path === path).map((x) => x.ms).sort((a, b) => a - b); return v.length ? v[Math.floor(v.length / 2)] : null; },
   };
   const b64 = (buf) => { const u = new Uint8Array(buf); let s = ''; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(s); };
@@ -92,6 +92,7 @@
   }
   function lips(s, on) {
     const avs = [App.avatarConv, App.avatarPresence].filter(Boolean);
+    if (on !== !!s.lipsOn) { const st = document.getElementById('stage'); if (st) st.classList.toggle('speaking', !!on); } // v8.4.5
     if (on && !s.lipsOn) { s.lipsOn = true; avs.forEach((a) => a.speakLive && a.speakLive(() => level(s), () => wide(s))); }
     if (!on && s.lipsOn) { s.lipsOn = false; avs.forEach((a) => a.stopAudio && a.stopAudio()); }
   }

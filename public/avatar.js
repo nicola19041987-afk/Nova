@@ -61,7 +61,8 @@
       this._pf = { draw: new Float32Array(240), gap: new Float32Array(240), n: 0 }; // v8.4.1: tempi dei fotogrammi (media e p95)
       this.resize();
       if (window.ResizeObserver) new ResizeObserver(() => this.resize()).observe(canvas);
-      requestAnimationFrame(this.loop); // parte subito, anche senza fotocamera
+      this._raf = requestAnimationFrame(this.loop); // parte subito, anche senza fotocamera
+      this._wd = setInterval(() => { try { this.watchdog(); } catch {} }, 1000);
     }
     // Canvas nitido su retina: risoluzione interna = dimensione a schermo (larghezza e altezza, anche non quadrata) x devicePixelRatio,
     // con un tetto di pixel per restare fluidi su iPhone. Il disegno usa uno spazio virtuale e scala da solo.
@@ -166,14 +167,19 @@
     detectFace() {
       const src = this.img && this.img._src; if (!src || !(window.App && App.autoFace) || this._det === src) return;
       this._det = src; this._detTries = this._detTries || {}; const n = (this._detTries[src] || 0) + 1; this._detTries[src] = n; if (n > 2) return;
-      setTimeout(() => {
+      // v8.4.5: il rilevamento del viso (MediaPipe) occupa il thread principale per qualche secondo (molto di più su iPhone in
+      // Risparmio energetico): parte solo quando lei NON sta parlando e il browser è libero, così l'avatar non si blocca a metà frase
+      const go = () => { if (!this.img || this.img._src !== src) { this._det = null; return; } if (this.speaking || document.visibilityState !== 'visible') return setTimeout(go, 1500); run(); };
+      const run = () => (window.requestIdleCallback ? requestIdleCallback(go2, { timeout: 4000 }) : go2());
+      const go2 = () => {
         App.autoFace(src).then((lm) => {
           if (!lm || !this.img || this.img._src !== src) { this._det = null; return; }
           this.setLandmarks(lm); if (App.faceFound) App.faceFound(src, lm, this);
         }).catch((e) => { console.warn('Viso non rilevato', e); this._det = null; });
-      }, 600);
+      };
+      setTimeout(go, 600);
     }
-    setColors(c) { this.colors = { ...this.colors, ...c }; if (!this.transparent) { this.c.style.background = this.colors.background; this._bdKey = ''; } }
+    setColors(c) { this.colors = { ...this.colors, ...c }; if (!this.transparent && !this._cssPhoto) { this.c.style.background = this.colors.background; this._bdKey = ''; } }
 
     // colore della palpebra: campiona la pelle sopra ciascun occhio
     sampleLids() {
@@ -229,7 +235,7 @@
     speakAudio(el, env, text, rate = 60) {
       this.breathCue(text, this.speaking);
       this._env = env && env.length ? { el, env, rate } : null;
-      this.kf = []; this.simUntil = 0; this.speaking = true;
+      this.kf = []; this.simUntil = 0; this.speaking = true; this._spkText = text || ''; this._spkAt = performance.now(); this._openAt = 0; this._simFb = false;
       if (!this._env && text) this.simulateText(text, 1); // inviluppo non disponibile: labiale stimato dal testo
     }
     // v8.1: il respiro segue il parlato: presa di fiato tra le frasi, risata, sospiro
@@ -269,7 +275,27 @@
 
     // ---- disegno ----
     loop(now) {
-      requestAnimationFrame(this.loop);
+      this._raf = requestAnimationFrame(this.loop);
+      // v8.4.5: un errore di disegno non deve MAI fermare l'avatar: si passa a modalità sempre più semplici
+      try { this.frame(now); this._okFrames = (this._okFrames || 0) + 1; if (this._cssPhoto && this._okFrames > 120) { this._cssPhoto = false; this.c.style.background = ''; } } catch (e) { this.drawError(e); }
+    }
+    drawError(e) {
+      this._errs = (this._errs || 0) + 1; this._lastErr = String((e && e.message) || e).slice(0, 160); this._okFrames = 0;
+      if (this._errs === 1) console.warn('Avatar: errore di disegno, passo a una modalità più semplice', e);
+      if (this._errs >= 2 && !this._safe) { this._safe = true; this.breathOn = false; if (this.breather) this.breather.ok = false; this._fallback = 'semplice (senza WebGL né ritocchi del viso)'; }
+      try { this.ctx.restore(); this.ctx.setTransform(1, 0, 0, 1, 0, 0); this.ctx.globalAlpha = 1; this.ctx.filter = 'none'; } catch {}
+      // il canvas non riesce proprio a disegnare: la foto diventa lo sfondo CSS del canvas (che il movimento CSS fa respirare)
+      if (this._errs >= 6 && !this._cssPhoto && this.img && this.img.src) { this._cssPhoto = true; this._fallback = 'foto CSS (canvas non disponibile)'; try { this.ctx.clearRect(0, 0, this.c.width, this.c.height); } catch {} this._cssBg = `#000 url("${String(this.img.src).replace(/"/g, '%22')}") center 20% / cover no-repeat`; this.c.style.background = this._cssBg; }
+    }
+    // v8.4.5: «cane da guardia»: se i fotogrammi si fermano (iOS Risparmio energetico, errore, rAF sospeso) riparte il ciclo e
+    // il movimento CSS (respiro/ondeggiamento sul canvas, gestito dal compositore del browser) diventa più evidente
+    watchdog() {
+      const c = this.c, st = c.parentElement, vis = document.visibilityState === 'visible' && c.isConnected && c.getClientRects().length > 0;
+      const stale = vis && performance.now() - (this._drawn || 0) > 1500;
+      if (stale) { this._stalls = (this._stalls || 0) + 1; try { cancelAnimationFrame(this._raf); } catch {} this._raf = requestAnimationFrame(this.loop); }
+      if (st && st.classList) st.classList.toggle('av-stalled', !!stale || !!this._safe);
+    }
+    frame(now) {
       // non visibile: risparmia batteria (getClientRects funziona anche dentro contenitori position:fixed su iOS)
       if (!this.c.isConnected || this.c.getClientRects().length === 0) return;
       if (++this._frame % 30 === 0) this.resize();
@@ -281,7 +307,9 @@
       const ctx = this.ctx, S = VS; // spazio virtuale; la trasformazione porta tutto alle dimensioni reali del canvas
       const dt = Math.min(100, now - (this._last || now)); this._last = now;
       const kf = (a) => 1 - Math.pow(1 - a, dt / 16.67); // v8.4.1: smorzamenti indipendenti dal frame rate (uguali a 30, 60 o 120 Hz)
-      { const tg = this.target(now); this.mouth += (tg - this.mouth) * kf(tg > this.mouth ? 0.5 : 0.28); } // apertura rapida, chiusura morbida
+      { const tg = this.target(now); this.mouth += (tg - this.mouth) * kf(tg > this.mouth ? 0.5 : 0.28); // apertura rapida, chiusura morbida
+        // v8.4.5: parla ma la bocca resta chiusa (audio non analizzabile, es. iOS): passa al labiale stimato dal testo
+        if (this.speaking && this._env) { if (tg > 0.05) this._openAt = now; else if (!this._simFb && this._spkText && now - Math.max(this._spkAt || 0, this._openAt || 0) > 900) { this._simFb = true; this._env = null; this.simulateText(this._spkText, 1); } } }
       this.wide = (this.wide || 0.5) + (((this.speaking ? this.vWide : 0.5) ?? 0.5) - (this.wide || 0.5)) * kf(0.25); // forma della bocca interpolata
       this._dEff += (this.dist - this._dEff) * (1 - Math.exp(-dt / 260)); // distanza: avvicinamento/allontanamento morbido
       this._mh += (this.mouth - this._mh) * (1 - Math.exp(-dt / 140));
@@ -424,7 +452,10 @@
       const stage = this.c.parentElement;
       if (stage && (this._stSp !== this.speaking || this._stGl !== col.glow)) { this._stSp = this.speaking; this._stGl = col.glow; stage.classList.toggle('speaking', this.speaking); stage.style.setProperty('--glow', col.glow); }
       const pulse = sens ? Math.round(14 + Math.sin(now / 1400) * 8) : 0;
-      const bs = this.speaking ? `0 0 0 3px ${col.glow}, 0 0 22px ${col.glow}88` : sens ? `0 0 ${pulse}px ${col.glow}66` : '';
+      // v8.4.5: niente più contorno pieno colorato (a schermo intero sembrava un bordo rosso di "registrazione"): solo un alone
+      // morbido nella vista normale, nessun alone a schermo intero o in chiamata
+      const bare = stage && stage.classList && (stage.classList.contains('fs') || stage.classList.contains('call'));
+      const bs = bare ? '' : this.speaking ? `0 0 18px ${col.glow}55` : sens ? `0 0 ${pulse}px ${col.glow}44` : '';
       if (bs !== this._bs) { this._bs = bs; this.c.style.boxShadow = bs; } // v8.4.1: niente scritture di stile a ogni fotogramma
       const P = this._pf, i = P.n++ % 240; P.draw[i] = performance.now() - tP0; P.gap[i] = gap;
     }
@@ -498,7 +529,7 @@
         // Respiro: compressione verticale minima ancorata in basso (≤ 0,25%), sempre dentro il riquadro.
         // v8.1: respiro realistico con deformazione morbida WebGL (spalle/petto/testa, sfondo fermo); se WebGL manca, il vecchio respiro.
         let src = img, headDy = 0; const trust = this.faceTrusted();
-        if (trust && this.breathOn !== false && img.naturalWidth) {
+        if (trust && !this._safe && this.breathOn !== false && img.naturalWidth) {
           if (!this.breather) this.breather = new Breather();
           if (this.breather.ok && this.breather.setup(img, this.lm)) { const amp = this.breathAmp || 1; src = this.breather.render(A.vol, amp, A.nod || 0); headDy = this.breather.headDy(A.vol, amp, A.nod || 0); }
         }
@@ -533,7 +564,7 @@
         // dimensionate per un primo piano, e su una figura intera la toppa delle sopracciglia diventava una striscia scura sulla fronte)
         // la testa è salita col respiro: le espressioni usano i punti spostati di quanto (nella foto deformata il viso è lì)
         const lmF = headDy ? shiftLm(this.lm, headDy / S) : this.lm;
-        if (trust) this.paintFace(ctx, src, lmF, A, faceScale(this.lm), this.lidColor); // v8.4.3: occhi/bocca solo con punti certi
+        if (trust && !this._safe) this.paintFace(ctx, src, lmF, A, faceScale(this.lm), this.lidColor); // v8.4.3: occhi/bocca solo con punti certi
         ctx.restore();
       } else {
         ctx.font = `${S * 0.6}px system-ui, "Apple Color Emoji", "Segoe UI Emoji", sans-serif`;
@@ -559,7 +590,7 @@
       const key = [show, this.img && this.img._src, c.offsetLeft, c.offsetTop, c.offsetWidth, c.offsetHeight, f, this.colors.background, getComputedStyle(c).borderRadius].join('|');
       if (!force && key === this._bdKey) return; this._bdKey = key;
       bd.hidden = !show;
-      c.style.background = show ? 'transparent' : this.colors.background;
+      c.style.background = this._cssPhoto ? this._cssBg : show ? 'transparent' : this.colors.background;
       if (!show) return;
       Object.assign(bd.style, { left: c.offsetLeft + 'px', top: c.offsetTop + 'px', width: c.offsetWidth + 'px', height: c.offsetHeight + 'px', borderRadius: getComputedStyle(c).borderRadius, background: this.colors.background });
       const inner = bd.firstChild;

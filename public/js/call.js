@@ -99,7 +99,7 @@
     ui.hidden = false; $('#call-name').textContent = ch.name; $('#call-caption').hidden = true;
     setMode(m || 'video'); speaker = true; $('#call-speaker').classList.add('on'); $('#call-speaker').textContent = '🔊'; if (App.tts) App.tts.volume = 1;
     $('#act-menu').hidden = true; $('#scene-menu').hidden = true;
-    prevTts = App.voice.ttsOn(); if (!prevTts) $('#tts-btn').click(); // in chiamata lei parla sempre
+    prevTts = null; if (App.tts) App.tts.fails = 0; // v8.4.5: in chiamata lei parla sempre (App.voice.ttsOn() è vero in chiamata), senza toccare «Lettura»
     prevAuto = $('#auto-send').checked; $('#auto-send').checked = true;
     App.call.active = true;
     requestAnimationFrame(() => App.fitFrame && App.fitFrame());

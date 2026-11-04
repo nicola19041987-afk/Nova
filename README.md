@@ -172,6 +172,18 @@ Tutto in `data/` sul server (escluso da git e dallo zip): `pins.json`, `sessions
 - Le clip delle azioni suonano con il loro audio (se presente) solo con Lettura attiva e audio sbloccato; se iOS lo blocca, la clip parte muta.
 - Sul telefono: interruttore laterale (silenzioso) disattivato e volume alzato; su iPhone la sintesi vocale può restare muta in modalità silenziosa.
 
+## Novità v8.4.5 (avatar sempre in movimento, voce in chiamata sempre attiva, niente "attacca/stacca")
+- **Avatar mai fermo:** sopra il disegno del canvas c'è un movimento CSS (respiro, leggero ondeggiamento, "bob" mentre parla) gestito dal compositore del browser: continua anche se iOS in Risparmio energetico rallenta i fotogrammi, se WebGL manca o se il disegno si blocca. Un controllo ogni secondo riavvia il ciclo di disegno se si ferma; gli errori di disegno passano a modalità più semplici (senza WebGL/ritocchi, poi foto come sfondo CSS). Il labiale passa alla stima dal testo se l'audio non è analizzabile. Il rilevamento del viso parte solo quando lei non parla.
+- **Bordo rosso:** era l'anello "sta parlando" (colore del personaggio, stile in linea che vinceva sul CSS). Tolto a schermo intero e in chiamata; altrove solo un alone morbido.
+- **Voce in chiamata:** lei parla SEMPRE a voce in chiamata, anche con «Lettura: off» (l'interruttore della chat non viene più toccato). A microfono aperto la voce passa solo dall'AudioContext condiviso: mai `<audio>`, mai sintesi del telefono, nessun `cancel()` a vuoto, clip delle azioni senza audio; se una frase non si decodifica si riprova.
+- **Modalità voce fuori chiamata:** con la chiave xAI usa il microfono continuo + trascrizione xAI in italiano (niente riconoscimento di Safari, che capiva parole a caso); pillola sull'avatar con il percorso in uso.
+- **Trascrizione:** filtro anti-aliasing prima dei 24 kHz, segmenti corti/deboli scartati, parole isolate sospette scartate (le risposte brevi vere restano).
+- **Tono:** base calda e naturale (1–3 frasi), niente sgarbi né commenti su "parole a caso", chiede gentilmente se non ha capito; le regole del personaggio hanno la precedenza.
+- **Aggiornamenti:** il service worker non si attiva più a metà chiamata o mentre parlate (attende che l'app sia libera); la pagina non si ricarica mai da sola.
+- **Menu Azioni/Soggiorno:** si chiudono da soli dopo 8 s; nascosti a schermo intero con la voce attiva e in chiamata.
+- **Diagnostica voce:** tempi dei turni classici (testo → prima parola → voce), modalità voce, stato dell'animazione dell'avatar.
+- Cache dell'app: `app-privata-v8-4-5`; icone 🤫 e `?v=843` invariate.
+
 ## Novità v8.4.4 (microfono senza "attacca/stacca", video senza spegnere il microfono, fotocamera in videochiamata)
 
 - **Voce (TTS) richiesta minima:** `POST /v1/tts` ora invia solo i campi documentati `text`, `voice_id`, `language: "it"` (+ `speed` 0,7–1,5 solo se ≠ 1). Rimossi `output_format` (predefinito MP3 24 kHz) e `optimize_streaming_latency`. Retry: 429/5xx → un nuovo tentativo; 400/422 → senza velocità; 404 → voce «eve». Risposta JSON con audio base64 gestita.

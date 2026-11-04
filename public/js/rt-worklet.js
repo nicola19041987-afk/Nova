@@ -3,7 +3,11 @@
 class RtCapture extends AudioWorkletProcessor {
   constructor() { super(); this.ratio = sampleRate / 24000; this.pos = 0; this.prev = 0; this.out = new Int16Array(2400); this.n = 0; this.e = 0; }
   process(inputs) {
-    const ch = inputs[0] && inputs[0][0]; if (!ch || !ch.length) return true;
+    const raw = inputs[0] && inputs[0][0]; if (!raw || !raw.length) return true;
+    // v8.4.5: filtro anti-aliasing (passa-basso ~10 kHz) prima di scendere a 24 kHz: senza, a 44,1/48 kHz le sibilanti
+    // si ripiegavano come rumore e la trascrizione peggiorava
+    let ch = raw;
+    if (this.ratio > 1.2) { if (!this.buf || this.buf.length !== raw.length) this.buf = new Float32Array(raw.length); const a = 1 - Math.exp(-2 * Math.PI * 10000 / sampleRate); let y = this.lp || 0; for (let k = 0; k < raw.length; k++) { y += a * (raw[k] - y); this.buf[k] = y; } this.lp = y; ch = this.buf; }
     const X = (k) => (k === 0 ? this.prev : ch[k - 1]); // X(0) = ultimo campione del blocco precedente
     let p = this.pos;
     while (p < ch.length) {

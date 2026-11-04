@@ -1,4 +1,4 @@
-/* diag.js — v8.4.1/v8.4.2 «Diagnostica voce» (Impostazioni → Voce): prova passo per passo token, WebSocket del tempo reale,
+/* diag.js — v8.4.1/v8.4.5 «Diagnostica voce» (Impostazioni → Voce): prova passo per passo token, WebSocket del tempo reale,
  * configurazione della sessione, microfono, trascrizione e voce, con i tempi. Risultato leggibile in uno screenshot. */
 (function () {
   const btn = document.getElementById('voice-diag'), out = document.getElementById('voice-diag-out');
@@ -15,7 +15,7 @@
   async function run() {
     const rows = []; let fatal = false;
     const row = (st, k, v) => { rows.push({ st, k, v }); draw(); };
-    const draw = () => { out.hidden = false; out.innerHTML = `<div class="diag-head">🩺 Diagnostica voce · v8.4.2 · ${new Date().toLocaleString('it-IT')}</div>` + rows.map((r) => `<div class="diag-row ${r.st}"><span>${r.st === 'ok' ? '✅' : r.st === 'warn' ? '⚠️' : r.st === 'run' ? '⏳' : '❌'}</span><b>${esc(r.k)}</b><span>${esc(r.v)}</span></div>`).join('') + (btn.disabled ? '' : '<button type="button" id="voice-diag-copy" class="small">📋 Copia il risultato</button>'); const c = document.getElementById('voice-diag-copy'); if (c) c.onclick = () => { const t = rows.map((r) => `${r.st.toUpperCase()} ${r.k}: ${r.v}`).join('\n'); (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(() => App.toast('Copiato'), () => App.toast('Fai uno screenshot')); }; };
+    const draw = () => { out.hidden = false; out.innerHTML = `<div class="diag-head">🩺 Diagnostica voce · v8.4.5 · ${new Date().toLocaleString('it-IT')}</div>` + rows.map((r) => `<div class="diag-row ${r.st}"><span>${r.st === 'ok' ? '✅' : r.st === 'warn' ? '⚠️' : r.st === 'run' ? '⏳' : '❌'}</span><b>${esc(r.k)}</b><span>${esc(r.v)}</span></div>`).join('') + (btn.disabled ? '' : '<button type="button" id="voice-diag-copy" class="small">📋 Copia il risultato</button>'); const c = document.getElementById('voice-diag-copy'); if (c) c.onclick = () => { const t = rows.map((r) => `${r.st.toUpperCase()} ${r.k}: ${r.v}`).join('\n'); (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(() => App.toast('Copiato'), () => App.toast('Fai uno screenshot')); }; };
     btn.disabled = true; btn.textContent = '⏳ Diagnostica in corso…';
     const AC = window.AudioContext || window.webkitAudioContext;
     const standalone = (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone;
@@ -79,6 +79,10 @@
     // 6) ultime chiamate
     const lt = App.latency && App.latency.median('tempo reale'), lc = App.latency && App.latency.median('classica');
     row('ok', 'Ritardo misurato (mediana)', `${lt ? 'tempo reale ' + (lt / 1000).toFixed(2) + ' s' : 'tempo reale: nessuna misura'} · ${lc ? 'classica ' + (lc / 1000).toFixed(2) + ' s' : 'classica: nessuna misura'}`);
+    { const L = (App.latency && App.latency.log || []).filter((x) => x.path === 'classica').slice(-3); // v8.4.5: dettaglio dei tempi
+      if (L.length) row('ok', 'Ultimi turni classici', L.map((x) => `${x.stt != null ? 'testo ' + (x.stt / 1000).toFixed(1) + ' s → ' : ''}${x.tok != null ? 'prima parola ' + (x.tok / 1000).toFixed(1) + ' s → ' : ''}voce ${(x.ms / 1000).toFixed(1)} s`).join(' · ')); }
+    if (App.voice && App.voice.mode) row('ok', 'Modalità voce (fuori chiamata)', { xai: 'microfono continuo + trascrizione xAI (italiano)', telefono: 'riconoscimento del telefono (riserva)', off: 'spenta' }[App.voice.mode()] || App.voice.mode());
+    { const a = App.avatarConv; if (a) row(a._safe || a._stalls ? 'warn' : 'ok', 'Animazione avatar', `${a._safe ? 'modalità semplice (' + (a._lastErr || 'errore di disegno') + ')' : a.breather && a.breather.ok ? 'respiro WebGL' : 'respiro semplice'} · blocchi ripresi: ${a._stalls || 0} · movimento CSS sempre attivo`); }
     if (App.rt && App.rt.lastError) row('warn', 'Ultimo errore tempo reale', App.rt.lastError);
     const log = App.rt && App.rt.log ? App.rt.log() : []; if (log.length) row('ok', 'Ultima chiamata (eventi)', log.slice(-8).map((x) => x.t + (x.d ? ' ' + x.d : '')).join(' → '));
     row(fatal ? 'err' : 'ok', 'Esito', fatal ? 'il tempo reale non può partire: vedi le righe rosse' : 'fatto · fai uno screenshot se qualcosa è rosso o giallo');

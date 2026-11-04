@@ -8,8 +8,9 @@
 (function () {
   const RATE = 24000, CH_MS = 100;
   const AC = window.AudioContext || window.webkitAudioContext;
-  const P = { pre: 3, startN: 2, endMs: 600, minMs: 350, maxMs: 25000, bargeN: 3 };
+  const P = { pre: 3, startN: 2, endMs: 600, minMs: 450, maxMs: 25000, bargeN: 3 }; // v8.4.5: frasi < 0,45 s di voce scartate
   let M = null;
+  const SHORT_OK = /^(s[iì]|no|ok|okay|ciao|grazie|certo|dai|boh|forse|esatto|perfetto|brava|bravo|bene|male|cosa|come|chi|perch[eé]|dove|quando|aspetta|basta|stop|ehi|ehm|allora|vero|davvero|sicuro|infatti|appunto|giusto|ecco|tranquilla|scusa|buonanotte|buongiorno|buonasera|benissimo|ottimo|figurati|magari|mai|sempre|prego|pronto|oddio|wow|mh+|ah+|oh+|eh+)$/i;
   const ctx = () => { if (!App.audio.ctx) App.audio.ctx = new AC(); if (App.audio.ctx.state !== 'running') App.audio.ctx.resume().catch(() => {}); return App.audio.ctx; };
   const herVoice = () => !!(App.tts && (App.tts.playing || App.tts.q.length)) || !!(App.avatarConv && App.avatarConv.speaking);
   function wav(chunks) {
@@ -25,6 +26,7 @@
     m.level = rms;
     if (m.muted) { m.pre = []; m.speech = null; return; }
     const her = herVoice(), now = performance.now();
+    if (her && m.noBarge && !m.speech) { m.pre = []; m.hot = 0; return; } // v8.4.5: fuori chiamata non la interrompe il suo stesso eco
     if (!m.speech) {
       if (!her && rms < m.floor * 2.5) m.floor = Math.max(0.003, m.floor * 0.95 + rms * 0.05); // rumore di fondo (solo quando nessuno parla)
       const th = her ? Math.max(0.045, m.floor * 7) : Math.max(0.014, m.floor * 3); // mentre lei parla serve più voce (il suo eco non deve interromperla)
@@ -39,7 +41,8 @@
       return;
     }
     const sp = m.speech; sp.chunks.push(pcm);
-    if (rms > Math.max(0.011, m.floor * 2.2)) sp.lastVoiceAt = now;
+    if (rms > Math.max(0.011, m.floor * 2.2)) { sp.lastVoiceAt = now; sp.voiced = (sp.voiced || 0) + 1; }
+    sp.peak = Math.max(sp.peak || 0, rms);
     if (App.call && App.call.onInterim && sp.chunks.length % 8 === 0) App.call.onInterim('…'); // annuisce ogni tanto mentre parli
     const dur = sp.chunks.length * CH_MS;
     if (now - sp.lastVoiceAt >= P.endMs || dur >= P.maxMs) { m.speech = null; m.onState && m.onState('idle'); finish(m, sp); }
@@ -50,17 +53,23 @@
     App.api('/api/ai-warm', { method: 'POST', ai: true }).catch(() => {});
   }
   async function finish(m, sp) {
-    const voiced = sp.lastVoiceAt - sp.startAt; if (voiced < P.minMs) return; // colpo di tosse, rumore breve
+    const voiced = sp.lastVoiceAt - sp.startAt; if (voiced < P.minMs) { m.dropped = (m.dropped || 0) + 1; return; } // colpo di tosse, rumore breve
+    // v8.4.5: segmenti deboli o con pochissima voce vera (rumore, eco, respiro) = parole a caso dalla trascrizione ("Foglia", "Gatto"): scartati
+    if ((sp.voiced || 0) * CH_MS < 400 || (sp.peak || 0) < Math.max(0.03, m.floor * 5)) { m.dropped = (m.dropped || 0) + 1; return; }
     const endAt = sp.lastVoiceAt, t0 = performance.now();
     try {
       const r = await App.api('/api/stt', { method: 'POST', body: wav(sp.chunks), headers: { 'Content-Type': 'audio/wav' }, ai: true, rawBody: true });
       m.sttMs.push(Math.round(performance.now() - t0)); m.fails = 0;
+      if (App.latency) App.latency.cur = { end: endAt, stt: Math.round(performance.now() - endAt) }; // v8.4.5: tempi per Diagnostica
       const text = String((r && r.text) || '').trim();
       if (!text || m.closed) return;
+      // v8.4.5: una sola parola "strana" da un segmento corto è quasi sempre un errore di trascrizione: scartata (le risposte brevi vere restano)
+      const words = text.replace(/[.,!?…;:"«»]/g, ' ').trim().split(/\s+/).filter(Boolean);
+      if (words.length === 1 && voiced < 900 && !SHORT_OK.test(words[0])) { m.dropped = (m.dropped || 0) + 1; console.info('Trascrizione scartata (parola isolata):', text); return; }
       const tw = performance.now(); while (App.chat.busy && !m.closed && performance.now() - tw < 10000) await new Promise((r) => setTimeout(r, 100)); // risposta precedente ancora in arrivo
       if (m.closed) return;
       if (App.latency) App.latency.mark = endAt; // ritardo misurato da quando hai smesso di parlare
-      App.chat.send(text);
+      if (m.onText) m.onText(text); else App.chat.send(text);
     } catch (e) {
       m.fails++; console.warn('Trascrizione:', e.message);
       if ((m.fails >= 2 || (e.status && e.status < 500)) && !m.closed && m.onFail) m.onFail(e);
@@ -70,7 +79,7 @@
     supported: () => !!(AC && navigator.mediaDevices && navigator.mediaDevices.getUserMedia),
     async start(opts = {}) {
       App.callMic.stop();
-      const m = M = { closed: false, muted: false, floor: 0.008, hot: 0, pre: [], speech: null, sttMs: [], fails: 0, barges: 0, level: 0, onFail: opts.onFail, onState: opts.onState };
+      const m = M = { onText: opts.onText, noBarge: !!opts.noBarge, dropped: 0, closed: false, muted: false, floor: 0.008, hot: 0, pre: [], speech: null, sttMs: [], fails: 0, barges: 0, level: 0, onFail: opts.onFail, onState: opts.onState };
       const c = ctx();
       m.stream = await App.audio.mic(); // v8.4.4: lo stesso microfono per tutta la chiamata (anche dopo il tempo reale)
       if (m.closed) return;
@@ -89,7 +98,7 @@
     setMuted(v) { if (M) { M.muted = !!v; M.speech = null; M.pre = []; } },
     get active() { return !!(M && !M.closed); },
     speaking: () => !!(M && M.speech),
-    stats: () => (M ? { floor: +M.floor.toFixed(4), level: +M.level.toFixed(4), sttMs: M.sttMs.slice(), barges: M.barges } : null),
+    stats: () => (M ? { floor: +M.floor.toFixed(4), level: +M.level.toFixed(4), sttMs: M.sttMs.slice(), barges: M.barges, dropped: M.dropped || 0 } : null),
     _wav: wav,
   };
 })();

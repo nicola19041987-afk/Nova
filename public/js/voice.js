@@ -3,10 +3,15 @@
  * Mentre l'avatar parla l'ascolto è in pausa, per evitare l'eco. */
 (function () {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let xMode = false, xFailed = false; // v8.4.5: modalità voce con trascrizione xAI
   let rec = null, on = false, pausedForTTS = false, ttsOn = false;
   let lastResAt = 0, eosT = 0, early = ''; // v8.4: fine del parlato anticipata (chiamate)
   let ignoreUntil = 0; // v8.4.1: in chiamata il riconoscimento NON si ferma mentre lei parla (niente bip di iOS): i risultati vengono ignorati
   const inCall = () => !!(App.call && App.call.active);
+  // v8.4.5: microfono aperto (chiamata o modalità voce con trascrizione xAI): la voce passa SOLO dall'AudioContext condiviso
+  const live = () => inCall() || xMode;
+  // v8.4.5: in chiamata lei parla SEMPRE a voce, a prescindere dall'interruttore «Lettura» della chat
+  const speakOn = () => ttsOn || inCall();
   const norm = (t) => String(t || '').toLowerCase().replace(/[^\p{L}\d ]+/gu, '').replace(/\s+/g, ' ').trim();
   // ---- v7.3: sblocco dell'audio su iPhone ----
   // iOS Safari/PWA: la sintesi vocale e l'audio Web restano muti finché non partono la prima volta DENTRO un tocco dell'utente.
@@ -68,7 +73,7 @@
     },
     // pillola "🔊 Tocca per attivare l'audio": visibile solo se una lettura è stata bloccata
     hint(show) { const el = document.getElementById('audio-unlock'); if (el) el.hidden = !show; },
-    clipSound: () => ttsOn && App.audio.unlocked, // clip delle azioni con il loro audio solo a lettura attiva e audio sbloccato
+    clipSound: () => ttsOn && App.audio.unlocked && !live(), // v8.4.5: mai clip con audio a microfono aperto (cambio di sessione su iPhone) // clip delle azioni con il loro audio solo a lettura attiva e audio sbloccato
   };
   // ---- v8: voce naturale xAI (Text to Speech) ----
   // Le frasi arrivano mentre la risposta viene scritta: la prima si sente dopo pochi istanti, le altre sono già pronte in coda.
@@ -111,7 +116,7 @@
     audio() { if (!this.el) { const a = new Audio(); a.preload = 'auto'; a.setAttribute('playsinline', ''); this.el = a; } return this.el; },
     stop() {
       this.gen++; this.q = []; this.buf = ''; this.streaming = false; this.sent = 0; this.devBuf = ''; this.degraded = false;
-      if (this.playing) { try { this.el.pause(); } catch {} }
+      if (this.playing && this.el && !this.el.paused) { try { this.el.pause(); } catch {} } // v8.4.5: nessun pause() inutile
       if (this.wa) { this.wa.stop(); this.wa = null; }
       this.playing = null; this.done();
     },
@@ -143,7 +148,7 @@
       const blob = await r.blob();
       if (!blob.size) throw new Error('Audio vuoto');
       const e = await envelope(blob).catch(() => null);
-      const res = { url: URL.createObjectURL(blob), env: e && e.env, buf: e && e.buf };
+      const res = { url: URL.createObjectURL(blob), env: e && e.env, buf: e && e.buf, blob };
       this.cache.set(key, res);
       while (this.cache.size > 40) { const [k, v] = this.cache.entries().next().value; this.cache.delete(k); if (!this.playing || this.playing.res !== v) URL.revokeObjectURL(v.url); }
       return res;
@@ -155,7 +160,11 @@
       try { res = await item.p; } catch (e) { if (item.gen === this.gen) this.fail(e, item); return; }
       if (item.gen !== this.gen) return;
       this.fails = 0; item.res = res;
-      if (inCall() && res.buf && App.audio.ctx) { // v8.4.1: in chiamata, WebAudio con dissolvenze
+      // v8.4.5: con il microfono aperto MAI un elemento <audio> (su iPhone ogni play/fine cambia la sessione audio = "suono di
+      // attacco e stacco"): la frase si decodifica e si suona sull'AudioContext condiviso; se non si decodifica, si riprova a scaricarla
+      if (live() && !res.buf) { try { const e2 = await envelope(res.blob); if (e2) { res.buf = e2.buf; res.env = res.env || e2.env; } } catch (er) { console.warn('Voce: audio non decodificabile', er); } if (item.gen !== this.gen) return; }
+      if (live() && !res.buf) { this.fail(new Error('audio non decodificabile'), item); return; }
+      if (live() && res.buf) { if (!App.audio.ctx) { const AC = window.AudioContext || window.webkitAudioContext; App.audio.ctx = new AC(); }
         if (!this.lipsOn) { const avs = [App.avatarConv, App.avatarPresence].filter((x) => x && x.breathM); avs.forEach((x) => x.breathM.preInhale(performance.now())); if (avs.length) { await new Promise((r) => setTimeout(r, 60)); if (item.gen !== this.gen) return; } }
         const h = this.wa = playBuffer(res.buf, NX.volume == null ? 1 : NX.volume);
         App.audio.unlocked = true; this.lips(h.el, res.env, item.text); pauseRec();
@@ -180,15 +189,19 @@
       }
     },
     lips(a, env, text) {
-      this.lipsOn = true;
+      this.lipsOn = true; { const st = document.getElementById('stage'); if (st) st.classList.add('speaking'); } // v8.4.5: movimento CSS anche se il canvas è fermo
       App.avatarConv && App.avatarConv.speakAudio(a, env, text);
       if (App.avatarPresence && !$('#presence').hidden) App.avatarPresence.speakAudio(a, env, text);
     },
     done() {
-      if (this.lipsOn) { this.lipsOn = false; App.avatarConv && App.avatarConv.stopAudio(); if (App.avatarPresence) App.avatarPresence.stopAudio(); }
+      if (this.lipsOn) { this.lipsOn = false; { const st = document.getElementById('stage'); if (st) st.classList.remove('speaking'); } App.avatarConv && App.avatarConv.stopAudio(); if (App.avatarPresence) App.avatarPresence.stopAudio(); }
       resumeRec();
     },
     fail(e, item) {
+      if (live() && item && !item.retried) { // v8.4.5: in chiamata un secondo tentativo prima di cambiare voce
+        item.retried = true; item.p = (async () => { this.cache.forEach((v, k) => { if (k.endsWith('|' + item.text)) this.cache.delete(k); }); return this.fetch(item.text); })(); item.p.catch(() => {});
+        this.q.unshift(item); this.playing = null; this.next(); return;
+      }
       this.fails++; console.warn('Voce xAI non disponibile:', e.message);
       if (!this._warned || performance.now() - this._warned > 60000) { this._warned = performance.now(); App.toast('🔈 Voce naturale non disponibile (' + e.message + '): uso la voce del telefono', 4500); }
       this.devBuf = [item.text, ...this.q.map((x) => x.text)].join(' '); this.q = []; this.playing = null; this.degraded = true; this.done();
@@ -226,6 +239,11 @@
   }
   const status = (t) => { const el = $('#voice-status'); el.hidden = !t; el.textContent = t || ''; };
   function setBtn() {
+    { // v8.4.5: pillola sempre visibile sull'avatar (anche a schermo intero) con il percorso della voce in uso
+      const st = document.getElementById('stage'); let p = document.getElementById('stage-voice');
+      if (st && !p) { p = document.createElement('div'); p.id = 'stage-voice'; p.className = 'stage-voice'; p.hidden = true; st.appendChild(p); }
+      if (p) { p.hidden = !on; p.dataset.kind = xMode ? 'xai' : 'sr'; p.textContent = xMode ? '🎙️ Voce · trascrizione xAI' : '🎙️ Voce · riconoscimento del telefono'; p.title = 'Per risposte più rapide usa la chiamata (⚡ Tempo reale)'; }
+    }
     $('#mic-btn').classList.toggle('on', on); $('#mic-btn span').textContent = on ? 'Voce: on' : 'Voce: off';
     $('#tts-btn').classList.toggle('on', ttsOn); $('#tts-btn').firstChild.textContent = ttsOn ? '🔊 ' : '🔇 ';
     $('#tts-btn span').textContent = ttsOn ? 'Lettura: on' : 'Lettura: off';
@@ -265,31 +283,49 @@
   }
   App.voice = {
     start() {
+      // v8.4.5: con la chiave xAI la modalità voce (fuori chiamata) usa il NOSTRO microfono + trascrizione xAI in italiano
+      // (stesso rilevatore del parlato della chiamata): niente riconoscimento di Safari, che su iPhone capiva parole a caso
+      // ("Foglia", "Gatto") e faceva il "bip" a ogni riavvio. Il riconoscimento del telefono resta solo come riserva.
+      if (App.key && App.key() && App.callMic && App.callMic.supported() && !xFailed && !(App.call && App.call.active)) {
+        if (!App.ls.get('micOn', false)) return App.toast('Attiva il microfono in Impostazioni');
+        try { App.audio.unlock(); } catch {} // dentro il tocco, PRIMA di passare alla sessione con microfono
+        on = true; xMode = true; setBtn(); status('🎙️ In ascolto… (trascrizione xAI)'); document.body.classList.add('voice-live');
+        App.audio.callSession(true); // v8.4.5: una sola sessione «registra + riproduci» finché la modalità voce è attiva
+        const onText = (t) => { if (!on) return; status('🎙️ In ascolto… (trascrizione xAI)'); if ($('#auto-send').checked) { $('#chat-input').value = ''; App.chat.send(t); } else { const inp = $('#chat-input'); inp.value = (inp.value ? inp.value + ' ' : '') + t; } };
+        const onFail = (e) => { console.warn('Trascrizione xAI non disponibile, uso il riconoscimento del telefono:', e && e.message); xFailed = true; App.callMic.stop(); xMode = false; if (!(App.call && App.call.active)) App.audio.callSession(false); if (on) { on = false; App.voice.start(); } };
+        App.callMic.start({ onText, onFail, noBarge: true, onState: (st) => { if (on && xMode) status(st === 'speech' ? '🎙️ Ti ascolto…' : '🎙️ In ascolto… (trascrizione xAI)'); } }).catch((e) => { if (e && (e.name === 'NotAllowedError' || e.name === 'SecurityError')) { on = false; xMode = false; setBtn(); status('Permesso microfono negato.'); document.body.classList.remove('voice-live'); } else onFail(e); });
+        return;
+      }
       if (!SR) { status('Il riconoscimento vocale non è supportato da questo browser (su iPhone il supporto è parziale). Puoi usare il microfono della tastiera.'); return; }
       if (!App.ls.get('micOn', false)) return App.toast('Attiva il microfono in Impostazioni');
       if (!rec) build();
       on = true; setBtn(); status('🎙️ In ascolto…'); try { rec.start(); } catch {}
     },
-    ttsOn: () => ttsOn,
+    ttsOn: () => speakOn(), // v8.4.5: in chiamata sempre vero (lei parla a voce anche con «Lettura: off»)
+    readOn: () => ttsOn,
     listening: () => on && !!rec,
     // Frase detta dall'avatar anche con la lettura spenta (es. domanda di conferma)
     sayNow(text) {
-      if (NX.enabled()) { if (SS) SS.cancel(); NX.say(text); return; }
+      if (NX.enabled()) { if (SS && (SS.speaking || SS.pending)) SS.cancel(); NX.say(text); return; }
       if (!SS) return;
       speakNow(text, { before: (u) => App.avatarConv.speakUtterance(u, text) });
     },
-    stop() { on = false; setBtn(); status(''); if (rec) try { rec.stop(); } catch {} },
+    stop() {
+      on = false; setBtn(); status(''); document.body.classList.remove('voice-live'); if (rec) try { rec.stop(); } catch {}
+      if (xMode) { xMode = false; App.callMic.stop(); if (!(App.call && App.call.active)) { App.audio.releaseMic(); App.audio.callSession(false); } } // in chiamata il microfono resta (stesso flusso)
+    },
+    mode: () => (on ? (xMode ? 'xai' : 'telefono') : 'off'),
     isListening: () => on,
     speak(text) {
-      if (!ttsOn) return;
+      if (!speakOn()) return;
       if (NX.enabled()) { NX.say(text); return; }
       speakDevice(cleanTTS(text).replace(/\[laugh\]/g, ''));
     },
     // v8: lettura in streaming (frase per frase mentre arriva la risposta). Restituisce true se è attiva.
-    streamStart() { if (!ttsOn || !NX.enabled()) return false; if (SS) SS.cancel(); NX.begin(); return true; },
+    streamStart() { if (!speakOn() || !NX.enabled()) return false; if (SS && (SS.speaking || SS.pending)) SS.cancel(); NX.begin(); return true; },
     streamFeed(delta) { NX.feed(delta); },
     streamEnd() { NX.end(); },
-    cancel() { NX.stop(); if (SS) try { SS.cancel(); } catch {} },
+    cancel() { NX.stop(); if (SS && (SS.speaking || SS.pending)) try { SS.cancel(); } catch {} }, // v8.4.5: niente cancel() a vuoto (in chiamata nessun tocco alla sintesi del telefono)
     engine: () => (NX.enabled() ? 'xai' : 'device'),
   };
   $('#mic-btn').addEventListener('click', () => (on ? App.voice.stop() : App.voice.start()));
@@ -300,7 +336,7 @@
     else { App.audio.unlock(); if (inCall()) {} else if (NX.enabled()) NX.say('Lettura attiva.'); else speakNow('Lettura attiva.', { sync: true }); } // v8.4.4: in chiamata nessuna conferma a voce // conferma udibile, detta dentro il tocco (sblocca iOS)
   });
   // v7.3: lettura ACCESA di default (chi l'ha spenta a mano resta spenta). Sull'app installata (PWA) le preferenze sono separate da Safari.
-  App.voice.init = () => { ttsOn = App.ls.get('tts', true) && (!!SS || NX.enabled()); setBtn(); loadVoices(); };
+  App.voice.init = () => {  ttsOn = App.ls.get('tts', true) && (!!SS || NX.enabled()); setBtn(); loadVoices(); };
   const au = document.getElementById('audio-unlock');
   if (au) au.addEventListener('click', (e) => { e.stopPropagation(); App.audio.unlock(); if (NX.playing || NX.q.length) return; if (performance.now() - (App.audio._spokeAt || 0) > 1500 && lastSpoken && SS && !SS.speaking) { App.audio._spokeAt = performance.now(); speakNow(lastSpoken.text, { ...lastSpoken.opts, sync: true }); } });
   // ---- v8: impostazioni voce (Impostazioni) ----
