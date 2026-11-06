@@ -70,11 +70,18 @@
   const playing = (s) => s && s.playT > ctx().currentTime + 0.005;
   function play(s, buf) {
     const c = ctx(), o = outChain(s), i16 = new Int16Array(buf), n = i16.length; if (!n) return;
-    const ab = c.createBuffer(1, n, RATE), d = ab.getChannelData(0); for (let i = 0; i < n; i++) d[i] = i16[i] / 32768;
+    let e2 = 0, zc = 0, prev = 0;
+    const ab = c.createBuffer(1, n, RATE), d = ab.getChannelData(0);
+    for (let i = 0; i < n; i++) { const v = i16[i] / 32768; d[i] = v; e2 += v * v; if ((v >= 0) !== (prev >= 0)) zc++; prev = v; }
+    const rms = Math.sqrt(e2 / n), shape = Math.max(0, Math.min(1, (zc / n) * 6));
     const src = c.createBufferSource(); src.buffer = ab; src.connect(o.g);
     const fresh = !(s.playT > c.currentTime + 0.002), t = Math.max(c.currentTime + 0.025, s.playT || 0);
     if (fresh) { const g = o.g.gain; g.cancelScheduledValues(t); g.setValueAtTime(0, t); g.linearRampToValueAtTime(s.volume, t + 0.015); } // dissolvenza in entrata: niente click
     src.start(t); s.playT = t + n / RATE;
+    if (!s.env) s.env = [];
+    s.env.push({ t0: t, t1: s.playT, rms, shape });
+    const cut = c.currentTime - 0.25;
+    while (s.env.length > 6 && s.env[0].t1 < cut) s.env.shift();
     s.sources.push(src); src.onended = () => { s.sources = s.sources.filter((x) => x !== src); };
     if (s.resp && !s.resp.firstAt) { // primo audio della risposta: latenza fine-parlato -> primo suono
       s.resp.firstAt = performance.now() + (t - c.currentTime) * 1000;
@@ -83,17 +90,36 @@
     lips(s, true);
   }
   // livello della voce (0..1) e "apertura larga" (vocali chiare/sibilanti) per il labiale, letti a ogni fotogramma
+  function envNow(s) {
+    const list = s.env; if (!list || !list.length) return null;
+    const t = ctx().currentTime;
+    for (let i = list.length - 1; i >= 0; i--) if (t >= list[i].t0 && t <= list[i].t1) return list[i];
+    return null;
+  }
   function level(s) {
-    const o = s.out; if (!o || !playing(s)) return 0;
-    o.an.getFloatTimeDomainData(o.td); let e = 0; for (let i = 0; i < o.td.length; i++) e += o.td[i] * o.td[i];
-    const rms = Math.sqrt(e / o.td.length); s.peak = Math.max(rms, (s.peak || 0.05) * 0.995);
-    const v = rms / (s.peak * 0.75); return v < 0.06 ? 0 : Math.min(1, Math.pow(v, 0.8));
+    if (!playing(s)) return 0;
+    let rms = 0;
+    const seg = envNow(s); if (seg) rms = seg.rms;
+    const o = s.out;
+    if (o) {
+      try {
+        o.an.getFloatTimeDomainData(o.td); let e = 0; for (let i = 0; i < o.td.length; i++) e += o.td[i] * o.td[i];
+        rms = Math.max(rms, Math.sqrt(e / o.td.length));
+      } catch { /* Safari: l'analizzatore spesso resta a zero; resta l'inviluppo del PCM */ }
+    }
+    if (rms <= 0) return 0;
+    s.peak = Math.max(rms, (s.peak || 0.05) * 0.995);
+    const v = rms / (s.peak * 0.75); return v < 0.04 ? 0 : Math.min(1, Math.pow(v, 0.8));
   }
   function wide(s) {
-    const o = s.out; if (!o || !playing(s)) return 0;
-    o.an.getByteFrequencyData(o.fd); let lo = 0, hi = 0; const N = o.fd.length, k = Math.floor(N * 0.04), h = Math.floor(N * 0.12);
-    for (let i = 1; i < k; i++) lo += o.fd[i]; for (let i = k; i < h; i++) hi += o.fd[i];
-    return Math.max(0, Math.min(1, (hi / Math.max(1, h - k)) / Math.max(1, lo / Math.max(1, k - 1)) - 0.4));
+    const seg = envNow(s);
+    if (seg) return seg.shape;
+    const o = s.out; if (!o || !playing(s)) return 0.5;
+    try {
+      o.an.getByteFrequencyData(o.fd); let lo = 0, hi = 0; const N = o.fd.length, k = Math.floor(N * 0.04), h = Math.floor(N * 0.12);
+      for (let i = 1; i < k; i++) lo += o.fd[i]; for (let i = k; i < h; i++) hi += o.fd[i];
+      return Math.max(0, Math.min(1, (hi / Math.max(1, h - k)) / Math.max(1, lo / Math.max(1, k - 1)) - 0.4));
+    } catch { return 0.5; }
   }
   function lips(s, on) {
     const avs = [App.avatarConv, App.avatarPresence].filter(Boolean);
@@ -107,7 +133,7 @@
       const t = c.currentTime, g = o.g.gain; g.cancelScheduledValues(t); g.setValueAtTime(g.value, t); g.linearRampToValueAtTime(0, t + 0.03);
       for (const x of s.sources) { try { x.onended = null; x.stop(t + 0.035); } catch {} }
     } else for (const x of s.sources) { try { x.onended = null; x.stop(); } catch {} }
-    s.sources = []; s.playT = 0; lips(s, false);
+    s.sources = []; s.playT = 0; s.env = []; lips(s, false);
   }
   function fadeOutEnd(s) { // fine risposta: chiude dolcemente l'ultimo pezzo
     const c = App.audio.ctx, o = s.out; if (!c || !o || !(s.playT > c.currentTime + 0.05)) return;

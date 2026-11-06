@@ -288,3 +288,133 @@ test('la voce in tempo reale resta in chat e un messaggio arriva da xAI', async 
   expect(snap.stopped).toBe(true);
   expect(snap.inCall).toBe(false);
 });
+
+test('labiale e movimento della sessione ⚡ seguono l’audio, senza coprire la chat', async ({ page }) => {
+  await mockApp(page);
+  await page.route('**/api/realtime/session', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ url: 'wss://example.test/rt', token: 'tok', adult: false, session: { instructions: 'Sei Nova', voice: 'ara' } }),
+  }));
+  await page.goto('/');
+  await page.waitForFunction(() => document.body.classList.contains('solo-mode') && document.getElementById('title').textContent === 'Nova');
+  const snap = await page.evaluate(async () => {
+    const corr = (xs, ys) => {
+      const n = xs.length, mx = xs.reduce((a, b) => a + b, 0) / n, my = ys.reduce((a, b) => a + b, 0) / n;
+      let num = 0, dx = 0, dy = 0;
+      for (let i = 0; i < n; i++) { const a = xs[i] - mx, b = ys[i] - my; num += a * b; dx += a * a; dy += b * b; }
+      return dx && dy ? num / Math.sqrt(dx * dy) : 0;
+    };
+    const meanDiff = (a, b, x0, x1, y0, y1) => {
+      let s = 0, n = 0;
+      for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
+        const i = (y * a.width + x) * 4;
+        s += Math.abs(a.data[i] - b.data[i]) + Math.abs(a.data[i + 1] - b.data[i + 1]) + Math.abs(a.data[i + 2] - b.data[i + 2]);
+        n++;
+      }
+      return s / Math.max(1, n);
+    };
+    const stage = document.getElementById('stage').getBoundingClientRect();
+    const msgs = document.getElementById('messages').getBoundingClientRect();
+    const c = document.createElement('canvas');
+    c.style.cssText = 'position:fixed;left:0;top:0;width:220px;height:220px;opacity:0;pointer-events:none';
+    document.body.appendChild(c);
+    const src = document.createElement('canvas'); src.width = src.height = 240;
+    const g = src.getContext('2d');
+    g.fillStyle = '#e7b89a'; g.fillRect(0, 0, 240, 240);
+    g.fillStyle = '#2a211c'; g.fillRect(70, 88, 26, 8); g.fillRect(144, 88, 26, 8);
+    g.fillStyle = '#7a3038'; g.fillRect(78, 150, 84, 8);
+    const im = new Image(); im.src = src.toDataURL(); await im.decode();
+    const av = new TalkingAvatar(c);
+    av.img = im;
+    av.lm = { auto: true, eyeL: { x: 0.34, y: 0.38 }, eyeR: { x: 0.66, y: 0.38 }, mouth: { x: 0.32, y: 0.64 }, mouthW: 0.2 };
+    av._trustKey = '';
+    av.breathOn = false;
+    av.resize();
+    let lv = 0;
+    av.speakLive(() => lv, () => 0.5);
+    let now = performance.now();
+    const levels = [], mouths = [], plates = [];
+    const seq = [0, 0.15, 0.45, 0.85, 0.85, 0.85, 0.35, 0.05, 0];
+    for (const v of seq) {
+      lv = v;
+      for (let k = 0; k < 5; k++) {
+        now += 22; av.frame(now);
+        levels.push(v); mouths.push(av.mouth);
+        if ((v === 0 && k === 4 && levels.length < 8) || (v === 0.85 && k >= 3)) plates.push(av.ctx.getImageData(0, 0, c.width, c.height));
+      }
+    }
+    const closed = plates[0], open = plates[plates.length - 1];
+    const y0 = Math.floor(c.height * 0.52), y1 = Math.floor(c.height * 0.78), mid = Math.floor(c.width / 2);
+    const diff = meanDiff(closed, open, 0, c.width, y0, y1);
+    const left = meanDiff(closed, open, 0, mid, y0, y1);
+    const right = meanDiff(closed, open, mid, c.width, y0, y1);
+    let jitter = 0, jn = 0;
+    for (let i = 1; i < plates.length; i++) { jitter += meanDiff(plates[i - 1], plates[i], 0, c.width, y0, y1); jn++; }
+    c.remove();
+    return {
+      trusted: av.faceTrusted(), corr: corr(levels, mouths), diff, left, right,
+      jitter: jitter / Math.max(1, jn),
+      inCall: document.body.classList.contains('in-call'),
+      chatBelow: stage.bottom <= msgs.top + 8,
+      chatH: msgs.height,
+    };
+  });
+  expect(snap.trusted).toBe(true);
+  expect(snap.corr).toBeGreaterThan(0.55);
+  expect(snap.diff).toBeGreaterThan(1.5);
+  expect(snap.left).toBeGreaterThan(0.8);
+  expect(snap.right).toBeGreaterThan(0.8);
+  expect(Math.max(snap.left, snap.right) / Math.min(snap.left, snap.right)).toBeLessThan(1.8);
+  expect(snap.jitter).toBeLessThan(snap.diff * 0.55);
+  expect(snap.inCall).toBe(false);
+  expect(snap.chatBelow).toBe(true);
+  expect(snap.chatH).toBeGreaterThan(40);
+});
+
+test('il PCM della sessione ⚡ apre e chiude la bocca', async ({ page, browserName }) => {
+  test.skip(browserName === 'webkit', 'In questo ambiente WebKit chiude il renderer quando parte un buffer PCM. Il labiale rispetto all’inviluppo è misurato nel test precedente.');
+  await mockApp(page);
+  await page.route('**/api/realtime/session', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ url: 'wss://example.test/rt', token: 'tok', adult: false, session: { instructions: 'Sei Nova', voice: 'ara' } }),
+  }));
+  await page.goto('/');
+  await page.waitForFunction(() => document.body.classList.contains('solo-mode'));
+  const live = await page.evaluate(async () => {
+    App.ls.set('key', 'sk-test');
+    App.ls.set('callEngine', 'realtime');
+    const ac = new (window.AudioContext || window.webkitAudioContext)();
+    const dest = ac.createMediaStreamDestination();
+    navigator.mediaDevices = navigator.mediaDevices || {};
+    navigator.mediaDevices.getUserMedia = async () => dest.stream;
+    class FakeWS {
+      constructor() {
+        this.readyState = 0; window.__ws = this;
+        setTimeout(() => { this.readyState = 1; if (this.onopen) this.onopen(); if (this.onmessage) this.onmessage({ data: JSON.stringify({ type: 'session.created' }) }); }, 0);
+      }
+      send(raw) { let msg = {}; try { msg = JSON.parse(raw); } catch { return; } if (msg.type === 'session.update') setTimeout(() => { if (this.onmessage) this.onmessage({ data: JSON.stringify({ type: 'session.updated' }) }); }, 0); }
+      close() { this.readyState = 3; }
+    }
+    window.WebSocket = FakeWS;
+    let err = '';
+    const toast = App.toast; App.toast = (m) => { err = String(m); return toast(m); };
+    await App.solo.toggleRt();
+    const tone = (amp, n = 2400) => { const b = new Int16Array(n); for (let i = 0; i < n; i++) b[i] = Math.sin(i / 6) * amp * 32767; return b.buffer; };
+    window.__ws.onmessage({ data: tone(0.7) });
+    await new Promise((r) => setTimeout(r, 40));
+    App.avatarConv.frame(performance.now());
+    const open = App.avatarConv.mouth;
+    await new Promise((r) => setTimeout(r, 280));
+    for (let i = 0; i < 6; i++) App.avatarConv.frame(performance.now() + i * 40);
+    const shut = App.avatarConv.mouth;
+    await App.solo.toggleRt();
+    return { err, open, shut, on: document.body.classList.contains('solo-rt'), inCall: document.body.classList.contains('in-call') };
+  });
+  expect(live.err).toBe('');
+  expect(live.open).toBeGreaterThan(0.15);
+  expect(live.shut).toBeLessThan(live.open * 0.65);
+  expect(live.on).toBe(false);
+  expect(live.inCall).toBe(false);
+});

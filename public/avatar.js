@@ -591,8 +591,9 @@
         }
         // v8.4.3: senza respiro WebGL (o con punti incerti) il respiro dell'immagine intera è VISIBILE (prima 0,25%: sembrava ferma),
         // più un leggero "sollevarsi" mentre parla; solo verticale, ancorato in basso: la cornice resta ferma, niente ondeggiamento laterale
-        const br = Math.max(-1, Math.min(1, A.breath)), talk = this.speaking ? Math.min(1, this.mouth) : 0;
-        const Y1b = E.y0 + E.h, bs = src === img ? 1 + (trust ? 0.0035 : 0.005) * (1 + br) + talk * 0.002 : 1; // v8.5.2: un solo respiro (niente CSS sopra) // sempre ≥ 1 e ritagliato
+        const br = Math.max(-1, Math.min(1, A.breath)), talk = this.speaking ? Math.min(1, this._mh || 0) : 0;
+        // Senza WebGL (Safari) e senza clip: il busto si alza in modo liscio, ancorato in basso, seguendo la bocca già filtrata.
+        const Y1b = E.y0 + E.h, bs = src === img ? 1 + (trust ? 0.0035 : 0.008) * (1 + br) + talk * (trust ? 0.006 : 0.02) : 1;
         ctx.save(); ctx.beginPath(); ctx.rect(E.x0, E.y0, E.w, E.h); ctx.clip();
         const cxb = E.x0 + E.w / 2; ctx.translate(cxb, Y1b); ctx.scale(src === img ? 1 + (bs - 1) * 0.25 : 1, bs); ctx.translate(-cxb, -Y1b);
         ctx.drawImage(src, E.x0, E.y0, E.w, E.h);
@@ -752,7 +753,11 @@
       // v8: geometria reale rilevata in automatico (larghezza bocca, occhi, sopracciglia), se disponibile
       const MW = lm.mouthW ? lm.mouthW * S : F * 0.2, EW = lm.eyeW ? lm.eyeW * S : F * 0.072, EH = lm.eyeH ? Math.max(lm.eyeH * S, EW * 0.22) : F * 0.026;
       // v8.4: angoli e forma della bocca: larghezza (visemi) e sorriso spostano gli angoli; patch ancorate ai punti del viso
-      const wide = Math.max(0, Math.min(1, this.wide ?? 0.5)), cxm = m.x * S, ly = m.y * S;
+      const wide = Math.max(0, Math.min(1, this.wide ?? 0.5));
+      const roll = Math.atan2(lm.eyeR.y - lm.eyeL.y, lm.eyeR.x - lm.eyeL.x);
+      const mid = ((lm.eyeL.x + lm.eyeR.x) / 2) * S;
+      const cxm = mid, ly = m.y * S;
+      ctx.save(); ctx.translate(cxm, ly); ctx.rotate(roll); ctx.translate(-cxm, -ly);
       const sxw = 1 + smile * 0.07 + (wide - 0.5) * 0.1 * Math.min(1, open * 2.2);
       if (smile > 0.05 || (open > 0.03 && Math.abs(sxw - 1) > 0.004)) {
         const w = Math.max(F * 0.12, MW * 1.12), h = w * 0.5;
@@ -792,6 +797,7 @@
           }
         }
       }
+      ctx.restore();
       const gxp = mc.gx * F * 0.0045, gyp = mc.gy * F * 0.0025, bup = mc.brow * F * 0.007, px = F * 0.0006;
       [lm.eyeL, lm.eyeR].forEach((e, ei) => {
         if (Math.abs(gxp) > px || Math.abs(gyp) > px) {

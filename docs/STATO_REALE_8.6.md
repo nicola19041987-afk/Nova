@@ -34,13 +34,13 @@ Il microfono del dock chiamava `App.call.start('voice')` e Home richiamava `chat
 
 ## Dipendenze tra i pezzi
 
-Login (`auth.js`) → `App.boot` → `loadChars` (wrapper solo) → `solo.boot` → `chat.open` → palco `TalkingAvatar` (`avatar.js` / `fitFrame` in `main.js`). Il dock Microfono passa da `voice.js` (dettato nel composer). Il tasto ⚡ del composer avvia `App.rt` e lascia i messaggi in chat. La Camera passa ancora da `call.js`. I movimenti stanno in `actions.js` + clip server (`prepSoloMotions`). L’aspetto testuale è il dialogo in `solo.js` che chiama `POST /api/characters/:id/regenerate`. Il service worker tiene la shell: un fix client non arriva finché la cache non cambia.
+Login (`auth.js`) → `App.boot` → `loadChars` (wrapper solo) → `solo.boot` → `chat.open` → palco `TalkingAvatar` (`avatar.js` / `fitFrame` in `main.js`). Il dock Microfono passa da `voice.js` (dettato nel composer). Il tasto ⚡ avvia `App.rt`: il PCM alimenta il labiale in `avatar.js` e i messaggi restano in chat. La Camera passa ancora da `call.js`. I movimenti stanno in `actions.js` + clip server (`prepSoloMotions`). L’aspetto testuale è il dialogo in `solo.js` che chiama `POST /api/characters/:id/regenerate`. Il service worker tiene la shell: un fix client non arriva finché la cache non cambia.
 
 ## Priorità 8.6 (bloccanti, in quest’ordine)
 
 1. **UI principale con l’unica avatar (Nova, id `greta`).** La home è verificata sul branch (vedi sopra). Restano fuori da questa verifica face-swap, lista azioni e menu Prepara.
-2. **Chat stabile + voce realtime.** Dettato del dock, thread di Home, sessione realtime dal tasto ⚡ e invio in chat con risposta imitata sono verificati. Restano il collegamento xAI vero, il microfono del dispositivo e il labiale misurato.
-3. **Sync voce / labbra / movimento.** Non misurato su 8.6.6.
+2. **Chat stabile + voce realtime.** Dettato del dock, thread di Home, sessione realtime dal tasto ⚡ e invio in chat con risposta imitata sono verificati. Restano il collegamento xAI vero e il microfono del dispositivo.
+3. **Sync voce / labbra / movimento.** Sulla sessione ⚡ la bocca segue l’inviluppo del PCM, è centrata sulla mezzeria degli occhi e il movimento senza clip resta nel canvas, sopra la chat. Misurato su Chromium e WebKit a 390×844 (correlazione, differenza di fotogramma, simmetria, jitter). Il controllo che schedula un buffer PCM è saltato su WebKit: il renderer si chiude. iPhone fisico non provato.
 4. **Movimento naturale senza jitter né sovrapposizioni.** Misura vecchia (v8.5.2). Clip e CSS di fallback convivono.
 5. **Personalizzazione aspetto.** Il dialogo «Aspetto di Nova» c’è; non è verificato end-to-end (serve chiave xAI).
 6. **Preparazione e gestione movimenti stabile.** `/api/solo/prep` esiste; la UI di prep è ancora nel codice storico.
