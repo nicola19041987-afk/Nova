@@ -9,7 +9,7 @@ Branch di lavoro: `nova-8.6-stabilizzazione`.
 - Login PIN e schermata nera con wordmark Nova. Il blocco di `close.js` (MutationObserver che riscriveva `hidden` a ogni mutazione e congelava il login prima di `DOMContentLoaded`) è corretto da v8.6.5.1: scrittura solo se cambia, osservatore staccato durante la scrittura, richieste accorpate con `requestAnimationFrame`. `stage.js` ha un osservatore diverso, che non scrive `hidden` nel callback.
 - Un solo personaggio di prodotto: id interno `greta`, file `assets/ready/greta.jpg`, nome visibile Nova (`SOLO_KEY`, migrazione del solo nome seedato).
 - Dopo l’accesso la shell aggiunge `body.solo-mode`, apre la conversazione e mostra palco, chat, composer e dock (Home, Microfono, Camera, Impostazioni). Su viewport >500px la colonna è centrata, max 430px, sfondo nero.
-- Chat condivisa con polling, note di assistenza, foglio umore. La foto in alto a sinistra elenca gli avatar non di sistema: creati da Nicola, senza autore (come Luna, se è ancora sul disco), o con messaggi di Nicola, ordinati per numero di messaggi. Attiva / Cancella. Cache `app-privata-v8-6-14`.
+- Chat condivisa con polling, note di assistenza, foglio umore. La foto in alto a sinistra elenca gli avatar non di sistema: creati da Nicola, senza autore (come Luna, se è ancora sul disco), o con messaggi di Nicola, ordinati per numero di messaggi. Attiva / Cancella. Cache `app-privata-v8-6-15`. Il foglio include anche gli avatar di Luisa e quelli con video, non gli uomini.
 - `npm run check` è l’unico controllo automatico storico: sintassi di server, script e JS pubblici.
 
 ## Corretto su questo branch (priorità 1)

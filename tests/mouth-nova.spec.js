@@ -38,7 +38,8 @@ test('la bocca di Nova resta sul centro vero, simmetrica e ferma a riposo', asyn
     const mouth = map(lm.mouth), left = map(lm.mouthL), right = map(lm.mouthR);
     const shoot = (open, wide) => {
       av.mouth = open; av._mh = open; av.speaking = open > 0.02; av.wide = wide; av._drawn = 0;
-      av.frame(8000 + open * 100);
+      av._pose = null; av._last = 8000;
+      av.frame(8000);
       return av.ctx.getImageData(0, 0, c.width, c.height);
     };
     const rest = shoot(0, 0.5);

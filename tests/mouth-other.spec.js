@@ -16,6 +16,7 @@ test('su un altro volto i punti di Nova non deformano, e la bocca vera resta sim
     g.beginPath(); g.moveTo(170, 327); g.lineTo(190, 327); g.stroke();
     const mx = 0.46 * 360, my = 140 + 0.62 * 360;
     g.fillStyle = '#9a3040'; g.beginPath(); g.ellipse(mx, my, 26, 7, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#5a3318'; g.fillRect(mx - 3, my + 12, 6, 16);
     const src = bmp.toDataURL('image/png');
     const img = await new Promise((ok, ko) => { const im = new Image(); im.onload = () => ok(im); im.onerror = ko; im.src = src; });
     img._src = 'glasses-check';
@@ -41,8 +42,9 @@ test('su un altro volto i punti di Nova non deformano, e la bocca vera resta sim
     av.resize();
     const shoot = (lm, open) => {
       av.lm = lm; av._trustKey = ''; av._lmFrom = av._lmTo = null;
-      av.mouth = open; av._mh = 0; av.speaking = false; av.wide = 0.5; av._drawn = 0; av._last = 9000;
-      av.frame(9000);
+      av.mouth = open; av._mh = 0; av.speaking = false; av.wide = 0.5; av._drawn = 0;
+      av._pose = null; av._last = 5000;
+      av.frame(5000);
       return av.ctx.getImageData(0, 0, c.width, c.height);
     };
     const diffAt = (a, b, x, y, rad) => {
@@ -79,6 +81,32 @@ test('su un altro volto i punti di Nova non deformano, e la bocca vera resta sim
       }
       return w > 1 ? { y: sy / w, w } : null;
     };
+    const L = side(opened, -1);
+    const R = side(opened, 1);
+    const chin = (im, sign) => {
+      let sy = 0, sx = 0, w = 0;
+      const x0 = Math.floor(centre.x - 40), x1 = Math.ceil(centre.x + 40);
+      const y0 = Math.floor(centre.y), y1 = Math.ceil(centre.y + 28);
+      for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
+        if (x < 0 || y < 0 || x >= im.width || y >= im.height) continue;
+        const dx = x - centre.x;
+        if (sign < 0 && dx >= -2) continue;
+        if (sign > 0 && dx <= 2) continue;
+        const i = (y * im.width + x) * 4, j = (y * rest.width + x) * 4;
+        const d = Math.abs(im.data[i] - rest.data[j]) + Math.abs(im.data[i + 1] - rest.data[j + 1]) + Math.abs(im.data[i + 2] - rest.data[j + 2]);
+        sy += (y - centre.y) * d; sx += dx * d; w += d;
+      }
+      return w > 1 ? { y: sy / w, x: sx / w, w } : null;
+    };
+    const cL = chin(opened, -1), cR = chin(opened, 1);
+    av.lm = { mouth: { x: 0.5, y: 0.7 } }; av._trustKey = ''; av.speaking = false; av.mouth = 0; av._drawn = 0; av._last = 0;
+    av.frame(1000);
+    const idleA = av.ctx.getImageData(0, 0, c.width, c.height);
+    av._drawn = 0; av._last = 1000;
+    av.frame(3400);
+    const idleB = av.ctx.getImageData(0, 0, c.width, c.height);
+    let idleDiff = 0, idleN = 0;
+    for (let i = 0; i < idleA.data.length; i += 16) { idleDiff += Math.abs(idleA.data[i] - idleB.data[i]); idleN++; }
     const crop = (im) => {
       const out = document.createElement('canvas');
       out.width = 120; out.height = 90;
@@ -93,8 +121,8 @@ test('su un altro volto i punti di Nova non deformano, e la bocca vera resta sim
       trustedNova: (av.lm = nova, av._trustKey = '', av.faceTrusted()),
       wrongMax: diffAt(wrong, stillWrong, Math.round(centre.x), Math.round(centre.y), 40).max,
       corner: diffAt(opened, rest, 8, 8, 6).max,
-      L: side(opened, -1),
-      R: side(opened, 1),
+      L, R, cL, cR,
+      idle: idleDiff / Math.max(1, idleN),
       before: crop(rest),
       after: crop(opened),
     };
@@ -107,6 +135,10 @@ test('su un altro volto i punti di Nova non deformano, e la bocca vera resta sim
   expect(Math.abs(snap.L.y - snap.R.y)).toBeLessThan(8);
   expect(snap.L.w).toBeGreaterThan(0);
   expect(snap.R.w).toBeGreaterThan(0);
+  expect(snap.cL && snap.cR).toBeTruthy();
+  expect(Math.abs(snap.cL.y - snap.cR.y)).toBeLessThan(6);
+  expect(Math.abs(snap.cL.x + snap.cR.x)).toBeLessThan(10);
+  expect(snap.idle).toBeGreaterThan(0.4);
   const dir = path.join(__dirname, '..', 'docs', 'mouth-check', 'glasses');
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, 'before.png'), Buffer.from(snap.before.split(',')[1], 'base64'));

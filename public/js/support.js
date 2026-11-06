@@ -100,6 +100,8 @@
     $('#support-text').value = '';
     $('#support-status').textContent = '';
     d.returnValue = '';
+    if (App.closeSheets) App.closeSheets(d);
+    const chiudi = d.querySelector('button[value="cancel"]'); if (chiudi) chiudi.disabled = false;
     d.showModal();
   }
   document.addEventListener('click', (e) => {

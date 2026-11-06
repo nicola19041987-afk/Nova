@@ -8,6 +8,8 @@ const ESTATE = 'dddddddddddddddd';
 const INVERNO = 'eeeeeeeeeeeeeeee';
 
 const LUNA = '1111111111111111';
+const CLIP = '2222222222222222';
+const UOMO = '3333333333333333';
 
 function seed() {
   return [
@@ -18,6 +20,8 @@ function seed() {
     { id: ESTATE, name: 'Estate', createdBy: 'nicola', avatar: 'E', messages: 2, nicolaMessages: 1 },
     { id: INVERNO, name: 'Inverno', createdBy: 'nicola', avatar: 'I', messages: 0, nicolaMessages: 0 },
     { id: LUNA, name: 'Luna', avatar: 'L', messages: 40, nicolaMessages: 18 },
+    { id: CLIP, name: 'Clip', createdBy: 'luisa', avatar: 'C', messages: 8, nicolaMessages: 3, actions: { saluta: { kind: 'video', url: '/api/actions/file/clip.mp4', at: '2026-02-01', stale: false } } },
+    { id: UOMO, name: 'Marco', createdBy: 'nicola', avatar: 'M', messages: 100, nicolaMessages: 50, appearance: { gender: 'uomo' } },
   ];
 }
 
@@ -101,8 +105,8 @@ test('il foglio avatar elenca, attiva, annulla la cancellazione e si chiude con 
       x: sheet.querySelector('.avatar-x').getAttribute('aria-label'),
     };
   }, { estate: ESTATE, inverno: INVERNO });
-  expect(r.names).toEqual(['Luna', 'Estate', 'Greta', 'Inverno']);
-  expect(r.counts).toEqual(['40', '2', '0', '0']);
+  expect(r.names).toEqual(['Luna', 'Clip', 'Mara', 'Estate', 'Greta', 'Inverno']);
+  expect(r.counts).toEqual(['40', '8', '5', '2', '0', '0']);
   expect(r.activeBefore).toBe(false);
   expect(r.activeName).toBe('Estate');
   expect(r.delLocked).toBe(true);
@@ -111,10 +115,45 @@ test('il foglio avatar elenca, attiva, annulla la cancellazione e si chiude con 
   expect(r.active).toBe(ESTATE);
   expect(r.photo).toBe('E');
   expect(r.asks).toEqual(['Cancellare definitivamente Inverno?']);
-  expect(r.still).toBe(4);
+  expect(r.still).toBe(6);
   expect(state.puts).toEqual([ESTATE]);
   expect(state.deleted).toEqual([]);
   expect(r.opened).toBe(true);
   expect(r.closed).toBe(true);
   expect(r.x).toBe('Chiudi');
+});
+
+test('il video di un avatar va sul palco e un foglio chiude l’altro', async ({ page, browserName }) => {
+  test.skip(browserName === 'webkit', 'Questo WebKit (WPE) chiude il processo dopo l’avvio della home. Il flusso è verificato su Chromium a 390×844.');
+  const state = { chars: seed(), active: '', deleted: [], puts: [] };
+  await mockApp(page, state);
+  await page.goto('/');
+  await page.waitForFunction(() => document.getElementById('title').textContent === 'Nova');
+  const r = await page.evaluate(async (id) => {
+    App.solo.openPicker();
+    const names = [...document.querySelectorAll('#avatar-sheet li b')].map((b) => b.textContent);
+    await App.solo.activate(id);
+    const video = document.getElementById('stage-video');
+    App.solo.openLook();
+    App.supportNote.open();
+    const look = document.getElementById('solo-look-dialog');
+    const sup = document.getElementById('support-dialog');
+    const chiudi = sup && sup.querySelector('button[value="cancel"]');
+    return {
+      names,
+      src: video && video.getAttribute('src'),
+      shown: !!(video && !video.hidden),
+      look: !!(look && look.open),
+      support: !!(sup && sup.open),
+      disabled: !!(chiudi && chiudi.disabled),
+    };
+  }, CLIP);
+  expect(r.names).not.toContain('Marco');
+  expect(r.names).toContain('Mara');
+  expect(r.names).toContain('Clip');
+  expect(r.src).toBe('/api/actions/file/clip.mp4');
+  expect(r.shown).toBe(true);
+  expect(r.look).toBe(false);
+  expect(r.support).toBe(true);
+  expect(r.disabled).toBe(false);
 });

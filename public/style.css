@@ -610,6 +610,8 @@ body.wa-conv #avatar-canvas{box-shadow:none}
 .call-btn.hot{background:linear-gradient(135deg,#ff5f3a,#d6246e)!important}
 body.voice-live #stage.fs #hot-btn,body.voice-live #stage:fullscreen #hot-btn{display:flex!important}
 .sheet{z-index:200}
+dialog.sheet[open]{z-index:400}
+dialog.sheet button{opacity:1;pointer-events:auto}
 .auto-prep{position:fixed;left:12px;bottom:calc(80px + env(safe-area-inset-bottom));z-index:7;background:#202c33;color:#e9edef;border-radius:14px;padding:6px 12px;font-size:12.5px;overflow:hidden;box-shadow:0 2px 8px #0007;pointer-events:none}
 .auto-prep i{position:absolute;left:0;bottom:0;height:3px;background:#1E6FD9;transition:width .4s}
 .auto-prep span{position:relative}
@@ -706,6 +708,8 @@ body.solo-mode #stage #avatar-canvas{
   max-width:100%!important;max-height:100%!important;
   border-radius:0!important;
 }
+body.solo-mode #stage-video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center 22%;z-index:2;background:#111}
+body.solo-mode #stage-video[hidden]{display:none!important}
 body.solo-mode #stage .stage-tools{top:calc(env(safe-area-inset-top) + 6px);right:8px}
 body.solo-mode #messages{flex:1 1 auto;min-height:120px;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:8px 10px 6px;background:var(--bg)}
 body.solo-mode #chat-form.composer{flex:0 0 auto;padding:6px 8px 8px;margin:0;padding-bottom:8px}

@@ -126,4 +126,9 @@
   watch();
   place();
   App.closeLayer = closeTop;
+  App.closeSheets = function (except) {
+    document.querySelectorAll('dialog').forEach((d) => { if (d !== except && d.open) { try { d.close(); } catch {} } });
+    const av = document.getElementById('avatar-sheet');
+    if (av && av !== except) av.hidden = true;
+  };
 })();

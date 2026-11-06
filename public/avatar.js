@@ -361,6 +361,37 @@
       else if ((this._okFrames || 0) > 60) this._stalledOn = false;
       if (st && st.classList && st.classList.contains('av-stalled') !== !!this._stalledOn) st.classList.toggle('av-stalled', !!this._stalledOn);
     }
+    // Movimento di una persona vera, ridotto per una foto 2D: la foto si muove tutta insieme (niente mesh che storce il viso).
+    livePose(now, dt) {
+      const P = this._pose || (this._pose = { roll: 0, pitch: 0, yaw: 0, lean: 1, torso: 0, breath: 0, tRoll: 0, tPitch: 0, tYaw: 0, tLean: 1, next: 0 });
+      const talk = this.speaking ? Math.min(1, Math.max(this.mouth || 0, this._mh || 0)) : 0;
+      const deg = Math.PI / 180;
+      const idleRoll = (Math.sin(now / 3400) * 0.55 + Math.sin(now / 6100 + 1.1) * 0.3 + Math.sin(now / 8900 + 2.2) * 0.15) * 1.6 * deg;
+      if (talk > 0.42 && now > P.next) {
+        const sign = Math.random() < 0.5 ? -1 : 1;
+        P.tRoll = sign * (2 + Math.random() * 2) * deg;
+        P.tPitch = (0.01 + Math.random() * 0.02) * (Math.random() < 0.7 ? 1 : -0.4);
+        P.tYaw = sign * (0.01 + Math.random() * 0.02);
+        P.tLean = 1 + (0.01 + Math.random() * 0.01) * (Math.random() < 0.5 ? 1 : -1);
+        P.next = now + 1000 + Math.random() * 1000;
+      } else if (talk < 0.08 && now > P.next) {
+        P.tRoll = 0; P.tPitch = 0; P.tYaw = 0; P.tLean = 1;
+        P.next = now + 400;
+      }
+      const step = Math.max(0, Math.min(80, dt || 16));
+      const easeT = 1 - Math.exp(-step / (talk > 0.2 ? 220 : 480));
+      P.roll += ((talk > 0.2 ? P.tRoll : idleRoll) - P.roll) * easeT;
+      P.pitch += ((talk > 0.2 ? P.tPitch : 0) - P.pitch) * easeT;
+      P.yaw += ((talk > 0.2 ? P.tYaw : 0) - P.yaw) * easeT;
+      P.lean += ((talk > 0.2 ? P.tLean : 1) - P.lean) * easeT;
+      P.torso = Math.sin(now / 3200) * 1.0 * deg;
+      P.breath = Math.sin(now / (60000 / 13.5) * Math.PI * 2);
+      P.roll = Math.max(-4 * deg, Math.min(4 * deg, P.roll));
+      P.pitch = Math.max(-0.03, Math.min(0.03, P.pitch));
+      P.yaw = Math.max(-0.03, Math.min(0.03, P.yaw));
+      P.lean = Math.max(0.98, Math.min(1.02, P.lean));
+      return P;
+    }
     frame(now) {
       // non visibile: risparmia batteria (getClientRects funziona anche dentro contenitori position:fixed su iOS)
       if (!this.c.isConnected || this.c.getClientRects().length === 0) return;
@@ -448,9 +479,8 @@
       // ammiccamenti variabili: durata 120–240 ms, a volte doppi o a metà; più frequenti mentre parla
       // v8.4: ogni 2–6 s (a volte doppio); chiusura rapida (~150 ms) e riapertura più lenta (curva asimmetrica)
       if (now > this.nextBlink) {
-        this.blinkStart = now; this.blinkDur = (sens ? 330 : 250) + Math.random() * 70; this.blinkAmp = Math.random() < 0.08 ? 0.6 : 1;
-        const dbl = !this.blinkDouble && Math.random() < 0.14; this.blinkDouble = dbl ? 1 : 0;
-        this.nextBlink = dbl ? now + this.blinkDur + 70 : now + (2000 + Math.random() * 4000) * (sens ? 1.25 : 1);
+        this.blinkStart = now; this.blinkDur = 100 + Math.random() * 100; this.blinkAmp = 1; this.blinkDouble = 0;
+        this.nextBlink = now + 3000 + Math.random() * 1000; // ogni 3–4 s, 100–200 ms
       }
       const bt = (now - this.blinkStart) / this.blinkDur, BC = 0.36;
       let blink = bt < 0 || bt >= 1 ? 0 : (bt < BC ? Math.sin((bt / BC) * Math.PI / 2) ** 1.6 : 1 - ease((bt - BC) / (1 - BC))) * this.blinkAmp;
@@ -460,7 +490,7 @@
       blink = Math.max(blink, mc.lid);
       // sopracciglia: alzate rapide su enfasi/reazioni e piccole alzate spontanee
       if ((now - this.emph < 120 || (re && now - re.start < 80)) && mc.browUntil < now) { mc.browT = 0.7 + Math.random() * 0.3; mc.browUntil = now + 380; }
-      if (now > mc.nextBrow) { mc.browT = 0.3 + Math.random() * 0.4; mc.browUntil = now + 250 + Math.random() * 250; mc.nextBrow = now + 6000 + Math.random() * 8000; }
+      if (now > mc.nextBrow) { mc.browT = 0.35 + Math.random() * 0.35; mc.browUntil = now + 280 + Math.random() * 220; mc.nextBrow = now + 2000 + Math.random() * 2000; }
       if (now > mc.browUntil) mc.browT = 0;
       mc.brow += (mc.browT - mc.brow) * Math.min(1, dt / (mc.browT > mc.brow ? 70 : 220));
       // sguardo: saccadi rapide verso punti vicini, poi fissazione; con l'imitazione tende a guardare l'utente
@@ -484,7 +514,8 @@
       if (squint > 0.3) blink = Math.max(blink, squint * 0.25); // occhi che "sorridono"
 
       // ---- disegno: contenimento (contain) nel riquadro, mai ritagliato; scena cinematografica facoltativa ----
-      const A = { nod: this._nod, now, S, rot: Math.max(-ROT_MAX, Math.min(ROT_MAX, sway + talkNod + rRot)), shiftX: Math.max(-SHIFT_MAX, Math.min(SHIFT_MAX, shiftX + rx)), bob: Math.max(-SHIFT_MAX, Math.min(SHIFT_MAX, bob + ry)), skew, breath, vol, smile, blink, wave, mc, M, spring };
+      const pose = this.livePose(now, dt);
+      const A = { nod: this._nod, now, S, rot: Math.max(-ROT_MAX, Math.min(ROT_MAX, sway + talkNod + rRot)), shiftX: Math.max(-SHIFT_MAX, Math.min(SHIFT_MAX, shiftX + rx)), bob: Math.max(-SHIFT_MAX, Math.min(SHIFT_MAX, bob + ry)), skew, breath, vol, smile, blink, wave, mc, M, spring, pose };
       if (!this.transparent && (this._frame % 10 === 0 || !this.bd)) this.syncBackdrop();
       const CW = this.c.width, CH = this.c.height, col = this.colors;
       ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalCompositeOperation = 'source-over'; ctx.clearRect(0, 0, CW, CH);
@@ -631,11 +662,16 @@
         }
         // v8.4.3: senza respiro WebGL (o con punti incerti) il respiro dell'immagine intera è VISIBILE (prima 0,25%: sembrava ferma),
         // più un leggero "sollevarsi" mentre parla; solo verticale, ancorato in basso: la cornice resta ferma, niente ondeggiamento laterale
-        const br = Math.max(-1, Math.min(1, A.breath)), talk = this.speaking ? Math.min(1, this._mh || 0) : 0;
-        // Senza WebGL (Safari) e senza clip: il busto si alza in modo liscio, ancorato in basso, seguendo la bocca già filtrata.
-        const Y1b = E.y0 + E.h, bs = src === img ? 1 + (trust ? 0.0035 : 0.008) * (1 + br) + talk * (trust ? 0.006 : 0.02) : 1;
-        ctx.save(); ctx.beginPath(); ctx.rect(E.x0, E.y0, E.w, E.h); ctx.clip();
-        const cxb = E.x0 + E.w / 2; ctx.translate(cxb, Y1b); ctx.scale(src === img ? 1 + (bs - 1) * 0.25 : 1, bs); ctx.translate(-cxb, -Y1b);
+        const pose = A.pose || {};
+        const breathY = 1 + 0.016 * (0.5 + 0.5 * (pose.breath || 0)); // 12–15 atti/min, petto +1–2%
+        const lean = pose.lean || 1;
+        ctx.save(); ctx.beginPath(); ctx.rect(E.x0 - E.w * 0.08, E.y0 - E.h * 0.08, E.w * 1.16, E.h * 1.2); ctx.clip();
+        const cxb = E.x0 + E.w / 2, base = E.y0 + E.h;
+        ctx.translate(cxb, base);
+        ctx.rotate((pose.roll || 0) + (pose.torso || 0));
+        ctx.translate((pose.yaw || 0) * E.w, (pose.pitch || 0) * E.h);
+        ctx.scale(lean, breathY * lean);
+        ctx.translate(-cxb, -base);
         ctx.drawImage(src, E.x0, E.y0, E.w, E.h);
         // Gesti (mezzo busto / figura intera): braccia che si muovono col ritmo e l'intensità del parlato.
         const tgt = (this.speaking ? 0.35 + this.mouth * 0.7 + (now - this.emph < 700 ? 0.6 : 0) : 0) + M.energy * 0.6 + wave * 0.8;
@@ -803,7 +839,7 @@
           ctx.save(); ctx.beginPath(); ctx.ellipse(e.x * S, e.y * S, w / 2, h / 2, 0, 0, Math.PI * 2); ctx.clip();
           ctx.translate(gxp, gyp); drawCover(ctx, img, S, { sx: e.x * S - w / 2 - b, sy: e.y * S - h / 2 - b, sw: w + 2 * b, sh: h + 2 * b }); ctx.restore();
         }
-        if (bup > px) {
+        if (bup > px && lm.browL && lm.browR) {
           const br = ei ? lm.browR : lm.browL; // v8: posizione vera del sopracciglio, se rilevata
           const w = Math.max(F * 0.1, EW * 1.6), h = w * 0.37, cx = br ? br.x * S : e.x * S, cy = br ? br.y * S : e.y * S - F * 0.075; // sopra la palpebra, senza toccare l'occhio
           ctx.save(); ctx.beginPath(); ctx.ellipse(cx, cy, w / 2, h / 2, 0, 0, Math.PI * 2); ctx.clip();
@@ -965,26 +1001,29 @@
   // Non usa l'inclinazione degli occhi: la bocca non si raddrizza da sola e non si storce da un lato.
   function paintMouth(ctx, img, lm, open, wide) {
     const S = VS, L = lm && lm.mouthL, R = lm && lm.mouthR;
-    if (!L || !R || !(open > 0)) return; // senza gli angoli veri non si inventa una bocca
-    const ang = Math.atan2((R.y - L.y) * S, (R.x - L.x) * S);
+    if (!L || !R || !(open > 0)) return;
+    const face = (lm.eyeL && lm.eyeR) ? Math.atan2((lm.eyeR.y - lm.eyeL.y) * S, (lm.eyeR.x - lm.eyeL.x) * S) : 0;
+    const cx = (L.x + R.x) / 2 * S, cy = (L.y + R.y) / 2 * S;
     const len = Math.max(S * 0.04, Math.hypot((R.x - L.x) * S, (R.y - L.y) * S));
-    const cx = (L.x + R.x) / 2 * S, cy = (L.y + R.y) / 2 * S; // centro = punto medio dei due angoli
-    const wF = 1 + (Math.max(0, Math.min(1, wide)) - 0.5) * 0.18;
-    const half = len * 0.52 * wF;
-    const jaw = open * len * 0.46, upper = open * len * 0.14;
-    const cols = 17, above = len * 0.26, below = len * 0.72, colW = (half * 2) / cols;
+    const wF = 1 + (Math.max(0, Math.min(1, wide || 0.5)) - 0.5) * 0.1;
+    const half = len * 0.5 * wF;
+    const jawCap = Math.min(len * 0.2, S * 0.032);
+    const jaw = Math.min(open * len * 0.18, jawCap);
+    const upper = Math.min(jaw * 0.32, S * 0.01);
+    const cols = 15, above = len * 0.16, below = Math.min(len * 0.38, S * 0.055), colW = (half * 2) / cols;
     ctx.save();
-    ctx.translate(cx, cy); ctx.rotate(ang); ctx.translate(-cx, -cy);
+    ctx.translate(cx, cy); ctx.rotate(face); ctx.translate(-cx, -cy);
     ctx.beginPath();
-    ctx.rect(cx - half - 1, cy - above - upper - 1, half * 2 + 2, above + below + jaw + upper + 2);
+    ctx.rect(cx - half, cy - above - upper, half * 2, above + below + jaw + upper);
     ctx.clip();
     for (let i = 0; i < cols; i++) {
       const u = ((i + 0.5) / cols) * 2 - 1;
       const att = Math.max(0, 1 - u * u);
       const x = cx - half + i * colW;
-      const up = upper * att, dn = jaw * att;
-      drawCover(ctx, img, S, { sx: x, sy: cy - above, sw: colW + 0.8, sh: above, dx: x, dy: cy - above - up, dw: colW + 0.8, dh: above + up * 0.9 });
-      drawCover(ctx, img, S, { sx: x, sy: cy, sw: colW + 0.8, sh: below, dx: x, dy: cy + dn * 0.08, dw: colW + 0.8, dh: below + dn * 0.92 });
+      const up = upper * att;
+      drawCover(ctx, img, S, { sx: x, sy: cy - above, sw: colW + 0.6, sh: above, dx: x, dy: cy - above - up, dw: colW + 0.6, dh: above });
+      // Il mento scende in blocco, uguale a sinistra e a destra, senza scivolare di lato.
+      drawCover(ctx, img, S, { sx: x, sy: cy, sw: colW + 0.6, sh: below, dx: x, dy: cy + jaw, dw: colW + 0.6, dh: below });
     }
     ctx.restore();
   }

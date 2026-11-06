@@ -12,13 +12,29 @@
     return list.find((c) => c.ready === 'greta') || list.find((c) => /^(nova|greta)$/i.test(String(c.name || '').trim())) || null;
   }
   function fit() { if (App.fitFrame) App.fitFrame(); }
-  // Foglio: niente seed di sistema. Dentro: creati da Nicola, senza autore (es. Luna), oppure con messaggi di Nicola. Fuori: quelli di Luisa se Nicola non ci ha mai scritto.
+  function isMale(c) {
+    const g = String((c.appearance && c.appearance.gender) || c.gender || '').toLowerCase();
+    return g === 'uomo' || g === 'male';
+  }
+  // Tutti gli avatar creati da qualcuno (anche Luisa, anche con video). Fuori: i seed di sistema e gli uomini.
   function sheetOk(c) {
     if (!c || c.ready) return false;
-    const by = c.createdBy || '';
-    const nico = Number(c.nicolaMessages) || 0;
-    if (by === 'luisa' && nico <= 0) return false;
-    return by === 'nicola' || !by || nico > 0;
+    if (isMale(c)) return false;
+    return true;
+  }
+  function stageClip(ch) {
+    const bag = Object.assign({}, (ch && ch.actions) || {}, (ch && ch.seated) || {});
+    const vids = Object.values(bag).filter((a) => a && a.kind === 'video' && a.url && !a.stale);
+    vids.sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')));
+    return vids[0] || null;
+  }
+  function showStage(ch) {
+    const v = document.getElementById('stage-video'); if (!v || !ch) return;
+    const clip = stageClip(ch);
+    if (!clip) { try { v.pause(); } catch {} v.hidden = true; if (v.getAttribute('src')) v.removeAttribute('src'); return; }
+    if (v.getAttribute('src') !== clip.url) v.src = clip.url;
+    v.hidden = false;
+    v.play().catch(() => {});
   }
   function sheetList() {
     return (App.chars || []).filter(sheetOk).sort((a, b) => (Number(b.messages) || 0) - (Number(a.messages) || 0) || String(a.name || '').localeCompare(String(b.name || ''), 'it'));
@@ -53,6 +69,7 @@
         App.api('/api/solo/prep', { method: 'POST', ai: true, body: { store: true } }).catch(() => {});
       }
       this.setDock('home');
+      showStage(ch);
       const rt = $('#solo-rt'); if (rt) rt.hidden = false;
     },
     async toggleRt() {
@@ -95,6 +112,7 @@
       const title = $('#title');
       if (title && document.body.dataset.tab === 'conv' && !document.body.classList.contains('in-call')) title.textContent = fresh.name;
       if (fresh.avatar !== prevAvatar && App.avatarConv && !(App.previews && App.previews[fresh.id])) App.avatarConv.setCharacter(fresh);
+      showStage(fresh);
     },
     syncSettings(ch) {
       const ta = $('#set-requests');
@@ -259,6 +277,7 @@
       const title = $('#title'); if (title) title.textContent = ch.name;
       if (App.avatarConv) App.avatarConv.setCharacter(ch);
       if (App.chat && App.chat.header) App.chat.header();
+      showStage(ch);
       this.renderPicker();
     },
     async removeChar(id) {
@@ -323,6 +342,7 @@
       f.body.value = (ch.appearance && (ch.appearance.build || '')) || '';
       f.clothes.value = (ch.look && ch.look.outfit) || '';
       f.extra.value = '';
+      if (App.closeSheets) App.closeSheets(dlg);
       dlg.showModal();
     },
   };
