@@ -134,7 +134,7 @@
   }
   const NX = {
     el: null, q: [], playing: null, buf: '', streaming: false, sent: 0, gen: 0, fails: 0, cache: new Map(), devBuf: '', degraded: false, blessed: false,
-    enabled() { return App.ls.get('voiceEngine', 'xai') === 'xai' && !!App.key() && this.fails < 3; },
+    enabled() { return App.ls.get('voiceEngine', 'xai') === 'xai' && !!(App.hasAi && App.hasAi()) && this.fails < 3; },
     voice() { const c = App.current; return (c && c.voice) || App.ls.get('ttsVoice', 'ara') || 'ara'; }, // v8.5.0: voce del personaggio anche nella lettura
     speed() { const c = App.current; if (c && Number.isFinite(c.voiceSpeed) && c.voiceSpeed) return c.voiceSpeed; return Number(App.ls.get('ttsSpeed', 1)) || 1; }, // v8.5.0: velocità del personaggio
     audio() { if (!this.el) { const a = new Audio(); a.preload = 'auto'; a.setAttribute('playsinline', ''); this.el = a; } return this.el; },
@@ -318,7 +318,7 @@
       // v8.4.5: con la chiave xAI la modalità voce (fuori chiamata) usa il NOSTRO microfono + trascrizione xAI in italiano
       // (stesso rilevatore del parlato della chiamata): niente riconoscimento di Safari, che su iPhone capiva parole a caso
       // ("Foglia", "Gatto") e faceva il "bip" a ogni riavvio. Il riconoscimento del telefono resta solo come riserva.
-      if (App.key && App.key() && App.callMic && App.callMic.supported() && !xFailed && !(App.call && App.call.active)) {
+      if (App.hasAi && App.hasAi() && App.callMic && App.callMic.supported() && !xFailed && !(App.call && App.call.active)) {
         if (!allow) return App.toast('Attiva il microfono in Impostazioni');
         try { App.audio.unlock(); } catch {} // dentro il tocco, PRIMA di passare alla sessione con microfono
         on = true; xMode = true; setBtn(); status(composerOnly ? '🎙️ Dettato…' : '🎙️ In ascolto… (trascrizione xAI)'); document.body.classList.add('voice-live');
@@ -379,11 +379,11 @@
     const show = () => {
       eng.value = App.ls.get('voiceEngine', 'xai'); vid.value = NX.voice(); sp.value = NX.speed(); spv.textContent = '×' + Number(sp.value).toFixed(2);
       vid.disabled = eng.value !== 'xai';
-      info.textContent = eng.value === 'xai' ? (App.key() ? (NX.fails >= 3 ? 'Voce naturale in pausa dopo alcuni errori: riprova con "Prova la voce".' : 'Attiva: voce naturale xAI.') : 'Serve la chiave xAI (sopra): finché manca uso la voce del telefono.') : 'Attiva: voce del telefono.';
+      info.textContent = eng.value === 'xai' ? (App.hasAi() ? (NX.fails >= 3 ? 'Voce naturale in pausa dopo alcuni errori: riprova con "Prova la voce".' : 'Attiva: voce naturale xAI.') : 'Serve la chiave xAI (sopra): finché manca uso la voce del telefono.') : 'Attiva: voce del telefono.';
     };
     let loaded = false;
     const loadVoices = async () => {
-      if (loaded || !App.key()) return; loaded = true;
+      if (loaded || !App.hasAi()) return; loaded = true;
       try {
         const r = await App.api('/api/tts/voices', { ai: true });
         if (r.voices && r.voices.length) { const cur = NX.voice(); vid.innerHTML = ''; for (const v of r.voices) { const o = document.createElement('option'); o.value = v.id; o.textContent = v.name + (v.description ? ' — ' + v.description : ''); vid.appendChild(o); } if (![...vid.options].some((o) => o.value === cur)) { const o = document.createElement('option'); o.value = cur; o.textContent = cur; vid.appendChild(o); } }

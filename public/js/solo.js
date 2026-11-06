@@ -65,7 +65,7 @@
       this.syncSettings(ch);
       this.bindOnce();
       requestAnimationFrame(() => { fit(); setTimeout(fit, 120); });
-      if (App.isAdmin && App.isAdmin() && App.key()) {
+      if (App.isAdmin && App.isAdmin() && App.key() && !(App.me && App.me.serverKey)) {
         App.api('/api/solo/prep', { method: 'POST', ai: true, body: { store: true } }).catch(() => {});
       }
       this.setDock('home');
@@ -89,7 +89,7 @@
       if (!ch || !App.current || App.current.id !== ch.id) return;
       if (App.call && App.call.active) return;
       if (App.voice && App.voice.isListening && App.voice.isListening()) App.voice.stop();
-      if (!App.key || !App.key()) return App.toast('🔑 Per la voce in tempo reale serve la chiave xAI in Impostazioni');
+      if (!App.hasAi || !App.hasAi()) return App.toast('🔑 Per la voce in tempo reale serve la chiave xAI in Impostazioni');
       if (!App.rt || !App.rt.supported || !App.rt.supported()) return App.toast('Questo browser non supporta la voce in tempo reale');
       document.body.classList.add('solo-rt');
       if (btn) { btn.classList.add('on'); btn.setAttribute('aria-pressed', 'true'); }

@@ -36,7 +36,7 @@
     if (!ch || !ch.id || !isPhoto(ch.avatar)) return;
     const ff = ch.frameFill;
     if (ff && ff.src === ch.avatar) { if (!ff.off && !ff.landmarks) landmarks(ch); return; }
-    if (!(App.canEdit && App.canEdit()) || !App.key() || navigator.webdriver) return;
+    if (!(App.canEdit && App.canEdit()) || !App.hasAi() || navigator.webdriver) return;
     const tried = App.ls.get('frameTried', {}), k = ch.id + '|' + ch.avatar; if (tried[k]) return;
     if (!far(await ratio(ch.avatar))) return;
     tried[k] = Date.now(); App.ls.set('frameTried', tried);

@@ -22,7 +22,7 @@
       const caption = prompt('Didascalia (lascia vuoto per farla scrivere al personaggio):', '');
       if (caption === null) return;
       App.toast('📔 Pubblicazione nel Diario…');
-      const p = await App.api('/api/feed', { method: 'POST', ai: !caption && !!App.key(), body: { ...spec, caption, autoCaption: !caption } });
+      const p = await App.api('/api/feed', { method: 'POST', ai: !caption && !!App.hasAi(), body: { ...spec, caption, autoCaption: !caption } });
       posts.unshift(p); this.render(); App.toast('📔 Pubblicato nel Diario');
     },
   };

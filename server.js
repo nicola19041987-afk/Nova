@@ -49,7 +49,7 @@ const USERS = { nicola: { name: 'Nico' }, luisa: { name: 'Luisa' } };
 // v8.4: ruoli. Nicola è l'amministratore (modifica personaggi, regole, scene, gesti, impostazioni e sblocchi);
 // Luisa usa l'app (chat, chiamate, galleria, «regala memoria») e dà o ritira SOLO il proprio consenso per la modalità adulti.
 const ADMIN_USER = USERS[process.env.ADMIN_USER] ? process.env.ADMIN_USER : 'nicola';
-const isAdmin = (u) => u === ADMIN_USER;
+const isAdmin = (u) => !!USERS[u]; // Nicola e Luisa hanno gli stessi poteri. Il consenso adulti e il PIN restano di ciascuno.
 // v8.5.2: utenti che possono modificare i personaggi (crea/modifica, foto, voce, look, movimenti, eliminare i propri). Default: luisa.
 const EDITORS = String(process.env.EDITOR_USERS || 'luisa').split(',').map((x) => x.trim()).filter((x) => USERS[x]);
 const canEdit = (u) => isAdmin(u) || EDITORS.includes(u);
@@ -220,12 +220,13 @@ function auth(req, res, next) {
   next();
 }
 function requireActivated(req, res, next) {
-  if (!isActivated(req.user)) return res.status(403).json({ error: 'Account non attivato: registra prima il consenso vocale.' });
+  // Il consenso vocale non è un muro prima della Home: resta solo per la modalità adulti (ogni profilo lo dà da sé).
   next();
 }
 // La chiave xAI arriva dal dispositivo: usata solo per questa richiesta, mai salvata.
 function requireKey(req, res, next) {
-  const k = String(req.get('X-AI-Key') || '').trim();
+  let k = String(req.get('X-AI-Key') || '').trim();
+  if (!k) k = getServerAiKey();
   if (!k || k.length > 300 || /\s/.test(k)) return res.status(400).json({ error: 'Chiave xAI mancante: inseriscila in Account su questo dispositivo.', code: 'NO_KEY' });
   req.aiKey = k;
   next();
@@ -346,6 +347,17 @@ app.post('/api/login', loginLimiter, async (req, res) => {
   res.json({ ok: true, user, name: USERS[user].name, activated: isActivated(user) });
 });
 
+app.post('/api/pin/change', auth, async (req, res) => {
+  const cur = String((req.body && req.body.current) || '');
+  const pin = String((req.body && req.body.pin) || '');
+  if (!PIN_RE.test(pin)) return res.status(400).json({ error: 'Il PIN deve avere 4 cifre' });
+  const pins = getPins();
+  const rec = pins[req.user];
+  if (!rec || !(await bcrypt.compare(cur, rec.hash))) return res.status(401).json({ error: 'PIN attuale errato' });
+  pins[req.user] = { hash: bcrypt.hashSync(pin, 12), createdAt: rec.createdAt, updatedAt: new Date().toISOString() };
+  writeJSON(PINS_FILE, pins);
+  res.json({ ok: true });
+});
 app.post('/api/logout', (req, res) => {
   delete sessions[req.cookies[COOKIE]]; saveSessions();
   res.clearCookie(COOKIE, { path: '/' });
@@ -353,7 +365,7 @@ app.post('/api/logout', (req, res) => {
 });
 
 app.get('/api/me', auth, (req, res) => {
-  res.json({ user: req.user, name: USERS[req.user].name, admin: isAdmin(req.user), editor: canEdit(req.user), solo: true, soloKey: SOLO_KEY, adminName: ADMIN_MSG.split(' ')[1], activated: isActivated(req.user), consent: getConsent(req.user), adult: adultOn(req.user), adultChat: adultChat(), chatModel: CHAT_MODEL, imageModel: IMAGE_MODEL, videoModel: VIDEO_MODEL, videoEnabled: !!VIDEO_PATH });
+  res.json({ user: req.user, name: USERS[req.user].name, admin: isAdmin(req.user), editor: canEdit(req.user), solo: true, soloKey: SOLO_KEY, adminName: ADMIN_MSG.split(' ')[1], activated: isActivated(req.user), consent: getConsent(req.user), adult: adultOn(req.user), adultChat: adultChat(), serverKey: !!getServerAiKey(), chatModel: CHAT_MODEL, imageModel: IMAGE_MODEL, videoModel: VIDEO_MODEL, videoEnabled: !!VIDEO_PATH });
 });
 
 // ---------- consenso vocale ----------
@@ -400,7 +412,7 @@ function keepActive(u, body, cur) {
 }
 // Modalità adulti: per utente, attivabile solo dopo il consenso vocale. In chat condivisa vale solo se attiva per ENTRAMBI.
 // v8.5.0: «Senza freni» vale solo se la modalità adulti è già attiva per ENTRAMBI (gating invariato) e Nicola l'ha accesa
-const noBrakes = () => adultChat() && getSettings(ADMIN_USER).noBrakes === true;
+const noBrakes = () => adultChat() && Object.keys(USERS).some((u) => getSettings(u).noBrakes === true);
 const adultOn = (u) => isActivated(u) && getSettings(u).adultMode === true;
 const adultChat = () => Object.keys(USERS).every(adultOn);
 // v8.3.1: stato chiaro per l'interfaccia (chi l'ha attivata, chi deve ancora farlo e cosa gli manca). Le regole non cambiano.
@@ -2533,6 +2545,73 @@ app.use(express.static(path.join(__dirname, 'public'), {
     if (file.includes(`${path.sep}vendor${path.sep}mediapipe${path.sep}`)) res.setHeader('Cache-Control', 'public, max-age=604800');
   },
 }));
+app.get('/api/support-notes', auth, async (req, res) => {
+  const mine = await withNotes(async () => loadNotes().filter((n) => n && n.authorId === req.user));
+  res.json({ notes: mine.map(publicNote) });
+});
+app.post('/api/support-notes', auth, async (req, res) => {
+  const text = String((req.body && req.body.text) || '').replace(/\s+/g, ' ').trim().slice(0, 4000);
+  if (!text) return res.status(400).json({ error: 'Scrivi un appunto' });
+  try {
+    const saved = await withNotes(async () => {
+      const list = loadNotes();
+      const now = new Date().toISOString();
+      const note = { id: newId(), authorId: req.user, author: personName(req.user), text, time: now, delivered: false, reply: { author: 'Nova', text: NOVA_REPLY, time: now } };
+      list.push(note);
+      writeJSON(NOTES_FILE(), list);
+      if (await deliverSupportNote(note)) note.delivered = true;
+      for (const n of list) { if (n !== note && n && !n.delivered && await deliverSupportNote(n)) n.delivered = true; }
+      writeJSON(NOTES_FILE(), list);
+      return note;
+    });
+    res.json({ ok: true, delivered: !!saved.delivered, note: publicNote(saved) });
+  } catch (e) {
+    console.error('Appunto assistenza:', e.message);
+    res.status(500).json({ error: 'Salvataggio non riuscito' });
+  }
+});
+app.post('/api/server-key', auth, requireActivated, (req, res) => {
+  if (!isAdmin(req.user)) return res.status(403).json({ error: ADMIN_MSG, code: 'ADMIN_ONLY' });
+  try {
+    const k = String(req.body.key || req.get('X-AI-Key') || '').trim();
+    setServerAiKey(k); res.json({ ok: true, stored: true });
+  } catch (e) { res.status(e.status || 400).json({ error: e.message }); }
+});
+app.get('/api/server-key', auth, (req, res) => {
+  if (!isAdmin(req.user)) return res.status(403).json({ error: ADMIN_MSG, code: 'ADMIN_ONLY' });
+  res.json({ stored: !!getServerAiKey(), fromEnv: !!(process.env.XAI_API_KEY || process.env.AI_KEY) });
+});
+app.post('/api/solo/prep', auth, requireActivated, async (req, res) => {
+  const key = String(req.get('X-AI-Key') || getServerAiKey() || '').trim();
+  if (!key) return res.status(400).json({ error: 'Chiave xAI mancante', code: 'NO_KEY' });
+  if (isAdmin(req.user) && req.body && req.body.store) { try { setServerAiKey(key); } catch {} }
+  res.json({ ok: true, started: true, busy: MOTION_PREP.busy });
+  setImmediate(() => prepSoloMotions(key).catch((e) => console.error('Prep solo:', e.message)));
+});
+app.get('/api/solo', auth, (req, res) => {
+  const ch = getSoloChar(req.user);
+  if (!ch) return res.status(404).json({ error: 'Avatar non pronto' });
+  const { drawer, ...pub } = ch;
+  res.json({ character: { ...pub, scenes: cleanScenes(pub.scenes), actions: visibleActions(pub), seated: visibleSeated(pub), adultActionsOk: aiFace(pub),
+    personality: SOLO_FIXED.personality, style: SOLO_FIXED.style }, prep: { busy: MOTION_PREP.busy, last: MOTION_PREP.last, lastErr: MOTION_PREP.lastErr } });
+});
+app.put('/api/solo/requests', auth, requireActivated, async (req, res) => {
+  const ch = getSoloChar(req.user); if (!ch) return res.status(404).json({ error: 'Avatar non pronto' });
+  if (!canEdit(req.user)) return res.status(403).json({ error: ADMIN_MSG, code: 'ADMIN_ONLY' });
+  const requests = String(req.body.requests || '').slice(0, 4000);
+  const c = await patchChar(ch.id, (x) => { x.requests = requests; x.orders = requests; });
+  const { drawer, ...pub } = c; res.json({ character: pub });
+});
+app.get('/api/mood', auth, (req, res) => {
+  const hist = loadMoodHist();
+  const cur = currentMood(hist);
+  const week = Date.now() - 7 * 864e5;
+  let series = hist.filter((p) => Date.parse(p.t) >= week);
+  if (!series.length) series = [{ ...cur, t: new Date().toISOString() }];
+  const values = {};
+  for (const k of MOOD_KEYS) values[k] = cur[k];
+  res.json({ values, summary: moodSummary(cur), history: series });
+});
 app.use('/api', (req, res) => res.status(404).json({ error: 'Non trovato' }));
 
 // ---------- protezione dati: backup automatici, registro eliminazioni, recupero personaggi ----------
@@ -2858,45 +2937,17 @@ async function renameSeededSoloToNova() {
   console.log('Nome del personaggio pronto aggiornato: Greta → Nova (foto, voce e movimenti invariati)');
 }
 
-app.post('/api/server-key', auth, requireActivated, (req, res) => {
-  if (!isAdmin(req.user)) return res.status(403).json({ error: ADMIN_MSG, code: 'ADMIN_ONLY' });
-  try {
-    const k = String(req.body.key || req.get('X-AI-Key') || '').trim();
-    setServerAiKey(k); res.json({ ok: true, stored: true });
-  } catch (e) { res.status(e.status || 400).json({ error: e.message }); }
-});
-app.get('/api/server-key', auth, (req, res) => {
-  if (!isAdmin(req.user)) return res.status(403).json({ error: ADMIN_MSG, code: 'ADMIN_ONLY' });
-  res.json({ stored: !!getServerAiKey(), fromEnv: !!(process.env.XAI_API_KEY || process.env.AI_KEY) });
-});
-app.post('/api/solo/prep', auth, requireActivated, async (req, res) => {
-  const key = String(req.get('X-AI-Key') || getServerAiKey() || '').trim();
-  if (!key) return res.status(400).json({ error: 'Chiave xAI mancante', code: 'NO_KEY' });
-  if (isAdmin(req.user) && req.body && req.body.store) { try { setServerAiKey(key); } catch {} }
-  res.json({ ok: true, started: true, busy: MOTION_PREP.busy });
-  setImmediate(() => prepSoloMotions(key).catch((e) => console.error('Prep solo:', e.message)));
-});
-app.get('/api/solo', auth, (req, res) => {
-  const ch = getSoloChar(req.user);
-  if (!ch) return res.status(404).json({ error: 'Avatar non pronto' });
-  const { drawer, ...pub } = ch;
-  res.json({ character: { ...pub, scenes: cleanScenes(pub.scenes), actions: visibleActions(pub), seated: visibleSeated(pub), adultActionsOk: aiFace(pub),
-    personality: SOLO_FIXED.personality, style: SOLO_FIXED.style }, prep: { busy: MOTION_PREP.busy, last: MOTION_PREP.last, lastErr: MOTION_PREP.lastErr } });
-});
-app.put('/api/solo/requests', auth, requireActivated, async (req, res) => {
-  const ch = getSoloChar(req.user); if (!ch) return res.status(404).json({ error: 'Avatar non pronto' });
-  if (!canEdit(req.user)) return res.status(403).json({ error: ADMIN_MSG, code: 'ADMIN_ONLY' });
-  const requests = String(req.body.requests || '').slice(0, 4000);
-  const c = await patchChar(ch.id, (x) => { x.requests = requests; x.orders = requests; });
-  const { drawer, ...pub } = c; res.json({ character: pub });
-});
-
-
 // ---------- v8.6.1: umore numerico di Nova (0-100) e appunti assistenza ----------
 const MOOD_KEYS = ['allegria', 'affetto', 'fiducia', 'desiderio', 'irritazione', 'energia'];
 const MOOD_BASE = { allegria: 62, affetto: 68, fiducia: 60, desiderio: 32, irritazione: 8, energia: 58 };
 const MOOD_FILE = () => path.join(DATA_DIR, 'mood-history.json');
-const NOTES_FILE = () => path.join(DATA_DIR, 'support-notes.json');
+const NOTES_FILE = () => path.join(DATA_DIR, 'notes.json');
+const NOTES_LEGACY = () => path.join(DATA_DIR, 'support-notes.json');
+function personName(id) {
+  if (id === 'nicola') return 'Nicola';
+  if (id === 'luisa') return 'Luisa';
+  return (USERS[id] && USERS[id].name) || String(id || '');
+}
 const APP_VERSION = '8.6.6';
 const clamp100 = (n) => Math.max(0, Math.min(100, Math.round(Number(n) || 0)));
 function isNovaChar(ch) {
@@ -2964,27 +3015,46 @@ function recordNovaMood(text, tag) {
   writeJSON(MOOD_FILE(), hist.slice(-500));
   return next;
 }
-app.get('/api/mood', auth, (req, res) => {
-  const hist = loadMoodHist();
-  const cur = currentMood(hist);
-  const week = Date.now() - 7 * 864e5;
-  let series = hist.filter((p) => Date.parse(p.t) >= week);
-  if (!series.length) series = [{ ...cur, t: new Date().toISOString() }];
-  const values = {};
-  for (const k of MOOD_KEYS) values[k] = cur[k];
-  res.json({ values, summary: moodSummary(cur), history: series });
-});
-
-function loadNotes() { const raw = readJSON(NOTES_FILE(), []); return Array.isArray(raw) ? raw : []; }
+const NOVA_REPLY = 'Prendo in considerazione e vi aggiorno appena è pronto.';
+function loadNotes() {
+  let raw = readJSON(NOTES_FILE(), null);
+  if (!Array.isArray(raw)) {
+    const old = readJSON(NOTES_LEGACY(), []);
+    raw = Array.isArray(old) ? old : [];
+    if (raw.length) writeJSON(NOTES_FILE(), raw); // copia, il file vecchio resta
+  }
+  let dirty = false;
+  const list = raw.map((n) => {
+    if (!n) return n;
+    const id = n.authorId || (n.author === 'Nicola' || n.author === 'Luisa' ? (n.author === 'Luisa' ? 'luisa' : 'nicola') : n.author);
+    const note = { ...n, authorId: id, author: personName(id) || n.author, time: n.time || n.createdAt };
+    if (!note.reply || note.reply.text !== NOVA_REPLY) {
+      dirty = true;
+      note.reply = { author: 'Nova', text: NOVA_REPLY, time: note.time };
+    }
+    return note;
+  });
+  if (dirty) writeJSON(NOTES_FILE(), list.filter(Boolean));
+  return list;
+}
+function publicNote(n) {
+  return {
+    id: n.id, author: n.author, authorId: n.authorId, text: n.text, time: n.time,
+    delivered: !!n.delivered, status: n.delivered ? 'inviato' : 'in attesa',
+    reply: { author: 'Nova', text: NOVA_REPLY, time: (n.reply && n.reply.time) || n.time },
+  };
+}
 async function deliverSupportNote(note) {
   const url = String(process.env.NOTES_WEBHOOK_URL || '').trim();
   const authz = process.env.NOTES_WEBHOOK_AUTH;
   if (!url || authz == null || String(authz) === '') return false;
+  const header = String(process.env.NOTES_WEBHOOK_HEADER || 'Authorization');
+  const payload = { author: note.author, text: note.text, time: note.time || note.createdAt, app: 'Nova', version: APP_VERSION };
   try {
     const r = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: String(authz) },
-      body: JSON.stringify({ author: note.author, text: note.text, createdAt: note.createdAt, app: 'Nova', version: APP_VERSION }),
+      headers: { 'Content-Type': 'application/json', [header]: String(authz) },
+      body: JSON.stringify(payload),
       signal: AbortSignal.timeout(12000),
     });
     if (!r.ok) console.error('Appunto assistenza non inoltrato: HTTP', r.status);
@@ -3010,26 +3080,6 @@ function withNotes(fn) {
   notesChain = run.then(() => {}, () => {});
   return run;
 }
-app.post('/api/support-notes', auth, async (req, res) => {
-  const text = String((req.body && req.body.text) || '').replace(/\s+/g, ' ').trim().slice(0, 4000);
-  if (!text) return res.status(400).json({ error: 'Scrivi un appunto' });
-  try {
-    const delivered = await withNotes(async () => {
-      const list = loadNotes();
-      const note = { id: newId(), author: req.user, text, createdAt: new Date().toISOString(), delivered: false };
-      list.push(note);
-      writeJSON(NOTES_FILE(), list);
-      if (await deliverSupportNote(note)) note.delivered = true;
-      for (const n of list) { if (n !== note && n && !n.delivered && await deliverSupportNote(n)) n.delivered = true; }
-      writeJSON(NOTES_FILE(), list);
-      return !!note.delivered;
-    });
-    res.json({ ok: true, delivered });
-  } catch (e) {
-    console.error('Appunto assistenza:', e.message);
-    res.status(500).json({ error: 'Salvataggio non riuscito' });
-  }
-});
 setInterval(() => { withNotes(() => flushSupportNotes()).catch((e) => console.error('Appunto assistenza:', e.message)); }, 5 * 60e3).unref();
 
 backupShared('avvio', { force: true }); // copia di sicurezza a ogni avvio, prima di qualsiasi modifica
@@ -3040,6 +3090,7 @@ try { migrateToShared(); } catch (e) { console.error('Migrazione archivio condiv
   await seedReadyChars().catch((e) => console.error('Personaggi pronti non creati:', e.message));
   if (getServerAiKey()) setImmediate(() => prepSoloMotions().catch((e) => console.error('Prep avvio:', e.message)));
   for (const c of readJSON(CHARS_FILE(), []) || []) if (!c.memorySeededAt) await seedBaseMemory(c).catch((e) => console.error('Memoria base non creata:', e.message));
+  await flushSupportNotes().catch((e) => console.error('Appunti non inoltrati all\'avvio:', e.message));
 })();
 setInterval(() => backupShared('orario'), 60 * 60e3).unref(); // ogni ora, solo se qualcosa è cambiato
 

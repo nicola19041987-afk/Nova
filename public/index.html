@@ -100,6 +100,7 @@
       <div id="wa-photo" class="wa-photo" role="button" tabindex="0" aria-label="Scegli avatar"></div>
       <div class="wa-title"><h2 id="title">Nova</h2><span id="wa-status" class="wa-status">online</span></div>
       <button type="button" id="support-note-btn" class="support-ic" title="Appunto per assistenza" aria-label="Appunto per assistenza">📝</button>
+      <button type="button" id="app-refresh" title="Aggiorna" aria-label="Aggiorna">↻</button>
       <span id="who" class="muted small"></span>
       <button type="button" id="wa-voice" class="wa-ic" title="Chiamata vocale" aria-label="Chiamata vocale">📞</button>
       <button type="button" id="wa-video" class="wa-ic" title="Videochiamata" aria-label="Videochiamata">📹</button>
@@ -113,7 +114,7 @@
         <ul id="char-list" class="list"></ul>
         <div class="new-row"><button id="new-char" class="primary block">＋ Nuovo</button></div>
         <div id="preset-row" class="preset-row" aria-label="Modelli pronti"></div>
-        <p id="admin-note-chars" class="admin-note" hidden>🔒 Solo Nicola gestisce chiave API, modalità adulti e «Senza freni». Tu puoi creare e modificare i personaggi, preparare i movimenti ed eliminare quelli che hai creato tu.</p>
+        <p id="admin-note-chars" class="admin-note" hidden>🔒 Questa parte è riservata a chi ha l’accesso. Nicola e Luisa gestiscono le stesse funzioni. Il consenso adulti e il PIN restano di ciascuno.</p>
       </div>
 
       <!-- conversazione -->
@@ -275,6 +276,11 @@
           <button type="button" id="set-hot-btn" class="hot-btn block">🔥 Hot</button>
           <button type="button" id="mood-open" class="block">Umore di Nova</button>
           <button type="button" id="support-note-settings" class="block">Appunto per assistenza</button>
+          <h3>PIN</h3>
+          <p class="muted small">Cambia solo il PIN di questo profilo. Quello dell’altra persona resta il suo.</p>
+          <input id="pin-now" type="password" inputmode="numeric" maxlength="4" placeholder="PIN attuale" autocomplete="off">
+          <input id="pin-new" type="password" inputmode="numeric" maxlength="4" placeholder="Nuovo PIN" autocomplete="off">
+          <button type="button" id="pin-change" class="block">Cambia PIN</button>
           <p class="muted small">Galleria e Diario restano nelle sezioni qui sotto / da Home.</p>
         </div>
         <div class="card">
@@ -323,7 +329,7 @@
           <label class="switch"><input type="checkbox" id="set-export"> Consenti esportazione/condivisione</label>
           <label class="switch"><input type="checkbox" id="set-adult"> Modalità adulti (18+)</label>
           <p class="muted small" id="adult-info">Disattivata.</p>
-          <label class="switch" id="nobrakes-row" hidden><input type="checkbox" id="set-nobrakes"> Senza freni (solo Nicola)</label>
+          <label class="switch" id="nobrakes-row" hidden><input type="checkbox" id="set-nobrakes"> Senza freni</label>
           <p class="muted small" id="nobrakes-info" hidden>Con la modalità adulti attiva per entrambi: dialogo intimo al massimo esplicito, intenso e audace, che nasce dalla conversazione. Spento = comportamento adulti di sempre.</p>
           <label>Parola chiave per attivarla a voce o per iscritto (facoltativa)
             <input id="kw-input" type="password" autocomplete="off" placeholder="vuoto = funzione spenta"></label>

@@ -3,8 +3,8 @@ App.account = {
   async load() {
     // chiave
     $('#key-input').value = App.key();
-    $('#key-status').textContent = App.key() ? 'Chiave salvata su questo dispositivo.' : 'Nessuna chiave su questo dispositivo.';
-    $('#key-warning').hidden = !!App.key();
+    $('#key-status').textContent = App.key() ? 'Chiave salvata su questo dispositivo.' : (App.me && App.me.serverKey ? 'Chiave già configurata sul server, condivisa.' : 'Nessuna chiave su questo dispositivo.');
+    $('#key-warning').hidden = App.hasAi();
     // privacy (server) + preferenze locali
     App.settings = await App.api('/api/settings'); App.ls.set('settings', App.settings);
     $('#set-autosave').checked = App.settings.autoSave; $('#set-export').checked = App.settings.allowExport;
@@ -15,7 +15,7 @@ App.account = {
     App.applyDevicePrefs();
     // modalità adulti (per utente, solo dopo il consenso vocale). v8.3.1: subito dopo le impostazioni, così un errore
     // nel caricare regole/memoria/note non lascia l'interruttore bloccato o con lo stato sbagliato
-    $('#set-adult').checked = !!App.settings.adultMode; $('#set-adult').disabled = !App.me.activated;
+    $('#set-adult').checked = !!App.settings.adultMode; $('#set-adult').disabled = false;
     await App.account.adultStatus();
     try {
       const kw = await App.api('/api/adult-keyword'); App.kwSet = kw.set;
@@ -82,6 +82,18 @@ $('#key-save').addEventListener('click', () => {
   App.ls.set('key', k); App.account.load(); App.toast('🔑 Chiave salvata solo su questo dispositivo');
 });
 $('#key-clear').addEventListener('click', () => { App.ls.del('key'); $('#key-input').value = ''; App.account.load(); });
+const pinChange = document.getElementById('pin-change');
+if (pinChange) pinChange.addEventListener('click', async () => {
+  const current = (document.getElementById('pin-now').value || '').trim();
+  const pin = (document.getElementById('pin-new').value || '').trim();
+  if (!/^\d{4}$/.test(pin)) return App.toast('Il nuovo PIN deve avere 4 cifre');
+  try {
+    await App.api('/api/pin/change', { method: 'POST', body: { current, pin } });
+    document.getElementById('pin-now').value = '';
+    document.getElementById('pin-new').value = '';
+    App.toast('PIN aggiornato');
+  } catch (e) { App.toast(e.message || 'PIN non cambiato'); }
+});
 
 async function saveSettings() {
   App.settings = await App.api('/api/settings', { method: 'PUT', body: { ...App.settings, adultMode: $('#set-adult').checked, noBrakes: $('#set-adult').checked && $('#set-nobrakes').checked, autoSave: $('#set-autosave').checked, allowExport: $('#set-export').checked, videoModel: $('#set-video-model').value.trim(), videoDuration: Number($('#set-video-duration').value) } });
@@ -168,6 +180,7 @@ $('#notes-save').addEventListener('click', async () => {
   $('#notes-status').textContent = `Salvate il ${fmtDate(n.updatedAt)}`;
 });
 $('#set-adult').addEventListener('change', async (e) => {
+  if (e.target.checked && App.me && !App.me.activated) { e.target.checked = false; App.showActivation(); return; }
   if (e.target.checked && !confirm('Attivare la modalità adulti (18+)? Contenuti espliciti solo tra adulti consenzienti e con personaggi inventati adulti (25+). Puoi disattivarla quando vuoi.')) { e.target.checked = false; return; }
   try {
     await saveSettings(); App.applyAdult && App.applyAdult();
@@ -193,7 +206,7 @@ App.adultText = function (st, html) {
   const other = st.missing.filter((m) => !m.me), meMiss = st.missing.find((m) => m.me);
   let head;
   if (st.chat) head = '🔓 Attiva per entrambi: nelle chat di coppia i contenuti per adulti sono sbloccati (sempre graduali e naturali, solo personaggi adulti 25+ con volto IA).';
-  else if (meMiss && meMiss.need === 'consenso') head = 'Prima serve il tuo consenso vocale (si registra una volta sola all\'accesso).';
+  else if (meMiss && meMiss.need === 'consenso') head = 'Prima serve il tuo consenso vocale (una volta sola, da questo interruttore). La Home resta aperta.';
   else if (meMiss) head = `Attivala qui sopra.${other.length ? ` Poi serve anche ${other.map((m) => e(m.name)).join(' e ')}.` : ' L\'altra persona l\'ha già attivata: manchi solo tu.'}`;
   else head = other.map((m) => m.need === 'consenso'
     ? `⏳ Manca il consenso di ${e(m.name)}: deve accedere con il suo profilo, registrare una volta il consenso vocale e poi attivare «Modalità adulti (18+)» in ${App.SETTINGS_NAME || 'Impostazioni'}.`

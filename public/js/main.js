@@ -5,7 +5,6 @@ App.avatarEditor = new TalkingAvatar($('#editor-canvas'));
 
 App.boot = async function () {
   try { App.me = await App.api('/api/me'); } catch { App.showLogin(); return; }
-  if (!App.me.activated) return App.showActivation();
   if (App.me.consent) App.ls.set('consent', { activatedAt: App.me.consent.activatedAt });
   App.showView('app'); $('#who').textContent = App.me.name;
   App.opts = await App.api('/api/characters/options');
@@ -45,7 +44,7 @@ App.applyStyle = function () {
 
 // Cambi automatici: al primo avvio del giorno (o secondo la frequenza scelta), piccole variazioni plausibili
 App.autoChanges = async function () {
-  if (!App.key() || !(App.me && (App.me.admin || App.me.editor))) return; // v8.4: le modifiche dei personaggi le fa solo Nicola
+  if (!App.hasAi() || !(App.me && (App.me.admin || App.me.editor))) return;
   for (const c of App.chars) {
     const ac = c.autoChanges || {};
     if (!ac.enabled || !/^\/api\/avatars\//.test(c.avatar)) continue;
@@ -102,6 +101,28 @@ if ('serviceWorker' in navigator) window.addEventListener('load', () => navigato
   tryActivate(); setInterval(tryActivate, 20000);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') tryActivate(); });
 }).catch(() => {}));
+App.refreshApp = async function () {
+  const btn = document.getElementById('app-refresh');
+  if (btn) btn.disabled = true;
+  try {
+    if (navigator.serviceWorker && navigator.serviceWorker.getRegistration) {
+      const reg = await navigator.serviceWorker.getRegistration();
+      if (reg && reg.update) await reg.update();
+      const w = reg && (reg.waiting || reg.installing);
+      if (w) {
+        w.postMessage({ type: 'SKIP_WAITING' });
+        await new Promise((res) => {
+          const done = () => res();
+          navigator.serviceWorker.addEventListener('controllerchange', done, { once: true });
+          setTimeout(done, 1200);
+        });
+      }
+    }
+  } catch { /* si ricarica comunque: la sessione è nel cookie */ }
+  location.reload();
+};
+const refreshBtn = document.getElementById('app-refresh');
+if (refreshBtn) refreshBtn.addEventListener('click', () => App.refreshApp());
 App.boot();
 
 // v7.1: cornice dell'avatar FISSA e verticale (9:16, come lo schermo del telefono), la più grande possibile nello spazio del palco.

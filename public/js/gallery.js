@@ -116,7 +116,7 @@
     const id = await pickChar('Invia in chat a…'); if (!id) return;
     const cap = prompt('Vuoi aggiungere un messaggio? (facoltativo)', '') ; if (cap === null) return;
     close(); await App.chat.open(id);
-    App.chat.send(cap || '', !App.key(), it);
+    App.chat.send(cap || '', !App.hasAi(), it);
     App.toast('📤 Inviata nella chat di coppia (la vedrà anche l\'altra persona)', 3500);
   });
   $('#vw-avatar').addEventListener('click', async () => {

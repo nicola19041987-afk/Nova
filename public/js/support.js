@@ -8,7 +8,9 @@
     d = document.createElement('dialog');
     d.id = 'support-dialog'; d.className = 'sheet';
     d.innerHTML = `<form method="dialog" id="support-form">
+      <button type="button" id="support-x" class="avatar-x" aria-label="Chiudi">✕</button>
       <h3>Appunto per assistenza</h3>
+      <div id="support-thread" class="support-thread" aria-live="polite"></div>
       <p class="muted small">Scrivi o detta. Puoi correggere il testo prima di inviare.</p>
       <textarea id="support-text" rows="5" maxlength="4000" placeholder="Cosa non funziona?"></textarea>
       <p id="support-status" class="muted small"></p>
@@ -17,14 +19,16 @@
         <button type="button" id="support-stop" class="block" hidden>Stop</button>
       </div>
       <div class="row">
-        <button type="submit" value="send" class="primary block" id="support-send">Invia</button>
-        <button type="submit" value="cancel" class="block">Chiudi</button>
+        <button type="button" class="primary block" id="support-send">Invia</button>
+        <button type="submit" value="cancel" class="block" id="support-cancel">Chiudi</button>
       </div>
     </form>`;
     (document.getElementById('app-shell') || document.body).appendChild(d);
     $('#support-mic').addEventListener('click', () => start($('#support-text'), $('#support-status')));
     $('#support-stop').addEventListener('click', () => stop());
-    d.addEventListener('close', () => { stop(); if (d.returnValue === 'send') send($('#support-text').value); });
+    $('#support-send').addEventListener('click', () => send($('#support-text').value));
+    $('#support-x').addEventListener('click', () => d.close());
+    d.addEventListener('close', () => stop());
     return d;
   }
   function stop() {
@@ -89,20 +93,49 @@
   }
   async function send(raw) {
     const text = String(raw || '').trim();
-    if (!text) { App.toast('Scrivi un appunto'); return; }
+    const ta = $('#support-text');
+    if (!text) { App.toast('Scrivi un appunto'); return false; }
     try {
       const r = await App.api('/api/support-notes', { method: 'POST', body: { text } });
-      App.toast(r.delivered ? 'Inviato ✓' : 'Salvato, invio appena possibile');
-    } catch (e) { App.toast(e.message || 'Invio non riuscito'); }
+      if (!r || r.ok === false) throw new Error('Salvataggio non riuscito');
+      App.toast(r.delivered ? 'Inviato' : 'Salvato, verrà inoltrato');
+      if (ta) ta.value = '';
+      if (r.note) paint([r.note].concat(currentNotes().filter((n) => n.id !== r.note.id)));
+      else await loadThread();
+      return true;
+    } catch (e) {
+      App.toast((e && e.message) || 'Salvataggio non riuscito');
+      return false;
+    }
   }
-  function open() {
+  function currentNotes() {
+    const box = $('#support-thread');
+    return (box && box._notes) || [];
+  }
+  function paint(notes) {
+    const box = $('#support-thread'); if (!box) return;
+    const list = (notes || []).slice().sort((a, b) => String(a.time || '').localeCompare(String(b.time || '')));
+    box._notes = list;
+    box.innerHTML = list.length ? list.map((n) => `<article>
+      <p class="who">${esc(n.author || '')} · ${esc(n.status === 'inviato' ? 'inviato' : 'in attesa')}</p>
+      <p class="txt">${esc(n.text || '')}</p>
+      <p class="reply"><b>Nova</b> ${esc((n.reply && n.reply.text) || '')}</p>
+    </article>`).join('') : '<p class="muted small">Nessun appunto ancora.</p>';
+    box.scrollTop = box.scrollHeight;
+  }
+  async function loadThread() {
+    const r = await App.api('/api/support-notes');
+    paint(r.notes || []);
+  }
+  async function open() {
     const d = dlg();
     $('#support-text').value = '';
     $('#support-status').textContent = '';
     d.returnValue = '';
     if (App.closeSheets) App.closeSheets(d);
     const chiudi = d.querySelector('button[value="cancel"]'); if (chiudi) chiudi.disabled = false;
-    d.showModal();
+    if (!d.open) d.showModal();
+    try { await loadThread(); } catch (e) { paint([]); }
   }
   document.addEventListener('click', (e) => {
     if (e.target.closest('#support-note-btn, #support-note-settings')) { e.preventDefault(); open(); }

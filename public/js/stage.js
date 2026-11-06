@@ -175,7 +175,7 @@
     },
     async gen() {
       const ch = App.current; if (!ch) return;
-      if (!App.key()) return App.toast('Serve la chiave xAI (Impostazioni) per creare la scena al tavolo');
+      if (!App.hasAi()) return App.toast('Serve la chiave xAI (Impostazioni) per creare la scena al tavolo');
       const btn = $('#scene-gen'); btn.disabled = true; $('#scene-info').textContent = 'Creo la foto di lei seduta al tavolo… (può volerci un minuto)';
       try {
         const r = await App.api(`/api/characters/${ch.id}/scene-image`, { method: 'POST', body: { room: ROOM }, ai: true });

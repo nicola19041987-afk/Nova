@@ -313,7 +313,7 @@
       const mk = (mode) => { const p = App.api('/api/realtime/session', { method: 'POST', body: { characterId: ch.id, mode, voice }, ai: true }); p.catch(() => {}); return { p }; };
       PRE = { ch: ch.id, vid: voice, at: Date.now(), modes: { voice: mk('voice'), video: mk('video') } };
     },
-    enabled: () => App.ls.get('callEngine', 'realtime') === 'realtime' && supported() && !!App.key(),
+    enabled: () => App.ls.get('callEngine', 'realtime') === 'realtime' && supported() && !!(App.hasAi && App.hasAi()),
     get active() { return !!(S && !S.closed && S.isReady); },
     // da chiamare DENTRO il tocco che avvia la chiamata (sblocco audio + microfono in parallelo alla connessione)
     async start(ch, mode, greet) {

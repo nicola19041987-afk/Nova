@@ -9,7 +9,7 @@ module.exports = defineConfig({
     viewport: { width: 390, height: 844 },
   },
   webServer: {
-    command: 'mkdir -p /tmp/nova-e2e-empty && DATA_DIR=/tmp/nova-e2e-empty PORT=8766 node server.js',
+    command: 'rm -rf /tmp/nova-e2e-empty && mkdir -p /tmp/nova-e2e-empty && DATA_DIR=/tmp/nova-e2e-empty PORT=8766 node server.js',
     url: 'http://127.0.0.1:8766/',
     reuseExistingServer: false,
     timeout: 20000,
