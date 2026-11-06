@@ -12,6 +12,8 @@
     return list.find((c) => c.ready === 'greta') || list.find((c) => /^(nova|greta)$/i.test(String(c.name || '').trim())) || null;
   }
   function fit() { if (App.fitFrame) App.fitFrame(); }
+  // Solo gli avatar che Nicola ha creato e salvato. Fuori: seed di sistema (Nova, Chiara, ready), il predefinito e quelli di Luisa o senza autore.
+  function ownSaved(c) { return !!(c && c.createdBy === 'nicola' && !c.ready); }
 
   App.solo = {
     char: soloChar,
@@ -229,13 +231,14 @@
       const ul = $('#avatar-sheet-list'); if (!ul) return;
       const active = soloChar();
       const aid = active && active.id;
-      ul.innerHTML = (App.chars || []).map((c) => {
+      const mine = (App.chars || []).filter(ownSaved);
+      ul.innerHTML = mine.map((c) => {
         const on = c.id === aid;
         return `<li data-id="${esc(c.id)}" class="${on ? 'on' : ''}">${App.avatarHtml(c, 'av-pick-face')}<b>${esc(c.name || 'Avatar')}</b><button type="button" data-act${on ? ' disabled' : ''}>Attiva</button><button type="button" data-del${on ? ' disabled' : ''}>Cancella</button></li>`;
-      }).join('') || '<li class="muted">Nessun avatar salvato</li>';
+      }).join('') || '<li class="muted">Nessun avatar salvato da Nicola</li>';
     },
     async activate(id) {
-      const ch = App.charById(id); if (!ch) return;
+      const ch = App.charById(id); if (!ch || !ownSaved(ch)) return;
       try {
         App.settings = await App.api('/api/settings', { method: 'PUT', body: { ...(App.settings || {}), activeChar: id } });
         App.ls.set('settings', App.settings);
@@ -251,7 +254,7 @@
     async removeChar(id) {
       const active = soloChar();
       if (!id || (active && active.id === id)) return;
-      const ch = App.charById(id); if (!ch) return;
+      const ch = App.charById(id); if (!ch || !ownSaved(ch)) return;
       if (!confirm(`Cancellare definitivamente ${ch.name}?`)) return;
       try { await App.api(`/api/characters/${id}`, { method: 'DELETE' }); }
       catch (e) { App.toast(e.message || 'Non cancellato'); return; }

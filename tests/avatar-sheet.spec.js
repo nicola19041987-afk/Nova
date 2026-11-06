@@ -3,12 +3,18 @@ const { test, expect } = require('@playwright/test');
 const CHIARA = 'aaaaaaaaaaaaaaaa';
 const NOVA = 'bbbbbbbbbbbbbbbb';
 const GRETA = 'cccccccccccccccc';
+const MARA = 'ffffffffffffffff';
+const ESTATE = 'dddddddddddddddd';
+const INVERNO = 'eeeeeeeeeeeeeeee';
 
 function seed() {
   return [
-    { id: CHIARA, name: 'Chiara', ready: 'chiara', avatar: '🌿', personality: 'x', style: '', orders: '', requests: '' },
-    { id: NOVA, name: 'Nova', ready: 'greta', avatar: '🍷', personality: 'Chi sei: Nova', style: '', orders: '', requests: '' },
+    { id: CHIARA, name: 'Chiara', ready: 'chiara', createdBy: 'nicola', avatar: '🌿', personality: 'x', style: '', orders: '', requests: '' },
+    { id: NOVA, name: 'Nova', ready: 'greta', createdBy: 'nicola', avatar: '🍷', personality: 'Chi sei: Nova', style: '', orders: '', requests: '' },
     { id: GRETA, name: 'Greta', avatar: 'G', personality: 'vecchia', style: '', orders: '', requests: '' },
+    { id: MARA, name: 'Mara', createdBy: 'luisa', avatar: 'M', personality: 'di luisa', style: '', orders: '', requests: '' },
+    { id: ESTATE, name: 'Estate', createdBy: 'nicola', avatar: 'E', personality: 'salvata', style: '', orders: '', requests: '' },
+    { id: INVERNO, name: 'Inverno', createdBy: 'nicola', avatar: 'I', personality: 'salvata', style: '', orders: '', requests: '' },
   ];
 }
 
@@ -61,14 +67,15 @@ test('il foglio avatar elenca, attiva, annulla la cancellazione e si chiude con 
     const sheet = document.getElementById('avatar-sheet');
     const row = (id) => sheet.querySelector(`li[data-id="${id}"]`);
     const names = [...sheet.querySelectorAll('li b')].map((b) => b.textContent);
-    const activeBefore = sheet.querySelector('li.on b').textContent;
+    const activeBefore = sheet.querySelector('li.on');
+    row(ids.estate).querySelector('[data-act]').click();
+    for (let i = 0; i < 40 && document.getElementById('title').textContent !== 'Estate'; i++) await new Promise((ok) => setTimeout(ok, 25));
     const delLocked = sheet.querySelector('li.on [data-del]').disabled;
-    row(ids.chiara).querySelector('[data-act]').click();
-    for (let i = 0; i < 40 && document.getElementById('title').textContent !== 'Chiara'; i++) await new Promise((ok) => setTimeout(ok, 25));
+    const activeName = sheet.querySelector('li.on b').textContent;
     const asks = [];
     const prev = window.confirm;
     window.confirm = (m) => { asks.push(m); return false; };
-    row(ids.greta).querySelector('[data-del]').click();
+    row(ids.inverno).querySelector('[data-del]').click();
     window.confirm = prev;
     const still = sheet.querySelectorAll('li').length;
     const opened = !sheet.hidden;
@@ -76,7 +83,8 @@ test('il foglio avatar elenca, attiva, annulla la cancellazione e si chiude con 
     return {
       opened,
       names,
-      activeBefore,
+      activeBefore: !!activeBefore,
+      activeName,
       delLocked,
       title: document.getElementById('title').textContent,
       current: App.current && App.current.id,
@@ -87,17 +95,18 @@ test('il foglio avatar elenca, attiva, annulla la cancellazione e si chiude con 
       closed: sheet.hidden,
       x: sheet.querySelector('.avatar-x').getAttribute('aria-label'),
     };
-  }, { chiara: CHIARA, greta: GRETA });
-  expect(r.names).toEqual(['Chiara', 'Nova', 'Greta']);
-  expect(r.activeBefore).toBe('Nova');
+  }, { estate: ESTATE, inverno: INVERNO });
+  expect(r.names).toEqual(['Estate', 'Inverno']);
+  expect(r.activeBefore).toBe(false);
+  expect(r.activeName).toBe('Estate');
   expect(r.delLocked).toBe(true);
-  expect(r.title).toBe('Chiara');
-  expect(r.current).toBe(CHIARA);
-  expect(r.active).toBe(CHIARA);
-  expect(r.photo).toBe('🌿');
-  expect(r.asks).toEqual(['Cancellare definitivamente Greta?']);
-  expect(r.still).toBe(3);
-  expect(state.puts).toEqual([CHIARA]);
+  expect(r.title).toBe('Estate');
+  expect(r.current).toBe(ESTATE);
+  expect(r.active).toBe(ESTATE);
+  expect(r.photo).toBe('E');
+  expect(r.asks).toEqual(['Cancellare definitivamente Inverno?']);
+  expect(r.still).toBe(2);
+  expect(state.puts).toEqual([ESTATE]);
   expect(state.deleted).toEqual([]);
   expect(r.opened).toBe(true);
   expect(r.closed).toBe(true);
