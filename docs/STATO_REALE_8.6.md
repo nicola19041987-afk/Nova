@@ -9,7 +9,7 @@ Branch di lavoro: `nova-8.6-stabilizzazione`.
 - Login PIN e schermata nera con wordmark Nova. Il blocco di `close.js` (MutationObserver che riscriveva `hidden` a ogni mutazione e congelava il login prima di `DOMContentLoaded`) è corretto da v8.6.5.1: scrittura solo se cambia, osservatore staccato durante la scrittura, richieste accorpate con `requestAnimationFrame`. `stage.js` ha un osservatore diverso, che non scrive `hidden` nel callback.
 - Un solo personaggio di prodotto: id interno `greta`, file `assets/ready/greta.jpg`, nome visibile Nova (`SOLO_KEY`, migrazione del solo nome seedato).
 - Dopo l’accesso la shell aggiunge `body.solo-mode`, apre la conversazione e mostra palco, chat, composer e dock (Home, Microfono, Camera, Impostazioni). Su viewport >500px la colonna è centrata, max 430px, sfondo nero.
-- Chat condivisa con polling, note di assistenza, foglio umore. Cache service worker di questo branch: `app-privata-v8-6-10` (il fix della bocca non è ancora su `main`).
+- Chat condivisa con polling, note di assistenza, foglio umore. Cache di questo branch: `app-privata-v8-6-11`. Su `main` (8.6.9) la bocca resta ferma su iPhone perché l’AudioContext parte sospeso e l’analizzatore resta a zero, senza ripiego. Qui, se il livello è muto ma la voce è in corso, la bocca segue le sillabe.
 - `npm run check` è l’unico controllo automatico storico: sintassi di server, script e JS pubblici.
 
 ## Corretto su questo branch (priorità 1)

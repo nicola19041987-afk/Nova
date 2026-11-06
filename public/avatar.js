@@ -212,10 +212,13 @@
     // ---- labiale ----
     speakUtterance(u, text) {
       const rate = u.rate || 1; let gotBoundary = false;
+      // Su iOS l'evento start spesso non arriva (la sintesi parte fuori dal tocco): la bocca si muove subito.
+      this._spkText = text || ''; this._spkAt = performance.now(); this.speaking = true;
+      this.simulateText(text, rate);
       u.addEventListener('start', () => {
         this.breathCue(text, false);
-        this.speaking = true; this.kf = [];
-        setTimeout(() => { if (!gotBoundary && this.speaking) this.simulateText(text, rate); }, 450); // iOS: boundary spesso assenti
+        this.speaking = true; this._spkAt = this._spkAt || performance.now();
+        setTimeout(() => { if (!gotBoundary && this.speaking && !this.kf.length) this.simulateText(text, rate); }, 450); // iOS: boundary spesso assenti
       });
       u.addEventListener('boundary', (e) => {
         if (e.name && e.name !== 'word') return;
@@ -250,7 +253,7 @@
     speakAudio(el, env, text, rate = 60) {
       this.breathCue(text, this.speaking);
       this._env = env && env.length ? { el, env, rate } : null;
-      this.kf = []; this.simUntil = 0; this.speaking = true; this._spkText = text || ''; this._spkAt = performance.now(); this._openAt = 0; this._simFb = false;
+      this.kf = []; this.simUntil = 0; this.speaking = true; this._spkText = text || ''; this._spkAt = performance.now(); this._openAt = 0; this._simFb = false; this._lipHeard = 0;
       if (!this._env && text) this.simulateText(text, 1); // inviluppo non disponibile: labiale stimato dal testo
     }
     // v8.1: il respiro segue il parlato: presa di fiato tra le frasi, risata, sospiro
@@ -261,31 +264,63 @@
       else if (/\b(uff+|ehh+|mah+|sigh)\b|sospir/i.test(t)) B.sigh(now);
     }
     // v8.4: labiale dal vivo (voce in streaming della conversazione in tempo reale): livello e "apertura larga" letti a ogni fotogramma
-    speakLive(levelFn, wideFn) { this._live = { levelFn, wideFn }; this._env = null; this.kf = []; this.simUntil = 0; this.speaking = true; }
+    speakLive(levelFn, wideFn) {
+      const fresh = !this.speaking;
+      this._live = { levelFn, wideFn }; this._env = null; this.kf = []; this.simUntil = 0; this.speaking = true;
+      if (fresh || !this._spkAt) this._spkAt = performance.now();
+      this._spkText = this._spkText || '';
+    }
+    // Safari: AudioContext sospeso e analizzatore a zero. Finché risulta che sta parlando, la bocca segue le sillabe.
+    syllable(now) {
+      const t0 = this._spkAt || now;
+      const period = 155;
+      const p = ((now - t0) % period) / period;
+      const env = p < 0.42 ? p / 0.42 : Math.max(0, 1 - (p - 0.42) / 0.58);
+      const shapes = [0.55, 0.84, 0.2, 0.62, 0.8];
+      this.vWide = shapes[Math.floor((now - t0) / period) % shapes.length];
+      return 0.26 + 0.64 * env;
+    }
     stopAudio() { this._live = null; this._env = null; this.speaking = false; this.kf = [{ t: performance.now() + 60, v: 0 }]; }
     target(now) {
       if (this.breathM && this.breathM.inhaling(now)) return 0.12; // v8.1: bocca appena socchiusa mentre prende fiato prima di parlare
-      if (this._live && this.speaking) { let v = 0; try { v = this._live.levelFn() || 0; this.vWide = this._live.wideFn ? this._live.wideFn() || 0 : 0; } catch {} return v; }
-      if (this._env && this.speaking) {
+      let v = 0, fromAudio = false;
+      if (this._live && this.speaking) {
+        fromAudio = true;
+        try { v = this._live.levelFn() || 0; const w = this._live.wideFn && this._live.wideFn(); if (w) this.vWide = w; } catch {}
+      } else if (this._env && this.speaking) {
+        fromAudio = true;
         const { el, env, rate } = this._env;
-        if (el.paused || el.ended) return 0;
-        const x = el.currentTime * rate + 2, i = Math.floor(x), f = x - i; // +2: anticipo di ~30 ms (la bocca si apre un filo prima del suono)
-        const a = env[Math.min(env.length - 1, i)] || 0, b = env[Math.min(env.length - 1, i + 1)] || 0;
-        // v8.4: "visemi" approssimati: ogni sillaba (~130 ms) ha una forma diversa (A aperta, E larga, O/U stretta)
-        const syl = Math.floor(x / 8), h = Math.sin(syl * 12.9898 + 78.233) * 43758.5453; this.vWide = (h - Math.floor(h)) * (a > 0.15 ? 1 : 0.5);
-        return a + (b - a) * f;
+        const clock = el && !el.ended && !(el.paused && !(el.currentTime > 0.05));
+        if (clock) {
+          const x = el.currentTime * rate + 2, i = Math.floor(x), f = x - i; // +2: anticipo di ~30 ms
+          const a = env[Math.min(env.length - 1, Math.max(0, i))] || 0, b = env[Math.min(env.length - 1, Math.max(0, i + 1))] || 0;
+          const syl = Math.floor(x / 8), h = Math.sin(syl * 12.9898 + 78.233) * 43758.5453; this.vWide = (h - Math.floor(h)) * (a > 0.15 ? 1 : 0.5);
+          v = a + (b - a) * f;
+        }
+        if (v <= 0.06) v = 0.02; // orologio fermo o inviluppo muto: la frase è comunque in corso
+      } else if (this.analyser && this.speaking) {
+        fromAudio = true;
+        try {
+          this.analyser.getByteTimeDomainData(this.buf);
+          let sum = 0; for (const b of this.buf) { const x = (b - 128) / 128; sum += x * x; }
+          v = Math.min(1, Math.sqrt(sum / this.buf.length) * 6);
+        } catch { v = 0; }
+      } else {
+        const kf = this.kf;
+        if (kf.length) {
+          while (kf.length > 1 && kf[1].t <= now) kf.shift();
+          const a = kf[0], b = kf[1];
+          if (!b) { if (a.t <= now) { this.kf = []; v = a.v; } else v = 0; }
+          else if (now < a.t) v = 0;
+          else v = a.v + (b.v - a.v) * ((now - a.t) / (b.t - a.t));
+        }
       }
-      if (this.analyser && this.speaking) {
-        this.analyser.getByteTimeDomainData(this.buf);
-        let sum = 0; for (const b of this.buf) { const v = (b - 128) / 128; sum += v * v; }
-        return Math.min(1, Math.sqrt(sum / this.buf.length) * 6);
-      }
-      const kf = this.kf; if (!kf.length) return 0;
-      while (kf.length > 1 && kf[1].t <= now) kf.shift();
-      const a = kf[0], b = kf[1];
-      if (!b) { if (a.t <= now) { this.kf = []; return a.v; } return 0; }
-      if (now < a.t) return 0;
-      return a.v + (b.v - a.v) * ((now - a.t) / (b.t - a.t));
+      if (v > 0.06) { this._lipHeard = now; return v; }
+      // Misuratore muto ma la voce risulta in corso (0 < v ≤ 0.06): sillabe, così Safari non resta a bocca chiusa.
+      if (this.speaking && v > 0) return this.syllable(now);
+      // Testo senza inviluppo (sintesi del telefono, decode fallito): dopo un attimo, sillabe se i keyframe non aprono.
+      if (this.speaking && !fromAudio && now - (this._lipHeard || this._spkAt || now) > 220) return this.syllable(now);
+      return v;
     }
 
     // ---- disegno ----

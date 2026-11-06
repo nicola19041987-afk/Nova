@@ -107,7 +107,7 @@
         rms = Math.max(rms, Math.sqrt(e / o.td.length));
       } catch { /* Safari: l'analizzatore spesso resta a zero; resta l'inviluppo del PCM */ }
     }
-    if (rms <= 0) return 0;
+    if (rms <= 0) return 0.02; // in riproduzione ma misuratore muto (Safari): non è «audio finito»
     s.peak = Math.max(rms, (s.peak || 0.05) * 0.995);
     const v = rms / (s.peak * 0.75); return v < 0.04 ? 0 : Math.min(1, Math.pow(v, 0.8));
   }
