@@ -8,7 +8,7 @@
   btn.title = 'Chiudi';
   btn.textContent = '✕';
   btn.hidden = true;
-  document.body.appendChild(btn);
+  (document.getElementById('app-shell') || document.body).appendChild(btn);
 
   const shown = (el) => el && !el.hidden;
   function openDialog() {
@@ -32,7 +32,7 @@
     if (shown($('#sheet'))) return { kind: 'sheet' };
     if (shown($('#viewer'))) return { kind: 'viewer' };
     if (shown($('#presence'))) return { kind: 'presence' };
-    if (App.call && App.call.active) return { kind: 'call' };
+    if (App.call && App.call.active && !App.call.minimized) return { kind: 'owned' };
     const stage = $('#stage');
     if (stage && (stage.classList.contains('av-full') || stage.classList.contains('fs') || document.body.classList.contains('avatar-fs-on') || document.body.classList.contains('av-full-on'))) return { kind: 'fs' };
     const diag = $('#voice-diag-out');
@@ -74,29 +74,53 @@
     if (cur.kind === 'tab') { goHome(); return true; }
     return false;
   }
-  function place() {
-    const cur = layer();
-    btn.hidden = !cur;
-    if (!cur) {
-      if (btn.parentElement !== document.body) document.body.appendChild(btn);
+  let raf = 0;
+  let observing = false;
+  const mo = new MutationObserver((records) => {
+    for (const r of records) {
+      if (r.target === btn) continue;
+      if (r.type === 'childList') {
+        const nodes = [...r.addedNodes, ...r.removedNodes];
+        if (nodes.length && nodes.every((n) => n === btn)) continue;
+      }
+      schedule();
       return;
     }
-    if (cur.kind === 'dialog') {
-      if (btn.parentElement !== cur.el) cur.el.appendChild(btn);
-    } else if (btn.parentElement !== document.body) document.body.appendChild(btn);
+  });
+  function watch() {
+    if (observing) return;
+    observing = true;
+    mo.observe(document.body, { subtree: true, attributes: true, attributeFilter: ['hidden', 'open', 'class'], childList: true });
   }
-  btn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); closeTop(); place(); });
+  function quiet(fn) {
+    if (observing) { mo.disconnect(); observing = false; }
+    try { fn(); } finally { watch(); }
+  }
+  function place() {
+    const cur = layer();
+    const hide = !cur || cur.kind === 'owned';
+    const host = document.getElementById('app-shell') || document.body;
+    const parent = cur && cur.kind === 'dialog' ? cur.el : host;
+    quiet(() => {
+      if (btn.hidden !== hide) btn.hidden = hide;
+      if (btn.parentElement !== parent) parent.appendChild(btn);
+    });
+  }
+  function schedule() {
+    if (raf) return;
+    raf = requestAnimationFrame(() => { raf = 0; place(); });
+  }
+  btn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); closeTop(); schedule(); });
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
     const t = e.target;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA') && !(t.closest && t.closest('dialog'))) return;
     if (!layer()) return;
     closeTop();
-    place();
+    schedule();
   });
-  const mo = new MutationObserver(() => place());
-  mo.observe(document.body, { subtree: true, attributes: true, attributeFilter: ['hidden', 'open', 'class'], childList: true });
-  document.addEventListener('visibilitychange', place);
+  document.addEventListener('visibilitychange', schedule);
+  watch();
   place();
   App.closeLayer = closeTop;
 })();
