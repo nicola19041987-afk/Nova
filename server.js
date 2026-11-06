@@ -61,11 +61,15 @@ const SOLO_FIXED = {
 };
 const NOVA_UNICO_FILE = 'a11cea7a10000001.jpg';
 const NOVA_UNICO_URL = `/api/avatars/${NOVA_UNICO_FILE}`;
+const BIONDA_FILE = 'b10b1a0000000001.jpg';
+const BIONDA_URL = `/api/avatars/${BIONDA_FILE}`;
+const BIONDA_ID = 'b10b1a0000000001';
 const AVATAR_ARCHIVE_KEY = 'avatar_archive_unico_v866';
+const E2E_HARNESS = process.env.NOVA_E2E === '1' && /nova-e2e/.test(String(process.env.DATA_DIR || ''));
 function liveChar(c) { return !!(c && !c.archived); }
 function getSoloChar(u) {
   const list = (getChars(u) || []).filter(liveChar);
-  return list.find((c) => c.ready === 'nova-unico') || list.find((c) => c.ready === SOLO_KEY) || list.find((c) => /^nova$/i.test(String(c.name || '').trim())) || null;
+  return list.find((c) => c.ready === 'nova-bionda') || list.find((c) => c.ready === 'nova-unico') || list.find((c) => c.ready === SOLO_KEY) || list.find((c) => /^nova$/i.test(String(c.name || '').trim())) || null;
 }
 const SERVER_KEY_FILE = () => path.join(DATA_DIR, 'server-ai-key.json');
 function getServerAiKey() {
@@ -278,8 +282,10 @@ app.use('/api', adminGuard);
 const PINS_FILE = path.join(DATA_DIR, 'pins.json');
 const getPins = () => readJSON(PINS_FILE, {});
 const PIN_RE = /^\d{4}$/;
+const loginStore = new rateLimit.MemoryStore();
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, limit: 10, standardHeaders: 'draft-7', legacyHeaders: false,
+  store: loginStore,
   message: { error: 'Troppi tentativi da questo dispositivo. Riprova tra 15 minuti.' },
 });
 // Blocco per profilo: dopo 5 PIN sbagliati blocco crescente (5, 10, 20… minuti, max 24 h)
@@ -302,6 +308,16 @@ function syncLuisaPinOnce() {
   done.luisa_pin_same_as_nico_v863 = new Date().toISOString();
   writeJSON(MIGRATIONS_FILE, done);
   console.log('Migrazione una tantum: accesso di Luisa allineato a Nicola. I cambi di PIN successivi restano distinti.');
+}
+// Solo il server dei test. In produzione la route non esiste e il limite resta 10 tentativi / 15 minuti.
+if (E2E_HARNESS) {
+  app.post('/api/e2e/reset-login-limit', async (req, res) => {
+    await loginStore.resetAll();
+    for (const u of Object.keys(lock)) lock[u] = { fails: 0, until: 0, level: 0 };
+    try { writeJSON(LOCK_FILE, lock); } catch {}
+    try { if (fs.existsSync(PINS_FILE)) fs.unlinkSync(PINS_FILE); } catch {}
+    res.json({ ok: true });
+  });
 }
 
 function startSession(res, user) {
@@ -404,7 +420,7 @@ function shownCharId(u) {
   const chars = (getChars(u) || []).filter(liveChar);
   const saved = String((getSettings(u).activeChar) || '');
   if (ID_RE.test(saved) && chars.some((c) => c.id === saved)) return saved;
-  const g = chars.find((c) => c.ready === 'nova-unico') || chars.find((c) => c.ready === SOLO_KEY) || chars.find((c) => /^nova$/i.test(String(c.name || '').trim()));
+  const g = chars.find((c) => c.ready === 'nova-bionda') || chars.find((c) => c.ready === 'nova-unico') || chars.find((c) => c.ready === SOLO_KEY) || chars.find((c) => /^nova$/i.test(String(c.name || '').trim()));
   return (g || chars[0] || {}).id || '';
 }
 function keepActive(u, body, cur) {
@@ -2210,7 +2226,7 @@ async function prepSoloMotions(reqKey) {
   try {
     let ch = getSoloChar(ADMIN_USER); if (!ch) return { ok: false, reason: 'no solo' };
     // La foto unica si muove sul disegno (bocca, respiro, sguardo). Le clip video la coprirebbero e qui non si generano da sole.
-    if (ch.ready === 'nova-unico') return { ok: true, still: true };
+    if (ch.ready === 'nova-unico' || ch.ready === 'nova-bionda') return { ok: true, still: true };
     const ids = Object.keys(ACTIONS).filter((id) => actionAllowed(ch, id));
     let done = 0, skipped = 0, refused = 0, failed = 0;
     for (const aid of ids) {
@@ -2690,7 +2706,7 @@ function avatarArchiveSet() {
   return files;
 }
 function stampArchived(rel, meta, set) {
-  if (!rel || rel.endsWith('/' + NOVA_UNICO_FILE)) return meta;
+  if (!rel || rel.endsWith('/' + BIONDA_FILE)) return meta;
   if (!(meta && meta.archived) && !(set && set.has(rel))) return meta;
   const base = String((meta && meta.label) || '');
   const label = base.includes('archiviato') ? base : (base ? base + ' · archiviato' : 'archiviato');
@@ -3158,9 +3174,9 @@ function migrateToShared() {
   writeJSON(MIGRATION_MARK(), report);
   console.log(`Archivio condiviso: migrazione completata (personaggi ${report.characters}, chat ${report.chats}, messaggi ${report.messages}, ricordi ${report.memory}, avatar ${report.avatars}).`);
 }
-// Copia un file nell'archivio avatar. Non cancella l'originale. La foto unica non si archivia.
+// Copia un file nell'archivio avatar. Non cancella l'originale. La foto bionda attiva non si archivia.
 function archiveCopyFile(destRoot, rel) {
-  if (!rel || rel === NOVA_UNICO_FILE || rel.endsWith('/' + NOVA_UNICO_FILE)) return null;
+  if (!rel || rel === BIONDA_FILE || rel.endsWith('/' + BIONDA_FILE)) return null;
   const abs = path.join(DATA_DIR, ...String(rel).split('/'));
   let st; try { st = fs.statSync(abs); } catch { return null; }
   if (!st.isFile()) return null;
@@ -3195,7 +3211,7 @@ function archiveAvatarsOnce() {
   const archived = [];
   let changed = false;
   for (const c of chars) {
-    if (!c || c.ready === 'nova-unico') continue;
+    if (!c || c.ready === 'nova-bionda') continue;
     if (!c.archived) { c.archived = true; c.archivedAt = new Date().toISOString(); changed = true; }
     archived.push({ id: c.id, name: c.name || '', ready: c.ready || '', avatar: c.avatar || '' });
   }
@@ -3225,30 +3241,68 @@ function preferUnico(id) {
     writeJSON(f, s);
   }
 }
-function seedNovaUnico() {
+function seedDarkArchived() {
   const src = path.join(__dirname, 'assets', 'ready', 'nova-unico.jpg');
   const dest = path.join(avatarDir(), NOVA_UNICO_FILE);
-  if (!fs.existsSync(dest)) {
-    if (!fs.existsSync(src)) { console.error('Foto Nova unica mancante in assets/ready/nova-unico.jpg'); return; }
-    fs.copyFileSync(src, dest);
-  }
-  let lm = null;
-  try { lm = cleanLm(JSON.parse(fs.readFileSync(path.join(__dirname, 'assets', 'ready', 'nova-unico-landmarks.json'), 'utf8')), NOVA_UNICO_URL); } catch (e) { console.error('Punti del viso di Nova non letti:', e.message); }
+  if (!fs.existsSync(dest) && fs.existsSync(src)) fs.copyFileSync(src, dest);
   const list = readJSON(CHARS_FILE(), []);
   const chars = Array.isArray(list) ? list.slice() : [];
-  let id = '';
   const i = chars.findIndex((c) => c && c.ready === 'nova-unico');
+  const now = new Date().toISOString();
+  if (i >= 0) {
+    if (!chars[i].archived) { chars[i].archived = true; chars[i].archivedAt = chars[i].archivedAt || now; }
+    if (!AV_RE.test(String(chars[i].avatar || '')) && fs.existsSync(dest)) chars[i].avatar = NOVA_UNICO_URL;
+    writeJSON(CHARS_FILE(), chars);
+    return;
+  }
+  if (!fs.existsSync(dest)) return;
+  chars.push({
+    id: newId(), name: 'Nova', ready: 'nova-unico', avatar: NOVA_UNICO_URL, avatarSource: 'upload',
+    landmarks: null, appearance: {}, look: {}, wardrobe: [],
+    personality: '', style: '', orders: '', requests: '', voice: '', voiceSpeed: null,
+    configNote: 'Da compilare', lookHistory: [], archived: true, archivedAt: now,
+    createdAt: now, updatedAt: now, createdBy: ADMIN_USER, updatedBy: ADMIN_USER, memorySeededAt: now,
+  });
+  writeJSON(CHARS_FILE(), chars);
+}
+function seedBionda() {
+  const src = path.join(__dirname, 'assets', 'ready', 'nova-bionda.jpg');
+  if (!fs.existsSync(src)) { console.error('Foto bionda mancante in assets/ready/nova-bionda.jpg'); return; }
+  const hash = crypto.createHash('sha256').update(fs.readFileSync(src)).digest('hex');
+  let lmRaw = null;
+  try { lmRaw = JSON.parse(fs.readFileSync(path.join(__dirname, 'assets', 'ready', 'nova-bionda-landmarks.json'), 'utf8')); }
+  catch (e) { console.error('Punti del viso biondo non letti:', e.message); }
+  const dir = avatarDir();
+  let url = '';
+  for (const name of fs.readdirSync(dir)) {
+    const abs = path.join(dir, name);
+    try {
+      if (!fs.statSync(abs).isFile()) continue;
+      if (crypto.createHash('sha256').update(fs.readFileSync(abs)).digest('hex') === hash) { url = `/api/avatars/${name}`; break; }
+    } catch {}
+  }
+  if (!url) {
+    fs.copyFileSync(src, path.join(dir, BIONDA_FILE));
+    url = BIONDA_URL;
+  }
+  const lm = lmRaw ? cleanLm({ ...lmRaw, auto: true, src: url }, url) : null;
+  const list = readJSON(CHARS_FILE(), []);
+  const chars = Array.isArray(list) ? list.slice() : [];
+  const i = chars.findIndex((c) => c && c.ready === 'nova-bionda');
+  let id = '';
   if (i >= 0) {
     const cur = chars[i];
-    if (cur.archived) { cur.archived = false; delete cur.archivedAt; }
-    if (lm && !(cur.landmarks && cur.landmarks.auto && cur.landmarks.src === NOVA_UNICO_URL)) cur.landmarks = lm;
-    if (!AV_RE.test(String(cur.avatar || ''))) cur.avatar = NOVA_UNICO_URL;
+    cur.archived = false;
+    delete cur.archivedAt;
+    cur.avatar = url;
+    if (lm) cur.landmarks = lm;
+    if (!String(cur.name || '').trim()) cur.name = 'Nova';
     id = cur.id;
     writeJSON(CHARS_FILE(), chars);
   } else {
     const now = new Date().toISOString();
     const c = {
-      id: newId(), name: 'Nova', ready: 'nova-unico', avatar: NOVA_UNICO_URL, avatarSource: 'upload',
+      id: BIONDA_ID, name: 'Nova', ready: 'nova-bionda', avatar: url, avatarSource: 'upload',
       landmarks: lm, appearance: {}, look: {}, wardrobe: [],
       personality: '', style: '', orders: '', requests: '', voice: '', voiceSpeed: null,
       configNote: 'Da compilare', lookHistory: [],
@@ -3258,10 +3312,12 @@ function seedNovaUnico() {
     writeJSON(CHARS_FILE(), [...chars, c]);
   }
   if (id) preferUnico(id);
+  console.log('Nova bionda attiva:', id, url);
 }
 function seedReadyChars() {
   archiveAvatarsOnce();
-  seedNovaUnico();
+  seedBionda();
+  seedDarkArchived();
 }
 // v8.6.1: il nome visibile del seed (ready='greta') diventa Nova. Id, foto, voce e movimenti restano quelli già salvati.
 async function renameSeededSoloToNova() {
@@ -3427,7 +3483,7 @@ try { migrateToShared(); } catch (e) { console.error('Migrazione archivio condiv
   try { seedReadyChars(); } catch (e) { console.error('Personaggi pronti non creati:', e.message); }
   if (getServerAiKey()) setImmediate(() => prepSoloMotions().catch((e) => console.error('Prep avvio:', e.message)));
   for (const c of readJSON(CHARS_FILE(), []) || []) {
-    if (!c || c.archived || c.ready === 'nova-unico' || c.memorySeededAt) continue;
+    if (!c || c.archived || c.ready === 'nova-unico' || c.ready === 'nova-bionda' || c.memorySeededAt) continue;
     await seedBaseMemory(c).catch((e) => console.error('Memoria base non creata:', e.message));
   }
   await flushSupportNotes().catch((e) => console.error('Appunti non inoltrati all\'avvio:', e.message));

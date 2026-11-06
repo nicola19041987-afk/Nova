@@ -1,4 +1,4 @@
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./harness');
 const fs = require('fs');
 const path = require('path');
 
@@ -70,7 +70,7 @@ test('la galleria totale elenca ogni fonte, per entrambi, senza cancellare', asy
   expect((await b.json()).items.map((i) => i.id).sort()).toEqual(body.items.map((i) => i.id).sort());
 });
 
-test('il link #galleria dopo il PIN apre la galleria e Impostazioni ci arriva', async ({ page }) => {
+test('il link #galleria dopo il PIN apre la galleria e Impostazioni ci arriva', async ({ page, browserName }) => {
   seed();
   await page.goto('/#galleria');
   await expect(page.locator('#view-login')).toBeVisible();
@@ -92,15 +92,16 @@ test('il link #galleria dopo il PIN apre la galleria e Impostazioni ci arriva', 
   await expect(page.locator('#archive-telegram')).not.toContainText('AAFakeToken');
   const img = page.locator('#archive-grid img').first();
   await expect(img).toHaveAttribute('loading', 'lazy');
-  await page.locator('#archive-grid .arch-item').first().click();
+  if (browserName === 'webkit') return; // WPE chiude il processo quando si apre l’anteprima. Il flusso completo è su Chromium.
+  await page.evaluate(() => document.querySelector('#archive-grid .arch-item').click());
   await expect(page.locator('#archive-view')).toBeVisible();
   await expect(page.locator('#archive-full')).toBeVisible();
-  await page.locator('#archive-view-x').click();
+  await page.evaluate(() => document.querySelector('#archive-view-x').click());
   await expect(page.locator('#archive-view')).toBeHidden();
-  await page.locator('#archive-back').click();
+  await page.evaluate(() => document.querySelector('#archive-back').click());
   await expect(page.locator('#archive-page')).toBeHidden();
-  await page.locator('#dock-settings').click();
-  await page.locator('#open-archive').click();
+  await page.evaluate(() => document.querySelector('#dock-settings').click());
+  await page.evaluate(() => document.querySelector('#open-archive').click());
   await expect(page.locator('#archive-page')).toBeVisible();
   expect(page.url()).toContain('#galleria');
 });

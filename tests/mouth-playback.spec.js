@@ -1,4 +1,4 @@
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./harness');
 
 test('la bocca si apre su tutti i percorsi anche se l’audio non dà un livello', async ({ page }) => {
   await page.goto('/');

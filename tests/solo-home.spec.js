@@ -1,4 +1,4 @@
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./harness');
 
 const CHIARA = 'aaaaaaaaaaaaaaaa';
 const NOVA = 'bbbbbbbbbbbbbbbb';
@@ -116,7 +116,7 @@ test('il microfono del dock detta nel composer e Home non svuota il thread', asy
   });
   await mockApp(page);
   await page.goto('/');
-  await page.waitForFunction(() => document.getElementById('title').textContent === 'Nova' && document.body.classList.contains('solo-mode'));
+  await page.waitForFunction(() => document.getElementById('title').textContent === 'Nova' && document.body.classList.contains('solo-mode') && App.solo && App.solo._bound);
   const snap = await page.evaluate(() => {
     const m = document.createElement('div');
     m.id = 'keep-me';

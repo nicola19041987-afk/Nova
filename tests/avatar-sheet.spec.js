@@ -1,4 +1,4 @@
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./harness');
 
 const CHIARA = 'aaaaaaaaaaaaaaaa';
 const NOVA = 'bbbbbbbbbbbbbbbb';
