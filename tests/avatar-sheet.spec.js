@@ -12,16 +12,17 @@ const CLIP = '2222222222222222';
 const UOMO = '3333333333333333';
 
 function seed() {
+  const old = (extra) => ({ archived: true, ...extra });
   return [
-    { id: CHIARA, name: 'Chiara', ready: 'chiara', createdBy: 'nicola', avatar: '🌿', messages: 80, nicolaMessages: 40 },
-    { id: NOVA, name: 'Nova', ready: 'greta', createdBy: 'nicola', avatar: '🍷', personality: 'Chi sei: Nova', messages: 90, nicolaMessages: 40 },
-    { id: GRETA, name: 'Greta', avatar: 'G', messages: 0, nicolaMessages: 0 },
-    { id: MARA, name: 'Mara', createdBy: 'luisa', avatar: 'M', messages: 5, nicolaMessages: 0 },
-    { id: ESTATE, name: 'Estate', createdBy: 'nicola', avatar: 'E', messages: 2, nicolaMessages: 1 },
-    { id: INVERNO, name: 'Inverno', createdBy: 'nicola', avatar: 'I', messages: 0, nicolaMessages: 0 },
-    { id: LUNA, name: 'Luna', avatar: 'L', messages: 40, nicolaMessages: 18 },
-    { id: CLIP, name: 'Clip', createdBy: 'luisa', avatar: 'C', messages: 8, nicolaMessages: 3, actions: { saluta: { kind: 'video', url: '/api/actions/file/clip.mp4', at: '2026-02-01', stale: false } } },
-    { id: UOMO, name: 'Marco', createdBy: 'nicola', avatar: 'M', messages: 100, nicolaMessages: 50, appearance: { gender: 'uomo' } },
+    old({ id: CHIARA, name: 'Chiara', ready: 'chiara', createdBy: 'nicola', avatar: '🌿', messages: 80, nicolaMessages: 40 }),
+    { id: NOVA, name: 'Nova', ready: 'nova-unico', createdBy: 'nicola', avatar: '🍷', personality: '', style: '', orders: '', requests: '', messages: 90, nicolaMessages: 40 },
+    old({ id: GRETA, name: 'Greta', avatar: 'G', messages: 0, nicolaMessages: 0 }),
+    old({ id: MARA, name: 'Mara', createdBy: 'luisa', avatar: 'M', messages: 5, nicolaMessages: 0 }),
+    old({ id: ESTATE, name: 'Estate', createdBy: 'nicola', avatar: 'E', messages: 2, nicolaMessages: 1 }),
+    old({ id: INVERNO, name: 'Inverno', createdBy: 'nicola', avatar: 'I', messages: 0, nicolaMessages: 0 }),
+    old({ id: LUNA, name: 'Luna', avatar: 'L', messages: 40, nicolaMessages: 18 }),
+    old({ id: CLIP, name: 'Clip', createdBy: 'luisa', avatar: 'C', messages: 8, nicolaMessages: 3, actions: { saluta: { kind: 'video', url: '/api/actions/file/clip.mp4', at: '2026-02-01', stale: false } } }),
+    old({ id: UOMO, name: 'Marco', createdBy: 'nicola', avatar: 'M', messages: 100, nicolaMessages: 50, appearance: { gender: 'uomo' } }),
   ];
 }
 
@@ -62,77 +63,52 @@ async function mockApp(page, state) {
   });
 }
 
-test('il foglio avatar elenca, attiva, annulla la cancellazione e si chiude con la X', async ({ page, browserName }) => {
+test('il foglio mostra solo Nova e si chiude con la X', async ({ page, browserName }) => {
   test.skip(browserName === 'webkit', 'Questo WebKit (WPE di Playwright) chiude il processo da solo: sulla home, con il motore dell’avatar, e anche dopo un click qualunque. Il foglio, aperto senza click e senza quell’engine, resta su. Non è il foglio né le miniature. Su Chromium a 390×844 il flusso è verificato.');
   const state = { chars: seed(), active: '', deleted: [], puts: [] };
   await mockApp(page, state);
   await page.goto('/');
   await page.waitForFunction(() => document.body.classList.contains('solo-mode') && document.getElementById('title').textContent === 'Nova');
   expect(page.viewportSize()).toEqual({ width: 390, height: 844 });
-  const r = await page.evaluate(async (ids) => {
+  const r = await page.evaluate(async (nova) => {
     document.getElementById('wa-photo').click();
     const sheet = document.getElementById('avatar-sheet');
-    const row = (id) => sheet.querySelector(`li[data-id="${id}"]`);
     const names = [...sheet.querySelectorAll('li b')].map((b) => b.textContent);
-    const counts = [...sheet.querySelectorAll('.av-msgs')].map((el) => el.textContent);
-    const activeBefore = sheet.querySelector('li.on');
-    row(ids.estate).querySelector('[data-act]').click();
-    for (let i = 0; i < 40 && document.getElementById('title').textContent !== 'Estate'; i++) await new Promise((ok) => setTimeout(ok, 25));
-    const delLocked = sheet.querySelector('li.on [data-del]').disabled;
-    const activeName = sheet.querySelector('li.on b').textContent;
-    const asks = [];
-    const prev = window.confirm;
-    window.confirm = (m) => { asks.push(m); return false; };
-    row(ids.inverno).querySelector('[data-del]').click();
-    window.confirm = prev;
-    const still = sheet.querySelectorAll('li').length;
+    const row = sheet.querySelector(`li[data-id="${nova}"]`);
+    const delLocked = !!(row && row.querySelector('[data-del]').disabled);
     const opened = !sheet.hidden;
     sheet.querySelector('.avatar-x').click();
     return {
       opened,
       names,
-      counts,
-      activeBefore: !!activeBefore,
-      activeName,
+      on: row && row.classList.contains('on'),
       delLocked,
       title: document.getElementById('title').textContent,
       current: App.current && App.current.id,
-      active: App.settings && App.settings.activeChar,
-      photo: document.getElementById('wa-photo').textContent,
-      asks,
-      still,
       closed: sheet.hidden,
       x: sheet.querySelector('.avatar-x').getAttribute('aria-label'),
     };
-  }, { estate: ESTATE, inverno: INVERNO });
-  expect(r.names).toEqual(['Luna', 'Clip', 'Mara', 'Estate', 'Greta', 'Inverno']);
-  expect(r.counts).toEqual(['40', '8', '5', '2', '0', '0']);
-  expect(r.activeBefore).toBe(false);
-  expect(r.activeName).toBe('Estate');
+  }, NOVA);
+  expect(r.names).toEqual(['Nova']);
+  expect(r.on).toBe(true);
   expect(r.delLocked).toBe(true);
-  expect(r.title).toBe('Estate');
-  expect(r.current).toBe(ESTATE);
-  expect(r.active).toBe(ESTATE);
-  expect(r.photo).toBe('E');
-  expect(r.asks).toEqual(['Cancellare definitivamente Inverno?']);
-  expect(r.still).toBe(6);
-  expect(state.puts).toEqual([ESTATE]);
+  expect(r.title).toBe('Nova');
+  expect(r.current).toBe(NOVA);
   expect(state.deleted).toEqual([]);
   expect(r.opened).toBe(true);
   expect(r.closed).toBe(true);
   expect(r.x).toBe('Chiudi');
 });
 
-test('il video di un avatar va sul palco e un foglio chiude l’altro', async ({ page, browserName }) => {
+test('un avatar archiviato non va sul palco e un foglio chiude l’altro', async ({ page, browserName }) => {
   test.skip(browserName === 'webkit', 'Questo WebKit (WPE) chiude il processo dopo l’avvio della home. Il flusso è verificato su Chromium a 390×844.');
   const state = { chars: seed(), active: '', deleted: [], puts: [] };
   await mockApp(page, state);
   await page.goto('/');
   await page.waitForFunction(() => document.getElementById('title').textContent === 'Nova');
-  const r = await page.evaluate(async (id) => {
+  const r = await page.evaluate(async () => {
     App.solo.openPicker();
     const names = [...document.querySelectorAll('#avatar-sheet li b')].map((b) => b.textContent);
-    await App.solo.activate(id);
     const video = document.getElementById('stage-video');
     App.solo.openLook();
     App.supportNote.open();
@@ -147,12 +123,10 @@ test('il video di un avatar va sul palco e un foglio chiude l’altro', async ({
       support: !!(sup && sup.open),
       disabled: !!(chiudi && chiudi.disabled),
     };
-  }, CLIP);
-  expect(r.names).not.toContain('Marco');
-  expect(r.names).toContain('Mara');
-  expect(r.names).toContain('Clip');
-  expect(r.src).toBe('/api/actions/file/clip.mp4');
-  expect(r.shown).toBe(true);
+  });
+  expect(r.names).toEqual(['Nova']);
+  expect(r.src || '').toBe('');
+  expect(r.shown).toBe(false);
   expect(r.look).toBe(false);
   expect(r.support).toBe(true);
   expect(r.disabled).toBe(false);

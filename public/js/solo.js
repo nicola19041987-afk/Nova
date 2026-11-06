@@ -1,26 +1,19 @@
-/* solo.js — v8.6.1: una avatar (Greta), metà schermo + dock Home/Mic/Camera/Impostazioni */
+/* solo.js — una sola avatar visibile (Nova). Le schede con archived restano su disco ma non si scelgono. */
 (function () {
   const $ = (s, r = document) => r.querySelector(s);
+  function live(c) { return !!(c && !c.archived); }
   function soloChar() {
-    const list = App.chars || [];
+    const list = (App.chars || []).filter(live);
     const saved = App.settings && App.settings.activeChar;
     if (saved) {
       const hit = list.find((c) => c.id === saved);
       if (hit) return hit;
     }
-    // Senza una scelta salvata, la home resta Nova (id interno greta). Mai il primo personaggio della lista.
-    return list.find((c) => c.ready === 'greta') || list.find((c) => /^(nova|greta)$/i.test(String(c.name || '').trim())) || null;
+    return list.find((c) => c.ready === 'nova-unico') || list.find((c) => c.ready === 'greta') || list.find((c) => /^nova$/i.test(String(c.name || '').trim())) || null;
   }
   function fit() { if (App.fitFrame) App.fitFrame(); }
-  function isMale(c) {
-    const g = String((c.appearance && c.appearance.gender) || c.gender || '').toLowerCase();
-    return g === 'uomo' || g === 'male';
-  }
-  // Tutti gli avatar creati da qualcuno (anche Luisa, anche con video). Fuori: i seed di sistema e gli uomini.
   function sheetOk(c) {
-    if (!c || c.ready) return false;
-    if (isMale(c)) return false;
-    return true;
+    return live(c);
   }
   function stageClip(ch) {
     const bag = Object.assign({}, (ch && ch.actions) || {}, (ch && ch.seated) || {});

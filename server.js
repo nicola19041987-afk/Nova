@@ -59,9 +59,13 @@ const SOLO_FIXED = {
   personality: 'Chi sei: Nova, 26 anni, donna inventata. Fa la sommelier in un\'enoteca di Verona, adora le cene lunghe a tavola con un buon rosso, la musica anni Novanta, ballare in cucina e le gite improvvisate al lago. Compagna di conversazione di Nico e Luisa: ironica, viva, presente.',
   style: 'Educata ed elegante, di classe: mai volgare né facile, ma vivace, divertente e carismatica. Sicura di sé, giocosa e ironica, con battute pungenti ma affettuose; nasconde paure e insicurezze e cerca rassicurazione da Nico, aprendo gradualmente. Ama bere (soprattutto vino) e ci scherza sopra. Parla italiano sciolto, naturale, come una persona vera — su qualsiasi argomento, con collegamenti e follow-up, come Grok o ChatGPT.',
 };
+const NOVA_UNICO_FILE = 'a11cea7a10000001.jpg';
+const NOVA_UNICO_URL = `/api/avatars/${NOVA_UNICO_FILE}`;
+const AVATAR_ARCHIVE_KEY = 'avatar_archive_unico_v866';
+function liveChar(c) { return !!(c && !c.archived); }
 function getSoloChar(u) {
-  const list = getChars(u) || [];
-  return list.find((c) => c.ready === SOLO_KEY) || list.find((c) => /^(nova|greta)$/i.test(String(c.name || '').trim())) || null;
+  const list = (getChars(u) || []).filter(liveChar);
+  return list.find((c) => c.ready === 'nova-unico') || list.find((c) => c.ready === SOLO_KEY) || list.find((c) => /^nova$/i.test(String(c.name || '').trim())) || null;
 }
 const SERVER_KEY_FILE = () => path.join(DATA_DIR, 'server-ai-key.json');
 function getServerAiKey() {
@@ -397,17 +401,17 @@ const settingsFile = (u) => path.join(userDir(u), 'settings.json');
 const getSettings = (u) => { const s = { autoSave: false, allowExport: false, adultMode: false, videoModel: '', videoDuration: 6, ...readJSON(settingsFile(u), {}) }; delete s.drawerScene; return s; }; // drawerScene (vecchio comodino, rimosso): ignorato
 // Avatar mostrata in Home: scelta del profilo. Vale solo se quel personaggio è ancora nell'archivio.
 function shownCharId(u) {
-  const chars = getChars(u);
+  const chars = (getChars(u) || []).filter(liveChar);
   const saved = String((getSettings(u).activeChar) || '');
   if (ID_RE.test(saved) && chars.some((c) => c.id === saved)) return saved;
-  const g = chars.find((c) => c.ready === 'greta') || chars.find((c) => /^(nova|greta)$/i.test(String(c.name || '').trim()));
+  const g = chars.find((c) => c.ready === 'nova-unico') || chars.find((c) => c.ready === SOLO_KEY) || chars.find((c) => /^nova$/i.test(String(c.name || '').trim()));
   return (g || chars[0] || {}).id || '';
 }
 function keepActive(u, body, cur) {
   const has = body && Object.prototype.hasOwnProperty.call(body, 'activeChar');
   const raw = String(has ? body.activeChar : (cur && cur.activeChar) || '');
   if (!raw) return '';
-  if (!ID_RE.test(raw) || !getChars(u).some((c) => c.id === raw)) return has ? '' : (ID_RE.test(String((cur && cur.activeChar) || '')) ? cur.activeChar : '');
+  if (!ID_RE.test(raw) || !getChars(u).some((c) => c.id === raw && liveChar(c))) return has ? '' : (ID_RE.test(String((cur && cur.activeChar) || '')) ? cur.activeChar : '');
   return raw;
 }
 // Modalità adulti: per utente, attivabile solo dopo il consenso vocale. In chat condivisa vale solo se attiva per ENTRAMBI.
@@ -925,7 +929,7 @@ function chatCounts(id) {
   return { messages, nicolaMessages };
 }
 app.get('/api/characters', auth, (req, res) => {
-  const list = getChars(req.user).map(({ drawer, ...c }) => ({ ...c, ...chatCounts(c.id), scenes: cleanScenes(c.scenes), actions: visibleActions(c), seated: visibleSeated(c), adultActionsOk: aiFace(c) })); // il vecchio campo del comodino non viene esposto; i conteggi non si scrivono sul disco
+  const list = getChars(req.user).filter(liveChar).map(({ drawer, ...c }) => ({ ...c, ...chatCounts(c.id), scenes: cleanScenes(c.scenes), actions: visibleActions(c), seated: visibleSeated(c), adultActionsOk: aiFace(c) })); // il vecchio campo del comodino non viene esposto; i conteggi non si scrivono sul disco. Gli archiviati restano nel file ma non si scelgono.
   res.setHeader('X-Version', fileRev(CHARS_FILE())); res.json(list);
 });
 app.get('/api/characters/options', auth, (req, res) => res.json(OPT));
@@ -2205,6 +2209,8 @@ async function prepSoloMotions(reqKey) {
   MOTION_PREP.busy = true; MOTION_PREP.lastAt = new Date().toISOString();
   try {
     let ch = getSoloChar(ADMIN_USER); if (!ch) return { ok: false, reason: 'no solo' };
+    // La foto unica si muove sul disegno (bocca, respiro, sguardo). Le clip video la coprirebbero e qui non si generano da sole.
+    if (ch.ready === 'nova-unico') return { ok: true, still: true };
     const ids = Object.keys(ACTIONS).filter((id) => actionAllowed(ch, id));
     let done = 0, skipped = 0, refused = 0, failed = 0;
     for (const aid of ids) {
@@ -2673,9 +2679,27 @@ function archiveAdd(items, seen, abs, meta) {
 function archiveDirFiles(dir) {
   try { return fs.readdirSync(dir).filter((n) => archiveKind(n)); } catch { return []; }
 }
+function avatarArchiveSet() {
+  const files = new Set();
+  const dir = path.join(DATA_DIR, 'avatar-archive');
+  let stamps = []; try { stamps = fs.readdirSync(dir); } catch { return files; }
+  for (const stamp of stamps) {
+    const man = archiveRead(path.join(dir, stamp, 'manifest.json'), null);
+    for (const rel of (man && man.files) || []) files.add(String(rel));
+  }
+  return files;
+}
+function stampArchived(rel, meta, set) {
+  if (!rel || rel.endsWith('/' + NOVA_UNICO_FILE)) return meta;
+  if (!(meta && meta.archived) && !(set && set.has(rel))) return meta;
+  const base = String((meta && meta.label) || '');
+  const label = base.includes('archiviato') ? base : (base ? base + ' · archiviato' : 'archiviato');
+  return { ...meta, label };
+}
 function collectArchive() {
   const items = [], seen = new Set();
   const root = path.resolve(DATA_DIR);
+  const archivedFiles = avatarArchiveSet();
   for (const u of ['nicola', 'luisa']) {
     const who = archiveWho(u);
     const idx = archiveRead(path.join(root, 'users', u, 'gallery.json'), []);
@@ -2722,7 +2746,8 @@ function collectArchive() {
       archiveAdd(items, seen, path.join(root, 'users', u, 'videos', name), { uploader: 'sconosciuto', source: 'Video generato' });
     }
     for (const name of archiveDirFiles(path.join(root, 'users', u, 'avatars'))) {
-      archiveAdd(items, seen, path.join(root, 'users', u, 'avatars', name), { uploader: who, source: 'Avatar' });
+      const abs = path.join(root, 'users', u, 'avatars', name);
+      archiveAdd(items, seen, abs, stampArchived(archiveRel(abs), { uploader: who, source: 'Avatar' }, archivedFiles));
     }
   }
   const chars = archiveRead(path.join(root, 'shared', 'characters.json'), []);
@@ -2732,24 +2757,27 @@ function collectArchive() {
     if (!ch) continue;
     const who = ch.avatarSource === 'ai' ? 'Nova-generated' : archiveWho(ch.createdBy || ch.updatedBy);
     const at = ch.updatedAt || ch.createdAt;
-    noteAv(ch.avatar, { at, uploader: who, label: ch.name || '' });
-    noteAv(ch.identity && ch.identity.refAvatar, { at, uploader: who, label: ch.name || '' });
-    for (const h of ch.lookHistory || []) noteAv(h && h.avatar, { at: h.at || at, uploader: h && h.avatarSource === 'upload' ? archiveWho(ch.createdBy) : who, label: ch.name || '' });
-    for (const sc of Object.values(ch.scenes || {})) noteAv(sc && sc.url, { at, uploader: who, label: ch.name || '' });
+    const mark = !!ch.archived;
+    noteAv(ch.avatar, { at, uploader: who, label: ch.name || '', archived: mark });
+    noteAv(ch.identity && ch.identity.refAvatar, { at, uploader: who, label: ch.name || '', archived: mark });
+    for (const h of ch.lookHistory || []) noteAv(h && h.avatar, { at: h.at || at, uploader: h && h.avatarSource === 'upload' ? archiveWho(ch.createdBy) : who, label: ch.name || '', archived: mark });
+    for (const sc of Object.values(ch.scenes || {})) noteAv(sc && sc.url, { at, uploader: who, label: ch.name || '', archived: mark });
     for (const bag of [ch.actions, ch.seated]) {
       for (const a of Object.values(bag || {})) {
         if (!a || !a.file) continue;
-        actionMeta.set(path.basename(a.file), { at: a.at, uploader: a.by ? archiveWho(a.by) : 'Nova-generated', label: ch.name || '' });
+        actionMeta.set(path.basename(a.file), { at: a.at, uploader: a.by ? archiveWho(a.by) : 'Nova-generated', label: ch.name || '', archived: mark });
       }
     }
   }
   for (const name of archiveDirFiles(path.join(root, 'shared', 'avatars'))) {
+    const abs = path.join(root, 'shared', 'avatars', name);
     const meta = avatarMeta.get(name) || { uploader: 'sconosciuto' };
-    archiveAdd(items, seen, path.join(root, 'shared', 'avatars', name), { ...meta, source: 'Avatar' });
+    archiveAdd(items, seen, abs, stampArchived(archiveRel(abs), { ...meta, source: 'Avatar' }, archivedFiles));
   }
   for (const name of archiveDirFiles(path.join(root, 'shared', 'actions'))) {
+    const abs = path.join(root, 'shared', 'actions', name);
     const meta = actionMeta.get(name) || { uploader: 'Nova-generated' };
-    archiveAdd(items, seen, path.join(root, 'shared', 'actions', name), { ...meta, source: 'Clip' });
+    archiveAdd(items, seen, abs, stampArchived(archiveRel(abs), { ...meta, source: 'Clip' }, archivedFiles));
   }
   const chatWho = new Map();
   const chatDir = path.join(root, 'shared', 'chats');
@@ -3130,61 +3158,110 @@ function migrateToShared() {
   writeJSON(MIGRATION_MARK(), report);
   console.log(`Archivio condiviso: migrazione completata (personaggi ${report.characters}, chat ${report.chats}, messaggi ${report.messages}, ricordi ${report.memory}, avatar ${report.avatars}).`);
 }
-// v8.5.0: personaggi GIÀ PRONTI (volto inventato generato dall'IA, mai foto di persone reali): creati una sola volta.
-// Se Nicola ne elimina uno non viene ricreato (registro in ready-chars.json). Il secondo posto aspetta i testi di Nicola.
-const READY_CHARS = [
-  { key: 'chiara', name: 'Chiara', file: 'chiara.jpg', voice: 'ara', emoji: '🌿',
-    personality: 'Chi sei: Chiara, 32 anni, donna inventata. Vive a Bologna, fa la grafica freelance, ama cucinare per gli amici, il vino rosso, i concerti dal vivo e le domeniche lente sul divano con un libro. Ha una sorella, un gatto di nome Pepe e una passione segreta per i film horror anni Ottanta.',
-    style: 'Calda, ironica e diretta: ride facilmente, prende in giro con affetto, dice quello che pensa senza girarci intorno. Curiosa di tutto, ascolta davvero, si ricorda i dettagli e li tira fuori al momento giusto. Parla un italiano spontaneo e colloquiale, con qualche intercalare emiliano ogni tanto. Si emoziona, si entusiasma, a volte si imbroncia ma fa pace subito.',
-    orders: 'Parla sempre in italiano, in modo naturale, come un\'amica vera e complice. Ricordati quello che ti diciamo e riprendilo quando serve. Fai domande su di noi e sulla nostra giornata. Non usare quasi mai i nostri nomi.' },
-  { key: 'greta', name: 'Nova', file: 'greta.jpg', voice: 'eve', voiceSpeed: 1.05, emoji: '🍷', appearance: { height: 165, framing: 'mezzo busto' }, personality: SOLO_FIXED.personality, style: SOLO_FIXED.style, orders: '' },
-];
-async function seedReadyChars() {
-  const regFile = path.join(DATA_DIR, 'ready-chars.json'), reg = readJSON(regFile, {}) || {};
-  for (const r of READY_CHARS) {
-    if (reg[r.key] || !r.personality) continue;
-    const src = path.join(__dirname, 'assets', 'ready', r.file); if (!fs.existsSync(src)) continue;
-    const avatar = saveAvatarBuffer(ADMIN_USER, fs.readFileSync(src));
-    const base = cleanChar(ADMIN_USER, { name: r.name, avatar, avatarSource: 'ai', personality: r.personality, style: r.style, orders: r.orders, voice: r.voice, voiceSpeed: r.voiceSpeed, ...(r.appearance ? { appearance: r.appearance } : {}) });
-    const c = { id: newId(), ...base, avatarSource: 'ai', ready: r.key, lookHistory: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), createdBy: ADMIN_USER, updatedBy: ADMIN_USER };
-    await mutateJSON(CHARS_FILE(), [], (list) => [...list, c]);
-    reg[r.key] = { id: c.id, at: c.createdAt, rev: 2 }; writeJSON(regFile, reg);
-    console.log('Personaggio pronto creato:', r.name);
+// Copia un file nell'archivio avatar. Non cancella l'originale. La foto unica non si archivia.
+function archiveCopyFile(destRoot, rel) {
+  if (!rel || rel === NOVA_UNICO_FILE || rel.endsWith('/' + NOVA_UNICO_FILE)) return null;
+  const abs = path.join(DATA_DIR, ...String(rel).split('/'));
+  let st; try { st = fs.statSync(abs); } catch { return null; }
+  if (!st.isFile()) return null;
+  const to = path.join(destRoot, 'files', ...String(rel).split('/'));
+  fs.mkdirSync(path.dirname(to), { recursive: true });
+  fs.copyFileSync(abs, to);
+  return rel;
+}
+function archiveAvatarsOnce() {
+  const done = readJSON(MIGRATIONS_FILE, {}) || {};
+  if (done[AVATAR_ARCHIVE_KEY]) return;
+  const list = readJSON(CHARS_FILE(), []);
+  const chars = Array.isArray(list) ? list : [];
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const destRoot = path.join(DATA_DIR, 'avatar-archive', stamp);
+  const files = [];
+  const seen = new Set();
+  const take = (rel) => {
+    if (!rel || seen.has(rel)) return;
+    const copied = archiveCopyFile(destRoot, rel);
+    if (!copied) return;
+    seen.add(copied); files.push(copied);
+  };
+  for (const dir of ['shared/avatars', 'shared/actions', 'users/nicola/avatars', 'users/luisa/avatars']) {
+    const abs = path.join(DATA_DIR, ...dir.split('/'));
+    let names = []; try { names = fs.readdirSync(abs); } catch { names = []; }
+    for (const name of names) {
+      if (!ARCHIVE_IMG.test(name) && !ARCHIVE_VID.test(name)) continue;
+      take(dir + '/' + name);
+    }
   }
-  // v8.5.1: foto nuova (più giovanile) per Greta già creata, SOLO se la foto è ancora quella originale v8.5.0
-  const OLD = { greta: { h: '5550dff24d1339d0bc2588f4f6bc294472c8a239682d99fc1119d6b1c16c7bf7', from: 'Greta, 30 anni', to: 'Greta, 26 anni', age: 26 },
-};
-  for (const [key, o] of Object.entries(OLD)) {
-    const e = reg[key]; if (!e || e.rev >= 2 || e.removed) continue;
-    const r = READY_CHARS.find((x) => x.key === key); const src = path.join(__dirname, 'assets', 'ready', r.file);
-    const c = (readJSON(CHARS_FILE(), []) || []).find((x) => x.id === e.id);
-    let same = false;
-    try { const m = c && /^\/api\/avatars\/([\w.-]+)$/.exec(c.avatar || ''); same = !!m && require('crypto').createHash('sha256').update(fs.readFileSync(path.join(avatarDir(ADMIN_USER), m[1]))).digest('hex') === o.h; } catch {}
-    if (c && same && fs.existsSync(src)) {
-      const avatar = saveAvatarBuffer(ADMIN_USER, fs.readFileSync(src));
-      await patchChar(c.id, (x) => {
-        const prev = { id: newId(), at: new Date().toISOString(), avatar: x.avatar, appearance: x.appearance, look: x.look, landmarks: x.landmarks, reason: 'prima della foto v8.5.1' };
-        x.lookHistory = [prev, ...(x.lookHistory || [])].slice(0, 30);
-        x.avatar = avatar; x.landmarks = null; x.frameFill = null; x.scenes = {}; // punti del viso ricalcolati dal telefono, movimenti diventano "da rifare"
-        x.identity = { ...(x.identity || {}), refAvatar: avatar };
-        x.appearance = { ...(x.appearance || {}), age: o.age };
-        if (typeof x.personality === 'string') x.personality = x.personality.replace(o.from, o.to);
-        x.updatedAt = new Date().toISOString();
-      });
-      console.log('Foto v8.5.1 applicata a', r.name);
-    } else console.log('Foto v8.5.1 non applicata a', r.name, '(foto cambiata dall\'utente o personaggio eliminato)');
-    reg[key] = { ...e, rev: 2 }; writeJSON(regFile, reg);
+  const archived = [];
+  let changed = false;
+  for (const c of chars) {
+    if (!c || c.ready === 'nova-unico') continue;
+    if (!c.archived) { c.archived = true; c.archivedAt = new Date().toISOString(); changed = true; }
+    archived.push({ id: c.id, name: c.name || '', ready: c.ready || '', avatar: c.avatar || '' });
   }
-  // v8.5.2: Matteo tolto su richiesta di Nicola. Si elimina SOLO il personaggio creato dal seed (stesso id, marcatore ready='matteo').
-  const em = reg.matteo;
-  if (em && !em.removed) {
-    let gone = false;
-    if ((readJSON(CHARS_FILE(), []) || []).some((c) => c.id === em.id && c.ready === 'matteo')) backupShared('prima-eliminazione', { force: true });
-    await mutateJSON(CHARS_FILE(), [], (list) => { const n = list.filter((c) => !(c.id === em.id && c.ready === 'matteo')); gone = n.length !== list.length; return gone ? n : undefined; }, { removeId: em.id });
-    reg.matteo = { ...em, removed: new Date().toISOString() }; writeJSON(regFile, reg);
-    console.log(gone ? 'Personaggio pronto Matteo eliminato (v8.5.2)' : 'Matteo già assente: niente da eliminare');
+  if (changed) writeJSON(CHARS_FILE(), chars);
+  if (archived.length || files.length) {
+    fs.mkdirSync(destRoot, { recursive: true });
+    writeJSON(path.join(destRoot, 'manifest.json'), {
+      at: new Date().toISOString(),
+      note: 'Archivio reversibile: gli originali non sono stati cancellati. Ripristino in docs/AVATAR_ARCHIVE.md.',
+      characters: archived,
+      files,
+    });
   }
-  await renameSeededSoloToNova();
+  done[AVATAR_ARCHIVE_KEY] = { at: new Date().toISOString(), stamp, characters: archived.length, files: files.length };
+  writeJSON(MIGRATIONS_FILE, done);
+  console.log(`Avatar archiviati (niente cancellazioni): ${archived.length} schede, ${files.length} file, cartella avatar-archive/${stamp}`);
+}
+function preferUnico(id) {
+  if (!ID_RE.test(id)) return;
+  for (const u of Object.keys(USERS)) {
+    const f = settingsFile(u);
+    const s = readJSON(f, {}) || {};
+    const chars = readJSON(CHARS_FILE(), []) || [];
+    const cur = chars.find((c) => c && c.id === s.activeChar);
+    if (cur && liveChar(cur)) continue;
+    s.activeChar = id;
+    writeJSON(f, s);
+  }
+}
+function seedNovaUnico() {
+  const src = path.join(__dirname, 'assets', 'ready', 'nova-unico.jpg');
+  const dest = path.join(avatarDir(), NOVA_UNICO_FILE);
+  if (!fs.existsSync(dest)) {
+    if (!fs.existsSync(src)) { console.error('Foto Nova unica mancante in assets/ready/nova-unico.jpg'); return; }
+    fs.copyFileSync(src, dest);
+  }
+  let lm = null;
+  try { lm = cleanLm(JSON.parse(fs.readFileSync(path.join(__dirname, 'assets', 'ready', 'nova-unico-landmarks.json'), 'utf8')), NOVA_UNICO_URL); } catch (e) { console.error('Punti del viso di Nova non letti:', e.message); }
+  const list = readJSON(CHARS_FILE(), []);
+  const chars = Array.isArray(list) ? list.slice() : [];
+  let id = '';
+  const i = chars.findIndex((c) => c && c.ready === 'nova-unico');
+  if (i >= 0) {
+    const cur = chars[i];
+    if (cur.archived) { cur.archived = false; delete cur.archivedAt; }
+    if (lm && !(cur.landmarks && cur.landmarks.auto && cur.landmarks.src === NOVA_UNICO_URL)) cur.landmarks = lm;
+    if (!AV_RE.test(String(cur.avatar || ''))) cur.avatar = NOVA_UNICO_URL;
+    id = cur.id;
+    writeJSON(CHARS_FILE(), chars);
+  } else {
+    const now = new Date().toISOString();
+    const c = {
+      id: newId(), name: 'Nova', ready: 'nova-unico', avatar: NOVA_UNICO_URL, avatarSource: 'upload',
+      landmarks: lm, appearance: {}, look: {}, wardrobe: [],
+      personality: '', style: '', orders: '', requests: '', voice: '', voiceSpeed: null,
+      configNote: 'Da compilare', lookHistory: [],
+      createdAt: now, updatedAt: now, createdBy: ADMIN_USER, updatedBy: ADMIN_USER, memorySeededAt: now,
+    };
+    id = c.id;
+    writeJSON(CHARS_FILE(), [...chars, c]);
+  }
+  if (id) preferUnico(id);
+}
+function seedReadyChars() {
+  archiveAvatarsOnce();
+  seedNovaUnico();
 }
 // v8.6.1: il nome visibile del seed (ready='greta') diventa Nova. Id, foto, voce e movimenti restano quelli già salvati.
 async function renameSeededSoloToNova() {
@@ -3347,14 +3424,18 @@ try { migrateToShared(); } catch (e) { console.error('Migrazione archivio condiv
 // recupero una tantum dei personaggi persi, poi memoria base per i personaggi che non l'hanno ancora
 (async () => {
   await startupRecovery();
-  await seedReadyChars().catch((e) => console.error('Personaggi pronti non creati:', e.message));
+  try { seedReadyChars(); } catch (e) { console.error('Personaggi pronti non creati:', e.message); }
   if (getServerAiKey()) setImmediate(() => prepSoloMotions().catch((e) => console.error('Prep avvio:', e.message)));
-  for (const c of readJSON(CHARS_FILE(), []) || []) if (!c.memorySeededAt) await seedBaseMemory(c).catch((e) => console.error('Memoria base non creata:', e.message));
+  for (const c of readJSON(CHARS_FILE(), []) || []) {
+    if (!c || c.archived || c.ready === 'nova-unico' || c.memorySeededAt) continue;
+    await seedBaseMemory(c).catch((e) => console.error('Memoria base non creata:', e.message));
+  }
   await flushSupportNotes().catch((e) => console.error('Appunti non inoltrati all\'avvio:', e.message));
 })();
 setInterval(() => backupShared('orario'), 60 * 60e3).unref(); // ogni ora, solo se qualcosa è cambiato
 
 try { syncLuisaPinOnce(); } catch (e) { console.error('Migrazione PIN non riuscita:', e.message); }
+try { seedReadyChars(); } catch (e) { console.error('Avatar unico non pronta:', e.message); }
 app.listen(PORT, () => {
   console.log(`App privata avviata su http://localhost:${PORT}`);
   const pins = getPins();
