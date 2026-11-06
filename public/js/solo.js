@@ -9,7 +9,7 @@
       const hit = list.find((c) => c.id === saved);
       if (hit) return hit;
     }
-    return list.find((c) => c.ready === 'nova-bionda') || list.find((c) => c.ready === 'nova-unico') || list.find((c) => c.ready === 'greta') || list.find((c) => /^nova$/i.test(String(c.name || '').trim())) || null;
+    return list.find((c) => c.ready === 'nova-scelta') || list.find((c) => c.ready === 'nova-bionda') || list.find((c) => c.ready === 'nova-unico') || list.find((c) => c.ready === 'greta') || list.find((c) => /^nova$/i.test(String(c.name || '').trim())) || null;
   }
   function fit() { if (App.fitFrame) App.fitFrame(); }
   function sheetOk(c) {

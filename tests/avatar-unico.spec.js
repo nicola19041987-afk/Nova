@@ -54,14 +54,14 @@ test('gli avatar vecchi restano su disco, nascosti, e Nova è l’unica visibile
     expect(list.ok(), await list.text()).toBeTruthy();
     const chars = await list.json();
     expect(chars.map((c) => c.name)).toEqual(['Nova']);
-    expect(chars[0].id).toBe('b10b1a0000000001');
-    expect(chars[0].ready).toBe('nova-bionda');
+    expect(chars[0].id).toBe('5ce17a0000000001');
+    expect(chars[0].ready).toBe('nova-scelta');
     expect(chars[0].personality).toBe('');
     expect(chars[0].style).toBe('');
     expect(chars[0].orders).toBe('');
     expect(chars[0].requests).toBe('');
     expect(chars[0].voice).toBe('');
-    expect(chars[0].avatar).toBe('/api/avatars/b10b1a0000000001.jpg');
+    expect(chars[0].avatar).toBe('/api/avatars/5ce17a0000000001.jpg');
     expect(chars[0].landmarks && chars[0].landmarks.auto).toBe(true);
     expect(chars[0].landmarks.src).toBe(chars[0].avatar);
     expect(chars[0].landmarks.mouthL && chars[0].landmarks.mouthR).toBeTruthy();
@@ -77,8 +77,10 @@ test('gli avatar vecchi restano su disco, nascosti, e Nova è l’unica visibile
     const stored = JSON.parse(fs.readFileSync(path.join(dir, 'shared', 'characters.json'), 'utf8'));
     const greta = stored.find((c) => c.id === '0123456789abcdef');
     const dark = stored.find((c) => c.ready === 'nova-unico');
+    const blonde = stored.find((c) => c.ready === 'nova-bionda');
     expect(greta && greta.archived).toBe(true);
     expect(dark && dark.archived).toBe(true);
+    expect(blonde && blonde.archived).toBe(true);
     expect(fs.readFileSync(path.join(dir, 'shared', 'avatars', '0123456789abcdef.jpg')).equals(oldJpg)).toBe(true);
     expect(fs.readFileSync(path.join(dir, 'shared', 'actions', 'fedcba9876543210.mp4')).equals(oldMp4)).toBe(true);
     expect(fs.readFileSync(path.join(dir, 'users', 'nicola', 'avatars', 'aaaaaaaaaaaaaaaa.jpg')).equals(userJpg)).toBe(true);
@@ -106,6 +108,7 @@ test('gli avatar vecchi restano su disco, nascosti, e Nova è l’unica visibile
     expect(unica && !(unica.label || '').includes('archiviato')).toBe(true);
     expect(fs.existsSync(path.join(dir, 'shared', 'avatars', 'a11cea7a10000001.jpg'))).toBe(true);
     expect(fs.existsSync(path.join(dir, 'shared', 'avatars', 'b10b1a0000000001.jpg'))).toBe(true);
+    expect(fs.existsSync(path.join(dir, 'shared', 'avatars', '5ce17a0000000001.jpg'))).toBe(true);
   } finally {
     await api.dispose();
     child.kill('SIGTERM');

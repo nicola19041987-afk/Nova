@@ -1011,34 +1011,59 @@
     if (sw <= 0 || sh <= 0 || dw <= 0 || dh <= 0) return;
     ctx.drawImage(img, ox + sx * k, oy + sy * k, sw * k, sh * k, dx, dy, dw, dh);
   }
-  // Apertura simmetrica attorno alla bocca vera, perpendicolare alla linea delle labbra già nella foto.
-  // Non usa l'inclinazione degli occhi: la bocca non si raddrizza da sola e non si storce da un lato.
+  // Apertura sulla asse della bocca: i campioni seguono la linea delle labbra e il mento scende
+  // perpendicolarmente a quella linea, non all'orizzontale dello schermo.
+  const mouthBuf = { src: null, out: null };
   function paintMouth(ctx, img, lm, open, wide) {
     const S = VS, L = lm && lm.mouthL, R = lm && lm.mouthR;
-    if (!L || !R || !(open > 0)) return;
-    const face = (lm.eyeL && lm.eyeR) ? Math.atan2((lm.eyeR.y - lm.eyeL.y) * S, (lm.eyeR.x - lm.eyeL.x) * S) : 0;
+    if (!L || !R || !(open > 0) || !img.naturalWidth) return;
     const cx = (L.x + R.x) / 2 * S, cy = (L.y + R.y) / 2 * S;
-    const len = Math.max(S * 0.04, Math.hypot((R.x - L.x) * S, (R.y - L.y) * S));
+    const vx = (R.x - L.x) * S, vy = (R.y - L.y) * S;
+    const len = Math.max(S * 0.04, Math.hypot(vx, vy));
+    const lip = Math.atan2(vy, vx);
     const wF = 1 + (Math.max(0, Math.min(1, wide || 0.5)) - 0.5) * 0.1;
     const half = len * 0.5 * wF;
-    const jawCap = Math.min(len * 0.2, S * 0.032);
-    const jaw = Math.min(open * len * 0.18, jawCap);
-    const upper = Math.min(jaw * 0.32, S * 0.01);
-    const cols = 15, above = len * 0.16, below = Math.min(len * 0.38, S * 0.055), colW = (half * 2) / cols;
-    ctx.save();
-    ctx.translate(cx, cy); ctx.rotate(face); ctx.translate(-cx, -cy);
-    ctx.beginPath();
-    ctx.rect(cx - half, cy - above - upper, half * 2, above + below + jaw + upper);
-    ctx.clip();
-    for (let i = 0; i < cols; i++) {
-      const u = ((i + 0.5) / cols) * 2 - 1;
-      const att = Math.max(0, 1 - u * u);
-      const x = cx - half + i * colW;
-      const up = upper * att;
-      drawCover(ctx, img, S, { sx: x, sy: cy - above, sw: colW + 0.6, sh: above, dx: x, dy: cy - above - up, dw: colW + 0.6, dh: above });
-      // Il mento scende in blocco, uguale a sinistra e a destra, senza scivolare di lato.
-      drawCover(ctx, img, S, { sx: x, sy: cy, sw: colW + 0.6, sh: below, dx: x, dy: cy + jaw, dw: colW + 0.6, dh: below });
+    const jawCap = Math.min(len * 0.22, S * 0.036);
+    const jaw = Math.min(open * len * 0.22, jawCap);
+    const above = len * 0.18, below = Math.min(len * 0.42, S * 0.06);
+    const cols = 17, colW = (half * 2) / cols, pad = 3;
+    const tw = Math.max(8, Math.ceil(half * 2 + pad * 2));
+    const th = Math.max(8, Math.ceil(above + below + pad * 2));
+    const oh = Math.ceil(th + jaw + 4);
+    if (!mouthBuf.src || mouthBuf.src.width !== tw || mouthBuf.src.height !== th) {
+      mouthBuf.src = document.createElement('canvas'); mouthBuf.src.width = tw; mouthBuf.src.height = th;
     }
+    if (!mouthBuf.out || mouthBuf.out.width !== tw || mouthBuf.out.height !== oh) {
+      mouthBuf.out = document.createElement('canvas'); mouthBuf.out.width = tw; mouthBuf.out.height = oh;
+    }
+    const side = Math.min(img.naturalWidth, img.naturalHeight);
+    const iox = (img.naturalWidth - side) / 2, ioy = (img.naturalHeight - side) / 2;
+    const ts = mouthBuf.src.getContext('2d');
+    ts.setTransform(1, 0, 0, 1, 0, 0); ts.clearRect(0, 0, tw, th);
+    ts.save();
+    ts.translate(tw / 2, pad + above);
+    ts.rotate(-lip);
+    ts.translate(-cx, -cy);
+    ts.drawImage(img, iox, ioy, side, side, 0, 0, S, S);
+    ts.restore();
+    const o = mouthBuf.out.getContext('2d');
+    o.setTransform(1, 0, 0, 1, 0, 0); o.clearRect(0, 0, tw, oh);
+    const mx = tw / 2, my = pad + above;
+    const ink = ts.getImageData(Math.max(0, Math.min(tw - 1, Math.round(mx))), Math.max(0, Math.min(th - 1, Math.round(my))), 1, 1).data;
+    for (let i = 0; i < cols; i++) {
+      const x = mx - half + i * colW;
+      const drop = jaw;
+      o.drawImage(mouthBuf.src, x, my, colW + 0.6, below, x, my + drop, colW + 0.6, below);
+      if (drop > 0.8) {
+        o.fillStyle = `rgba(${Math.round(ink[0] * 0.45)},${Math.round(ink[1] * 0.32)},${Math.round(ink[2] * 0.32)},0.85)`;
+        o.fillRect(x, my, colW + 0.6, drop);
+      }
+    }
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(lip);
+    ctx.translate(-tw / 2, -(pad + above));
+    ctx.drawImage(mouthBuf.out, 0, 0);
     ctx.restore();
   }
 

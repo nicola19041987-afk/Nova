@@ -64,12 +64,15 @@ const NOVA_UNICO_URL = `/api/avatars/${NOVA_UNICO_FILE}`;
 const BIONDA_FILE = 'b10b1a0000000001.jpg';
 const BIONDA_URL = `/api/avatars/${BIONDA_FILE}`;
 const BIONDA_ID = 'b10b1a0000000001';
+const SCELTA_FILE = '5ce17a0000000001.jpg';
+const SCELTA_URL = `/api/avatars/${SCELTA_FILE}`;
+const SCELTA_ID = '5ce17a0000000001';
 const AVATAR_ARCHIVE_KEY = 'avatar_archive_unico_v866';
 const E2E_HARNESS = process.env.NOVA_E2E === '1' && /nova-e2e/.test(String(process.env.DATA_DIR || ''));
 function liveChar(c) { return !!(c && !c.archived); }
 function getSoloChar(u) {
   const list = (getChars(u) || []).filter(liveChar);
-  return list.find((c) => c.ready === 'nova-bionda') || list.find((c) => c.ready === 'nova-unico') || list.find((c) => c.ready === SOLO_KEY) || list.find((c) => /^nova$/i.test(String(c.name || '').trim())) || null;
+  return list.find((c) => c.ready === 'nova-scelta') || list.find((c) => c.ready === 'nova-bionda') || list.find((c) => c.ready === 'nova-unico') || list.find((c) => c.ready === SOLO_KEY) || list.find((c) => /^nova$/i.test(String(c.name || '').trim())) || null;
 }
 const SERVER_KEY_FILE = () => path.join(DATA_DIR, 'server-ai-key.json');
 function getServerAiKey() {
@@ -420,7 +423,7 @@ function shownCharId(u) {
   const chars = (getChars(u) || []).filter(liveChar);
   const saved = String((getSettings(u).activeChar) || '');
   if (ID_RE.test(saved) && chars.some((c) => c.id === saved)) return saved;
-  const g = chars.find((c) => c.ready === 'nova-bionda') || chars.find((c) => c.ready === 'nova-unico') || chars.find((c) => c.ready === SOLO_KEY) || chars.find((c) => /^nova$/i.test(String(c.name || '').trim()));
+  const g = chars.find((c) => c.ready === 'nova-scelta') || chars.find((c) => c.ready === 'nova-bionda') || chars.find((c) => c.ready === 'nova-unico') || chars.find((c) => c.ready === SOLO_KEY) || chars.find((c) => /^nova$/i.test(String(c.name || '').trim()));
   return (g || chars[0] || {}).id || '';
 }
 function keepActive(u, body, cur) {
@@ -2226,7 +2229,7 @@ async function prepSoloMotions(reqKey) {
   try {
     let ch = getSoloChar(ADMIN_USER); if (!ch) return { ok: false, reason: 'no solo' };
     // La foto unica si muove sul disegno (bocca, respiro, sguardo). Le clip video la coprirebbero e qui non si generano da sole.
-    if (ch.ready === 'nova-unico' || ch.ready === 'nova-bionda') return { ok: true, still: true };
+    if (ch.ready === 'nova-unico' || ch.ready === 'nova-bionda' || ch.ready === 'nova-scelta') return { ok: true, still: true };
     const ids = Object.keys(ACTIONS).filter((id) => actionAllowed(ch, id));
     let done = 0, skipped = 0, refused = 0, failed = 0;
     for (const aid of ids) {
@@ -2706,7 +2709,7 @@ function avatarArchiveSet() {
   return files;
 }
 function stampArchived(rel, meta, set) {
-  if (!rel || rel.endsWith('/' + BIONDA_FILE)) return meta;
+  if (!rel || rel.endsWith('/' + SCELTA_FILE)) return meta;
   if (!(meta && meta.archived) && !(set && set.has(rel))) return meta;
   const base = String((meta && meta.label) || '');
   const label = base.includes('archiviato') ? base : (base ? base + ' · archiviato' : 'archiviato');
@@ -3174,9 +3177,9 @@ function migrateToShared() {
   writeJSON(MIGRATION_MARK(), report);
   console.log(`Archivio condiviso: migrazione completata (personaggi ${report.characters}, chat ${report.chats}, messaggi ${report.messages}, ricordi ${report.memory}, avatar ${report.avatars}).`);
 }
-// Copia un file nell'archivio avatar. Non cancella l'originale. La foto bionda attiva non si archivia.
+// Copia un file nell'archivio avatar. Non cancella l'originale. La foto scelta non si archivia.
 function archiveCopyFile(destRoot, rel) {
-  if (!rel || rel === BIONDA_FILE || rel.endsWith('/' + BIONDA_FILE)) return null;
+  if (!rel || rel === SCELTA_FILE || rel.endsWith('/' + SCELTA_FILE)) return null;
   const abs = path.join(DATA_DIR, ...String(rel).split('/'));
   let st; try { st = fs.statSync(abs); } catch { return null; }
   if (!st.isFile()) return null;
@@ -3211,7 +3214,7 @@ function archiveAvatarsOnce() {
   const archived = [];
   let changed = false;
   for (const c of chars) {
-    if (!c || c.ready === 'nova-bionda') continue;
+    if (!c || c.ready === 'nova-scelta') continue;
     if (!c.archived) { c.archived = true; c.archivedAt = new Date().toISOString(); changed = true; }
     archived.push({ id: c.id, name: c.name || '', ready: c.ready || '', avatar: c.avatar || '' });
   }
@@ -3289,6 +3292,46 @@ function seedBionda() {
   const list = readJSON(CHARS_FILE(), []);
   const chars = Array.isArray(list) ? list.slice() : [];
   const i = chars.findIndex((c) => c && c.ready === 'nova-bionda');
+  const now = new Date().toISOString();
+  if (i >= 0) {
+    if (!chars[i].archived) { chars[i].archived = true; chars[i].archivedAt = chars[i].archivedAt || now; }
+    if (!AV_RE.test(String(chars[i].avatar || ''))) chars[i].avatar = url;
+    writeJSON(CHARS_FILE(), chars);
+    return;
+  }
+  chars.push({
+    id: BIONDA_ID, name: 'Nova', ready: 'nova-bionda', avatar: url, avatarSource: 'upload',
+    landmarks: lm, appearance: {}, look: {}, wardrobe: [],
+    personality: '', style: '', orders: '', requests: '', voice: '', voiceSpeed: null,
+    configNote: 'Da compilare', lookHistory: [], archived: true, archivedAt: now,
+    createdAt: now, updatedAt: now, createdBy: ADMIN_USER, updatedBy: ADMIN_USER, memorySeededAt: now,
+  });
+  writeJSON(CHARS_FILE(), chars);
+}
+function seedScelta() {
+  const src = path.join(__dirname, 'assets', 'ready', 'nova-scelta.jpg');
+  if (!fs.existsSync(src)) { console.error('Foto scelta mancante in assets/ready/nova-scelta.jpg'); return ''; }
+  const hash = crypto.createHash('sha256').update(fs.readFileSync(src)).digest('hex');
+  let lmRaw = null;
+  try { lmRaw = JSON.parse(fs.readFileSync(path.join(__dirname, 'assets', 'ready', 'nova-scelta-landmarks.json'), 'utf8')); }
+  catch (e) { console.error('Punti del viso scelto non letti:', e.message); }
+  const dir = avatarDir();
+  let url = '';
+  for (const name of fs.readdirSync(dir)) {
+    const abs = path.join(dir, name);
+    try {
+      if (!fs.statSync(abs).isFile()) continue;
+      if (crypto.createHash('sha256').update(fs.readFileSync(abs)).digest('hex') === hash) { url = `/api/avatars/${name}`; break; }
+    } catch {}
+  }
+  if (!url) {
+    fs.copyFileSync(src, path.join(dir, SCELTA_FILE));
+    url = SCELTA_URL;
+  }
+  const lm = lmRaw ? cleanLm({ ...lmRaw, auto: true, src: url }, url) : null;
+  const list = readJSON(CHARS_FILE(), []);
+  const chars = Array.isArray(list) ? list.slice() : [];
+  const i = chars.findIndex((c) => c && c.ready === 'nova-scelta');
   let id = '';
   if (i >= 0) {
     const cur = chars[i];
@@ -3302,7 +3345,7 @@ function seedBionda() {
   } else {
     const now = new Date().toISOString();
     const c = {
-      id: BIONDA_ID, name: 'Nova', ready: 'nova-bionda', avatar: url, avatarSource: 'upload',
+      id: SCELTA_ID, name: 'Nova', ready: 'nova-scelta', avatar: url, avatarSource: 'upload',
       landmarks: lm, appearance: {}, look: {}, wardrobe: [],
       personality: '', style: '', orders: '', requests: '', voice: '', voiceSpeed: null,
       configNote: 'Da compilare', lookHistory: [],
@@ -3311,13 +3354,15 @@ function seedBionda() {
     id = c.id;
     writeJSON(CHARS_FILE(), [...chars, c]);
   }
-  if (id) preferUnico(id);
-  console.log('Nova bionda attiva:', id, url);
+  console.log('Nova scelta attiva:', id, url);
+  return id;
 }
 function seedReadyChars() {
   archiveAvatarsOnce();
+  const id = seedScelta();
   seedBionda();
   seedDarkArchived();
+  if (id) preferUnico(id);
 }
 // v8.6.1: il nome visibile del seed (ready='greta') diventa Nova. Id, foto, voce e movimenti restano quelli già salvati.
 async function renameSeededSoloToNova() {
@@ -3341,7 +3386,7 @@ function personName(id) {
   if (id === 'luisa') return 'Luisa';
   return (USERS[id] && USERS[id].name) || String(id || '');
 }
-const APP_VERSION = '8.6.6';
+const APP_VERSION = '8.6.7';
 const clamp100 = (n) => Math.max(0, Math.min(100, Math.round(Number(n) || 0)));
 function isNovaChar(ch) {
   return !!(ch && (ch.ready === SOLO_KEY || /^(nova|greta)$/i.test(String(ch.name || '').trim())));
@@ -3483,7 +3528,7 @@ try { migrateToShared(); } catch (e) { console.error('Migrazione archivio condiv
   try { seedReadyChars(); } catch (e) { console.error('Personaggi pronti non creati:', e.message); }
   if (getServerAiKey()) setImmediate(() => prepSoloMotions().catch((e) => console.error('Prep avvio:', e.message)));
   for (const c of readJSON(CHARS_FILE(), []) || []) {
-    if (!c || c.archived || c.ready === 'nova-unico' || c.ready === 'nova-bionda' || c.memorySeededAt) continue;
+    if (!c || c.archived || c.ready === 'nova-unico' || c.ready === 'nova-bionda' || c.ready === 'nova-scelta' || c.memorySeededAt) continue;
     await seedBaseMemory(c).catch((e) => console.error('Memoria base non creata:', e.message));
   }
   await flushSupportNotes().catch((e) => console.error('Appunti non inoltrati all\'avvio:', e.message));

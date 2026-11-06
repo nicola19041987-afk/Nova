@@ -4,13 +4,13 @@ All’avvio il server esegue una volta la migrazione `avatar_archive_unico_v866`
 
 Cosa fa:
 
-- Segna `archived: true` su ogni personaggio già presente, tranne la Nova bionda (`ready: "nova-bionda"`).
+- Segna `archived: true` su ogni personaggio già presente, tranne la Nova scelta (`ready: "nova-scelta"`).
 - Copia foto e clip (non le cancella) in `data/avatar-archive/<data-ora>/files/`, con l’elenco in `manifest.json`.
-- Cartelle copiate: `shared/avatars`, `shared/actions`, `users/nicola/avatars`, `users/luisa/avatars`. La foto bionda attiva `b10b1a0000000001.jpg` non viene archiviata. La foto scura `a11cea7a10000001.jpg` resta sul disco e la sua scheda è archiviata.
+- Cartelle copiate: `shared/avatars`, `shared/actions`, `users/nicola/avatars`, `users/luisa/avatars`. La foto attiva `5ce17a0000000001.jpg` non viene archiviata. La foto bionda e la foto scura restano sul disco con la scheda archiviata.
 - Gli originali restano al loro posto. La Galleria totale li mostra ancora, con l’etichetta `archiviato`.
 - L’app (foglio, scelta, avatar di default) legge solo le schede senza `archived`.
 
-La Nova visibile è la foto bionda nuova, per Nicola e Luisa. Personalità, carattere, richieste e voce sono vuoti (`configNote: "Da compilare"`).
+La Nova visibile è la foto scelta da Nicola (coda, canotta bianca), per Nicola e Luisa. Personalità, carattere, richieste e voce sono vuoti (`configNote: "Da compilare"`).
 
 ## Ripristinare un avatar
 
