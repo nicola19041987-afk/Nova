@@ -111,9 +111,21 @@
     s.peak = Math.max(rms, (s.peak || 0.05) * 0.995);
     const v = rms / (s.peak * 0.75); return v < 0.04 ? 0 : Math.min(1, Math.pow(v, 0.8));
   }
+  function vowelShape(text) {
+    const ch = String(text || '').toLowerCase().replace(/[^aeiouàèéìòóù]/g, '').slice(-1);
+    if (!ch) return null;
+    if ('ouòóù'.includes(ch)) return 0.18;
+    if ('ieìéè'.includes(ch)) return 0.86;
+    if ('aà'.includes(ch)) return 0.55;
+    return null;
+  }
   function wide(s) {
     const seg = envNow(s);
-    if (seg) return seg.shape;
+    const spec = seg ? seg.shape : null;
+    const vis = s.viseme;
+    if (spec != null && vis != null) return spec * 0.4 + vis * 0.6;
+    if (spec != null) return spec;
+    if (vis != null) return vis;
     const o = s.out; if (!o || !playing(s)) return 0.5;
     try {
       o.an.getByteFrequencyData(o.fd); let lo = 0, hi = 0; const N = o.fd.length, k = Math.floor(N * 0.04), h = Math.floor(N * 0.12);
@@ -187,7 +199,7 @@
         if (!s.resp) s.resp = { id: ev.response_id, text: '', firstAt: 0 };
         if (ev.delta) play(s, unb64(ev.delta)); break;
       case 'response.output_audio_transcript.delta': case 'response.audio_transcript.delta':
-        if (s.resp) { s.resp.text += ev.delta || ''; if (App.call && App.call.caption) App.call.caption(s.resp.text); } break;
+        if (s.resp) { s.resp.text += ev.delta || ''; s.viseme = vowelShape(s.resp.text); if (App.call && App.call.caption) App.call.caption(s.resp.text); } break;
       case 'response.output_audio_transcript.done': case 'response.audio_transcript.done':
         if (s.resp && ev.transcript) s.resp.text = ev.transcript; break;
       case 'response.done': {

@@ -749,55 +749,13 @@
     // Espressioni sul viso della foto (labiale, sorriso, sguardo, sopracciglia, palpebre). fs = scala del viso (1 = ritratto).
     paintFace(ctx, img, lm, A, fs, lids) {
       const S = VS, { mc, smile, blink } = A;
-      const m = lm.mouth, open = Math.max(0, this.mouth), F = S * fs;
-      // v8: geometria reale rilevata in automatico (larghezza bocca, occhi, sopracciglia), se disponibile
-      const MW = lm.mouthW ? lm.mouthW * S : F * 0.2, EW = lm.eyeW ? lm.eyeW * S : F * 0.072, EH = lm.eyeH ? Math.max(lm.eyeH * S, EW * 0.22) : F * 0.026;
+      const open = Math.max(0, this.mouth), F = S * fs;
+      const EW = lm.eyeW ? lm.eyeW * S : F * 0.072, EH = lm.eyeH ? Math.max(lm.eyeH * S, EW * 0.22) : F * 0.026;
       // v8.4: angoli e forma della bocca: larghezza (visemi) e sorriso spostano gli angoli; patch ancorate ai punti del viso
-      const wide = Math.max(0, Math.min(1, this.wide ?? 0.5));
-      const roll = Math.atan2(lm.eyeR.y - lm.eyeL.y, lm.eyeR.x - lm.eyeL.x);
-      const mid = ((lm.eyeL.x + lm.eyeR.x) / 2) * S;
-      const cxm = mid, ly = m.y * S;
-      ctx.save(); ctx.translate(cxm, ly); ctx.rotate(roll); ctx.translate(-cxm, -ly);
-      const sxw = 1 + smile * 0.07 + (wide - 0.5) * 0.1 * Math.min(1, open * 2.2);
-      if (smile > 0.05 || (open > 0.03 && Math.abs(sxw - 1) > 0.004)) {
-        const w = Math.max(F * 0.12, MW * 1.12), h = w * 0.5;
-        ctx.save(); ctx.beginPath(); ctx.ellipse(cxm, ly, w / 2, h / 2, 0, 0, Math.PI * 2); ctx.clip();
-        ctx.translate(cxm, ly); ctx.scale(sxw, 1 - smile * 0.02); ctx.translate(-cxm, -ly - smile * F * 0.004);
-        drawCover(ctx, img, S, { sx: cxm - w / 2, sy: ly - h / 2, sw: w, sh: h }); ctx.restore();
-      }
-      if (open > 0.03) {
-        // mandibola e labbro inferiore scendono in modo graduale (ellissi annidate: il bordo si sposta poco, il centro di più)
-        // così non ci sono "gradini" ai lati; sopra la linea delle labbra non si muove nulla. O/U: più stretta e un po' più alta.
-        const jw = Math.max(F * 0.2, MW * 1.7), jh = jw * 0.76, cx = cxm, drop = open * Math.max(F * 0.024, MW * 0.2) * (0.9 + (1 - wide) * 0.25);
-        const cy = ly + jh * 0.3, LV = [[1, 0.12], [0.86, 0.32], [0.72, 0.55], [0.58, 0.8], [0.45, 1]];
-        for (const [k, f] of LV) {
-          const rx = jw / 2 * k, ry = jh * 0.62 * k;
-          ctx.save(); ctx.beginPath(); ctx.rect(cx - rx, ly, rx * 2, cy + ry - ly); ctx.clip();
-          ctx.beginPath(); ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2); ctx.clip();
-          ctx.translate(0, drop * f); drawCover(ctx, img, S, { sx: cx - rx, sy: ly - drop, sw: rx * 2, sh: cy + ry - ly + drop }); ctx.restore();
-        }
-        // interno della bocca a lente (fra labbro superiore e inferiore), scuro al centro e sfumato agli angoli; accenno dei denti superiori
-        const hw = MW * (0.3 + wide * 0.1 + smile * 0.04), top = ly - drop * 0.08, bot = ly + drop * 0.92, mid = (top + bot) / 2, hh = (bot - top) / 2;
-        if (hh > F * 0.0012) {
-          ctx.save(); ctx.beginPath();
-          ctx.moveTo(cx - hw, mid); ctx.bezierCurveTo(cx - hw * 0.55, top - hh * 0.15, cx + hw * 0.55, top - hh * 0.15, cx + hw, mid);
-          ctx.bezierCurveTo(cx + hw * 0.55, bot + hh * 0.3, cx - hw * 0.55, bot + hh * 0.3, cx - hw, mid); ctx.closePath(); ctx.clip();
-          ctx.translate(cx, mid); ctx.scale(1, Math.max(0.08, hh / hw));
-          const g = ctx.createRadialGradient(0, 0, 0, 0, 0, hw);
-          g.addColorStop(0, 'rgba(26,4,9,0.96)'); g.addColorStop(0.55, 'rgba(44,8,14,0.9)'); g.addColorStop(0.85, 'rgba(78,24,30,0.55)'); g.addColorStop(1, 'rgba(110,45,50,0.05)');
-          ctx.fillStyle = g; ctx.fillRect(-hw, -hw, hw * 2, hw * 2);
-          ctx.restore();
-          if (open > 0.22) { // denti: solo un accenno chiaro sotto il labbro superiore, sfumato ai lati
-            ctx.save(); ctx.beginPath();
-            ctx.moveTo(cx - hw, mid); ctx.bezierCurveTo(cx - hw * 0.55, top - hh * 0.15, cx + hw * 0.55, top - hh * 0.15, cx + hw, mid); ctx.closePath(); ctx.clip();
-            const tw = hw * 0.62, th = Math.min(hh * 0.42, F * 0.009), ta = Math.min(0.5, (open - 0.22) * 1.3);
-            const tg = ctx.createLinearGradient(cx - tw, 0, cx + tw, 0);
-            tg.addColorStop(0, 'rgba(225,215,210,0)'); tg.addColorStop(0.25, `rgba(232,224,218,${ta})`); tg.addColorStop(0.75, `rgba(232,224,218,${ta})`); tg.addColorStop(1, 'rgba(225,215,210,0)');
-            ctx.fillStyle = tg; ctx.fillRect(cx - tw, top, tw * 2, th + (mid - top) * 0.2); ctx.restore();
-          }
-        }
-      }
-      ctx.restore();
+      // A riposo non si disegna nulla sulla bocca: i pixel restano quelli della foto.
+      // Parlando, mascella e labbra si aprono in modo simmetrico attorno alla bocca vera, lungo la sua linea
+      // (non la linea degli occhi). Nessuna rotazione solo della bocca: se la testa è inclinata, la bocca resta con il viso.
+      if (open > 0.02) paintMouth(ctx, img, lm, open, Math.max(0, Math.min(1, (this.wide ?? 0.5) + smile * 0.06)));
       const gxp = mc.gx * F * 0.0045, gyp = mc.gy * F * 0.0025, bup = mc.brow * F * 0.007, px = F * 0.0006;
       [lm.eyeL, lm.eyeR].forEach((e, ei) => {
         if (Math.abs(gxp) > px || Math.abs(gyp) > px) {
@@ -958,7 +916,39 @@
     const ox = (img.naturalWidth - s) / 2, oy = (img.naturalHeight - s) / 2, k = s / S;
     if (!region) return ctx.drawImage(img, ox, oy, s, s, 0, 0, S, S);
     const { sx, sy, sw, sh } = region;
-    ctx.drawImage(img, ox + sx * k, oy + sy * k, sw * k, sh * k, sx, sy, sw, sh);
+    const dx = region.dx == null ? sx : region.dx, dy = region.dy == null ? sy : region.dy;
+    const dw = region.dw == null ? sw : region.dw, dh = region.dh == null ? sh : region.dh;
+    if (sw <= 0 || sh <= 0 || dw <= 0 || dh <= 0) return;
+    ctx.drawImage(img, ox + sx * k, oy + sy * k, sw * k, sh * k, dx, dy, dw, dh);
+  }
+  // Apertura simmetrica attorno alla bocca vera, perpendicolare alla linea delle labbra già nella foto.
+  // Non usa l'inclinazione degli occhi: la bocca non si raddrizza da sola e non si storce da un lato.
+  function paintMouth(ctx, img, lm, open, wide) {
+    const S = VS, c = lm.mouth; if (!c) return;
+    const span0 = Math.max(S * 0.05, (lm.mouthW || 0.14) * S);
+    const L = lm.mouthL || { x: c.x - (lm.mouthW || 0.14) / 2, y: c.y };
+    const R = lm.mouthR || { x: c.x + (lm.mouthW || 0.14) / 2, y: c.y };
+    const ang = Math.atan2((R.y - L.y) * S, (R.x - L.x) * S);
+    const len = Math.max(span0, Math.hypot((R.x - L.x) * S, (R.y - L.y) * S));
+    const cx = c.x * S, cy = c.y * S;
+    const wF = 1 + (Math.max(0, Math.min(1, wide)) - 0.5) * 0.18;
+    const half = len * 0.52 * wF;
+    const jaw = open * len * 0.46, upper = open * len * 0.14;
+    const cols = 17, above = len * 0.26, below = len * 0.72, colW = (half * 2) / cols;
+    ctx.save();
+    ctx.translate(cx, cy); ctx.rotate(ang); ctx.translate(-cx, -cy);
+    ctx.beginPath();
+    ctx.rect(cx - half - 1, cy - above - upper - 1, half * 2 + 2, above + below + jaw + upper + 2);
+    ctx.clip();
+    for (let i = 0; i < cols; i++) {
+      const u = ((i + 0.5) / cols) * 2 - 1;
+      const att = Math.max(0, 1 - u * u);
+      const x = cx - half + i * colW;
+      const up = upper * att, dn = jaw * att;
+      drawCover(ctx, img, S, { sx: x, sy: cy - above, sw: colW + 0.8, sh: above, dx: x, dy: cy - above - up, dw: colW + 0.8, dh: above + up * 0.9 });
+      drawCover(ctx, img, S, { sx: x, sy: cy, sw: colW + 0.8, sh: below, dx: x, dy: cy + dn * 0.08, dw: colW + 0.8, dh: below + dn * 0.92 });
+    }
+    ctx.restore();
   }
 
   // Editor dei punti del viso: trascina 👁 👁 👄

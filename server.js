@@ -686,8 +686,11 @@ function cleanLm(lm, avatar) {
   if (/^data:/.test(src) && avatar && AV_RE.test(avatar)) src = avatar; // anteprima appena salvata: ora ha il suo indirizzo definitivo
   const out = { eyeL: P(lm.eyeL, 0.38, 0.42), eyeR: P(lm.eyeR, 0.62, 0.42), mouth: P(lm.mouth, 0.5, 0.7), auto: true, src, at: String(lm.at || new Date().toISOString()).slice(0, 30),
     mouthW: r(lm.mouthW, 0.003, 0.6), mouthH: r(lm.mouthH, 0, 0.3), eyeW: r(lm.eyeW, 0.002, 0.3), eyeH: r(lm.eyeH, 0, 0.15), tilt: r(lm.tilt, -0.8, 0.8) };
+  if (lm.mouthL && lm.mouthR) { out.mouthL = P(lm.mouthL, out.mouth.x - 0.06, out.mouth.y); out.mouthR = P(lm.mouthR, out.mouth.x + 0.06, out.mouth.y); }
+  if (lm.lipU) out.lipU = P(lm.lipU, out.mouth.x, out.mouth.y - 0.01);
+  if (lm.lipL) out.lipL = P(lm.lipL, out.mouth.x, out.mouth.y + 0.01);
   if (lm.browL && lm.browR) { out.browL = P(lm.browL, 0.38, 0.36); out.browR = P(lm.browR, 0.62, 0.36); }
-  if (Number(lm.v) >= 2) out.v = 2;
+  if (Number(lm.v) >= 3) out.v = 3; else if (Number(lm.v) >= 2) out.v = 2;
   // v8.1: corpo (spalle, fianchi) e maschera della persona a bassa risoluzione per il respiro
   const B = lm.body;
   if (B && typeof B === 'object') {

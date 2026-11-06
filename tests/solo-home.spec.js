@@ -136,8 +136,9 @@ test('il microfono del dock detta nel composer e Home non svuota il thread', asy
       stop() {}
       abort() {}
     }
-    window.SpeechRecognition = FakeSR;
-    window.webkitSpeechRecognition = FakeSR;
+    try { delete window.SpeechRecognition; delete window.webkitSpeechRecognition; } catch {}
+    Object.defineProperty(window, 'SpeechRecognition', { configurable: true, writable: true, value: FakeSR });
+    Object.defineProperty(window, 'webkitSpeechRecognition', { configurable: true, writable: true, value: FakeSR });
     document.getElementById('dock-settings').click();
     const onSettings = !document.getElementById('tab-account').hidden && document.getElementById('tab-conv').hidden;
     document.getElementById('dock-home').click();
@@ -327,7 +328,7 @@ test('labiale e movimento della sessione ⚡ seguono l’audio, senza coprire la
     const im = new Image(); im.src = src.toDataURL(); await im.decode();
     const av = new TalkingAvatar(c);
     av.img = im;
-    av.lm = { auto: true, eyeL: { x: 0.34, y: 0.38 }, eyeR: { x: 0.66, y: 0.38 }, mouth: { x: 0.32, y: 0.64 }, mouthW: 0.2 };
+    av.lm = { auto: true, eyeL: { x: 0.34, y: 0.36 }, eyeR: { x: 0.66, y: 0.40 }, mouth: { x: 0.5, y: 0.64 }, mouthL: { x: 0.40, y: 0.64 }, mouthR: { x: 0.60, y: 0.64 }, mouthW: 0.2 };
     av._trustKey = '';
     av.breathOn = false;
     av.resize();
@@ -349,12 +350,13 @@ test('labiale e movimento della sessione ⚡ seguono l’audio, senza coprire la
     const diff = meanDiff(closed, open, 0, c.width, y0, y1);
     const left = meanDiff(closed, open, 0, mid, y0, y1);
     const right = meanDiff(closed, open, mid, c.width, y0, y1);
-    let jitter = 0, jn = 0;
+    let jitter = 0, jn = 0, maxStep = 0;
     for (let i = 1; i < plates.length; i++) { jitter += meanDiff(plates[i - 1], plates[i], 0, c.width, y0, y1); jn++; }
+    for (let i = 1; i < mouths.length; i++) maxStep = Math.max(maxStep, Math.abs(mouths[i] - mouths[i - 1]));
     c.remove();
     return {
       trusted: av.faceTrusted(), corr: corr(levels, mouths), diff, left, right,
-      jitter: jitter / Math.max(1, jn),
+      jitter: jitter / Math.max(1, jn), maxStep,
       inCall: document.body.classList.contains('in-call'),
       chatBelow: stage.bottom <= msgs.top + 8,
       chatH: msgs.height,
@@ -367,6 +369,7 @@ test('labiale e movimento della sessione ⚡ seguono l’audio, senza coprire la
   expect(snap.right).toBeGreaterThan(0.8);
   expect(Math.max(snap.left, snap.right) / Math.min(snap.left, snap.right)).toBeLessThan(1.8);
   expect(snap.jitter).toBeLessThan(snap.diff * 0.55);
+  expect(snap.maxStep).toBeLessThan(0.3);
   expect(snap.inCall).toBe(false);
   expect(snap.chatBelow).toBe(true);
   expect(snap.chatH).toBeGreaterThan(40);

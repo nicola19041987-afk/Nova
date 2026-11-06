@@ -42,13 +42,14 @@
       const avg = (ids) => { const o = { x: 0, y: 0 }; ids.forEach((i) => { const p = P(i); o.x += p.x; o.y += p.y; }); return { x: o.x / ids.length, y: o.y / ids.length }; };
       const d = (a, b) => { const p = P(a), q = P(b); return Math.hypot(p.x - q.x, p.y - q.y); };
       let eA = avg([33, 133, 159, 145]), eB = avg([362, 263, 386, 374]), bA = P(105), bB = P(334);
+      let mL = P(61), mR = P(291); if (mL.x > mR.x) [mL, mR] = [mR, mL];
       let wA = d(33, 133), wB = d(362, 263), hA = d(159, 145), hB = d(386, 374);
       if (eA.x > eB.x) { [eA, eB] = [eB, eA]; [bA, bB] = [bB, bA]; [wA, wB] = [wB, wA]; [hA, hB] = [hB, hA]; }
       if (Math.hypot(eB.x - eA.x, eB.y - eA.y) < 0.008) continue; // troppo piccolo per animarlo bene
       const body = await autoBody(img).catch((e) => { console.warn('Corpo non rilevato', e); return null; });
       return {
-        v: 2, ...(body ? { body } : {}),
-        eyeL: eA, eyeR: eB, mouth: avg([13, 14]), browL: bA, browR: bB,
+        v: 3, ...(body ? { body } : {}),
+        eyeL: eA, eyeR: eB, mouth: avg([13, 14]), mouthL: mL, mouthR: mR, lipU: P(13), lipL: P(14), browL: bA, browR: bB,
         mouthW: d(61, 291), mouthH: d(0, 17), eyeW: (wA + wB) / 2, eyeH: (hA + hB) / 2, tilt: Math.atan2(eB.y - eA.y, eB.x - eA.x),
         auto: true, src: srcKey(src), at: new Date().toISOString(),
       };
@@ -126,14 +127,14 @@
   };
   App.faceMigrate = async function () {
     if (App._faceMig || !window.Motion) return; App._faceMig = true;
-    const todo = (App.chars || []).filter((c) => /^\/api\/avatars\//.test(c.avatar || '') && !(c.landmarks && c.landmarks.auto && c.landmarks.src === c.avatar && c.landmarks.v >= 2) && !App.ls.get('faceTried2:' + c.avatar, false)); // v8.1: v2 = anche corpo e maschera
+    const todo = (App.chars || []).filter((c) => /^\/api\/avatars\//.test(c.avatar || '') && !(c.landmarks && c.landmarks.auto && c.landmarks.src === c.avatar && c.landmarks.v >= 3 && c.landmarks.mouthL) && !App.ls.get('faceTried3:' + c.avatar, false));
     for (const c of todo) {
       await new Promise((ok) => (window.requestIdleCallback ? requestIdleCallback(ok, { timeout: 3000 }) : setTimeout(ok, 500)));
       try {
         const lm = await autoFace(c.avatar);
         // v8.4.3: un rilevamento fallito (es. modello non ancora pronto su iPhone) non blocca più per sempre: fino a 3 tentativi
-        if (!lm) { const n = Number(App.ls.get('faceTry3:' + c.avatar, 0)) + 1; App.ls.set('faceTry3:' + c.avatar, n); if (n >= 3) App.ls.set('faceTried2:' + c.avatar, true); continue; }
-        App.ls.set('faceTried2:' + c.avatar, true);
+        if (!lm) { const n = Number(App.ls.get('faceTry3n:' + c.avatar, 0)) + 1; App.ls.set('faceTry3n:' + c.avatar, n); if (n >= 3) App.ls.set('faceTried3:' + c.avatar, true); continue; }
+        App.ls.set('faceTried3:' + c.avatar, true);
         const r = await App.api(`/api/characters/${c.id}/landmarks`, { method: 'PUT', body: { avatar: c.avatar, landmarks: lm } });
         if (r.applied) { adopt(r.character); if (App.current && App.current.id === c.id) App.avatarConv.setLandmarks(r.character.landmarks); }
       } catch (e) { console.warn('Migrazione viso:', e.message); }
