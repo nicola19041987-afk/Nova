@@ -11,7 +11,7 @@
   // v8.4.5: microfono aperto (chiamata o modalità voce con trascrizione xAI): la voce passa SOLO dall'AudioContext condiviso
   const live = () => inCall() || xMode;
   // v8.4.5: in chiamata lei parla SEMPRE a voce, a prescindere dall'interruttore «Lettura» della chat
-  const speakOn = () => ttsOn || inCall();
+  const speakOn = () => true; // v8.6.0: parla sempre (mai silenziosa)
   const norm = (t) => String(t || '').toLowerCase().replace(/[^\p{L}\d ]+/gu, '').replace(/\s+/g, ' ').trim();
   // ---- v7.3: sblocco dell'audio su iPhone ----
   // iOS Safari/PWA: la sintesi vocale e l'audio Web restano muti finché non partono la prima volta DENTRO un tocco dell'utente.

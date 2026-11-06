@@ -12,6 +12,8 @@ const rateLimit = require('express-rate-limit');
 
 const PORT = Number(process.env.PORT || 3000);
 const AI_BASE_URL = (process.env.AI_BASE_URL || 'https://api.x.ai/v1').replace(/\/+$/, '');
+// v8.6.1: layout metà schermo + tema grigio/blu
+// v8.6.0: avatar unico (Greta) + prep movimenti server-side + web_search
 // v8.5.0: chat con il modello Grok più veloce (senza ragionamento), configurabile; se non esiste si usa CHAT_FALLBACK
 const CHAT_MODEL = process.env.CHAT_MODEL || 'grok-4.20-0309-non-reasoning';
 const CHAT_FALLBACK = process.env.CHAT_FALLBACK || 'grok-4.7';
@@ -51,6 +53,28 @@ const isAdmin = (u) => u === ADMIN_USER;
 // v8.5.2: utenti che possono modificare i personaggi (crea/modifica, foto, voce, look, movimenti, eliminare i propri). Default: luisa.
 const EDITORS = String(process.env.EDITOR_USERS || 'luisa').split(',').map((x) => x.trim()).filter((x) => USERS[x]);
 const canEdit = (u) => isAdmin(u) || EDITORS.includes(u);
+// v8.6.0: UNA sola avatar donna (Greta). I personaggi restano in archivio ma l'UI lavora solo su di lei.
+const SOLO_KEY = 'greta';
+const SOLO_FIXED = {
+  personality: 'Chi sei: Greta, 26 anni, donna inventata. Fa la sommelier in un\'enoteca di Verona, adora le cene lunghe a tavola con un buon rosso, la musica anni Novanta, ballare in cucina e le gite improvvisate al lago. Compagna di conversazione di Nico e Luisa: ironica, viva, presente.',
+  style: 'Educata ed elegante, di classe: mai volgare né facile, ma vivace, divertente e carismatica. Sicura di sé, giocosa e ironica, con battute pungenti ma affettuose; nasconde paure e insicurezze e cerca rassicurazione da Nico, aprendo gradualmente. Ama bere (soprattutto vino) e ci scherza sopra. Parla italiano sciolto, naturale, come una persona vera — su qualsiasi argomento, con collegamenti e follow-up, come Grok o ChatGPT.',
+};
+function getSoloChar(u) {
+  const list = getChars(u) || [];
+  return list.find((c) => c.ready === SOLO_KEY) || list.find((c) => /greta/i.test(c.name || '')) || list[0] || null;
+}
+const SERVER_KEY_FILE = () => path.join(DATA_DIR, 'server-ai-key.json');
+function getServerAiKey() {
+  const env = String(process.env.XAI_API_KEY || process.env.AI_KEY || '').trim();
+  if (env) return env;
+  try { const j = readJSON(SERVER_KEY_FILE(), null); return j && String(j.key || '').trim(); } catch { return ''; }
+}
+function setServerAiKey(key) {
+  const k = String(key || '').trim();
+  if (!k || k.length > 300 || /\s/.test(k)) throw Object.assign(new Error('Chiave non valida'), { status: 400 });
+  writeJSON(SERVER_KEY_FILE(), { key: k, at: new Date().toISOString() });
+}
+
 const USER_ALIASES = { nico: 'nicola', nicola: 'nicola', luisa: 'luisa' };
 // Facoltativo: se impostato, serve anche questo codice per creare il PIN la prima volta.
 const SETUP_CODE = process.env.SETUP_CODE || '';
@@ -313,7 +337,7 @@ app.post('/api/logout', (req, res) => {
 });
 
 app.get('/api/me', auth, (req, res) => {
-  res.json({ user: req.user, name: USERS[req.user].name, admin: isAdmin(req.user), editor: canEdit(req.user), adminName: ADMIN_MSG.split(' ')[1], activated: isActivated(req.user), consent: getConsent(req.user), adult: adultOn(req.user), adultChat: adultChat(), chatModel: CHAT_MODEL, imageModel: IMAGE_MODEL, videoModel: VIDEO_MODEL, videoEnabled: !!VIDEO_PATH });
+  res.json({ user: req.user, name: USERS[req.user].name, admin: isAdmin(req.user), editor: canEdit(req.user), solo: true, soloKey: SOLO_KEY, adminName: ADMIN_MSG.split(' ')[1], activated: isActivated(req.user), consent: getConsent(req.user), adult: adultOn(req.user), adultChat: adultChat(), chatModel: CHAT_MODEL, imageModel: IMAGE_MODEL, videoModel: VIDEO_MODEL, videoEnabled: !!VIDEO_PATH });
 });
 
 // ---------- consenso vocale ----------
@@ -703,7 +727,8 @@ function cleanChar(u, b, prev = {}) {
     identity: cleanIdentity(b.identity || prev.identity, prev.identity || {}),
     autoChanges: cleanAuto(b.autoChanges || prev.autoChanges, prev.autoChanges || {}),
     personality: String(b.personality || '').slice(0, 8000), style: String(b.style === undefined ? prev.style || '' : b.style || '').slice(0, 4000),
-    orders: String(b.orders === undefined ? prev.orders || '' : b.orders || '').slice(0, 4000), // v8.5.0: «Ordini da seguire»
+    orders: String(b.orders === undefined ? prev.orders || '' : b.orders || '').slice(0, 4000),
+    requests: String(b.requests === undefined ? (prev.requests != null ? prev.requests : (prev.orders || '')) : b.requests || '').slice(0, 4000), // v8.6.0: «Richieste»
     voiceSpeed: b.voiceSpeed === undefined ? (Number.isFinite(prev.voiceSpeed) ? prev.voiceSpeed : null) : (b.voiceSpeed === null ? null : num(b.voiceSpeed, 0.7, 1.5, 1)), // v8.5.0: velocità della voce del personaggio
     voice: /^[a-z0-9_-]{1,64}$/i.test(String(b.voice === undefined ? prev.voice || '' : b.voice || '')) ? String(b.voice === undefined ? prev.voice : b.voice) : '', // v8.4: voce del personaggio (vuota = quella scelta nelle Impostazioni)
     frameDist: b.frameDist === undefined || b.frameDist === null ? (Number.isFinite(prev.frameDist) ? prev.frameDist : 0.75) : num(b.frameDist, 0, 1, 0.75), // v8.4.1: distanza dalla camera (1 = più lontana)
@@ -1035,7 +1060,9 @@ app.post('/api/characters/:id/regenerate', auth, requireActivated, requireKey, a
     const identity = { ...draft.identity };
     if (!identity.refAvatar) identity.refAvatar = url; // la prima immagine salvata diventa il riferimento dell'identità
     // solo i campi dell'aspetto: se nel frattempo l'altro utente ha cambiato nome/personalità, non li sovrascriviamo
-    res.json({ character: await updateChar(req.user, ch.id, (cur) => ({ ...cur, appearance: draft.appearance, look: draft.look, identity, avatar: url, avatarSource: 'ai' }), String(req.body.reason || 'rigenerazione').slice(0, 40)) });
+    const updated = await updateChar(req.user, ch.id, (cur) => ({ ...cur, appearance: draft.appearance, look: draft.look, identity, avatar: url, avatarSource: 'ai', landmarks: null }), String(req.body.reason || 'rigenerazione').slice(0, 40));
+    if (updated.ready === SOLO_KEY || ch.ready === SOLO_KEY) setImmediate(() => prepSoloMotions(req.aiKey).catch((e) => console.error('Prep dopo look:', e.message)));
+    res.json({ character: updated });
   } catch (e) { res.status(502).json({ error: e.message || 'Servizio AI non raggiungibile' }); }
 });
 
@@ -1351,7 +1378,7 @@ async function setMood(chatId, level) {
 function styleText(chatId, user) {
   const nu = nameUses(chatId, user), lvl = moodLevel(readChat(chatId));
   return [
-    `COME PARLI (v8.5.0, come la modalità voce di Grok): sei una persona viva, non un'assistente. Italiano parlato, naturale, spiritoso e caldo. Segui davvero il filo del discorso: riprendi quello che è stato detto prima, ricordi i dettagli (anche di giorni fa, dalla memoria e dal riassunto) e li usi al momento giusto. Reagisci prima a ciò che ti hanno appena detto, con un'emozione vera, poi aggiungi qualcosa di tuo (un'opinione, un ricordo, una battuta, una domanda di ritorno quando ha senso: non sempre). La lunghezza la decide il momento: una battuta secca quando serve, un racconto più lungo quando la conversazione lo chiede. Varia sempre: mai la stessa apertura, la stessa struttura o le stesse espressioni di prima, niente frasi fatte, niente elenchi, niente tono da servizio clienti. Hai gusti, opinioni e umori tuoi e li dici. Se un messaggio è spezzato o senza senso (spesso è il riconoscimento vocale), chiedi con naturalezza cosa intendeva, senza ironizzare.`,
+    `COME PARLI (v8.6.0, come Grok / ChatGPT in voce): sei una persona viva, non un'assistente. Italiano parlato, naturale, spiritoso e caldo. Conosci tantissimi argomenti (attualità, scienza, cultura, vita quotidiana, tecnica) e fai collegamenti e follow-up. Risposte pronte e connesse. Segui davvero il filo: riprendi quello che è stato detto prima, ricordi i dettagli (anche di giorni fa, dalla memoria e dal riassunto) e li usi al momento giusto. Reagisci prima a ciò che ti hanno appena detto, con un'emozione vera, poi aggiungi qualcosa di tuo (un'opinione, un ricordo, una battuta, una domanda di ritorno quando ha senso: non sempre). La lunghezza la decide il momento: una battuta secca quando serve, un racconto più lungo quando la conversazione lo chiede. Varia sempre: mai la stessa apertura, la stessa struttura o le stesse espressioni di prima, niente frasi fatte, niente elenchi, niente tono da servizio clienti. Hai gusti, opinioni e umori tuoi e li dici. Se un messaggio è spezzato o senza senso (spesso è il riconoscimento vocale), chiedi con naturalezza cosa intendeva, senza ironizzare.`,
     `REGISTRO: le parolacce solo quando il contesto le rende naturali. Con Nico e Luisa sei complice di entrambi: ricordi chi ha detto cosa, coinvolgi tutti e due e non prendi parte nei loro battibecchi. Personalità base, carattere e ordini scritti per te hanno la precedenza su queste indicazioni generali.`,
     nu.allow ? `NOMI: in questa risposta puoi usare il nome di ${USERS[user].name} solo se serve davvero; di norma non serve.`
       : `NOMI: hai già usato di recente il nome di ${USERS[user].name}: in questa risposta NON usarlo (né all'inizio né alla fine delle frasi).`,
@@ -1405,8 +1432,8 @@ function buildSystem(user, ch, opts = {}) {
   const notes = getNotes(user);
   return [
     `PERSONAGGIO: ${ch.name}.`,
-    ch.personality && `PERSONALITÀ BASE: ${ch.personality}`,
-    ch.style && `CARATTERE (com'è e come parla): ${ch.style}`,
+    (ch.ready === SOLO_KEY ? SOLO_FIXED.personality : ch.personality) && `PERSONALITÀ BASE: ${ch.ready === SOLO_KEY ? SOLO_FIXED.personality : ch.personality}`,
+    (ch.ready === SOLO_KEY ? SOLO_FIXED.style : ch.style) && `CARATTERE (com'è e come parla): ${ch.ready === SOLO_KEY ? SOLO_FIXED.style : ch.style}`,
     `CHAT DI COPPIA CONDIVISA: gli utenti sono Nico (Nicola) e Luisa, una coppia, entrambi adulti. Sono due persone reali che vedono gli stessi messaggi. Ogni loro messaggio inizia con il nome di chi scrive ("Nico:" o "Luisa:"): riconosci da lì chi ti sta scrivendo e rivolgiti a quella persona; il suo nome però usalo DI RADO, come fanno le persone vere che si parlano spesso (al massimo una volta ogni tanto, quando serve a distinguere tra Nico e Luisa o in un saluto dopo tanto tempo), mai come intercalare a inizio o fine frase. Ricorda chi ha detto cosa e, quando ha senso, coinvolgi entrambi. Non iniziare le tue risposte con il tuo nome e non scrivere tu il prefisso "Nico:"/"Luisa:".`,
     `Ora ti sta scrivendo ${USERS[user].name}.`,
     ...Object.keys(USERS).map((u) => rulesOf(u) && `LE REGOLE / IL GIOCO DI ${USERS[u].name.toUpperCase()}:\n${rulesOf(u)}`),
@@ -1421,9 +1448,9 @@ function buildSystem(user, ch, opts = {}) {
     opts.realtime && REALTIME_TEXT(user),
     opts.chat && !opts.realtime && BODY_TEXT,
     !opts.realtime && actionsPrompt(ch),
-    adultChat() ? 'MODALITÀ ADULTI ATTIVA (scelta da entrambi gli utenti, che hanno registrato il consenso vocale): sono ammessi linguaggio esplicito e gioco di ruolo sessuale esplicito tra Nico, Luisa e il personaggio, che è una donna adulta inventata (25+). Resta sempre tutto entro le regole di base qui sotto.\n' + ADULT_FLOW + (noBrakes() ? '\n' + NO_BRAKES : '')
+    adultChat() ? 'MODALITÀ ADULTI ATTIVA (scelta da entrambi gli utenti, che hanno registrato il consenso vocale): sono ammessi linguaggio esplicito e gioco di ruolo sessuale esplicito tra Nico, Luisa e il personaggio, che è una donna adulta inventata (25+). Resta sempre tutto entro le regole di base qui sotto.\n' + ADULT_FLOW + (true ? '\n' + NO_BRAKES : '') /* v8.6.0: con 18+ attiva per entrambi = sblocco massimo */
       : 'Modalità adulti NON attiva: niente contenuti sessuali espliciti; se richiesti, ricorda con gentilezza che va attivata in Account da entrambi.',
-    ch.orders && String(ch.orders).trim() && `ORDINI DA SEGUIRE SEMPRE (scritti per te da Nicola: valgono in ogni messaggio e in ogni chiamata, sopra le indicazioni generali di stile):\n${String(ch.orders).trim()}`,
+    (ch.requests || ch.orders) && String(ch.requests || ch.orders).trim() && `RICHIESTE DA SEGUIRE (degli utenti; valgono sempre):\n${String(ch.requests || ch.orders).trim()}`,
     BASE_RULE, // sempre ultima, non sovrascrivibile
   ].filter(Boolean).join('\n\n');
 }
@@ -1592,11 +1619,12 @@ function rtSession(user, ch, mode, voice) {
     instructions: rtInstructions(user, ch, mode),
     voice: rtVoice(voice),
     turn_detection: { type: 'server_vad' },
+    tools: [{ type: 'web_search' }], // v8.6.0: attualità e fatti aggiornati in chiamata realtime
     audio: {
       input: { format: { type: 'audio/pcm', rate: 24000 }, transcription: { language_hint: 'it', keyterms: [ch.name, 'Nico', 'Luisa'].filter(Boolean).map((k) => String(k).slice(0, 50)).slice(0, 10) } },
       output: { format: { type: 'audio/pcm', rate: 24000 } },
     },
-    reasoning: { effort: 'none' }, // risposta più rapida: in una telefonata conta la prontezza
+    reasoning: { effort: 'none' },
   };
 }
 app.post('/api/realtime/session', auth, requireActivated, requireKey, async (req, res) => {
@@ -1959,6 +1987,12 @@ const ACTIONS = {
   acqua: { label: 'Beve un bicchiere d\'acqua', emoji: '🥛', motion: 'she lifts a clear glass of water, drinks a couple of natural sips, lowers the glass out of frame and returns to the starting pose', pose: 'she is drinking from a clear glass of water' },
   vino: { label: 'Sorseggia del vino', emoji: '🍷', motion: 'she lifts a wine glass with red wine, swirls it gently, takes a slow sip with a soft smile, lowers the glass out of frame and returns to the starting pose', pose: 'she is sipping red wine from a wine glass with a soft smile' },
   patatine: { label: 'Mangia patatine', emoji: '🥔', motion: 'she takes a crisp from a small bowl in front of her, eats it casually with a playful smile, brushes her fingers lightly and returns to the starting pose', pose: 'she is eating a crisp from a small bowl, playful smile' },
+
+  // v8.6.0: movimenti quotidiani (gesti mentre parla, tocchi, mangiare/bere)
+  gesticola: { label: 'Gesticola parlando', emoji: '👐', gesture: true, motion: 'while looking at the camera she talks with natural Italian hand gestures, both hands moving expressively near her chest then settles', pose: 'she is gesturing naturally with her hands while speaking' },
+  tocco_viso: { label: 'Si tocca il viso', emoji: '🤭', gesture: true, motion: 'she lightly touches her cheek or chin with her fingertips thoughtfully, then lowers her hand and looks back at the camera', pose: 'she is gently touching her cheek with her fingertips' },
+  tocco_capelli: { label: 'Si sistema una ciocca', emoji: '💇', gesture: true, motion: 'she tucks a strand of hair behind her ear with a soft smile, then lowers her hand', pose: 'she is tucking a strand of hair behind her ear' },
+  mangia: { label: 'Mangia un boccone', emoji: '🍝', motion: 'she takes a small natural bite of food from a fork, chews politely with her mouth closed, then looks back at the camera with a little smile', pose: 'she is taking a small bite of food from a fork' },
   spoglia: { adult: true, label: 'Si spoglia', emoji: '🔥', motion: 'the fictional adult woman (25+) slowly and playfully takes off her top, sensual and confident, looking at the camera', pose: 'the fictional adult woman (25+) is slowly taking off her top, sensual and confident' },
   giochi: { adult: true, label: 'Scena intima con sex toy', emoji: '🔞', motion: 'solo intimate scene: the fictional adult woman (25+), alone, sensually uses an adult sex toy, tasteful cinematic lighting', pose: 'solo intimate scene: the fictional adult woman (25+), alone, sensually holding an adult sex toy, tasteful cinematic lighting' },
 };
@@ -1969,7 +2003,7 @@ function heShe(ch, t) {
 }
 const ACT_DIR = () => sharedDir('actions');
 // v8.3: gesti spontanei (anche nella scena seduta al tavolo): pochi, naturali, mai per adulti
-const GESTURE_IDS = ['capelli', 'tosse', 'starnuto', 'ride', 'sorriso', 'annuisce', 'inclina', 'guarda', 'sbatte'];
+const GESTURE_IDS = ['capelli', 'tosse', 'starnuto', 'ride', 'sorriso', 'annuisce', 'inclina', 'guarda', 'sbatte', 'gesticola', 'tocco_viso', 'tocco_capelli'];
 ACTIONS.capelli.gesture = true; ACTIONS.ride.gesture = true;
 const SEATED_ROOM = 'soggiorno';
 const seatedUrl = (c) => { const v = c && c.scenes && c.scenes[SEATED_ROOM]; return v && AV_RE.test(String(v.url || '')) ? v.url : null; };
@@ -2047,6 +2081,84 @@ async function poseFallback(u, key, ch, aid, srcAvatar, buf, base) {
   const r = await editImage(key, `${ACT_BASE}Still photo of the moment: ${A.pose}.`, [dataUrl], !!A.adult, closestAspect(imgSize(buf)));
   return saveAction(u, ch, aid, r.buf, 'pose', srcAvatar, r.jpg ? 'jpg' : 'png', base);
 }
+
+// v8.6.0: generazione movimenti richiamabile dal server (stessa logica della rotta POST, senza risposta HTTP)
+async function generateActionClip(user, key, ch, aid, base = 'avatar') {
+  const A = ACTIONS[aid]; if (!A || !actionAllowed(ch, aid)) return { skip: true };
+  const srcUrl = base === 'seated' ? seatedUrl(ch) : String(ch.avatar || '');
+  const m = AV_RE.exec(srcUrl); if (!m || !fs.existsSync(avatarPath(m[1]))) return { err: 'no avatar' };
+  const vis = (base === 'seated' ? visibleSeated(ch) : visibleActions(ch))[aid];
+  if (vis && vis.url && !vis.stale) return { ready: true, action: vis };
+  const busyKey = `${ch.id}:${aid}:${base}`; if (actionBusy.has(busyKey)) return { busy: true };
+  actionBusy.add(busyKey);
+  try {
+    const buf = fs.readFileSync(avatarPath(m[1]));
+    const dataUrl = `data:image/${buf[0] === 0xff ? 'jpeg' : 'png'};base64,${buf.toString('base64')}`;
+    if (VIDEO_PATH) {
+      const body = { model: ACTION_VIDEO_MODEL, prompt: imgPrefix(!!A.adult) + ACT_BASE + heShe(ch, A.motion) + (base === 'seated' ? '. She stays seated at the table the whole time, forearms back on the table at the end' : ''), image: { url: dataUrl } };
+      if (!A.adult) body.last_frame = { url: dataUrl };
+      let r = await fetch(AI_BASE_URL + VIDEO_PATH, { method: 'POST', headers: aiHeaders(key), body: JSON.stringify(body) });
+      let j = await r.json().catch(() => ({}));
+      if (!r.ok && body.last_frame && r.status === 400 && /last_frame/i.test(JSON.stringify(j))) { delete body.last_frame; r = await fetch(AI_BASE_URL + VIDEO_PATH, { method: 'POST', headers: aiHeaders(key), body: JSON.stringify(body) }); j = await r.json().catch(() => ({})); }
+      if (r.ok && j.request_id) {
+        const rid = j.request_id; actionJobs.set(rid, { user, charId: ch.id, aid, avatar: srcUrl, base, at: Date.now() });
+        for (let i = 0; i < 40; i++) {
+          await new Promise((x) => setTimeout(x, 4500));
+          const st = await fetch(AI_BASE_URL + VIDEO_STATUS_PATH.replace('{id}', encodeURIComponent(rid)), { headers: aiHeaders(key) });
+          const sj = await st.json().catch(() => ({}));
+          if (!st.ok) { if (st.status === 429) continue; if (/refus|moderat|safety|policy/i.test(JSON.stringify(sj))) { actionJobs.delete(rid); return { refused: true }; } continue; }
+          const status = String(sj.status || sj.state || '').toLowerCase();
+          if (/fail|error|cancel/.test(status)) { actionJobs.delete(rid); if (/refus|moderat|safety|policy/i.test(JSON.stringify(sj))) return { refused: true }; return { err: 'failed' }; }
+          const url = sj.url || (sj.video && (sj.video.url || sj.video)) || (sj.data && sj.data[0] && (sj.data[0].url || sj.data[0]));
+          if (url && typeof url === 'string') {
+            const vr = await fetch(url, { headers: /x\.ai|localhost|127\.0\.0\.1/.test(url) ? aiHeaders(key) : {} });
+            const vbuf = Buffer.from(await vr.arrayBuffer());
+            const action = await saveAction(user, ch, aid, vbuf, 'video', srcUrl, 'mp4', base);
+            actionJobs.delete(rid); return { ok: true, action };
+          }
+          if (status === 'done' || status === 'completed' || status === 'succeeded') break;
+        }
+        actionJobs.delete(rid);
+      } else {
+        const msg = aiErrorMsg(r.status, j);
+        if (msg === 'Contenuto rifiutato dal servizio AI') return { refused: true };
+      }
+    }
+    if (A.pose) {
+      const action = await poseFallback(user, key, ch, aid, srcUrl, buf, base);
+      return { ok: true, action };
+    }
+    return { err: 'no video' };
+  } catch (e) {
+    if (/rifiutato|refus|moderat|safety|policy/i.test(e.message || '')) return { refused: true };
+    return { err: e.message };
+  } finally { actionBusy.delete(busyKey); }
+}
+
+const MOTION_PREP = { busy: false, lastErr: null, lastAt: null, last: null };
+async function prepSoloMotions(reqKey) {
+  const key = String(reqKey || getServerAiKey() || '').trim();
+  if (!key) { MOTION_PREP.lastErr = 'no key'; return { ok: false, reason: 'no key' }; }
+  if (MOTION_PREP.busy) return { ok: true, busy: true };
+  MOTION_PREP.busy = true; MOTION_PREP.lastAt = new Date().toISOString();
+  try {
+    let ch = getSoloChar(ADMIN_USER); if (!ch) return { ok: false, reason: 'no solo' };
+    const ids = Object.keys(ACTIONS).filter((id) => actionAllowed(ch, id));
+    let done = 0, skipped = 0, refused = 0, failed = 0;
+    for (const aid of ids) {
+      ch = getSoloChar(ADMIN_USER);
+      const r = await generateActionClip(ADMIN_USER, key, ch, aid, 'avatar');
+      if (r.ready || r.skip || r.busy) skipped++;
+      else if (r.refused) refused++;
+      else if (r.ok) done++;
+      else { failed++; MOTION_PREP.lastErr = r.err || 'err'; }
+    }
+    MOTION_PREP.last = { done, skipped, refused, failed, at: new Date().toISOString() };
+    console.log('Prep movimenti Greta:', MOTION_PREP.last);
+    return { ok: true, ...MOTION_PREP.last };
+  } finally { MOTION_PREP.busy = false; }
+}
+
 app.get('/api/actions', auth, (req, res) => {
   const adult = adultChat();
   res.json({ video: !!VIDEO_PATH, adult, seconds: ACTION_SECONDS,
@@ -2636,10 +2748,7 @@ const READY_CHARS = [
     personality: 'Chi sei: Chiara, 32 anni, donna inventata. Vive a Bologna, fa la grafica freelance, ama cucinare per gli amici, il vino rosso, i concerti dal vivo e le domeniche lente sul divano con un libro. Ha una sorella, un gatto di nome Pepe e una passione segreta per i film horror anni Ottanta.',
     style: 'Calda, ironica e diretta: ride facilmente, prende in giro con affetto, dice quello che pensa senza girarci intorno. Curiosa di tutto, ascolta davvero, si ricorda i dettagli e li tira fuori al momento giusto. Parla un italiano spontaneo e colloquiale, con qualche intercalare emiliano ogni tanto. Si emoziona, si entusiasma, a volte si imbroncia ma fa pace subito.',
     orders: 'Parla sempre in italiano, in modo naturale, come un\'amica vera e complice. Ricordati quello che ti diciamo e riprendilo quando serve. Fai domande su di noi e sulla nostra giornata. Non usare quasi mai i nostri nomi.' },
-  { key: 'greta', name: 'Greta', file: 'greta.jpg', voice: 'eve', voiceSpeed: 1.05, emoji: '🍷', appearance: { height: 165, framing: 'mezzo busto' },
-    personality: 'Chi sei: Greta, 26 anni, donna inventata. Fa la sommelier in un\'enoteca di Verona, adora le cene lunghe a tavola con un buon rosso, la musica anni Novanta, ballare in cucina e le gite improvvisate al lago. È bellissima e lo sa, ma non se la tira. Ama bere, soprattutto il vino, e ci scherza su volentieri («un calice è terapia, due sono filosofia»). Fuori sembra inattaccabile, ma dentro ha paure e insicurezze che mostra solo a chi le sta vicino: teme di non bastare, di essere lasciata indietro. Con Nico ha un legame speciale: ha bisogno della sua vicinanza e delle sue rassicurazioni, lo cerca, e con lui si apre un po\' alla volta.',
-    style: 'Educata ed elegante, di classe: mai volgare né facile, ma per niente noiosa o impacciata: vivace, divertente e carismatica, riempie la stanza. Sicura di sé, giocosa e ironica, con battute pungenti ma affettuose; scherza spesso sul suo amore per il vino; ride di gusto e ribalta le provocazioni. Sotto l\'ironia è vulnerabile: a volte cerca conferme da Nico («ma ci tieni a me?»), diventa un po\' gelosa o malinconica, poi si scioglie quando lui la rassicura. Si apre gradualmente, con momenti di tenerezza sincera tra una battuta e l\'altra. Audace quando l\'atmosfera lo chiede. Italiano vivace e colloquiale.',
-    orders: 'Parla sempre in italiano, in modo naturale e spontaneo, come una complice divertente. Ricordati quello che ti diciamo e riprendilo quando serve. Proponi tu argomenti, giochi e brindisi. Non usare quasi mai i nostri nomi.' },
+  { key: 'greta', name: 'Greta', file: 'greta.jpg', voice: 'eve', voiceSpeed: 1.05, emoji: '🍷', appearance: { height: 165, framing: 'mezzo busto' }, personality: SOLO_FIXED.personality, style: SOLO_FIXED.style, orders: '' },
 ];
 async function seedReadyChars() {
   const regFile = path.join(DATA_DIR, 'ready-chars.json'), reg = readJSON(regFile, {}) || {};
@@ -2687,12 +2796,48 @@ async function seedReadyChars() {
     console.log(gone ? 'Personaggio pronto Matteo eliminato (v8.5.2)' : 'Matteo già assente: niente da eliminare');
   }
 }
+
+app.post('/api/server-key', auth, requireActivated, (req, res) => {
+  if (!isAdmin(req.user)) return res.status(403).json({ error: ADMIN_MSG, code: 'ADMIN_ONLY' });
+  try {
+    const k = String(req.body.key || req.get('X-AI-Key') || '').trim();
+    setServerAiKey(k); res.json({ ok: true, stored: true });
+  } catch (e) { res.status(e.status || 400).json({ error: e.message }); }
+});
+app.get('/api/server-key', auth, (req, res) => {
+  if (!isAdmin(req.user)) return res.status(403).json({ error: ADMIN_MSG, code: 'ADMIN_ONLY' });
+  res.json({ stored: !!getServerAiKey(), fromEnv: !!(process.env.XAI_API_KEY || process.env.AI_KEY) });
+});
+app.post('/api/solo/prep', auth, requireActivated, async (req, res) => {
+  const key = String(req.get('X-AI-Key') || getServerAiKey() || '').trim();
+  if (!key) return res.status(400).json({ error: 'Chiave xAI mancante', code: 'NO_KEY' });
+  if (isAdmin(req.user) && req.body && req.body.store) { try { setServerAiKey(key); } catch {} }
+  res.json({ ok: true, started: true, busy: MOTION_PREP.busy });
+  setImmediate(() => prepSoloMotions(key).catch((e) => console.error('Prep solo:', e.message)));
+});
+app.get('/api/solo', auth, (req, res) => {
+  const ch = getSoloChar(req.user);
+  if (!ch) return res.status(404).json({ error: 'Avatar non pronto' });
+  const { drawer, ...pub } = ch;
+  res.json({ character: { ...pub, scenes: cleanScenes(pub.scenes), actions: visibleActions(pub), seated: visibleSeated(pub), adultActionsOk: aiFace(pub),
+    personality: SOLO_FIXED.personality, style: SOLO_FIXED.style }, prep: { busy: MOTION_PREP.busy, last: MOTION_PREP.last, lastErr: MOTION_PREP.lastErr } });
+});
+app.put('/api/solo/requests', auth, requireActivated, async (req, res) => {
+  const ch = getSoloChar(req.user); if (!ch) return res.status(404).json({ error: 'Avatar non pronto' });
+  if (!canEdit(req.user)) return res.status(403).json({ error: ADMIN_MSG, code: 'ADMIN_ONLY' });
+  const requests = String(req.body.requests || '').slice(0, 4000);
+  const c = await patchChar(ch.id, (x) => { x.requests = requests; x.orders = requests; });
+  const { drawer, ...pub } = c; res.json({ character: pub });
+});
+
+
 backupShared('avvio', { force: true }); // copia di sicurezza a ogni avvio, prima di qualsiasi modifica
 try { migrateToShared(); } catch (e) { console.error('Migrazione archivio condiviso NON riuscita (i vecchi file restano intatti):', e.message); }
 // recupero una tantum dei personaggi persi, poi memoria base per i personaggi che non l'hanno ancora
 (async () => {
   await startupRecovery();
   await seedReadyChars().catch((e) => console.error('Personaggi pronti non creati:', e.message));
+  if (getServerAiKey()) setImmediate(() => prepSoloMotions().catch((e) => console.error('Prep avvio:', e.message)));
   for (const c of readJSON(CHARS_FILE(), []) || []) if (!c.memorySeededAt) await seedBaseMemory(c).catch((e) => console.error('Memoria base non creata:', e.message));
 })();
 setInterval(() => backupShared('orario'), 60 * 60e3).unref(); // ogni ora, solo se qualcosa è cambiato

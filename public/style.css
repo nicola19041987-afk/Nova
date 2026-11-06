@@ -248,7 +248,7 @@ details.card summary{font-weight:600}
 .lm-manual summary{cursor:pointer;color:var(--muted);font-size:.9em;margin:4px 0}
 
 /* ---------- v8.2: stile WhatsApp (chat, chiamata vocale, videochiamata) ---------- */
-:root{--wa-bg:#0b141a;--wa-head:#202c33;--wa-out:#005c4b;--wa-in:#202c33;--wa-text:#e9edef;--wa-meta:#8696a0;--wa-green:#00a884;--wa-blue:#53bdeb}
+:root{--wa-bg:#0b141a;--wa-head:#202c33;--wa-out:#005c4b;--wa-in:#202c33;--wa-text:#e9edef;--wa-meta:#8696a0;--wa-green:#1E6FD9;--wa-blue:#53bdeb}
 .wa-photo,.wa-status,.wa-ic{display:none}
 body.wa-conv .topbar{background:var(--wa-head);border-bottom:0;gap:6px;padding-left:6px;padding-right:6px}
 body.wa-conv #who{display:none}
@@ -314,7 +314,7 @@ body.wa-conv{background:var(--wa-bg)}
 #stage.call.voice{overflow:hidden}
 #tab-conv .voicebar button.on{background:var(--wa-green);border:0}
 body.wa-conv #avatar-canvas{box-shadow:0 0 0 1px #2a3942}
-body.wa-conv #stage.speaking #avatar-canvas{box-shadow:0 0 0 3px var(--wa-green),0 0 22px #00a88466}
+body.wa-conv #stage.speaking #avatar-canvas{box-shadow:0 0 0 3px var(--wa-green),0 0 22px #1E6FD966}
 .call-ui:not(.voice) .call-top{padding:0 calc(min(24%,130px) + 8px)}
 @media (orientation:landscape) and (max-height:600px){#stage:not(.fs):not(.call) .stage-tools{left:6px;right:6px;top:6px;gap:4px;justify-content:center;flex-wrap:wrap}#stage:not(.fs):not(.call) .stage-tools button{width:34px;height:34px;line-height:34px;font-size:16px}}
 /* v8.3: in orizzontale il riquadro di lei è stretto: i menu 🎭/🏠 si aprono accanto, interi */
@@ -540,7 +540,7 @@ dialog{background:#1c1c1e;border:0}
 /* niente contorno colorato a schermo intero o in chiamata (era l'anello "sta parlando" del personaggio: sembrava un bordo rosso) */
 #stage.fs #avatar-canvas,#stage:fullscreen #avatar-canvas,#stage.call #avatar-canvas{box-shadow:none!important}
 #stage.speaking #avatar-canvas{box-shadow:0 0 18px #d14b8f55}
-body.wa-conv #stage.speaking #avatar-canvas{box-shadow:0 0 18px #00a88455}
+body.wa-conv #stage.speaking #avatar-canvas{box-shadow:0 0 18px #1E6FD955}
 /* v8.4.5: a schermo intero mentre parli a voce niente menu a tendina sopra di lei (Azioni / Soggiorno) */
 body.voice-live #stage.fs #act-btn,body.voice-live #stage.fs #scene-btn,body.voice-live #stage.fs #act-menu,body.voice-live #stage.fs #scene-menu,
 body.in-call #act-menu,body.in-call #scene-menu{display:none!important}
@@ -552,7 +552,7 @@ body.in-call #act-menu,body.in-call #scene-menu{display:none!important}
 body.voice-live #stage:fullscreen #act-btn,body.voice-live #stage:fullscreen #scene-btn,body.voice-live #stage:fullscreen #act-menu,body.voice-live #stage:fullscreen #scene-menu{display:none!important}
 
 /* ===================== v8.5.0 — stile WhatsApp classico (niente telefono finto) ===================== */
-:root{--bg:#0b141a;--card:#111b21;--card2:#202c33;--line:#222d34;--text:#e9edef;--muted:#8696a0;--accent:#00a884;--accent2:#00a884;--green:#00a884;--danger:#f15c6d;--bar:#202c33;--sb:0px}
+:root{--bg:#0b141a;--card:#111b21;--card2:#202c33;--line:#222d34;--text:#e9edef;--muted:#8696a0;--accent:#1E6FD9;--accent2:#1E6FD9;--green:#1E6FD9;--danger:#f15c6d;--bar:#202c33;--sb:0px}
 html,body{background:#0b141a;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;letter-spacing:0}
 .ios-status,.home,.home-ind,#home-link,.home-link{display:none!important}
 body.sb-on{--sb:0px}
@@ -576,10 +576,10 @@ body[data-tab=conv] main{padding:0}
 #char-list li .grow span{color:#8696a0;font-size:14px}
 #char-list li [data-edit]{opacity:.55;font-size:16px}
 .new-row{position:fixed;right:16px;bottom:calc(76px + env(safe-area-inset-bottom));z-index:6;margin:0}
-#new-char{width:auto;border-radius:16px;padding:15px 18px;background:#00a884;color:#0b141a;font-weight:700;box-shadow:0 4px 12px #0008}
+#new-char{width:auto;border-radius:16px;padding:15px 18px;background:#1E6FD9;color:#0b141a;font-weight:700;box-shadow:0 4px 12px #0008}
 .preset-chip,.admin-note,.card{background:#111b21}
 .card{border:1px solid #1f2c33}
-.preset-row>span{color:#00a884;font-weight:600;font-size:13px;text-transform:uppercase;letter-spacing:.04em}
+.preset-row>span{color:#1E6FD9;font-weight:600;font-size:13px;text-transform:uppercase;letter-spacing:.04em}
 /* barra schede in basso: icona attiva su pillola verde */
 .tabbar{background:#111b21;-webkit-backdrop-filter:none;backdrop-filter:none;border-top:1px solid #222d34}
 .tabbar button{color:#aebac1;padding:8px 0 6px;gap:4px}
@@ -588,21 +588,21 @@ body[data-tab=conv] main{padding:0}
 .tabbar button.active{color:#e9edef}
 .tabbar button.active svg{background:#103529;color:#00d9a6}
 /* controlli */
-button.primary{background:#00a884;color:#0b141a}
-button.link{color:#00a884}
-input:focus,select:focus,textarea:focus{outline:2px solid #00a88466}
+button.primary{background:#1E6FD9;color:#0b141a}
+button.link{color:#1E6FD9}
+input:focus,select:focus,textarea:focus{outline:2px solid #1E6FD966}
 input,select,textarea{background:#202c33}
 .seg{background:#111b21}
 .seg button.on{background:#103529;color:#00d9a6}
-.switch input[type=checkbox]:checked{background:#00a884}
-.chips button.sel,.scene-menu button.on,.voicebar button.on,.post .actions .liked{background:#00a884;color:#0b141a}
+.switch input[type=checkbox]:checked{background:#1E6FD9}
+.chips button.sel,.scene-menu button.on,.voicebar button.on,.post .actions .liked{background:#1E6FD9;color:#0b141a}
 /* conversazione */
 #tab-conv .msg.user{background:#005c4b}
 #tab-conv .msg.assistant{background:#202c33}
-#stage.speaking #avatar-canvas,body.wa-conv #stage.speaking #avatar-canvas{box-shadow:0 0 18px #00a88440}
+#stage.speaking #avatar-canvas,body.wa-conv #stage.speaking #avatar-canvas{box-shadow:0 0 18px #1E6FD940}
 body.wa-conv #avatar-canvas{box-shadow:none}
 /* chiamate */
-.call-btn.green{background:#00a884!important}
+.call-btn.green{background:#1E6FD9!important}
 .call-btn.end{background:#f15c6d!important}
 /* v8.5.0: tasto 🔥 Hot */
 .stage-tools .hot-btn{width:auto!important;padding:0 12px!important;border-radius:20px!important;background:linear-gradient(135deg,#ff5f3a,#d6246e)!important;font-size:16px!important;display:flex;align-items:center;gap:3px}
@@ -611,7 +611,7 @@ body.wa-conv #avatar-canvas{box-shadow:none}
 body.voice-live #stage.fs #hot-btn,body.voice-live #stage:fullscreen #hot-btn{display:flex!important}
 .sheet{z-index:200}
 .auto-prep{position:fixed;left:12px;bottom:calc(80px + env(safe-area-inset-bottom));z-index:7;background:#202c33;color:#e9edef;border-radius:14px;padding:6px 12px;font-size:12.5px;overflow:hidden;box-shadow:0 2px 8px #0007;pointer-events:none}
-.auto-prep i{position:absolute;left:0;bottom:0;height:3px;background:#00a884;transition:width .4s}
+.auto-prep i{position:absolute;left:0;bottom:0;height:3px;background:#1E6FD9;transition:width .4s}
 .auto-prep span{position:relative}
 body[data-tab=conv] .auto-prep{bottom:calc(70px + env(safe-area-inset-bottom));opacity:.85}
 body.in-call .auto-prep{display:none}
@@ -633,3 +633,106 @@ dialog{padding-bottom:calc(16px + env(safe-area-inset-bottom))}
 .call-btn{min-width:48px;min-height:48px}
 .preset-chip{min-height:64px}
 body[data-tab=conv] .auto-prep{top:calc(env(safe-area-inset-top) + 64px);bottom:auto;left:10px;right:auto}
+
+/* ===== v8.6.1: tema grigio chiaro + blu ===== */
+:root{
+  --bg:#ECEFF3; --card:#FFFFFF; --card2:#E4E7EB; --text:#1A1D21; --muted:#5B6570; --line:#D0D5DD;
+  --accent:#1E6FD9; --accent2:#2F80ED; --accent-soft:#D6E6FB; --danger:#D92D20;
+  --wa-bg:#ECEFF3; --wa-head:#F2F4F7; --wa-out:#D6E6FB; --wa-in:#FFFFFF; --wa-text:#1A1D21;
+  --wa-meta:#5B6570; --wa-green:#1E6FD9; --wa-blue:#2F80ED;
+}
+body{background:var(--bg);color:var(--text)}
+.topbar,body.wa-conv .topbar{background:var(--wa-head)!important;border-bottom:1px solid var(--line);color:var(--text)}
+body.wa-conv .topbar h2,body.wa-conv #back-btn,body.wa-conv .wa-ic{color:var(--text)!important}
+body.wa-conv .wa-status{color:var(--muted)!important}
+body.wa-conv .wa-status.typing{color:var(--accent)!important}
+body.wa-conv{background:var(--bg)}
+#tab-conv .messages{background-color:var(--bg)!important;background-image:none!important}
+#tab-conv .msg.user{background:var(--wa-out)!important;color:var(--text)!important}
+#tab-conv .msg.user.other,#tab-conv .msg.assistant{background:var(--wa-in)!important;border:1px solid var(--line)!important;color:var(--text)!important}
+#tab-conv .msg .meta,#tab-conv .msg .ticks{color:#667085!important}
+#tab-conv .msg .ticks.read{color:var(--wa-blue)!important}
+.composer{background:var(--wa-head);border-top:1px solid var(--line)}
+.composer textarea,#chat-input{background:#fff;color:var(--text);border:1px solid var(--line);font-size:16px}
+button.primary,.solo-chip,#new-char{background:var(--accent)!important;color:#fff!important}
+.tabbar{background:rgba(242,244,247,.96)!important;border-top:1px solid var(--line)}
+.tabbar button{color:var(--muted)}
+.tabbar button.active{color:var(--accent)}
+.card{background:var(--card);border:1px solid var(--line);color:var(--text)}
+.switch input[type=checkbox]:checked{background:var(--accent)!important}
+.notice{background:var(--accent-soft);color:var(--text);border-color:var(--accent)}
+#avatar-canvas{background:#E4E7EB!important;box-shadow:0 0 0 2px var(--line)!important}
+body.wa-conv #stage.speaking #avatar-canvas,#stage.speaking #avatar-canvas{box-shadow:0 0 0 3px var(--accent),0 0 22px #1E6FD966!important}
+.hot-btn{background:linear-gradient(135deg,#2F80ED,#1E6FD9)!important;color:#fff!important}
+.av-backdrop{background:#E4E7EB!important}
+input,textarea,select{background:#fff;color:var(--text);border-color:var(--line)}
+.list li{background:var(--card);border-color:var(--line)}
+.toast{background:#1A1D21e6;color:#fff}
+.sheet-box,.sheet{background:var(--card);color:var(--text)}
+.lock-note,.admin-note,.muted{color:var(--muted)}
+
+/* ===== v8.6.1: metà schermo avatar + chat + dock ===== */
+body.solo-mode #legacy-tabbar{display:none!important}
+body.solo-mode #solo-dock{display:flex!important}
+body.solo-mode #solo-bar{display:none!important}
+body.solo-mode .topbar .wa-ic,#wa-voice,#wa-video{display:none!important}
+body.solo-mode .voicebar{display:none!important}
+body.solo-mode #large-title{display:none!important}
+body.solo-mode #view-app{display:flex;flex-direction:column;height:100dvh;height:100vh;overflow:hidden}
+body.solo-mode .topbar{flex:0 0 auto}
+body.solo-mode main{
+  padding:0!important;max-width:none;flex:1 1 auto;min-height:0;
+  height:auto!important;display:flex;flex-direction:column;overflow:hidden;
+  padding-bottom:0!important;margin-bottom:0!important;
+}
+body.solo-mode #tab-conv{
+  display:flex!important;flex-direction:column;flex:1 1 auto;min-height:0;
+  height:100%!important;padding:0;margin:0;overflow:hidden;
+}
+body.solo-mode #tab-account,body.solo-mode #tab-chat,body.solo-mode #tab-calls,body.solo-mode #tab-images,body.solo-mode #tab-feed{
+  flex:1 1 auto;min-height:0;overflow:auto;-webkit-overflow-scrolling:touch;
+  padding-bottom:calc(64px + env(safe-area-inset-bottom));
+}
+body.solo-mode #stage{
+  flex:0 0 42dvh; /* metà visiva sopra la chat, lascia spazio messaggi+composer+dock */
+  height:42dvh;max-height:42dvh;min-height:180px;padding:0;margin:0;
+  background:#E8EBF0;border-bottom:1px solid var(--line);
+  position:relative;overflow:hidden;
+}
+body.solo-mode #view-app{padding-bottom:calc(56px + env(safe-area-inset-bottom))}
+body.solo-mode #stage #avatar-canvas{
+  max-width:100%!important;max-height:100%!important;
+  border-radius:0!important;
+}
+body.solo-mode #stage .stage-tools{top:calc(env(safe-area-inset-top) + 6px);right:8px}
+body.solo-mode #messages{flex:1 1 auto;min-height:120px;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:8px 10px 6px;background:var(--bg)}
+body.solo-mode #chat-form.composer{flex:0 0 auto;padding:6px 8px 8px;margin:0;padding-bottom:8px}
+body.solo-mode #typing{flex:0 0 auto;margin:0 10px}
+/* fullscreen avatar overlay (metà → tutto) */
+body.solo-mode #stage.av-full{
+  position:fixed;inset:0;z-index:70;flex:none!important;max-height:none!important;height:100dvh!important;height:100vh!important;
+  background:#1A1D21;border:0;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+body.solo-mode #stage.av-full #avatar-canvas{border-radius:12px!important;height:calc(100% - 12px)!important}
+body.solo-mode.av-full-on .solo-dock,body.solo-mode.av-full-on .topbar,body.solo-mode.av-full-on #messages,body.solo-mode.av-full-on #chat-form,body.solo-mode.av-full-on #typing{visibility:hidden}
+body.solo-mode.av-full-on #stage.av-full .stage-tools{visibility:visible}
+.solo-dock{
+  display:none;position:fixed;left:0;right:0;bottom:0;z-index:8;
+  background:rgba(242,244,247,.97);border-top:1px solid var(--line);
+  padding:4px 0 calc(4px + env(safe-area-inset-bottom));
+  justify-content:space-around;align-items:stretch;
+}
+.solo-dock button{
+  flex:1;border:0;background:none;color:var(--muted);min-height:52px;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+  font-size:11px;font-weight:600;padding:6px 4px;-webkit-tap-highlight-color:transparent;
+}
+.solo-dock button .dock-ic{font-size:22px;line-height:1}
+.solo-dock button.active,.solo-dock button.on{color:var(--accent)}
+.solo-dock button:active{color:var(--accent2)}
+#solo-settings-card textarea{width:100%;min-height:72px;border-radius:10px;border:1px solid var(--line);padding:10px;font-size:16px;background:#fff}
+#solo-settings-card .hot-btn{margin-top:8px}
+#av-expand{background:#ffffffcc!important;color:#1A1D21!important}
+body.solo-mode #act-btn,body.solo-mode #scene-btn,body.solo-mode #call-btn{display:none!important}
+body.solo-mode #hot-btn{display:inline-flex!important}
+

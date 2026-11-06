@@ -4,7 +4,7 @@
 (function () {
   const av = () => App.avatarConv;
   const TAG = /\s*\[azione:\s*([a-zà-ù]+)\s*\]/gi;
-  const GESTURE_IDS = ['capelli', 'tosse', 'starnuto', 'ride', 'sorriso', 'annuisce', 'inclina', 'guarda', 'sbatte'];
+  const GESTURE_IDS = ['capelli', 'tosse', 'starnuto', 'ride', 'sorriso', 'annuisce', 'inclina', 'guarda', 'sbatte', 'gesticola', 'tocco_viso', 'tocco_capelli'];
   const AUTO_MIN_GAP = 150e3, AUTO_IDLE = 45e3, AUTO_MAX_HOUR = 8;
   let info = { catalog: [], adult: false, video: true }, lastActivity = Date.now(), autoLog = [], lastAuto = 0, running = null, autoQ = [], autoBusy = new Set(), autoDone = 0, autoTotal = 0, autoFail = 0, prepLog = [], lastWhy = '', failToast = 0;
   const poseLm = new Map(); // url -> punti del viso trovati sul telefono
@@ -267,7 +267,10 @@
       }
       // le azioni per adulti possono partire da sole SOLO se la modalità adulti è attiva per entrambi (altrimenti non esistono)
       // v8: le azioni per adulti NON partono mai da sole: solo dal filo della conversazione (tag dell'IA) o a mano
-      const pool = ready(ch).filter(([id]) => !meta(id).adult).map(([id]) => id);
+      const everyday = ['gesticola','tocco_viso','tocco_capelli','capelli','acqua','vino','patatine','mangia','sorriso','annuisce'];
+      let pool = ready(ch).filter(([id]) => !meta(id).adult).map(([id]) => id);
+      // v8.6.0: preferisci gesti quotidiani se pronti
+      const pref = pool.filter((id) => everyday.includes(id)); if (pref.length) pool = pref;
       if (!pool.length) return;
       const id = pick(pool); if (!id) return; // v8.3: mai la stessa due volte di fila; la risata solo dal contesto
       lastAuto = now; autoLog.push(now);
@@ -296,7 +299,7 @@
   $('#hot-btn').addEventListener('click', hot);
   $('#call-hot').addEventListener('click', hot);
   $('#act-auto').addEventListener('change', (e) => App.ls.set('actAuto', e.target.checked));
-  $('#act-prepare').addEventListener('click', () => { $('#act-menu').hidden = true; App.actions.openPrepare(); });
+  $('#act-prepare') && $('#act-prepare').addEventListener('click', () => { if (document.body.classList.contains('solo-mode')) return; $('#act-menu').hidden = true; App.actions.openPrepare(); });
   $('#act-go').addEventListener('click', () => App.actions.prepare());
   $('#act-stop').addEventListener('click', () => { if (running) running.stop = true; });
   $('#act-close').addEventListener('click', () => { if (running) running.stop = true; $('#act-dialog').close(); });

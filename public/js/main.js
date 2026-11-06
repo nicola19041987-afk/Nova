@@ -12,9 +12,14 @@ App.boot = async function () {
   App.editor.init(); App.voice.init();
   await App.account.load();
   App.chat.renderList();
+  try { if (App.solo) await App.solo.boot(); } catch (e) { console.warn(e); }
   App.media.load().catch(() => {}); App.feed.load().catch(() => {});
   App.applyAdult();
-  App.motionStyle = window.Motion ? new Motion.Style(App.ls) : null; App.applyStyle();
+  App.motionStyle = null; // v8.6.0: niente apprendimento dai movimenti in camera
+  App.applyStyle = function () { /* no-op: stile fisso, realistico */ };
+  App.applyStyle();
+  // voce sempre attiva (non resta muta)
+  try { App.ls.set('ttsOn', true); App.ls.set('readOn', true); } catch {}
   $('#tab-conv').classList.toggle('compact', !!App.ls.get('avatarCompact', false));
   App.actions && App.actions.load();
   App.sync();
@@ -58,15 +63,28 @@ App.openTab = function (t) {
   if (App.home) App.home.hide();
   $$('.tabbar button').forEach((x) => x.classList.toggle('active', x.dataset.tab === t));
   ['chat', 'conv', 'calls', 'feed', 'images', 'account'].forEach((n) => { const el = $(`#tab-${n}`); if (el) el.hidden = true; });
+  const solo = document.body.classList.contains('solo-mode');
+  if (solo && t === 'chat') {
+    const ch = App.solo && App.solo.char && App.solo.char();
+    if (ch && (!App.current || App.current.id !== ch.id)) App.chat.open(ch.id);
+    $('#tab-conv').hidden = false; $('#back-btn').hidden = true;
+    $('#title').textContent = (App.current && App.current.name) || 'Greta';
+    document.body.dataset.tab = 'conv'; $('#large-title').hidden = true;
+    if (App.solo && App.solo.setDock) App.solo.setDock('home');
+    if (App.chat && App.chat.header) App.chat.header();
+    requestAnimationFrame(() => App.fitFrame && App.fitFrame());
+    window.scrollTo(0, 0); return;
+  }
   const conv = t === 'chat' && App.current;
-  if (conv) { $('#tab-conv').hidden = false; $('#back-btn').hidden = false; $('#title').textContent = App.current.name; }
-  else { $(`#tab-${t}`).hidden = false; $('#back-btn').hidden = true; $('#title').textContent = TITLES[t]; }
+  if (conv) { $('#tab-conv').hidden = false; $('#back-btn').hidden = !!solo; $('#title').textContent = App.current.name; }
+  else { $(`#tab-${t}`).hidden = false; $('#back-btn').hidden = true; $('#title').textContent = TITLES[t] || t; }
   document.body.dataset.tab = conv ? 'conv' : t;
-  $('#large-title').textContent = TITLES[t]; $('#large-title').hidden = !!conv;
-  if (App.chat && App.chat.header) App.chat.header(); // v8.2: intestazione WhatsApp solo nella conversazione
+  $('#large-title').textContent = TITLES[t] || t; $('#large-title').hidden = !!conv || solo;
+  if (App.chat && App.chat.header) App.chat.header();
   if (t === 'feed') App.feed.load().catch(() => {});
   if (t === 'calls' && App.calls) App.calls.load();
   if (t === 'images' && App.gallery) App.gallery.load();
+  if (solo && t === 'account' && App.solo && App.solo.setDock) App.solo.setDock('settings');
   window.scrollTo(0, 0);
 };
 
@@ -88,9 +106,12 @@ App.fitFrame = function () {
   const cs = getComputedStyle(st);
   const W = st.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight), H = st.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
   if (W < 10 || H < 10) return;
+  // v8.6.1: in metà schermo / fullscreen riempie l'altezza (9:16), senza ritagliare il volto (object-position top)
   let h = H, w = h * 9 / 16; if (w > W) { w = W; h = w * 16 / 9; }
   w = Math.floor(w); h = Math.floor(h);
-  Object.assign(c.style, { width: w + 'px', height: h + 'px', left: Math.round(parseFloat(cs.paddingLeft) + (W - w) / 2) + 'px', top: Math.round(parseFloat(cs.paddingTop) + (H - h) / 2) + 'px', transform: 'none', aspectRatio: 'auto', maxWidth: 'none' });
+  const left = Math.round(parseFloat(cs.paddingLeft) + (W - w) / 2);
+  const top = Math.round(parseFloat(cs.paddingTop) + Math.max(0, (H - h) / 2));
+  Object.assign(c.style, { width: w + 'px', height: h + 'px', left: left + 'px', top: top + 'px', transform: 'none', translate: 'none', aspectRatio: 'auto', maxWidth: 'none', borderRadius: st.classList.contains('av-full') ? '12px' : (document.body.classList.contains('solo-mode') ? '0' : '') });
   if (App.avatarConv && App.avatarConv.syncBackdrop) App.avatarConv.syncBackdrop(true);
 };
 (function () {

@@ -136,7 +136,8 @@
       const r = await App.api(`/api/characters/${E.id}/regenerate`, { method: 'POST', ai: true, body: { appearance: E.appearance, look: E.look, identity: E.identity, prompt: $('#regen-extra').value, reason } });
       const framingChanged = prevFraming && prevFraming !== E.appearance.framing;
       if (r.character) {
-        if (framingChanged) { r.character.landmarks = clone(LM_DEFAULT[E.appearance.framing]); store(await App.api(`/api/characters/${E.id}`, { method: 'PUT', body: { ...r.character } })); }
+        if (framingChanged) { r.character.landmarks = clone(LM_DEFAULT[E.appearance.framing]); try { if (E.ready==='greta' || (App.me&&App.me.solo)) App.api('/api/solo/prep',{method:'POST',ai:true,body:{}}); } catch {}
+      store(await App.api(`/api/characters/${E.id}`, { method: 'PUT', body: { ...r.character } })); }
         else store(r.character);
         $('#avatar-status').textContent = '✅ Nuovo look salvato.';
       } else if (r.preview) {

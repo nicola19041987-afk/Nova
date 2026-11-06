@@ -89,7 +89,7 @@ $('#live-mirror').addEventListener('click', () => { App.ls.set('mirrorMoves', !m
 function setMode(m) {
   mode = m;
   $('#live-mode').textContent = mode === 'presence' ? '🎭 Volto dal vivo' : '🧍 Presenza';
-  $('#presence-avatar').hidden = mode !== 'presence'; $('#faceswap-panel').hidden = mode !== 'face';
+  $('#presence-avatar').hidden = mode !== 'presence'; $('#faceswap-panel').hidden = true; // v8.6.0: no face-swap
   octx.clearRect(0, 0, overlay.width, overlay.height);
   if (mode === 'face') { fillFaces(); ensureLandmarker(); }
 }

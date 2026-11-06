@@ -21,6 +21,11 @@ App.chat = {
     if (App.rt && App.rt.prewarm) setTimeout(() => App.rt.prewarm(ch), 600); // v8.5.0
     App.scene && App.scene.apply();
     App.avatarConv.stopAction(true); App.actions && App.actions.render();
+    if (document.body.classList.contains('solo-mode')) {
+      $('#back-btn').hidden = true;
+      requestAnimationFrame(() => { App.fitFrame && App.fitFrame(); setTimeout(() => App.fitFrame && App.fitFrame(), 100); });
+      if (App.solo && App.solo.setDock) App.solo.setDock('home');
+    }
     $('#messages').innerHTML = ''; this.epoch = null; this.last = 0; this.ids = new Set();
     this.header(null);
     await this.poll(true);
@@ -28,7 +33,13 @@ App.chat = {
   },
   close() {
     App.stageFs && App.stageFs.exit(); $('#scene-menu').hidden = true; $('#act-menu').hidden = true; App.avatarConv.stopAction(true);
-    App.current = null; App.voice && App.voice.stop(); App.voice && App.voice.cancel ? App.voice.cancel() : window.speechSynthesis && window.speechSynthesis.cancel();
+    App.voice && App.voice.stop(); App.voice && App.voice.cancel ? App.voice.cancel() : window.speechSynthesis && window.speechSynthesis.cancel();
+    // v8.6.0: in solo non si torna alla lista personaggi — resta su Greta o va alle tab
+    if (document.body.classList.contains('solo-mode')) {
+      const ch = App.solo && App.solo.char && App.solo.char();
+      if (ch) { App.current = ch; this.header(null); return; }
+    }
+    App.current = null;
     $('#tab-conv').hidden = true; $('#tab-chat').hidden = false; $('#back-btn').hidden = true; $('#title').textContent = 'Chat';
     document.body.dataset.tab = 'chat'; $('#large-title').hidden = false; $('#large-title').textContent = 'Chat';
     this.setTyping(null); this.renderList(); document.body.classList.remove('wa-conv');
