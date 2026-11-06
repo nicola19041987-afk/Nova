@@ -2,9 +2,9 @@
  * L'ascolto si riavvia da solo a ogni evento "end" finché il microfono è acceso: nessun limite di durata.
  * Mentre l'avatar parla l'ascolto è in pausa, per evitare l'eco. */
 (function () {
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const speechRec = () => window.SpeechRecognition || window.webkitSpeechRecognition;
   let xMode = false, xFailed = false; // v8.4.5: modalità voce con trascrizione xAI
-  let rec = null, on = false, pausedForTTS = false, ttsOn = false;
+  let rec = null, on = false, pausedForTTS = false, ttsOn = false, composerOnly = false;
   let lastResAt = 0, eosT = 0, early = ''; // v8.4: fine del parlato anticipata (chiamate)
   let ignoreUntil = 0; // v8.4.1: in chiamata il riconoscimento NON si ferma mentre lei parla (niente bip di iOS): i risultati vengono ignorati
   const inCall = () => !!(App.call && App.call.active);
@@ -273,7 +273,7 @@
     $('#tts-btn span').textContent = ttsOn ? 'Lettura: on' : 'Lettura: off';
   }
   function build() {
-    rec = new SR(); rec.lang = 'it-IT'; rec.continuous = true; rec.interimResults = true;
+    rec = new (speechRec())(); rec.lang = 'it-IT'; rec.continuous = true; rec.interimResults = true;
     rec.onresult = (e) => {
       if (inCall() && (pausedForTTS || performance.now() < ignoreUntil)) return; // è la sua voce (eco), non la tua
       let interim = ''; lastResAt = performance.now(); clearTimeout(eosT);
@@ -287,14 +287,15 @@
             if (b.startsWith(a)) { t = t.split(/\s+/).slice(nw).join(' ').trim(); if (!t) continue; }
           }
           if (App.latency) App.latency.mark = App.latency.mark || lastResAt;
-          if ($('#auto-send').checked) { $('#chat-input').value = ''; App.chat.send(t); }
+          if (composerOnly) putComposer(t);
+          else if ($('#auto-send').checked) { $('#chat-input').value = ''; App.chat.send(t); }
           else { const inp = $('#chat-input'); inp.value = (inp.value ? inp.value + ' ' : '') + t; }
         } else interim += r[0].transcript;
       }
       status(interim ? '🎙️ ' + interim : '🎙️ In ascolto…');
       if (interim && App.call) App.call.onInterim(interim); // v8: annuisce mentre parli (videochiamata)
       // v8.4: fine del parlato più rapida in chiamata: ~600 ms senza nuove parole = turno finito (non si aspetta il "final" del browser)
-      if (interim.trim() && App.call && App.call.active && $('#auto-send').checked) {
+      if (!composerOnly && interim.trim() && App.call && App.call.active && $('#auto-send').checked) {
         const snap = interim.trim(), at = lastResAt;
         eosT = setTimeout(() => { if (!on || lastResAt !== at || App.chat.busy) return; early = snap; if (App.latency) App.latency.mark = at; $('#chat-input').value = ''; App.chat.send(snap); }, 600);
       }
@@ -305,23 +306,30 @@
     };
     rec.onend = () => { if (on && (!pausedForTTS || inCall())) setTimeout(() => { try { rec.start(); } catch {} }, inCall() ? 0 : 250); }; // riavvio automatico
   }
+  function putComposer(t) {
+    const inp = $('#chat-input'); if (!inp || !t) return;
+    inp.value = (inp.value ? inp.value + ' ' : '') + t;
+    try { inp.dispatchEvent(new Event('input', { bubbles: true })); } catch {}
+  }
   App.voice = {
-    start() {
+    start(opts = {}) {
+      composerOnly = !!(opts && opts.composer);
+      const allow = composerOnly || App.ls.get('micOn', false);
       // v8.4.5: con la chiave xAI la modalità voce (fuori chiamata) usa il NOSTRO microfono + trascrizione xAI in italiano
       // (stesso rilevatore del parlato della chiamata): niente riconoscimento di Safari, che su iPhone capiva parole a caso
       // ("Foglia", "Gatto") e faceva il "bip" a ogni riavvio. Il riconoscimento del telefono resta solo come riserva.
       if (App.key && App.key() && App.callMic && App.callMic.supported() && !xFailed && !(App.call && App.call.active)) {
-        if (!App.ls.get('micOn', false)) return App.toast('Attiva il microfono in Impostazioni');
+        if (!allow) return App.toast('Attiva il microfono in Impostazioni');
         try { App.audio.unlock(); } catch {} // dentro il tocco, PRIMA di passare alla sessione con microfono
-        on = true; xMode = true; setBtn(); status('🎙️ In ascolto… (trascrizione xAI)'); document.body.classList.add('voice-live');
+        on = true; xMode = true; setBtn(); status(composerOnly ? '🎙️ Dettato…' : '🎙️ In ascolto… (trascrizione xAI)'); document.body.classList.add('voice-live');
         App.audio.callSession(true); // v8.4.5: una sola sessione «registra + riproduci» finché la modalità voce è attiva
-        const onText = (t) => { if (!on) return; status('🎙️ In ascolto… (trascrizione xAI)'); if ($('#auto-send').checked) { $('#chat-input').value = ''; App.chat.send(t); } else { const inp = $('#chat-input'); inp.value = (inp.value ? inp.value + ' ' : '') + t; } };
-        const onFail = (e) => { console.warn('Trascrizione xAI non disponibile, uso il riconoscimento del telefono:', e && e.message); xFailed = true; App.callMic.stop(); xMode = false; if (!(App.call && App.call.active)) App.audio.callSession(false); if (on) { on = false; App.voice.start(); } };
+        const onText = (t) => { if (!on) return; status(composerOnly ? '🎙️ Dettato…' : '🎙️ In ascolto… (trascrizione xAI)'); if (composerOnly) putComposer(t); else if ($('#auto-send').checked) { $('#chat-input').value = ''; App.chat.send(t); } else { const inp = $('#chat-input'); inp.value = (inp.value ? inp.value + ' ' : '') + t; } };
+        const onFail = (e) => { console.warn('Trascrizione xAI non disponibile, uso il riconoscimento del telefono:', e && e.message); xFailed = true; App.callMic.stop(); xMode = false; if (!(App.call && App.call.active)) App.audio.callSession(false); if (on) { const keep = composerOnly; on = false; App.voice.start(keep ? { composer: true } : undefined); } };
         App.callMic.start({ onText, onFail, noBarge: true, onState: (st) => { if (on && xMode) status(st === 'speech' ? '🎙️ Ti ascolto…' : '🎙️ In ascolto… (trascrizione xAI)'); } }).catch((e) => { if (e && (e.name === 'NotAllowedError' || e.name === 'SecurityError')) { on = false; xMode = false; setBtn(); status('Permesso microfono negato.'); document.body.classList.remove('voice-live'); } else onFail(e); });
         return;
       }
-      if (!SR) { status('Il riconoscimento vocale non è supportato da questo browser (su iPhone il supporto è parziale). Puoi usare il microfono della tastiera.'); return; }
-      if (!App.ls.get('micOn', false)) return App.toast('Attiva il microfono in Impostazioni');
+      if (!speechRec()) { composerOnly = false; status('Il riconoscimento vocale non è supportato da questo browser (su iPhone il supporto è parziale). Puoi usare il microfono della tastiera.'); return; }
+      if (!allow) return App.toast('Attiva il microfono in Impostazioni');
       if (!rec) build();
       on = true; setBtn(); status('🎙️ In ascolto…'); try { rec.start(); } catch {}
     },
@@ -335,7 +343,7 @@
       speakNow(text, { before: (u) => App.avatarConv.speakUtterance(u, text) });
     },
     stop() {
-      on = false; setBtn(); status(''); document.body.classList.remove('voice-live'); if (rec) try { rec.stop(); } catch {}
+      on = false; composerOnly = false; setBtn(); status(''); document.body.classList.remove('voice-live'); if (rec) try { rec.stop(); } catch {}
       if (xMode) { xMode = false; App.callMic.stop(); if (!(App.call && App.call.active)) { App.audio.releaseMic(); App.audio.callSession(false); } } // in chiamata il microfono resta (stesso flusso)
     },
     mode: () => (on ? (xMode ? 'xai' : 'telefono') : 'off'),

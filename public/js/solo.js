@@ -87,27 +87,31 @@
       this.setDock(name);
       if (name === 'home') {
         if (this.full) this.toggleFull(false);
-        const ch = soloChar();
-        if (ch) App.chat.open(ch.id);
+        // Il thread è già aperto: openTab mostra la conversazione senza richiamare chat.open, che svuoterebbe #messages.
         App.openTab('chat');
-        // force conv visible in solo
-        $('#tab-conv').hidden = false; $('#tab-account').hidden = true; $('#tab-chat').hidden = true;
-        $('#tab-calls') && ($('#tab-calls').hidden = true); $('#tab-images') && ($('#tab-images').hidden = true);
+        const conv = $('#tab-conv'); if (conv) conv.hidden = false;
+        const acc = $('#tab-account'); if (acc) acc.hidden = true;
+        const list = $('#tab-chat'); if (list) list.hidden = true;
+        const calls = $('#tab-calls'); if (calls) calls.hidden = true;
+        const images = $('#tab-images'); if (images) images.hidden = true;
         document.body.dataset.tab = 'conv';
         requestAnimationFrame(fit);
         return;
       }
       if (name === 'mic') {
-        // realtime voice call
-        const ch = soloChar(); if (!ch) return;
-        if (App.current?.id !== ch.id) App.chat.open(ch.id);
-        if (App.call && App.call.active) {
-          if (App.call.minimized && App.call.restore) App.call.restore();
-          else if (App.call.mode === 'voice') { /* già in chiamata vocale */ }
-          else if ($('#call-tovoice') || true) { try { App.call.start('voice'); } catch {} }
-        } else {
-          try { App.call.start('voice'); } catch (e) { App.toast(e.message || 'Microfono non avviato'); }
+        // Il microfono del dock non apre una chiamata: accende o spegne il dettato nel composer.
+        const listening = App.voice && App.voice.isListening && App.voice.isListening();
+        if (listening) {
+          App.voice.stop();
+          this.setDock(document.body.dataset.tab === 'account' ? 'settings' : 'home');
+          return;
         }
+        const ch = soloChar();
+        if (ch && (!App.current || App.current.id !== ch.id) && App.chat) App.chat.open(ch.id);
+        else if ($('#tab-conv') && $('#tab-conv').hidden && App.openTab) App.openTab('chat');
+        if (App.voice && App.voice.start) App.voice.start({ composer: true });
+        const on = App.voice && App.voice.isListening && App.voice.isListening();
+        this.setDock(on ? 'mic' : (document.body.dataset.tab === 'account' ? 'settings' : 'home'));
         return;
       }
       if (name === 'cam') {
