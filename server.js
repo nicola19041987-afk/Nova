@@ -2523,6 +2523,266 @@ app.use(express.static(path.join(__dirname, 'public'), {
     if (file.includes(`${path.sep}vendor${path.sep}mediapipe${path.sep}`)) res.setHeader('Cache-Control', 'public, max-age=604800');
   },
 }));
+app.get(['/galleria', '/galleria/'], (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache');
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// ---------- Galleria totale: sola lettura, nessun file viene spostato o riscritto ----------
+const ARCHIVE_IMG = /\.(png|jpe?g|webp|gif|heic)$/i;
+const ARCHIVE_VID = /\.(mp4|mov|webm|m4v)$/i;
+function archiveWho(id) {
+  const k = String(id || '').toLowerCase();
+  if (k === 'nicola' || k === 'nico') return 'Nicola';
+  if (k === 'luisa') return 'Luisa';
+  if (k === 'nova' || k === 'ai') return 'Nova-generated';
+  return 'sconosciuto';
+}
+function archiveRead(f, def) { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return def; } }
+function archiveExists(abs) { try { return fs.statSync(abs).isFile(); } catch { return false; } }
+function archiveMtime(abs) { try { return new Date(fs.statSync(abs).mtimeMs).toISOString(); } catch { return null; } }
+function archiveRel(abs) {
+  const rel = path.relative(path.resolve(DATA_DIR), path.resolve(abs));
+  if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) return null;
+  return rel.split(path.sep).join('/');
+}
+function archiveAllowed(rel) {
+  if (!rel || rel.includes('..')) return false;
+  const ok = /^users\/(nicola|luisa)\/(gallery|gallery-trash|images|videos|avatars)\/[^/]+$/.test(rel)
+    || /^shared\/(avatars|actions|chat-media|feed)\/[^/]+$/.test(rel)
+    || /^shared\/trash-characters\/[^/]+\/files\/[^/]+$/.test(rel);
+  if (!ok || /\.json$/i.test(rel)) return false;
+  return ARCHIVE_IMG.test(rel) || ARCHIVE_VID.test(rel) || /\.t\.jpg$/i.test(rel);
+}
+function archiveId(rel) { return Buffer.from(rel).toString('base64url'); }
+function archiveDecode(id) {
+  let rel = '';
+  try { rel = Buffer.from(String(id || ''), 'base64url').toString('utf8'); } catch { return null; }
+  rel = rel.split('\\').join('/');
+  if (!archiveAllowed(rel)) return null;
+  const abs = path.resolve(DATA_DIR, rel);
+  const root = path.resolve(DATA_DIR) + path.sep;
+  if (!abs.startsWith(root)) return null;
+  return { rel, abs };
+}
+function archiveKind(name) { return ARCHIVE_VID.test(name) ? 'video' : (ARCHIVE_IMG.test(name) ? 'photo' : null); }
+function archiveAdd(items, seen, abs, meta) {
+  if (!archiveExists(abs)) return;
+  const rel = archiveRel(abs);
+  const kind = rel && archiveKind(rel);
+  if (!rel || !kind || !archiveAllowed(rel) || seen.has(rel)) return;
+  seen.add(rel);
+  let thumbRel = null;
+  if (meta.thumbAbs && archiveExists(meta.thumbAbs)) thumbRel = archiveRel(meta.thumbAbs);
+  items.push({
+    id: archiveId(rel), kind, at: meta.at || archiveMtime(abs), uploader: meta.uploader || 'sconosciuto',
+    source: meta.source, trash: !!meta.trash, label: String(meta.label || '').slice(0, 80),
+    thumb: thumbRel && archiveAllowed(thumbRel) ? '/api/archive/media/' + archiveId(thumbRel) : (kind === 'photo' ? '/api/archive/media/' + archiveId(rel) : null),
+    url: '/api/archive/media/' + archiveId(rel),
+  });
+}
+function archiveDirFiles(dir) {
+  try { return fs.readdirSync(dir).filter((n) => archiveKind(n)); } catch { return []; }
+}
+function collectArchive() {
+  const items = [], seen = new Set();
+  const root = path.resolve(DATA_DIR);
+  for (const u of ['nicola', 'luisa']) {
+    const who = archiveWho(u);
+    const idx = archiveRead(path.join(root, 'users', u, 'gallery.json'), []);
+    const known = new Set();
+    for (const it of Array.isArray(idx) ? idx : []) {
+      if (!it || !it.file) continue;
+      known.add(it.file); if (it.thumb) known.add(it.thumb);
+      const trash = !!it.deletedAt;
+      const base = path.join(root, 'users', u, trash ? 'gallery-trash' : 'gallery');
+      archiveAdd(items, seen, path.join(base, path.basename(it.file)), {
+        at: it.addedAt || it.deletedAt, uploader: who, source: 'Galleria', trash, label: it.name || '',
+        thumbAbs: it.thumb ? path.join(base, path.basename(it.thumb)) : null,
+      });
+    }
+    for (const name of archiveDirFiles(path.join(root, 'users', u, 'gallery'))) {
+      if (known.has(name) || /\.t\.jpg$/i.test(name)) continue;
+      archiveAdd(items, seen, path.join(root, 'users', u, 'gallery', name), { uploader: 'sconosciuto', source: 'Galleria' });
+    }
+    const images = archiveRead(path.join(root, 'users', u, 'images.json'), []);
+    const imgKnown = new Set();
+    for (const it of Array.isArray(images) ? images : []) {
+      if (!it || !it.file) continue;
+      imgKnown.add(path.basename(it.file));
+      const manual = it.prompt === 'Immagine ritagliata';
+      archiveAdd(items, seen, path.join(root, 'users', u, 'images', path.basename(it.file)), {
+        at: it.createdAt, uploader: manual ? who : 'Nova-generated', source: manual ? 'Caricamento' : 'Immagine generata', label: manual ? '' : 'Nova',
+      });
+    }
+    for (const name of archiveDirFiles(path.join(root, 'users', u, 'images'))) {
+      if (imgKnown.has(name)) continue;
+      archiveAdd(items, seen, path.join(root, 'users', u, 'images', name), { uploader: 'sconosciuto', source: 'Immagine generata' });
+    }
+    const videos = archiveRead(path.join(root, 'users', u, 'videos.json'), []);
+    const vidKnown = new Set();
+    for (const it of Array.isArray(videos) ? videos : []) {
+      if (!it || !it.file) continue;
+      vidKnown.add(path.basename(it.file));
+      archiveAdd(items, seen, path.join(root, 'users', u, 'videos', path.basename(it.file)), {
+        at: it.createdAt, uploader: 'Nova-generated', source: 'Video generato', label: 'Nova',
+      });
+    }
+    for (const name of archiveDirFiles(path.join(root, 'users', u, 'videos'))) {
+      if (vidKnown.has(name)) continue;
+      archiveAdd(items, seen, path.join(root, 'users', u, 'videos', name), { uploader: 'sconosciuto', source: 'Video generato' });
+    }
+    for (const name of archiveDirFiles(path.join(root, 'users', u, 'avatars'))) {
+      archiveAdd(items, seen, path.join(root, 'users', u, 'avatars', name), { uploader: who, source: 'Avatar' });
+    }
+  }
+  const chars = archiveRead(path.join(root, 'shared', 'characters.json'), []);
+  const avatarMeta = new Map(), actionMeta = new Map();
+  const noteAv = (url, meta) => { const m = /\/api\/avatars\/([a-f0-9]{16}\.(?:png|jpg))$/.exec(String(url || '')); if (m) avatarMeta.set(m[1], meta); };
+  for (const ch of Array.isArray(chars) ? chars : []) {
+    if (!ch) continue;
+    const who = ch.avatarSource === 'ai' ? 'Nova-generated' : archiveWho(ch.createdBy || ch.updatedBy);
+    const at = ch.updatedAt || ch.createdAt;
+    noteAv(ch.avatar, { at, uploader: who, label: ch.name || '' });
+    noteAv(ch.identity && ch.identity.refAvatar, { at, uploader: who, label: ch.name || '' });
+    for (const h of ch.lookHistory || []) noteAv(h && h.avatar, { at: h.at || at, uploader: h && h.avatarSource === 'upload' ? archiveWho(ch.createdBy) : who, label: ch.name || '' });
+    for (const sc of Object.values(ch.scenes || {})) noteAv(sc && sc.url, { at, uploader: who, label: ch.name || '' });
+    for (const bag of [ch.actions, ch.seated]) {
+      for (const a of Object.values(bag || {})) {
+        if (!a || !a.file) continue;
+        actionMeta.set(path.basename(a.file), { at: a.at, uploader: a.by ? archiveWho(a.by) : 'Nova-generated', label: ch.name || '' });
+      }
+    }
+  }
+  for (const name of archiveDirFiles(path.join(root, 'shared', 'avatars'))) {
+    const meta = avatarMeta.get(name) || { uploader: 'sconosciuto' };
+    archiveAdd(items, seen, path.join(root, 'shared', 'avatars', name), { ...meta, source: 'Avatar' });
+  }
+  for (const name of archiveDirFiles(path.join(root, 'shared', 'actions'))) {
+    const meta = actionMeta.get(name) || { uploader: 'Nova-generated' };
+    archiveAdd(items, seen, path.join(root, 'shared', 'actions', name), { ...meta, source: 'Clip' });
+  }
+  const chatWho = new Map();
+  const chatDir = path.join(root, 'shared', 'chats');
+  let chatNames = [];
+  try { chatNames = fs.readdirSync(chatDir).filter((n) => n.endsWith('.json')); } catch { chatNames = []; }
+  for (const n of chatNames) {
+    const chat = archiveRead(path.join(chatDir, n), null);
+    for (const m of (chat && chat.messages) || []) {
+      const ph = m && m.photo;
+      if (!ph || !ph.file) continue;
+      const who = m.role === 'assistant' ? 'Nova-generated' : archiveWho(m.author);
+      chatWho.set(path.basename(ph.file), { at: m.at, uploader: who, label: who });
+      if (ph.thumb) chatWho.set(path.basename(ph.thumb), { at: m.at, uploader: who, thumb: true });
+    }
+  }
+  for (const name of archiveDirFiles(path.join(root, 'shared', 'chat-media'))) {
+    if (/\.t\.jpg$/i.test(name)) continue;
+    const meta = chatWho.get(name) || { uploader: 'sconosciuto' };
+    const thumbName = chatWho.has(name.replace(/\.[^.]+$/, '.t.jpg')) ? name.replace(/\.[^.]+$/, '.t.jpg') : null;
+    archiveAdd(items, seen, path.join(root, 'shared', 'chat-media', name), {
+      ...meta, source: 'Chat', thumbAbs: thumbName ? path.join(root, 'shared', 'chat-media', thumbName) : null,
+    });
+  }
+  const feed = archiveRead(path.join(root, 'shared', 'feed.json'), []);
+  const feedKnown = new Set();
+  for (const p of Array.isArray(feed) ? feed : []) {
+    if (!p || !p.file) continue;
+    feedKnown.add(path.basename(p.file));
+    archiveAdd(items, seen, path.join(root, 'shared', 'feed', path.basename(p.file)), {
+      at: p.createdAt, uploader: archiveWho(p.author), source: 'Diario', label: p.caption || '',
+    });
+  }
+  for (const name of archiveDirFiles(path.join(root, 'shared', 'feed'))) {
+    if (feedKnown.has(name)) continue;
+    archiveAdd(items, seen, path.join(root, 'shared', 'feed', name), { uploader: 'sconosciuto', source: 'Diario' });
+  }
+  const trashRoot = path.join(root, 'shared', 'trash-characters');
+  let trashDirs = [];
+  try { trashDirs = fs.readdirSync(trashRoot); } catch { trashDirs = []; }
+  for (const d of trashDirs) {
+    const td = path.join(trashRoot, d);
+    if (!archiveExists(path.join(td, 'character.json')) && !archiveExists(path.join(td, 'meta.json'))) continue;
+    const meta = archiveRead(path.join(td, 'meta.json'), {});
+    const ch = archiveRead(path.join(td, 'character.json'), {});
+    for (const name of archiveDirFiles(path.join(td, 'files'))) {
+      archiveAdd(items, seen, path.join(td, 'files', name), {
+        at: meta.deletedAt || ch.updatedAt, uploader: archiveWho(meta.by || ch.createdBy), source: 'Cestino', trash: true, label: ch.name || meta.name || '',
+      });
+    }
+  }
+  items.sort((a, b) => String(a.at || '').localeCompare(String(b.at || '')) || a.id.localeCompare(b.id));
+  const by = { Nicola: 0, Luisa: 0, 'Nova-generated': 0, sconosciuto: 0 };
+  let photos = 0, videos = 0;
+  for (const it of items) {
+    if (it.kind === 'video') videos++; else photos++;
+    if (!Object.prototype.hasOwnProperty.call(by, it.uploader)) it.uploader = 'sconosciuto';
+    by[it.uploader]++;
+  }
+  return {
+    totals: { photos, videos, by, first: items.length ? items[0].at : null, last: items.length ? items[items.length - 1].at : null },
+    items, telegram: collectTelegram(),
+  };
+}
+function archiveRedact(s) {
+  return String(s || '')
+    .replace(/\b\d{6,12}:[A-Za-z0-9_-]{20,}\b/g, '[omesso]')
+    .replace(/bot\d{5,}:[A-Za-z0-9_-]+/gi, '[omesso]')
+    .replace(/\s+/g, ' ').trim().slice(0, 240);
+}
+function collectTelegram() {
+  const hits = [];
+  const seen = new Set();
+  const push = (row) => {
+    const text = archiveRedact(row.text);
+    if (!/telegram|t\.me\//i.test(text)) return;
+    const key = text + '|' + (row.at || '');
+    if (seen.has(key)) return;
+    seen.add(key);
+    hits.push({ at: row.at || null, who: row.who || 'sconosciuto', source: row.source || '', text });
+  };
+  const root = path.resolve(DATA_DIR);
+  const walk = (dir, depth) => {
+    if (depth > 5) return;
+    let ents = [];
+    try { ents = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of ents) {
+      if (e.name.startsWith('.') || e.name === 'backups' || e.name === 'node_modules') continue;
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) {
+        if (/^(avatars|actions|gallery|gallery-trash|images|videos|feed|chat-media|files|consent)$/.test(e.name)) continue;
+        walk(p, depth + 1);
+      } else if (e.isFile() && e.name.endsWith('.json') && !/pins|sessions|server-ai-key|lockout|consent/i.test(e.name)) {
+        let st; try { st = fs.statSync(p); } catch { continue; }
+        if (st.size > 2000000) continue;
+        let txt = ''; try { txt = fs.readFileSync(p, 'utf8'); } catch { continue; }
+        if (!/telegram|t\.me\//i.test(txt)) continue;
+        let data; try { data = JSON.parse(txt); } catch { push({ text: txt.slice(0, 180), source: path.basename(p) }); continue; }
+        const msgs = data && Array.isArray(data.messages) ? data.messages : null;
+        if (msgs) {
+          for (const m of msgs) if (m && /telegram|t\.me\//i.test(m.content || '')) push({ at: m.at, who: m.role === 'assistant' ? 'Nova-generated' : archiveWho(m.author), source: 'Chat', text: m.content });
+        } else push({ text: txt.slice(0, 180), source: path.relative(root, p).split(path.sep).join('/') });
+      }
+    }
+  };
+  walk(root, 0);
+  hits.sort((a, b) => String(a.at || '').localeCompare(String(b.at || '')));
+  return { code: false, hits };
+}
+app.get('/api/archive', auth, (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.json(collectArchive());
+});
+app.get('/api/archive/media/:id', auth, (req, res) => {
+  const hit = archiveDecode(req.params.id);
+  if (!hit || !archiveExists(hit.abs)) return res.status(404).end();
+  const ext = path.extname(hit.abs).toLowerCase();
+  const types = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp', '.gif': 'image/gif', '.heic': 'image/heic', '.mp4': 'video/mp4', '.m4v': 'video/mp4', '.mov': 'video/quicktime', '.webm': 'video/webm' };
+  res.setHeader('Content-Type', types[ext] || 'application/octet-stream');
+  res.setHeader('Cache-Control', 'private, max-age=86400');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.sendFile(hit.abs);
+});
 app.use('/api', (req, res) => res.status(404).json({ error: 'Non trovato' }));
 
 // ---------- protezione dati: backup automatici, registro eliminazioni, recupero personaggi ----------
