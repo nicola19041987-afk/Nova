@@ -731,7 +731,7 @@ body.solo-mode #stage.av-full{
 body.solo-mode #stage #avatar-canvas,body.solo-mode #stage .av-backdrop{
   left:0!important;top:0!important;width:100%!important;height:100%!important;
   max-width:none!important;max-height:none!important;margin:0!important;
-  border-radius:0!important;object-fit:cover!important;object-position:center 22%!important;
+  border-radius:0!important;object-fit:fill!important;object-position:center center!important;
   box-shadow:none!important;
 }
 body.solo-mode #stage.av-full #avatar-canvas{border-radius:0!important;height:100%!important}

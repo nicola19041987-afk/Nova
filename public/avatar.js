@@ -1011,8 +1011,8 @@
     if (sw <= 0 || sh <= 0 || dw <= 0 || dh <= 0) return;
     ctx.drawImage(img, ox + sx * k, oy + sy * k, sw * k, sh * k, dx, dy, dw, dh);
   }
-  // Apertura sulla asse della bocca: i campioni seguono la linea delle labbra e il mento scende
-  // perpendicolarmente a quella linea, non all'orizzontale dello schermo.
+  // Apertura sulla asse della bocca: labbra che si separano, interno sfumato, bordi morbidi.
+  // L'ampiezza è una frazione della larghezza delle labbra (non un rettangolo fisso).
   const mouthBuf = { src: null, out: null };
   function paintMouth(ctx, img, lm, open, wide) {
     const S = VS, L = lm && lm.mouthL, R = lm && lm.mouthR;
@@ -1021,15 +1021,14 @@
     const vx = (R.x - L.x) * S, vy = (R.y - L.y) * S;
     const len = Math.max(S * 0.04, Math.hypot(vx, vy));
     const lip = Math.atan2(vy, vx);
-    const wF = 1 + (Math.max(0, Math.min(1, wide || 0.5)) - 0.5) * 0.1;
-    const half = len * 0.5 * wF;
-    const jawCap = Math.min(len * 0.22, S * 0.036);
-    const jaw = Math.min(open * len * 0.22, jawCap);
-    const above = len * 0.18, below = Math.min(len * 0.42, S * 0.06);
-    const cols = 17, colW = (half * 2) / cols, pad = 3;
+    const wF = 1 + (Math.max(0, Math.min(1, wide || 0.5)) - 0.5) * 0.08;
+    const half = len * 0.52 * wF;
+    const jaw = Math.min(open * len * 0.13, len * 0.16);
+    const above = len * 0.16, below = len * 0.22;
+    const cols = 24, colW = (half * 2) / cols, pad = 4;
     const tw = Math.max(8, Math.ceil(half * 2 + pad * 2));
     const th = Math.max(8, Math.ceil(above + below + pad * 2));
-    const oh = Math.ceil(th + jaw + 4);
+    const oh = Math.ceil(th + jaw + 6);
     if (!mouthBuf.src || mouthBuf.src.width !== tw || mouthBuf.src.height !== th) {
       mouthBuf.src = document.createElement('canvas'); mouthBuf.src.width = tw; mouthBuf.src.height = th;
     }
@@ -1050,15 +1049,32 @@
     o.setTransform(1, 0, 0, 1, 0, 0); o.clearRect(0, 0, tw, oh);
     const mx = tw / 2, my = pad + above;
     const ink = ts.getImageData(Math.max(0, Math.min(tw - 1, Math.round(mx))), Math.max(0, Math.min(th - 1, Math.round(my))), 1, 1).data;
+    const dr = Math.round(ink[0] * 0.42), dg = Math.round(ink[1] * 0.28), db = Math.round(ink[2] * 0.3);
     for (let i = 0; i < cols; i++) {
+      const u = ((i + 0.5) / cols) * 2 - 1;
+      const att = Math.pow(Math.max(0, 1 - u * u), 1.2);
       const x = mx - half + i * colW;
-      const drop = jaw;
-      o.drawImage(mouthBuf.src, x, my, colW + 0.6, below, x, my + drop, colW + 0.6, below);
-      if (drop > 0.8) {
-        o.fillStyle = `rgba(${Math.round(ink[0] * 0.45)},${Math.round(ink[1] * 0.32)},${Math.round(ink[2] * 0.32)},0.85)`;
-        o.fillRect(x, my, colW + 0.6, drop);
-      }
+      const drop = jaw * att, up = drop * 0.34;
+      if (drop < 0.35) continue;
+      o.drawImage(mouthBuf.src, x, my - above, colW + 0.8, above, x, my - above - up, colW + 0.8, above);
+      o.drawImage(mouthBuf.src, x, my + 0.4, colW + 0.8, below, x, my + drop, colW + 0.8, below);
+      const g = o.createLinearGradient(0, my - up, 0, my + drop);
+      g.addColorStop(0, `rgba(${dr},${dg},${db},0)`);
+      g.addColorStop(0.42, `rgba(${dr},${dg},${db},${(0.22 * att).toFixed(3)})`);
+      g.addColorStop(0.62, `rgba(${Math.round(dr * 0.7)},${Math.round(dg * 0.65)},${Math.round(db * 0.65)},${(0.38 * att).toFixed(3)})`);
+      g.addColorStop(1, `rgba(${dr},${dg},${db},0)`);
+      o.fillStyle = g;
+      o.fillRect(x, my - up, colW + 0.8, drop + up);
     }
+    o.globalCompositeOperation = 'destination-in';
+    const fade = o.createLinearGradient(mx - half, 0, mx + half, 0);
+    fade.addColorStop(0, 'rgba(0,0,0,0)');
+    fade.addColorStop(0.16, 'rgba(0,0,0,1)');
+    fade.addColorStop(0.84, 'rgba(0,0,0,1)');
+    fade.addColorStop(1, 'rgba(0,0,0,0)');
+    o.fillStyle = fade;
+    o.fillRect(0, 0, tw, oh);
+    o.globalCompositeOperation = 'source-over';
     ctx.save();
     ctx.translate(cx, cy);
     ctx.rotate(lip);

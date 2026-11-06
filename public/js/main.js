@@ -138,7 +138,7 @@ App.fitFrame = function () {
   if (document.body.classList.contains('solo-mode')) {
     const left = Math.round(parseFloat(cs.paddingLeft) || 0);
     const top = Math.round(parseFloat(cs.paddingTop) || 0);
-    Object.assign(c.style, { width: Math.floor(W) + 'px', height: Math.floor(H) + 'px', left: left + 'px', top: top + 'px', right: 'auto', bottom: 'auto', transform: 'none', translate: 'none', aspectRatio: 'auto', maxWidth: 'none', maxHeight: 'none', borderRadius: '0', objectFit: 'cover', objectPosition: 'center 22%' });
+    Object.assign(c.style, { width: Math.floor(W) + 'px', height: Math.floor(H) + 'px', left: left + 'px', top: top + 'px', right: 'auto', bottom: 'auto', transform: 'none', translate: 'none', aspectRatio: 'auto', maxWidth: 'none', maxHeight: 'none', borderRadius: '0', objectFit: 'fill', objectPosition: 'center center' });
     if (App.avatarConv && App.avatarConv.syncBackdrop) App.avatarConv.syncBackdrop(true);
     return;
   }
