@@ -210,9 +210,9 @@
       this.full = on;
       const st = $('#stage'); if (st) st.classList.toggle('av-full', on);
       document.body.classList.toggle('av-full-on', on);
-      const b = $('#av-expand'); if (b) { b.textContent = on ? '✕' : '⛶'; b.title = on ? 'Riduci' : 'Ingrandisci avatar'; }
+      document.dispatchEvent(new CustomEvent('nova-layer'));
+      const b = $('#av-expand'); if (b) { b.textContent = '⛶'; b.title = on ? 'Riduci' : 'Ingrandisci avatar'; b.setAttribute('aria-hidden', on ? 'true' : 'false'); }
       if (on && App.stageFs && !App.stageFs.isFs()) { /* css overlay, not browser FS */ }
-      requestAnimationFrame(() => { fit(); setTimeout(fit, 80); });
     },
     async saveRequests() {
       const v = ($('#set-requests') && $('#set-requests').value) || '';

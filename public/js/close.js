@@ -77,7 +77,6 @@
     if (cur.kind === 'tab') { goHome(); return true; }
     return false;
   }
-  let raf = 0;
   let observing = false;
   const mo = new MutationObserver((records) => {
     for (const r of records) {
@@ -109,10 +108,12 @@
       if (btn.parentElement !== parent) parent.appendChild(btn);
     });
   }
+  let raf = 0;
   function schedule() {
     if (raf) return;
     raf = requestAnimationFrame(() => { raf = 0; place(); });
   }
+  document.addEventListener('nova-layer', () => place());
   btn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); closeTop(); schedule(); });
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;

@@ -436,9 +436,8 @@ test('a schermo intero resta una sola X, quella globale', async ({ page }) => {
   await mockApp(page);
   await page.goto('/');
   await page.waitForFunction(() => document.body.classList.contains('solo-mode') && document.getElementById('title').textContent === 'Nova');
-  const xs = await page.evaluate(async () => {
+  const xs = await page.evaluate(() => {
     App.solo.toggleFull(true);
-    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
     const vis = (el) => {
       if (!el) return false;
       const s = getComputedStyle(el);
@@ -449,9 +448,16 @@ test('a schermo intero resta una sola X, quella globale', async ({ page }) => {
       full: document.body.classList.contains('av-full-on'),
       layer: vis(document.getElementById('layer-x')),
       expand: vis(document.getElementById('av-expand')),
+      expandText: document.getElementById('av-expand').textContent,
     };
   });
   expect(xs.full).toBe(true);
   expect(xs.layer).toBe(true);
   expect(xs.expand).toBe(false);
+  expect(xs.expandText).not.toBe('✕');
+  const closed = await page.evaluate(() => {
+    document.getElementById('layer-x').click();
+    return !document.body.classList.contains('av-full-on');
+  });
+  expect(closed).toBe(true);
 });

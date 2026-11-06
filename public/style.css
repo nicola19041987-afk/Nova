@@ -724,10 +724,9 @@ body.solo-mode #chat-form.composer{flex:0 0 auto;padding:6px 8px 8px;margin:0;pa
 body.solo-mode #solo-rt{display:inline-flex;align-items:center;justify-content:center;border-radius:50%;width:40px;height:40px;flex:0 0 40px;padding:0;background:#E4E7EB;color:#1E6FD9;font-size:18px}
 body.solo-mode.solo-rt #solo-rt{background:#1E6FD9;color:#fff}
 body.solo-mode #typing{flex:0 0 auto;margin:0 10px}
-/* fullscreen avatar overlay (metà → tutto) */
 body.solo-mode #stage.av-full{
-  position:fixed;inset:0;z-index:70;flex:none!important;max-height:none!important;height:100dvh!important;height:100vh!important;
-  background:#1A1D21;border:0;padding:0!important;
+  position:absolute;top:0;left:0;right:0;bottom:auto;z-index:70;background:#1A1D21;flex:none!important;
+  height:640px!important;max-height:640px!important;
 }
 body.solo-mode #stage #avatar-canvas,body.solo-mode #stage .av-backdrop{
   left:0!important;top:0!important;width:100%!important;height:100%!important;
@@ -846,9 +845,6 @@ html,body{background:#000}
 }
 @media (min-width:500px){
   #app-shell{transform:translateZ(0)}
-}
-body.solo-mode #stage.av-full{
-  position:absolute!important;inset:0!important;width:auto!important;height:auto!important;max-width:none!important;max-height:none!important;
 }
 body.solo-mode #tab-conv:not([hidden]),body.solo-mode .conv:not([hidden]){
   display:flex!important;flex-direction:column!important;grid-template-columns:none!important;

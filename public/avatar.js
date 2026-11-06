@@ -59,7 +59,7 @@
       this._frame = 0; this.simUntil = 0;
       this.dist = 0.75; this._dEff = 0.75; this._nod = 0; this._nodV = 0; this._mh = 0; // v8.4.1: distanza dalla camera, cenni del capo
       this._pf = { draw: new Float32Array(240), gap: new Float32Array(240), n: 0 }; // v8.4.1: tempi dei fotogrammi (media e p95)
-      this.resize();
+      this._applyResize();
       if (window.ResizeObserver) new ResizeObserver(() => this.resize()).observe(canvas);
       this._raf = requestAnimationFrame(this.loop); // parte subito, anche senza fotocamera
       this._wd = setInterval(() => { try { this.watchdog(); } catch {} }, 1000);
@@ -67,6 +67,11 @@
     // Canvas nitido su retina: risoluzione interna = dimensione a schermo (larghezza e altezza, anche non quadrata) x devicePixelRatio,
     // con un tetto di pixel per restare fluidi su iPhone. Il disegno usa uno spazio virtuale e scala da solo.
     resize() {
+      if (this._inFrame) { this._needResize = true; return; }
+      this._applyResize();
+    }
+    _applyResize() {
+      if (this._inFrame) { this._needResize = true; return; }
       const w = this.c.clientWidth || 0, h = this.c.clientHeight || 0; if (!w || !h) return;
       let d = Math.min(3, window.devicePixelRatio || 1); const MAXPX = 1.8e6, MAXD = 2000;
       d = Math.min(d, Math.sqrt(MAXPX / (w * h)), MAXD / Math.max(w, h));
@@ -332,7 +337,7 @@
     loop(now) {
       this._raf = requestAnimationFrame(this.loop);
       // v8.4.5: un errore di disegno non deve MAI fermare l'avatar: si passa a modalità sempre più semplici
-      try { this.frame(now); this._okFrames = (this._okFrames || 0) + 1; if (this._cssPhoto && this._okFrames > 120) { this._cssPhoto = false; this.c.style.background = ''; } } catch (e) { this.drawError(e); }
+      try { this.frame(now); this._okFrames = (this._okFrames || 0) + 1; if (this._cssPhoto && this._okFrames > 120) { this._cssPhoto = false; this.c.style.background = ''; } } catch (e) { this._inFrame = false; this.drawError(e); }
     }
     drawError(e) {
       this._errs = (this._errs || 0) + 1; this._lastErr = String((e && e.message) || e).slice(0, 160); this._okFrames = 0;
@@ -366,12 +371,13 @@
       const P = this._pose || (this._pose = { roll: 0, pitch: 0, yaw: 0, lean: 1, torso: 0, breath: 0, tRoll: 0, tPitch: 0, tYaw: 0, tLean: 1, next: 0 });
       const talk = this.speaking ? Math.min(1, Math.max(this.mouth || 0, this._mh || 0)) : 0;
       const deg = Math.PI / 180;
-      const idleRoll = (Math.sin(now / 3400) * 0.55 + Math.sin(now / 6100 + 1.1) * 0.3 + Math.sin(now / 8900 + 2.2) * 0.15) * 1.6 * deg;
+      const idleRoll = 0;
       if (talk > 0.42 && now > P.next) {
         const sign = Math.random() < 0.5 ? -1 : 1;
-        P.tRoll = sign * (2 + Math.random() * 2) * deg;
-        P.tPitch = (0.01 + Math.random() * 0.02) * (Math.random() < 0.7 ? 1 : -0.4);
-        P.tYaw = sign * (0.01 + Math.random() * 0.02);
+        // Niente roll/yaw casuali mentre parla: su WebKit spostano il mento di lato e la bocca non è più simmetrica.
+        P.tRoll = 0;
+        P.tPitch = (0.006 + Math.random() * 0.008) * (Math.random() < 0.7 ? 1 : -0.4);
+        P.tYaw = 0;
         P.tLean = 1 + (0.01 + Math.random() * 0.01) * (Math.random() < 0.5 ? 1 : -1);
         P.next = now + 1000 + Math.random() * 1000;
       } else if (talk < 0.08 && now > P.next) {
@@ -384,9 +390,9 @@
       P.pitch += ((talk > 0.2 ? P.tPitch : 0) - P.pitch) * easeT;
       P.yaw += ((talk > 0.2 ? P.tYaw : 0) - P.yaw) * easeT;
       P.lean += ((talk > 0.2 ? P.tLean : 1) - P.lean) * easeT;
-      P.torso = Math.sin(now / 3200) * 1.0 * deg;
+      P.torso = 0;
       P.breath = Math.sin(now / (60000 / 13.5) * Math.PI * 2);
-      P.roll = Math.max(-4 * deg, Math.min(4 * deg, P.roll));
+      P.roll = Math.max(-1.6 * deg, Math.min(1.6 * deg, P.roll));
       P.pitch = Math.max(-0.03, Math.min(0.03, P.pitch));
       P.yaw = Math.max(-0.03, Math.min(0.03, P.yaw));
       P.lean = Math.max(0.98, Math.min(1.02, P.lean));
@@ -400,6 +406,7 @@
       // v8.4.1: ritmo costante ~60 fotogrammi al secondo anche a riposo (prima 30: il movimento sembrava "a scatti");
       // sugli schermi a 120 Hz si salta un fotogramma su due (stesso ritmo, metà lavoro)
       if (now - (this._drawn || 0) < 12) return;
+      this._inFrame = true;
       const gap = this._drawn ? now - this._drawn : 16.7; this._drawn = now; const tP0 = performance.now();
       if (this.simUntil && now > this.simUntil) { this.simUntil = 0; this.speaking = false; }
       const ctx = this.ctx, S = VS; // spazio virtuale; la trasformazione porta tutto alle dimensioni reali del canvas
@@ -556,6 +563,8 @@
       const bs = bare ? '' : this.speaking ? `0 0 18px ${col.glow}55` : sens ? `0 0 ${pulse}px ${col.glow}44` : '';
       if (bs !== this._bs) { this._bs = bs; this.c.style.boxShadow = bs; } // v8.4.1: niente scritture di stile a ogni fotogramma
       const P = this._pf, i = P.n++ % 240; P.draw[i] = performance.now() - tP0; P.gap[i] = gap;
+      this._inFrame = false;
+      if (this._needResize) { this._needResize = false; this.resize(); }
     }
 
     // Estensione dell'immagine intera nello spazio "quadrato S" dei punti del viso (il quadrato centrale = 0..S)
@@ -668,10 +677,15 @@
         ctx.save(); ctx.beginPath(); ctx.rect(E.x0 - E.w * 0.08, E.y0 - E.h * 0.08, E.w * 1.16, E.h * 1.2); ctx.clip();
         const cxb = E.x0 + E.w / 2, base = E.y0 + E.h;
         ctx.translate(cxb, base);
-        ctx.rotate((pose.roll || 0) + (pose.torso || 0));
-        ctx.translate((pose.yaw || 0) * E.w, (pose.pitch || 0) * E.h);
+        ctx.rotate(pose.torso || 0);
         ctx.scale(lean, breathY * lean);
         ctx.translate(-cxb, -base);
+        const mouth = this.lm && this.lm.mouth;
+        const mx = (mouth && mouth.x != null ? mouth.x : 0.5) * S;
+        const my = (mouth && mouth.y != null ? mouth.y : 0.64) * S;
+        ctx.translate(mx, my);
+        ctx.translate(0, (pose.pitch || 0) * E.h);
+        ctx.translate(-mx, -my);
         ctx.drawImage(src, E.x0, E.y0, E.w, E.h);
         // Gesti (mezzo busto / figura intera): braccia che si muovono col ritmo e l'intensità del parlato.
         const tgt = (this.speaking ? 0.35 + this.mouth * 0.7 + (now - this.emph < 700 ? 0.6 : 0) : 0) + M.energy * 0.6 + wave * 0.8;
