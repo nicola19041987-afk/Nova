@@ -2849,7 +2849,7 @@ const MOOD_KEYS = ['allegria', 'affetto', 'fiducia', 'desiderio', 'irritazione',
 const MOOD_BASE = { allegria: 62, affetto: 68, fiducia: 60, desiderio: 32, irritazione: 8, energia: 58 };
 const MOOD_FILE = () => path.join(DATA_DIR, 'mood-history.json');
 const NOTES_FILE = () => path.join(DATA_DIR, 'support-notes.json');
-const APP_VERSION = '8.6.1';
+const APP_VERSION = '8.6.2';
 const clamp100 = (n) => Math.max(0, Math.min(100, Math.round(Number(n) || 0)));
 function isNovaChar(ch) {
   return !!(ch && (ch.ready === SOLO_KEY || /^(nova|greta)$/i.test(String(ch.name || '').trim())));
