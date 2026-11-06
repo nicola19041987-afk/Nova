@@ -2,7 +2,9 @@
 (function () {
   const $ = (s, r = document) => r.querySelector(s);
   function soloChar() {
-    return (App.chars || []).find((c) => c.ready === 'greta') || (App.chars || []).find((c) => /^(nova|greta)$/i.test(String(c.name || '').trim())) || App.chars[0];
+    const list = App.chars || [];
+    // L'unica avatar della home è Nova (id interno greta). Mai il primo personaggio della lista.
+    return list.find((c) => c.ready === 'greta') || list.find((c) => /^(nova|greta)$/i.test(String(c.name || '').trim())) || null;
   }
   function fit() { if (App.fitFrame) App.fitFrame(); }
 
@@ -13,7 +15,18 @@
       document.body.classList.add('solo-mode');
       const dock = $('#solo-dock'); if (dock) dock.hidden = false;
       const legacy = $('#legacy-tabbar'); if (legacy) legacy.hidden = true;
-      const ch = soloChar(); if (!ch) return;
+      const listTab = $('#tab-chat'); if (listTab) listTab.hidden = true;
+      const ch = soloChar();
+      if (!ch) {
+        const conv = $('#tab-conv'); if (conv) conv.hidden = false;
+        const title = $('#title'); if (title) title.textContent = 'Nova';
+        document.body.dataset.tab = 'conv';
+        this.bindOnce();
+        return;
+      }
+      // Una sola apertura. Le ricariche dei personaggi non azzerano la chat e non tolgono Impostazioni.
+      if (this._booted) { this.syncChar(); return; }
+      this._booted = true;
       if (!App.current || App.current.id !== ch.id) {
         try { await App.chat.open(ch.id); } catch (e) { console.warn('Solo open:', e.message); }
       }
@@ -24,6 +37,16 @@
         App.api('/api/solo/prep', { method: 'POST', ai: true, body: { store: true } }).catch(() => {});
       }
       this.setDock('home');
+    },
+    syncChar() {
+      const ch = soloChar();
+      if (!ch || !App.current || App.current.id !== ch.id) return;
+      const fresh = (App.charById && App.charById(ch.id)) || ch;
+      const prevAvatar = App.current.avatar;
+      App.current = fresh;
+      const title = $('#title');
+      if (title && document.body.dataset.tab === 'conv' && !document.body.classList.contains('in-call')) title.textContent = fresh.name;
+      if (fresh.avatar !== prevAvatar && App.avatarConv && !(App.previews && App.previews[fresh.id])) App.avatarConv.setCharacter(fresh);
     },
     syncSettings(ch) {
       const ta = $('#set-requests');
@@ -58,7 +81,7 @@
       document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && this.full) this.toggleFull(false); });
     },
     setDock(name) {
-      $$('#solo-dock [data-dock]').forEach((b) => b.classList.toggle('active', b.dataset.dock === name));
+      document.querySelectorAll('#solo-dock [data-dock]').forEach((b) => b.classList.toggle('active', b.dataset.dock === name));
     },
     onDock(name) {
       this.setDock(name);
@@ -186,7 +209,12 @@
     const orig = App.loadChars;
     App.loadChars = async (...a) => {
       const r = await orig(...a);
-      try { if (App.me) await App.solo.boot(); } catch (e) { console.warn(e); }
+      try {
+        if (App.me && App.solo) {
+          if (!App.solo._booted) await App.solo.boot();
+          else App.solo.syncChar();
+        }
+      } catch (e) { console.warn(e); }
       return r;
     };
     App.loadChars._soloWrapped = true;

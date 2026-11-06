@@ -1,5 +1,11 @@
 # Nova — roadmap (snapshot WIP)
 
+## Verificato sul branch `nova-8.6-stabilizzazione` (non pubblicato)
+
+Solo ciò che i test di questo branch hanno eseguito. Il tag `stable-v8.6.6` resta il baseline su `main`.
+
+- **UI una sola avatar, parte home.** All’ingresso la schermata è la conversazione di Nova (`ready: greta`), non la lista e non Chiara. `#tab-chat` (lista, Nuovo, preset) non è visibile in `solo-mode`. Una seconda lettura dei personaggi non riapre la chat. `npm run check` ok. Playwright Chromium e WebKit a 390×844: login visibile e home Nova, 4/4. Non verificato: face-swap, menu Prepara, chiamata voce/video, labiale, movimenti, aspetto con chiave xAI, consenso vocale, iPhone fisico.
+
 ## Cosa c’è in produzione (v8.5.2, live / in pubblicazione)
 
 - **Luisa sbloccata**: può creare/modificare personaggi (3 campi, foto, voce, look), preparare movimenti, eliminare solo i personaggi che ha creato. Restano solo-admin: chiave API, Senza freni, attivazione adulti, gestione utenti. Gating adulti e consenso di entrambi invariati.
@@ -22,7 +28,7 @@ Obiettivo: **un’unica avatar donna (Greta)**, realismo massimo, movimenti quot
 
 ### Manca ancora (piano di implementazione)
 
-1. **UI una sola avatar** — CSS `body.solo-mode`: nascondere `#char-list`, `#new-char`, `#preset-row` (dati in archivio intatti). All’accesso aprire sempre Greta (`public/js/chat.js` / nuovo `public/js/solo.js`). Rimuovere/nascondere face-swap (`#faceswap-panel`, tab face in `live.js`/`media.js`) e ogni “copia movimenti”; nascondere lista azioni, `#act-prepare`, menu Prepara (Hot può restare solo se utile agli adulti già sbloccati, senza lista “da preparare”).
+1. **UI una sola avatar** — La home (lista nascosta, apertura di Nova / id `greta`, niente fallback sul primo personaggio) è verificata sul branch, vedi sopra. Resta da fare e non è verificato: rimuovere/nascondere face-swap (`#faceswap-panel`, tab face in `live.js`/`media.js`) e ogni “copia movimenti”; nascondere lista azioni, `#act-prepare`, menu Prepara (Hot può restare solo se utile agli adulti già sbloccati, senza lista “da preparare”). I dati in archivio restano intatti.
 2. **Aspetto modificabile a testo** — Nell’editor (o pannello compatto): campi semplici corpo / capelli (colore·lunghezza·stile) / occhi / vestiti → `POST` regenerate esistente o `/api/solo/look` che aggiorna `look`+`appearance` e rilancia prep movimenti. Personalità/carattere/ordini **non** editabili in UI (testo fisso `SOLO_FIXED`).
 3. **Campo «Richieste» + toggle 18+** — Un textarea `requests` (salva con `/api/solo/requests`); accanto toggle adulti (solo admin, stesso gating e doppio consenso). Con adulti attivi per entrambi → sblocco massimo già previsto (`NO_BRAKES`).
 4. **Movimenti server-side** — Completare e testare `prepSoloMotions` all’avvio (se c’è chiave env/file) e dopo cambio look; al primo login admin chiamare `/api/solo/prep` con `X-AI-Key` (opz. `store`). Adulti: stesse definizioni + gating; rifiuto xAI → skip silenzioso. Config interna movimenti in `ACTIONS` (Nicola chiederà nuovi in chat).

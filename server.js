@@ -61,7 +61,7 @@ const SOLO_FIXED = {
 };
 function getSoloChar(u) {
   const list = getChars(u) || [];
-  return list.find((c) => c.ready === SOLO_KEY) || list.find((c) => /^(nova|greta)$/i.test(String(c.name || '').trim())) || list[0] || null;
+  return list.find((c) => c.ready === SOLO_KEY) || list.find((c) => /^(nova|greta)$/i.test(String(c.name || '').trim())) || null;
 }
 const SERVER_KEY_FILE = () => path.join(DATA_DIR, 'server-ai-key.json');
 function getServerAiKey() {

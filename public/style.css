@@ -685,11 +685,13 @@ body.solo-mode main{
   height:auto!important;display:flex;flex-direction:column;overflow:hidden;
   padding-bottom:0!important;margin-bottom:0!important;
 }
-body.solo-mode #tab-conv{
+body.solo-mode #tab-conv:not([hidden]){
   display:flex!important;flex-direction:column;flex:1 1 auto;min-height:0;
   height:100%!important;padding:0;margin:0;overflow:hidden;
 }
-body.solo-mode #tab-account,body.solo-mode #tab-chat,body.solo-mode #tab-calls,body.solo-mode #tab-images,body.solo-mode #tab-feed{
+/* Lista, «Nuovo» e preset non sono la home: in solo si vede solo Nova. */
+body.solo-mode #tab-chat{display:none!important}
+body.solo-mode #tab-account,body.solo-mode #tab-calls,body.solo-mode #tab-images,body.solo-mode #tab-feed{
   flex:1 1 auto;min-height:0;overflow:auto;-webkit-overflow-scrolling:touch;
   padding-bottom:calc(64px + env(safe-area-inset-bottom));
 }
@@ -819,7 +821,7 @@ html,body{background:#000}
 body.solo-mode #stage.av-full{
   position:absolute!important;inset:0!important;width:auto!important;height:auto!important;max-width:none!important;max-height:none!important;
 }
-body.solo-mode #tab-conv,body.solo-mode .conv{
+body.solo-mode #tab-conv:not([hidden]),body.solo-mode .conv:not([hidden]){
   display:flex!important;flex-direction:column!important;grid-template-columns:none!important;
 }
 body.solo-mode #stage{width:auto!important;grid-column:auto!important;grid-row:auto!important}

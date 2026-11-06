@@ -26,7 +26,10 @@ App.boot = async function () {
   App.sync();
   App.autoChanges();
   setTimeout(() => App.faceMigrate && App.faceMigrate(), 6000);
-  document.body.dataset.tab = 'chat'; if (App.roles) App.roles.apply(); if (App.home) App.home.boot(); // v8: occhi e bocca automatici sugli avatar esistenti (una volta, in background)
+  // In solo la home è la conversazione con Nova. 'chat' è la lista personaggi, che qui non esiste.
+  if (!document.body.classList.contains('solo-mode')) document.body.dataset.tab = 'chat';
+  else if (document.body.dataset.tab !== 'account') document.body.dataset.tab = 'conv';
+  if (App.roles) App.roles.apply(); if (App.home) App.home.boot();
 };
 // Modalità adulti (per utente): solo effetti locali sull'avatar (espressioni/movimenti più sensuali, canvas).
 App.applyAdult = function () {
