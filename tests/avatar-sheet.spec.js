@@ -56,7 +56,7 @@ async function mockApp(page, state) {
 }
 
 test('il foglio avatar elenca, attiva, annulla la cancellazione e si chiude con la X', async ({ page, browserName }) => {
-  test.skip(browserName === 'webkit', 'WPE chiude il processo quando si apre questo foglio. Il flusso è verificato su Chromium a 390×844.');
+  test.skip(browserName === 'webkit', 'Questo WebKit (WPE di Playwright) chiude il processo da solo: sulla home, con il motore dell’avatar, e anche dopo un click qualunque. Il foglio, aperto senza click e senza quell’engine, resta su. Non è il foglio né le miniature. Su Chromium a 390×844 il flusso è verificato.');
   const state = { chars: seed(), active: '', deleted: [], puts: [] };
   await mockApp(page, state);
   await page.goto('/');
