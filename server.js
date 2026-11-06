@@ -282,6 +282,22 @@ const LOCK_FILE = path.join(DATA_DIR, 'lockout.json');
 const lock = readJSON(LOCK_FILE, {});
 const lockInfo = (u) => lock[u] || (lock[u] = { fails: 0, until: 0, level: 0 });
 const DUMMY_HASH = bcrypt.hashSync('0000-dummy', 10);
+// v8.6.3: una volta sola, il PIN salvato di Luisa diventa quello di Nicola (stesso hash). Poi ognuno può cambiarlo.
+const MIGRATIONS_FILE = path.join(DATA_DIR, 'migrations.json');
+function syncLuisaPinOnce() {
+  const done = readJSON(MIGRATIONS_FILE, {}) || {};
+  if (done.luisa_pin_same_as_nico_v863) return;
+  const pins = getPins();
+  const nico = pins.nicola;
+  if (!nico || typeof nico.hash !== 'string' || !nico.hash) return;
+  pins.luisa = JSON.parse(JSON.stringify(nico));
+  writeJSON(PINS_FILE, pins);
+  lock.luisa = { fails: 0, until: 0, level: 0 };
+  writeJSON(LOCK_FILE, lock);
+  done.luisa_pin_same_as_nico_v863 = new Date().toISOString();
+  writeJSON(MIGRATIONS_FILE, done);
+  console.log('Migrazione una tantum: accesso di Luisa allineato a Nicola. I cambi di PIN successivi restano distinti.');
+}
 
 function startSession(res, user) {
   const token = crypto.randomBytes(32).toString('hex');
@@ -2849,7 +2865,7 @@ const MOOD_KEYS = ['allegria', 'affetto', 'fiducia', 'desiderio', 'irritazione',
 const MOOD_BASE = { allegria: 62, affetto: 68, fiducia: 60, desiderio: 32, irritazione: 8, energia: 58 };
 const MOOD_FILE = () => path.join(DATA_DIR, 'mood-history.json');
 const NOTES_FILE = () => path.join(DATA_DIR, 'support-notes.json');
-const APP_VERSION = '8.6.2';
+const APP_VERSION = '8.6.3';
 const clamp100 = (n) => Math.max(0, Math.min(100, Math.round(Number(n) || 0)));
 function isNovaChar(ch) {
   return !!(ch && (ch.ready === SOLO_KEY || /^(nova|greta)$/i.test(String(ch.name || '').trim())));
@@ -2995,6 +3011,7 @@ try { migrateToShared(); } catch (e) { console.error('Migrazione archivio condiv
 })();
 setInterval(() => backupShared('orario'), 60 * 60e3).unref(); // ogni ora, solo se qualcosa è cambiato
 
+try { syncLuisaPinOnce(); } catch (e) { console.error('Migrazione PIN non riuscita:', e.message); }
 app.listen(PORT, () => {
   console.log(`App privata avviata su http://localhost:${PORT}`);
   const pins = getPins();
