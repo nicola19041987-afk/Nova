@@ -223,7 +223,7 @@ function requireActivated(req, res, next) {
   // Il consenso vocale non è un muro prima della Home: resta solo per la modalità adulti (ogni profilo lo dà da sé).
   next();
 }
-// La chiave xAI arriva dal dispositivo: usata solo per questa richiesta, mai salvata.
+// La chiave xAI arriva dal dispositivo, oppure da quella già salvata sul server. Mai registrata nei log.
 function requireKey(req, res, next) {
   let k = String(req.get('X-AI-Key') || '').trim();
   if (!k) k = getServerAiKey();
