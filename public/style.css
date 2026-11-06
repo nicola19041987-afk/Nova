@@ -252,7 +252,7 @@ details.card summary{font-weight:600}
 .wa-photo,.wa-status,.wa-ic{display:none}
 body.wa-conv .topbar{background:var(--wa-head);border-bottom:0;gap:6px;padding-left:6px;padding-right:6px}
 body.wa-conv #who{display:none}
-body.wa-conv .wa-photo{display:block;flex:0 0 auto}
+body.wa-conv .wa-photo{display:block;flex:0 0 auto;border:0;padding:0;background:transparent;cursor:pointer}
 body.wa-conv .wa-photo .wa-av{width:38px;height:38px;border-radius:50%;overflow:hidden;display:flex;align-items:center;justify-content:center;background:#2a3942;font-size:22px}
 body.wa-conv .wa-photo .wa-av img{width:100%;height:100%;object-fit:cover;object-position:50% 18%;display:block}
 .wa-title{flex:1;min-width:0;display:flex;flex-direction:column;line-height:1.15}
@@ -806,6 +806,19 @@ body.solo-mode.in-call.call-min #stage #avatar-canvas,body.solo-mode.in-call.cal
   box-shadow:0 2px 10px #00000033;cursor:pointer;-webkit-tap-highlight-color:transparent;
 }
 .layer-x:active{background:#D6E6FB}
+.avatar-sheet{position:fixed;left:8px;right:8px;bottom:10px;z-index:80;background:#F4F6F8;color:#1A1D21;border:1px solid #D0D5DD;border-radius:18px;padding:54px 12px 16px;max-height:70vh;overflow:auto}
+.avatar-sheet[hidden]{display:none!important}
+.avatar-sheet h3{margin:0 36px 10px 4px;font-size:17px;font-weight:600}
+.avatar-x{position:absolute;top:10px;right:10px;z-index:2;width:40px;height:40px;padding:0;border-radius:50%;border:1px solid #D0D5DD;background:#fff;color:#1E6FD9;font-size:22px;line-height:36px}
+#avatar-sheet-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px;overflow:auto;max-height:56vh}
+#avatar-sheet-list li{display:flex;align-items:center;gap:8px;background:#fff;border:1px solid #D0D5DD;border-radius:14px;padding:8px}
+#avatar-sheet-list li.on{border-color:#1E6FD9;background:#F3F8FE}
+#avatar-sheet-list b{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:15px}
+#avatar-sheet-list .av-pick-face{width:44px;height:44px;flex:0 0 44px;border-radius:50%;overflow:hidden;display:flex;align-items:center;justify-content:center;background:#E4E7EB;font-size:22px}
+#avatar-sheet-list .av-pick-face img{width:100%;height:100%;object-fit:cover;object-position:50% 18%}
+#avatar-sheet-list button{flex:0 0 auto;border:0;border-radius:999px;padding:7px 10px;font-size:13px;font-weight:600;background:#E8F1FC;color:#1E6FD9}
+#avatar-sheet-list [data-del]{background:#EEF1F4;color:#5C6570}
+#avatar-sheet-list button:disabled{opacity:.4}
 dialog > .layer-x{position:absolute;top:10px;right:10px}
 dialog:has(> .layer-x){padding-top:54px}
 body.av-full-on .stage-tools,body.avatar-fs-on .stage-tools{right:calc(env(safe-area-inset-right) + 58px)!important}

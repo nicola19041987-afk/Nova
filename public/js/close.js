@@ -29,6 +29,8 @@
     if (!inApp()) return null;
     const dlg = openDialog();
     if (dlg) return { kind: 'dialog', el: dlg };
+    const avatars = $('#avatar-sheet');
+    if (shown(avatars)) return { kind: 'avatar', el: avatars };
     if (shown($('#sheet'))) return { kind: 'sheet' };
     if (shown($('#viewer'))) return { kind: 'viewer' };
     if (shown($('#presence'))) return { kind: 'presence' };
@@ -56,6 +58,7 @@
     const cur = layer();
     if (!cur) return false;
     if (cur.kind === 'dialog') { cur.el.close(); return true; }
+    if (cur.kind === 'avatar') { cur.el.hidden = true; return true; }
     if (cur.kind === 'sheet') { const c = $('#sheet-cancel'); if (c) c.click(); else $('#sheet').hidden = true; return true; }
     if (cur.kind === 'viewer') { const c = $('#vw-close'); if (c) c.click(); return true; }
     if (cur.kind === 'presence') { const c = $('#live-close'); if (c) c.click(); return true; }

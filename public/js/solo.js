@@ -3,7 +3,12 @@
   const $ = (s, r = document) => r.querySelector(s);
   function soloChar() {
     const list = App.chars || [];
-    // L'unica avatar della home è Nova (id interno greta). Mai il primo personaggio della lista.
+    const saved = App.settings && App.settings.activeChar;
+    if (saved) {
+      const hit = list.find((c) => c.id === saved);
+      if (hit) return hit;
+    }
+    // Senza una scelta salvata, la home resta Nova (id interno greta). Mai il primo personaggio della lista.
     return list.find((c) => c.ready === 'greta') || list.find((c) => /^(nova|greta)$/i.test(String(c.name || '').trim())) || null;
   }
   function fit() { if (App.fitFrame) App.fitFrame(); }
@@ -107,6 +112,12 @@
         });
       }
       const rt = $('#solo-rt'); if (rt) rt.addEventListener('click', () => this.toggleRt());
+      const photo = $('#wa-photo');
+      if (photo) {
+        const open = (e) => { e.preventDefault(); e.stopPropagation(); this.openPicker(); };
+        photo.addEventListener('click', open);
+        photo.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') open(e); });
+      }
       const look = $('#set-look-btn'); if (look) look.onclick = () => this.openLook();
       const save = $('#set-requests-save'); if (save) save.onclick = () => this.saveRequests();
       const hot = $('#set-hot-btn'); if (hot) hot.onclick = () => { const h = $('#hot-btn'); if (h) h.click(); else if (App.actions && App.actions.openHot) App.actions.openHot(); };
@@ -185,6 +196,68 @@
         }
         App.toast('Richieste salvate');
       } catch (e) { App.toast(e.message); }
+    },
+    picker() {
+      let dlg = $('#avatar-sheet');
+      if (dlg) return dlg;
+      dlg = document.createElement('div');
+      dlg.id = 'avatar-sheet';
+      dlg.className = 'avatar-sheet';
+      dlg.hidden = true;
+      dlg.innerHTML = `<button type="button" class="avatar-x" aria-label="Chiudi">×</button><h3 id="avatar-sheet-title">Avatar</h3><ul id="avatar-sheet-list"></ul>`;
+      dlg.setAttribute('role', 'dialog');
+      dlg.setAttribute('aria-modal', 'true');
+      dlg.setAttribute('aria-labelledby', 'avatar-sheet-title');
+      (document.getElementById('app-shell') || document.body).appendChild(dlg);
+      dlg.addEventListener('click', (e) => {
+        if (e.target === dlg || e.target.closest('.avatar-x')) dlg.hidden = true;
+      });
+      const ul = $('#avatar-sheet-list');
+      if (ul) ul.addEventListener('click', (e) => {
+        const li = e.target.closest('li[data-id]'); if (!li) return;
+        if (e.target.closest('[data-act]')) this.activate(li.dataset.id);
+        if (e.target.closest('[data-del]')) this.removeChar(li.dataset.id);
+      });
+      return dlg;
+    },
+    openPicker() {
+      const dlg = this.picker();
+      this.renderPicker();
+      dlg.hidden = false;
+    },
+    renderPicker() {
+      const ul = $('#avatar-sheet-list'); if (!ul) return;
+      const active = soloChar();
+      const aid = active && active.id;
+      ul.innerHTML = (App.chars || []).map((c) => {
+        const on = c.id === aid;
+        return `<li data-id="${esc(c.id)}" class="${on ? 'on' : ''}">${App.avatarHtml(c, 'av-pick-face')}<b>${esc(c.name || 'Avatar')}</b><button type="button" data-act${on ? ' disabled' : ''}>Attiva</button><button type="button" data-del${on ? ' disabled' : ''}>Cancella</button></li>`;
+      }).join('') || '<li class="muted">Nessun avatar salvato</li>';
+    },
+    async activate(id) {
+      const ch = App.charById(id); if (!ch) return;
+      try {
+        App.settings = await App.api('/api/settings', { method: 'PUT', body: { ...(App.settings || {}), activeChar: id } });
+        App.ls.set('settings', App.settings);
+      } catch (e) { App.toast(e.message || 'Scelta non salvata'); return; }
+      if (!App.current || App.current.id !== id) {
+        try { await App.chat.open(id); } catch (e) { App.toast(e.message); }
+      }
+      const title = $('#title'); if (title) title.textContent = ch.name;
+      if (App.avatarConv) App.avatarConv.setCharacter(ch);
+      if (App.chat && App.chat.header) App.chat.header();
+      this.renderPicker();
+    },
+    async removeChar(id) {
+      const active = soloChar();
+      if (!id || (active && active.id === id)) return;
+      const ch = App.charById(id); if (!ch) return;
+      if (!confirm(`Cancellare definitivamente ${ch.name}?`)) return;
+      try { await App.api(`/api/characters/${id}`, { method: 'DELETE' }); }
+      catch (e) { App.toast(e.message || 'Non cancellato'); return; }
+      App.chars = (App.chars || []).filter((c) => c.id !== id);
+      if (App.chat && App.chat.renderList) App.chat.renderList();
+      this.renderPicker();
     },
     openLook() {
       const ch = soloChar(); if (!ch) return;

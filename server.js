@@ -383,6 +383,21 @@ app.get('/api/consent/audio', auth, (req, res) => {
 // ---------- privacy (per utente): tutto OFF di default ----------
 const settingsFile = (u) => path.join(userDir(u), 'settings.json');
 const getSettings = (u) => { const s = { autoSave: false, allowExport: false, adultMode: false, videoModel: '', videoDuration: 6, ...readJSON(settingsFile(u), {}) }; delete s.drawerScene; return s; }; // drawerScene (vecchio comodino, rimosso): ignorato
+// Avatar mostrata in Home: scelta del profilo. Vale solo se quel personaggio è ancora nell'archivio.
+function shownCharId(u) {
+  const chars = getChars(u);
+  const saved = String((getSettings(u).activeChar) || '');
+  if (ID_RE.test(saved) && chars.some((c) => c.id === saved)) return saved;
+  const g = chars.find((c) => c.ready === 'greta') || chars.find((c) => /^(nova|greta)$/i.test(String(c.name || '').trim()));
+  return (g || chars[0] || {}).id || '';
+}
+function keepActive(u, body, cur) {
+  const has = body && Object.prototype.hasOwnProperty.call(body, 'activeChar');
+  const raw = String(has ? body.activeChar : (cur && cur.activeChar) || '');
+  if (!raw) return '';
+  if (!ID_RE.test(raw) || !getChars(u).some((c) => c.id === raw)) return has ? '' : (ID_RE.test(String((cur && cur.activeChar) || '')) ? cur.activeChar : '');
+  return raw;
+}
 // Modalità adulti: per utente, attivabile solo dopo il consenso vocale. In chat condivisa vale solo se attiva per ENTRAMBI.
 // v8.5.0: «Senza freni» vale solo se la modalità adulti è già attiva per ENTRAMBI (gating invariato) e Nicola l'ha accesa
 const noBrakes = () => adultChat() && getSettings(ADMIN_USER).noBrakes === true;
@@ -401,15 +416,17 @@ app.get('/api/settings', auth, (req, res) => res.json(getSettings(req.user)));
 app.get('/api/adult-status', auth, (req, res) => { res.setHeader('Cache-Control', 'no-store'); res.json(adultStatus(req.user)); });
 app.put('/api/settings', auth, (req, res) => {
   if (req.body.adultMode === true && !isActivated(req.user)) return res.status(403).json({ error: 'La modalità adulti si attiva solo dopo il consenso vocale.' });
-  if (!isAdmin(req.user)) { // v8.4: Luisa può solo dare o ritirare il PROPRIO consenso alla modalità adulti
+  if (!isAdmin(req.user)) { // v8.4: Luisa può solo dare o ritirare il PROPRIO consenso alla modalità adulti (e scegliere la sua avatar)
     const cur = getSettings(req.user), keys = ['autoSave', 'allowExport', 'videoModel', 'videoDuration'];
     if (keys.some((k) => req.body[k] !== undefined && String(req.body[k]) !== String(cur[k]))) return res.status(403).json({ error: ADMIN_MSG + ' Tu puoi solo dare o ritirare il tuo consenso alla modalità adulti.', code: 'ADMIN_ONLY' });
-    const s = { ...cur, adultMode: req.body.adultMode === true }; writeJSON(settingsFile(req.user), s); return res.json(s);
+    const s = { ...cur, adultMode: req.body.adultMode === true, activeChar: keepActive(req.user, req.body, cur) }; writeJSON(settingsFile(req.user), s); return res.json(s);
   }
+  const cur = getSettings(req.user);
   const s = { autoSave: req.body.autoSave === true, allowExport: req.body.allowExport === true, adultMode: req.body.adultMode === true,
     noBrakes: req.body.noBrakes === true && req.body.adultMode === true, // v8.5.0: «Senza freni» (solo Nicola, solo con la modalità adulti)
     videoModel: /^[\w.\-]{0,60}$/.test(req.body.videoModel || '') ? String(req.body.videoModel || '') : '',
-    videoDuration: num(req.body.videoDuration, 1, 15, 6) };
+    videoDuration: num(req.body.videoDuration, 1, 15, 6),
+    activeChar: keepActive(req.user, req.body, cur) };
   writeJSON(settingsFile(req.user), s); res.json(s);
 });
 // ---------- parola chiave per attivare la modalità adulti (per profilo, facoltativa) ----------
@@ -922,6 +939,7 @@ app.delete('/api/characters/:id', auth, async (req, res) => {
     if (!ID_RE.test(id)) return res.status(400).json({ error: 'ID non valido' });
     const ch = getChars(req.user).find((c) => c.id === id);
     if (!ch) return res.status(404).json({ error: 'Personaggio non trovato' });
+    if (shownCharId(req.user) === id) return res.status(409).json({ error: 'Prima attiva un altro avatar' });
     const backup = backupShared('prima-eliminazione', { force: true }); // copia completa (personaggio + chat + foto) prima di eliminare
     if (!backup) return res.status(500).json({ error: 'Backup non riuscito: per sicurezza non elimino nulla.' });
     // cestino del personaggio (7 giorni)
