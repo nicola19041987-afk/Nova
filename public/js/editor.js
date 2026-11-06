@@ -89,7 +89,7 @@
     $('#look-history').innerHTML = (E.lookHistory || []).map((h) => `<figure><img src="${esc(h.avatar)}" alt=""><figcaption>${esc(fmtDate(h.at))}<br>${esc(h.reason)}</figcaption><button type="button" data-revert="${h.id}">Ripristina</button></figure>`).join('') || '<p class="muted small">Nessun look precedente.</p>';
     $('#avatar-consent-wrap').hidden = !(E.avatarSource === 'upload' && String(E.avatar).startsWith('data:'));
     { const d = E.frameDist == null ? 0.75 : E.frameDist, el = $('#frame-dist'); if (el) { el.value = d; $('#frame-dist-val').textContent = distLabel(d); } }
-    $('#char-delete').hidden = !E.id || !App.isAdmin(); $('#import-box').hidden = !!E.id || !App.isAdmin(); $('#char-dialog-title').textContent = E.id ? `Modifica ${E.name}` : 'Nuovo personaggio';
+    $('#char-delete').hidden = !E.id || !(App.isAdmin() || (App.canEdit() && (App.charById(E.id) || {}).createdBy === (App.me && App.me.user))); $('#import-box').hidden = !!E.id || !App.isAdmin(); $('#char-dialog-title').textContent = E.id ? `Modifica ${E.name}` : 'Nuovo personaggio';
     $('#doc-canvas').hidden = true; $('#doc-actions').hidden = true;
   }
   function fromForm() {
@@ -153,7 +153,7 @@
   const distLabel = (d) => (d < 0.2 ? 'vicina (primo piano)' : d < 0.5 ? 'media' : d < 0.85 ? 'lontana (consigliata)' : 'molto lontana');
   // v8.4.1: distanza dalla camera, anteprima dal vivo (anche nella chat aperta)
   { const el = $('#frame-dist'); if (el) el.addEventListener('input', () => {
-    if (!App.isAdmin()) return; const d = Number(el.value); E.frameDist = d; $('#frame-dist-val').textContent = distLabel(d); dirty = true;
+    if (!App.canEdit()) return; const d = Number(el.value); E.frameDist = d; $('#frame-dist-val').textContent = distLabel(d); dirty = true;
     App.avatarEditor && App.avatarEditor.setDistance && App.avatarEditor.setDistance(d);
     if (App.current && App.current.id === E.id) { App.avatarConv.setDistance(d); if (App.avatarPresence) App.avatarPresence.setDistance(d); }
   }); }

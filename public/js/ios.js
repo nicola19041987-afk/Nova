@@ -85,12 +85,13 @@
     App.call.start(li.dataset.m === 'voice' ? 'voice' : 'video');
   });
   // ---------- permessi: Nicola amministratore, Luisa utente ----------
-  const NOTE = 'Solo Nicola può modificare';
+  const NOTE = 'Solo Nicola può modificare questa parte';
   App.isAdmin = () => !!(App.me && App.me.admin);
+  App.canEdit = () => !!(App.me && (App.me.admin || App.me.editor)); // v8.5.2: Luisa modifica i personaggi
   App.roles = {
     apply() {
-      const admin = App.isAdmin(); document.body.classList.toggle('not-admin', !admin);
-      $('#admin-note-chars').hidden = admin;
+      const admin = App.isAdmin(); document.body.classList.toggle('not-admin', !admin); document.body.classList.toggle('no-edit', !App.canEdit());
+      $('#admin-note-chars').hidden = App.canEdit();
       const lock = (sel, keep = []) => {
         const el = $(sel); if (!el) return; const card = el.closest('.card') || el.parentElement;
         card.classList.toggle('locked', !admin);
@@ -101,7 +102,7 @@
       ['#set-autosave', '#set-export'].forEach((s) => { const x = $(s); if (x) { x.disabled = !admin; x.closest('label').classList.toggle('locked-row', !admin); x.closest('label').title = admin ? '' : NOTE; } });
       ['#recovery-scan', '#wipe-btn'].forEach((s) => { const c = $(s) && $(s).closest('.card'); if (c) c.hidden = !admin; });
     },
-    guard(msg) { if (App.isAdmin()) return true; App.toast('🔒 ' + NOTE + (msg ? ': ' + msg : ''), 3500); return false; },
+    guard(msg) { if (App.canEdit()) return true; App.toast('🔒 ' + NOTE + (msg ? ': ' + msg : ''), 3500); return false; },
   };
   statusBar();
 })();

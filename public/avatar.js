@@ -143,7 +143,22 @@
     debugState() { return { lag: Math.round(this.lag), gain: +this.gain.toFixed(3), m: { ...this.m, lift: [...this.m.lift] }, brow: +this.micro.brow.toFixed(3), gaze: [+this.micro.gx.toFixed(3), +this.micro.gy.toFixed(3)], smile: +this.micro.smile.toFixed(3), look: +this.micro.look.toFixed(3), blinkDur: Math.round(this.blinkDur), blinkAmp: this.blinkAmp, style: { ...this.style }, swayPeriod: Math.round(this.swayPeriod) }; }
     // ---- ritmo: periodo (ms) stimato dai movimenti dell'utente; l'oscillazione a riposo si sincronizza ----
     setRhythm(period, strength) { this.rhythm = period ? { period: Math.min(2400, Math.max(330, period)), strength: Math.min(1, strength || 0.5) } : null; }
-    setLandmarks(lm) { this.lm = JSON.parse(JSON.stringify(lm)); this.sampleLids(); this._trustKey = ''; }
+    setLandmarks(lm) {
+      const next = JSON.parse(JSON.stringify(lm));
+      // v8.5.2: i punti nuovi arrivano con una dissolvenza (niente salti del warp quando il telefono rivaluta il viso)
+      if (this.lm && this.lm.eyeL && next && next.eyeL) {
+        this._lmFrom = JSON.parse(JSON.stringify(this.lm)); this._lmTo = next; this._lmT0 = performance.now(); this._lmDur = 420;
+      } else { this.lm = next; this._lmFrom = this._lmTo = null; }
+      this.sampleLids(); this._trustKey = '';
+    }
+    _lerpLm(now) {
+      if (!this._lmTo || !this._lmFrom) return;
+      const p = Math.min(1, (now - (this._lmT0 || now)) / (this._lmDur || 420));
+      const e = p * p * (3 - 2 * p), mix = (a, b) => ({ x: a.x + (b.x - a.x) * e, y: a.y + (b.y - a.y) * e });
+      const f = this._lmFrom, t = this._lmTo;
+      this.lm = { ...t, eyeL: mix(f.eyeL, t.eyeL), eyeR: mix(f.eyeR, t.eyeR), mouth: mix(f.mouth, t.mouth) };
+      if (p >= 1) { this.lm = t; this._lmFrom = this._lmTo = null; this.sampleLids(); }
+    }
     // v8.4.3: i punti del viso valgono per QUESTA foto? (rilevati in automatico su questa immagine, o messi a mano e plausibili)
     // Se no: niente deformazioni locali di occhi/bocca/testa (venivano storte), solo respiro e movimento dell'immagine intera,
     // e si rilevano i punti giusti in background (MediaPipe sul telefono).
@@ -289,15 +304,27 @@
     }
     // v8.4.5: «cane da guardia»: se i fotogrammi si fermano (iOS Risparmio energetico, errore, rAF sospeso) riparte il ciclo e
     // il movimento CSS (respiro/ondeggiamento sul canvas, gestito dal compositore del browser) diventa più evidente
+    // v8.5.2: isteresi sul fallback CSS — niente flip-flop fotogramma per fotogramma (causa del "saltella")
     watchdog() {
-      const c = this.c, st = c.parentElement, vis = document.visibilityState === 'visible' && c.isConnected && c.getClientRects().length > 0;
-      const stale = vis && performance.now() - (this._drawn || 0) > 1500;
-      if (stale) { this._stalls = (this._stalls || 0) + 1; try { cancelAnimationFrame(this._raf); } catch {} this._raf = requestAnimationFrame(this.loop); }
-      if (st && st.classList) st.classList.toggle('av-stalled', !!stale || !!this._safe);
+      const c = this.c, st = c.parentElement, now = performance.now();
+      const vis = document.visibilityState === 'visible' && c.isConnected && c.getClientRects().length > 0;
+      const age = now - (this._drawn || 0);
+      const stale = vis && age > 1600;
+      if (stale) {
+        this._stalls = (this._stalls || 0) + 1;
+        if (!this._stallSince) this._stallSince = now;
+        try { cancelAnimationFrame(this._raf); } catch {}
+        this._raf = requestAnimationFrame(this.loop);
+      } else this._stallSince = 0;
+      const want = !!this._safe || !!this._cssPhoto || (!!this._stallSince && now - this._stallSince > 700);
+      if (want) this._stalledOn = true;
+      else if ((this._okFrames || 0) > 60) this._stalledOn = false;
+      if (st && st.classList && st.classList.contains('av-stalled') !== !!this._stalledOn) st.classList.toggle('av-stalled', !!this._stalledOn);
     }
     frame(now) {
       // non visibile: risparmia batteria (getClientRects funziona anche dentro contenitori position:fixed su iOS)
       if (!this.c.isConnected || this.c.getClientRects().length === 0) return;
+      this._lerpLm(now);
       if (++this._frame % 30 === 0) this.resize();
       // v8.4.1: ritmo costante ~60 fotogrammi al secondo anche a riposo (prima 30: il movimento sembrava "a scatti");
       // sugli schermi a 120 Hz si salta un fotogramma su due (stesso ritmo, metà lavoro)
@@ -531,12 +558,12 @@
         let src = img, headDy = 0; const trust = this.faceTrusted();
         if (trust && !this._safe && this.breathOn !== false && img.naturalWidth) {
           if (!this.breather) this.breather = new Breather();
-          if (this.breather.ok && this.breather.setup(img, this.lm)) { const amp = this.breathAmp || 1.35; src = this.breather.render(A.vol, amp, A.nod || 0); headDy = this.breather.headDy(A.vol, amp, A.nod || 0); }
+          if (this.breather.ok && this.breather.setup(img, this.lm)) { const amp = Math.min(1.25, this.breathAmp || 1.2); src = this.breather.render(A.vol, amp, A.nod || 0); headDy = this.breather.headDy(A.vol, amp, A.nod || 0); }
         }
         // v8.4.3: senza respiro WebGL (o con punti incerti) il respiro dell'immagine intera è VISIBILE (prima 0,25%: sembrava ferma),
         // più un leggero "sollevarsi" mentre parla; solo verticale, ancorato in basso: la cornice resta ferma, niente ondeggiamento laterale
         const br = Math.max(-1, Math.min(1, A.breath)), talk = this.speaking ? Math.min(1, this.mouth) : 0;
-        const Y1b = E.y0 + E.h, bs = src === img ? 1 + (trust ? 0.005 : 0.0065) * (1 + br) + talk * 0.003 : 1; // v8.5.0: più visibile // sempre ≥ 1 e ritagliato: nessun bordo vuoto
+        const Y1b = E.y0 + E.h, bs = src === img ? 1 + (trust ? 0.0035 : 0.005) * (1 + br) + talk * 0.002 : 1; // v8.5.2: un solo respiro (niente CSS sopra) // sempre ≥ 1 e ritagliato
         ctx.save(); ctx.beginPath(); ctx.rect(E.x0, E.y0, E.w, E.h); ctx.clip();
         const cxb = E.x0 + E.w / 2; ctx.translate(cxb, Y1b); ctx.scale(src === img ? 1 + (bs - 1) * 0.25 : 1, bs); ctx.translate(-cxb, -Y1b);
         ctx.drawImage(src, E.x0, E.y0, E.w, E.h);
@@ -634,7 +661,7 @@
           const v = this._vid || (this._vid = document.createElement('video'));
           const snd = !!(window.App && App.audio && App.audio.clipSound()); v.muted = !snd; v.defaultMuted = !snd; v.volume = 1; v.playsInline = true; // v7.3: audio della clip se la lettura è attiva e l'audio sbloccato
            v.setAttribute('playsinline', ''); v.setAttribute('webkit-playsinline', ''); v.preload = 'auto'; v.loop = false;
-          const act = { kind: 'video', el: v, resolve, start: 0, fadeIn: 380, fadeOut: 520, endAt: 0, ready: false };
+          const act = { kind: 'video', el: v, resolve, start: 0, fadeIn: 420, fadeOut: 560, endAt: 0, ready: false };
           this.act = act;
           const to = setTimeout(() => fail(new Error('Video non caricato')), 9000);
           v.oncanplay = () => { if (this.act !== act || act.ready) return; act.ready = true; clearTimeout(to); act.start = performance.now(); v.play().catch((e) => { if (!v.muted) { v.muted = true; v.play().catch((e2) => fail(e2)); } else fail(e); }); }; // se l'audio è bloccato, riparte muta
@@ -1044,7 +1071,7 @@ vec2 src=(p-vec2(0.0,dy)-dc)/uR;vec4 c=texture2D(uI,clamp(src,vec2(0.0),vec2(1.0
       if (b.table && Number.isFinite(b.table.y)) { const ty = (b.table.y * s + oy) * gs; if (ty > shY + 0.8 * ed) wY = Math.min(wY, ty); }
       const cY = shY + Math.min(1.1 * ed, (wY - shY) * 0.35);
       this.g = { W, H, gs, ed, fx, chinY, shY, shHW, shX, wY, cX: shX, cY, cRx: shHW * 0.8, cRy: shHW * 0.62,
-        rise: Math.max(0.095 * ed, 0.0032 * H), exp: 0.016, /* v8.5.0: respiro ben visibile (petto e spalle) */ k: (s * gs) / 1000 };
+        rise: Math.max(0.08 * ed, 0.0026 * H), exp: 0.014, /* v8.5.2: respiro visibile e liscio */ k: (s * gs) / 1000 };
       // maschera della persona (facoltativa): ferma lo sfondo
       const m = b.mask;
       if (m !== this.maskSrc) {

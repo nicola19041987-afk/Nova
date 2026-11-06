@@ -84,7 +84,7 @@ main:has(> #tab-conv:not([hidden])){padding-top:6px;padding-left:max(8px,env(saf
 .conv{height:calc(100vh - 128px - env(safe-area-inset-top) - env(safe-area-inset-bottom));height:calc(100dvh - 128px - env(safe-area-inset-top) - env(safe-area-inset-bottom))}
 #stage{position:relative;flex:1 1 0;min-height:220px;display:flex;padding:0 0 6px}
 /* v7.1: cornice FISSA verticale 9:16 (stile schermo del telefono), alta quanto lo spazio disponibile; dimensioni calcolate da App.fitFrame */
-#avatar-canvas{position:absolute;left:50%;top:0;transform:translateX(-50%);height:calc(100% - 6px);aspect-ratio:9/16;max-width:100%;min-height:0;border-radius:18px;background:#2b1530;box-shadow:0 0 0 2px var(--line);display:block;touch-action:manipulation}
+#avatar-canvas{position:absolute;left:50%;top:0;transform:translate3d(-50%,0,0);height:calc(100% - 6px);aspect-ratio:9/16;max-width:100%;min-height:0;border-radius:18px;contain:layout paint;background:#2b1530;box-shadow:0 0 0 2px var(--line);display:block;touch-action:manipulation}
 .conv .messages{flex:0 0 max(88px,16vh);flex-basis:max(88px,16dvh);min-height:0}
 .conv .voicebar{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;padding-bottom:4px}
 .conv .voicebar::-webkit-scrollbar{display:none}
@@ -402,7 +402,7 @@ label{color:var(--muted)}
 .admin-note{background:var(--card);border-radius:12px;padding:12px 14px;color:var(--muted);font-size:14px;margin-top:12px}
 .lock-note{color:#ffd60a;font-size:13px;margin:-4px 0 8px}
 .locked-row{opacity:.6}
-body.not-admin [data-edit],body.not-admin .new-row,body.not-admin #preset-row,body.not-admin .admin-ctl,body.not-admin #mem-clear,body.not-admin #mem-list button{display:none!important}
+body.no-edit [data-edit],body.no-edit .new-row,body.no-edit #preset-row,body.no-edit .admin-ctl,body.not-admin #clear-chat,body.not-admin #mem-clear,body.not-admin #mem-list button{display:none!important}
 /* controllo segmentato */
 .seg{display:flex;background:#1c1c1e;border-radius:9px;padding:2px;margin:0 0 14px;gap:2px}
 .seg button{flex:1;padding:7px 4px;font-size:13px;font-weight:600;border-radius:7px;background:none;color:#fff}
@@ -528,18 +528,14 @@ dialog{background:#1c1c1e;border:0}
    respiro (scala ancorata in basso), leggero ondeggiamento e "bob" mentre parla. Funziona anche se iOS (Risparmio energetico)
    rallenta i fotogrammi, se WebGL non c'è o se il disegno si blocca. Proprietà singole (scale/rotate/translate): si sommano alla
    transform già usata per centrare il canvas. */
-@keyframes nv-breathe{0%,100%{scale:1 1}50%{scale:1.006 1.016}}
-@keyframes nv-sway{0%,100%{rotate:-.18deg}50%{rotate:.18deg}}
-@keyframes nv-talk{0%,100%{translate:0 0}35%{translate:0 -.32%}70%{translate:0 .08%}}
-@keyframes nv-breathe2{0%,100%{scale:1 1}50%{scale:1.008 1.02}}
-@keyframes nv-sway2{0%,100%{rotate:-.35deg;translate:-.4% 0}50%{rotate:.35deg;translate:.4% 0}}
-#avatar-canvas{transform-origin:50% 100%;animation:nv-breathe 4.4s ease-in-out infinite,nv-sway 9.5s ease-in-out infinite}
-#stage.speaking #avatar-canvas{animation:nv-breathe 3.4s ease-in-out infinite,nv-sway 9.5s ease-in-out infinite,nv-talk .5s ease-in-out infinite}
-#stage.av-stalled #avatar-canvas{animation:nv-breathe2 4s ease-in-out infinite,nv-sway2 7s ease-in-out infinite}
-#stage.av-stalled.speaking #avatar-canvas{animation:nv-breathe2 3.2s ease-in-out infinite,nv-talk .45s ease-in-out infinite}
+/* v8.5.2: UN solo motore di movimento. Di default il canvas disegna respiro/labiale; il CSS non anima.
+   Il respiro CSS scatta SOLO in fallback (.av-stalled / foto CSS), morbido, senza sway laterale né flip-flop. */
+@keyframes nv-breathe{0%,100%{scale:1 1}50%{scale:1.005 1.012}}
+#avatar-canvas{transform-origin:50% 100%;animation:none;backface-visibility:hidden;-webkit-backface-visibility:hidden}
+#stage.av-stalled #avatar-canvas,#stage.av-stalled.speaking #avatar-canvas{animation:nv-breathe 4.6s ease-in-out infinite}
 @media (prefers-reduced-motion:reduce){
-  #avatar-canvas,#stage.av-stalled #avatar-canvas{animation:nv-breathe 5s ease-in-out infinite}
-  #stage.speaking #avatar-canvas{animation:nv-breathe 4s ease-in-out infinite,nv-talk .6s ease-in-out infinite}
+  #avatar-canvas,#stage.av-stalled #avatar-canvas,#stage.av-stalled.speaking #avatar-canvas{animation:none}
+}
 }
 /* niente contorno colorato a schermo intero o in chiamata (era l'anello "sta parlando" del personaggio: sembrava un bordo rosso) */
 #stage.fs #avatar-canvas,#stage:fullscreen #avatar-canvas,#stage.call #avatar-canvas{box-shadow:none!important}

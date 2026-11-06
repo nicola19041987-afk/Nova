@@ -71,7 +71,7 @@
       return info.catalog.filter((c) => !c.adult).map((c) => c.id).filter((id) => { const a = ch.actions && ch.actions[id]; return (!a || a.stale || !a.url) && !refused()[refKey(ch, 'avatar', id)]; });
     },
     autoAll() {
-      if (App.ls.get('autoPrep', true) === false || !App.key() || (App.isAdmin && !App.isAdmin())) return;
+      if (App.ls.get('autoPrep', true) === false || !App.key() || (App.canEdit && !App.canEdit())) return;
       (App.chars || []).forEach((ch) => this.autoMissing(ch).forEach((id) => { const k = ch.id + '|' + id + '|' + ch.avatar; if (!autoQ.some((q) => q.k === k) && !autoBusy.has(k)) autoQ.push({ k, cid: ch.id, id }); }));
       // il personaggio aperto ha la precedenza
       if (App.current) autoQ.sort((a, b) => (b.cid === App.current.id) - (a.cid === App.current.id));

@@ -82,7 +82,7 @@
     tr.innerHTML = [-1, 0, 1].map((k) => `<div class="vw-slide" style="transform:translateX(${k * 100}%)">${list[idx + k] ? slide(list[idx + k]) : ''}</div>`).join('');
     $('#vw-title').textContent = cur.name || ''; $('#vw-pos').textContent = list.length > 1 ? `${idx + 1} di ${list.length}` : '';
     const own = !cur.app && !cur.chat && !cur.trash;
-    $('#vw-del').hidden = !own; $('#vw-avatar').hidden = cur.kind !== 'image' || !App.isAdmin() || !!cur.trash;
+    $('#vw-del').hidden = !own; $('#vw-avatar').hidden = cur.kind !== 'image' || !App.canEdit() || !!cur.trash;
     $('#vw-send').hidden = !own;
     cur._blob = null;
     if (own) fetch(cur.url, { credentials: 'same-origin' }).then((r) => r.blob()).then((b) => { if (list[idx] === cur) cur._blob = b; }).catch(() => {}); // pronto per «Condividi» (iPhone vuole il file subito)

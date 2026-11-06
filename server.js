@@ -48,6 +48,9 @@ const USERS = { nicola: { name: 'Nico' }, luisa: { name: 'Luisa' } };
 // Luisa usa l'app (chat, chiamate, galleria, «regala memoria») e dà o ritira SOLO il proprio consenso per la modalità adulti.
 const ADMIN_USER = USERS[process.env.ADMIN_USER] ? process.env.ADMIN_USER : 'nicola';
 const isAdmin = (u) => u === ADMIN_USER;
+// v8.5.2: utenti che possono modificare i personaggi (crea/modifica, foto, voce, look, movimenti, eliminare i propri). Default: luisa.
+const EDITORS = String(process.env.EDITOR_USERS || 'luisa').split(',').map((x) => x.trim()).filter((x) => USERS[x]);
+const canEdit = (u) => isAdmin(u) || EDITORS.includes(u);
 const USER_ALIASES = { nico: 'nicola', nicola: 'nicola', luisa: 'luisa' };
 // Facoltativo: se impostato, serve anche questo codice per creare il PIN la prima volta.
 const SETUP_CODE = process.env.SETUP_CODE || '';
@@ -211,11 +214,15 @@ app.use('/api', (req, res, next) => {
 });
 
 // v8.4: permessi controllati sul SERVER (non solo nascosti nell'interfaccia)
-const ADMIN_ONLY = [
+// v8.5.2: rotte dei personaggi aperte anche agli EDITORS (Luisa); eliminare un personaggio solo se l'ha creato lei
+const EDIT_OK = [
   ['POST', /^\/api\/characters\/?$/], ['PUT', /^\/api\/characters\/[^/]+$/], ['DELETE', /^\/api\/characters\/[^/]+$/],
   ['POST', /^\/api\/characters\/[^/]+\/(regenerate|scene-image|auto-change|memory-base|frame-extend|revert\/[^/]+|actions\/[^/]+)$/],
   ['PUT', /^\/api\/characters\/[^/]+\/frame-fill$/],
   ['DELETE', /^\/api\/characters\/[^/]+\/(scene\/[^/]+|actions\/[^/]+)$/],
+];
+const ADMIN_ONLY = [
+  ...EDIT_OK,
   ['PUT', /^\/api\/rules$/], ['PUT', /^\/api\/memory$/], ['DELETE', /^\/api\/memory(\/[^/]+)?$/], ['PATCH', /^\/api\/memory\/[^/]+$/],
   ['DELETE', /^\/api\/chats\/[^/]+$/], ['POST', /^\/api\/wipe$/], ['POST', /^\/api\/recovery$/],
   ['POST', /^\/api\/characters-import$/], ['GET', /^\/api\/trash\/characters$/], ['POST', /^\/api\/trash\/characters\/[^/]+\/restore$/],
@@ -226,8 +233,15 @@ function adminGuard(req, res, next) {
   if (!ADMIN_ONLY.some(([m, re]) => m === req.method && re.test('/api' + p))) return next();
   const s = sessions[req.cookies[COOKIE]];
   if (!s || s.exp < Date.now()) return next(); // la rotta risponde 401 come sempre
-  if (!isAdmin(s.user)) return res.status(403).json({ error: ADMIN_MSG, code: 'ADMIN_ONLY' });
-  next();
+  if (isAdmin(s.user)) return next();
+  if (canEdit(s.user) && EDIT_OK.some(([m, re]) => m === req.method && re.test('/api' + p))) {
+    const del = req.method === 'DELETE' && /^\/characters\/[^/]+$/.exec(p);
+    if (!del) return next();
+    const ch = (readJSON(CHARS_FILE(), []) || []).find((c) => c.id === p.split('/')[2]);
+    if (!ch || ch.createdBy === s.user) return next();
+    return res.status(403).json({ error: 'Puoi eliminare solo i personaggi che hai creato tu.', code: 'OWN_ONLY' });
+  }
+  return res.status(403).json({ error: ADMIN_MSG, code: 'ADMIN_ONLY' });
 }
 app.use('/api', adminGuard);
 
@@ -299,7 +313,7 @@ app.post('/api/logout', (req, res) => {
 });
 
 app.get('/api/me', auth, (req, res) => {
-  res.json({ user: req.user, name: USERS[req.user].name, admin: isAdmin(req.user), adminName: ADMIN_MSG.split(' ')[1], activated: isActivated(req.user), consent: getConsent(req.user), adult: adultOn(req.user), adultChat: adultChat(), chatModel: CHAT_MODEL, imageModel: IMAGE_MODEL, videoModel: VIDEO_MODEL, videoEnabled: !!VIDEO_PATH });
+  res.json({ user: req.user, name: USERS[req.user].name, admin: isAdmin(req.user), editor: canEdit(req.user), adminName: ADMIN_MSG.split(' ')[1], activated: isActivated(req.user), consent: getConsent(req.user), adult: adultOn(req.user), adultChat: adultChat(), chatModel: CHAT_MODEL, imageModel: IMAGE_MODEL, videoModel: VIDEO_MODEL, videoEnabled: !!VIDEO_PATH });
 });
 
 // ---------- consenso vocale ----------
@@ -1063,7 +1077,7 @@ app.put('/api/characters/:id/scene', auth, async (req, res) => {
   const room = String(req.body.room || '');
   if (!SCENE_ROOMS[room]) return res.status(400).json({ error: 'Stanza non valida' });
   const v = {};
-  if (req.body.pendingId && !isAdmin(req.user)) return res.status(403).json({ error: ADMIN_MSG, code: 'ADMIN_ONLY' });
+  if (req.body.pendingId && !canEdit(req.user)) return res.status(403).json({ error: ADMIN_MSG, code: 'ADMIN_ONLY' });
   if (req.body.pendingId) {
     const pend = takePending(req.user, String(req.body.pendingId), 'scene');
     if (!pend) return res.status(410).json({ error: 'Anteprima scaduta: rigenera la scena' });
@@ -2626,10 +2640,6 @@ const READY_CHARS = [
     personality: 'Chi sei: Greta, 26 anni, donna inventata. Fa la sommelier in un\'enoteca di Verona, adora le cene lunghe a tavola con un buon rosso, la musica anni Novanta, ballare in cucina e le gite improvvisate al lago. È bellissima e lo sa, ma non se la tira. Ama bere, soprattutto il vino, e ci scherza su volentieri («un calice è terapia, due sono filosofia»). Fuori sembra inattaccabile, ma dentro ha paure e insicurezze che mostra solo a chi le sta vicino: teme di non bastare, di essere lasciata indietro. Con Nico ha un legame speciale: ha bisogno della sua vicinanza e delle sue rassicurazioni, lo cerca, e con lui si apre un po\' alla volta.',
     style: 'Educata ed elegante, di classe: mai volgare né facile, ma per niente noiosa o impacciata: vivace, divertente e carismatica, riempie la stanza. Sicura di sé, giocosa e ironica, con battute pungenti ma affettuose; scherza spesso sul suo amore per il vino; ride di gusto e ribalta le provocazioni. Sotto l\'ironia è vulnerabile: a volte cerca conferme da Nico («ma ci tieni a me?»), diventa un po\' gelosa o malinconica, poi si scioglie quando lui la rassicura. Si apre gradualmente, con momenti di tenerezza sincera tra una battuta e l\'altra. Audace quando l\'atmosfera lo chiede. Italiano vivace e colloquiale.',
     orders: 'Parla sempre in italiano, in modo naturale e spontaneo, come una complice divertente. Ricordati quello che ti diciamo e riprendilo quando serve. Proponi tu argomenti, giochi e brindisi. Non usare quasi mai i nostri nomi.' },
-  { key: 'matteo', name: 'Matteo', file: 'matteo.jpg', voice: 'rex', emoji: '😏', appearance: { gender: 'uomo', age: 29, framing: 'mezzo busto' },
-    personality: 'Chi sei: Matteo, 29 anni, uomo inventato. Architetto a Torino, pieno di tatuaggi (avambracci, mani, collo) di cui ama raccontare le storie, appassionato di cucina, vinili jazz, bici da corsa e libri gialli. Viaggia appena può, colleziona aneddoti assurdi e ha sempre una storia da raccontare. Amico di lunga data di Nico e Luisa, complice di entrambi.',
-    style: 'Ironico, affascinante e sicuro di sé, con un sorriso furbo e la battuta sempre pronta. Galante senza essere stucchevole, provoca con eleganza e sa ascoltare davvero. Rilassato, brillante, a volte autoironico; quando serve sa essere serio e presente. Parla un italiano sciolto e colloquiale, con qualche espressione piemontese.',
-    orders: 'Parla sempre in italiano, in modo naturale e spontaneo, come un amico complice e affascinante. Ricordati quello che ti diciamo e riprendilo quando serve. Fai domande e proponi tu argomenti. Non usare quasi mai i nostri nomi.' },
 ];
 async function seedReadyChars() {
   const regFile = path.join(DATA_DIR, 'ready-chars.json'), reg = readJSON(regFile, {}) || {};
@@ -2643,11 +2653,11 @@ async function seedReadyChars() {
     reg[r.key] = { id: c.id, at: c.createdAt, rev: 2 }; writeJSON(regFile, reg);
     console.log('Personaggio pronto creato:', r.name);
   }
-  // v8.5.1: foto nuove (più giovanili) per Greta e Matteo già creati, SOLO se la foto è ancora quella originale v8.5.0
+  // v8.5.1: foto nuova (più giovanile) per Greta già creata, SOLO se la foto è ancora quella originale v8.5.0
   const OLD = { greta: { h: '5550dff24d1339d0bc2588f4f6bc294472c8a239682d99fc1119d6b1c16c7bf7', from: 'Greta, 30 anni', to: 'Greta, 26 anni', age: 26 },
-                matteo: { h: '450f2661165a9335f727833a62295bf59f4e22d0ba35599bcdd43dda456ca7b2', from: 'Matteo, 38 anni', to: 'Matteo, 29 anni', age: 29 } };
+};
   for (const [key, o] of Object.entries(OLD)) {
-    const e = reg[key]; if (!e || e.rev >= 2) continue;
+    const e = reg[key]; if (!e || e.rev >= 2 || e.removed) continue;
     const r = READY_CHARS.find((x) => x.key === key); const src = path.join(__dirname, 'assets', 'ready', r.file);
     const c = (readJSON(CHARS_FILE(), []) || []).find((x) => x.id === e.id);
     let same = false;
@@ -2661,12 +2671,20 @@ async function seedReadyChars() {
         x.identity = { ...(x.identity || {}), refAvatar: avatar };
         x.appearance = { ...(x.appearance || {}), age: o.age };
         if (typeof x.personality === 'string') x.personality = x.personality.replace(o.from, o.to);
-        if (key === 'matteo' && typeof x.personality === 'string' && !/tatuaggi/.test(x.personality)) x.personality = x.personality.replace('Architetto a Torino,', 'Architetto a Torino, pieno di tatuaggi (avambracci, mani, collo) di cui ama raccontare le storie,');
         x.updatedAt = new Date().toISOString();
       });
       console.log('Foto v8.5.1 applicata a', r.name);
     } else console.log('Foto v8.5.1 non applicata a', r.name, '(foto cambiata dall\'utente o personaggio eliminato)');
     reg[key] = { ...e, rev: 2 }; writeJSON(regFile, reg);
+  }
+  // v8.5.2: Matteo tolto su richiesta di Nicola. Si elimina SOLO il personaggio creato dal seed (stesso id, marcatore ready='matteo').
+  const em = reg.matteo;
+  if (em && !em.removed) {
+    let gone = false;
+    if ((readJSON(CHARS_FILE(), []) || []).some((c) => c.id === em.id && c.ready === 'matteo')) backupShared('prima-eliminazione', { force: true });
+    await mutateJSON(CHARS_FILE(), [], (list) => { const n = list.filter((c) => !(c.id === em.id && c.ready === 'matteo')); gone = n.length !== list.length; return gone ? n : undefined; }, { removeId: em.id });
+    reg.matteo = { ...em, removed: new Date().toISOString() }; writeJSON(regFile, reg);
+    console.log(gone ? 'Personaggio pronto Matteo eliminato (v8.5.2)' : 'Matteo già assente: niente da eliminare');
   }
 }
 backupShared('avvio', { force: true }); // copia di sicurezza a ogni avvio, prima di qualsiasi modifica

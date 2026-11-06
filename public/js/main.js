@@ -36,7 +36,7 @@ App.applyStyle = function () {
 
 // Cambi automatici: al primo avvio del giorno (o secondo la frequenza scelta), piccole variazioni plausibili
 App.autoChanges = async function () {
-  if (!App.key() || !(App.me && App.me.admin)) return; // v8.4: le modifiche dei personaggi le fa solo Nicola
+  if (!App.key() || !(App.me && (App.me.admin || App.me.editor))) return; // v8.4: le modifiche dei personaggi le fa solo Nicola
   for (const c of App.chars) {
     const ac = c.autoChanges || {};
     if (!ac.enabled || !/^\/api\/avatars\//.test(c.avatar)) continue;
