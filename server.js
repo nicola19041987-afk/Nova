@@ -49,7 +49,7 @@ const USERS = { nicola: { name: 'Nico' }, luisa: { name: 'Luisa' } };
 // v8.4: ruoli. Nicola è l'amministratore (modifica personaggi, regole, scene, gesti, impostazioni e sblocchi);
 // Luisa usa l'app (chat, chiamate, galleria, «regala memoria») e dà o ritira SOLO il proprio consenso per la modalità adulti.
 const ADMIN_USER = USERS[process.env.ADMIN_USER] ? process.env.ADMIN_USER : 'nicola';
-const isAdmin = (u) => u === ADMIN_USER;
+const isAdmin = (u) => !!USERS[u]; // Nicola e Luisa hanno gli stessi poteri. Il consenso adulti e il PIN restano di ciascuno.
 // v8.5.2: utenti che possono modificare i personaggi (crea/modifica, foto, voce, look, movimenti, eliminare i propri). Default: luisa.
 const EDITORS = String(process.env.EDITOR_USERS || 'luisa').split(',').map((x) => x.trim()).filter((x) => USERS[x]);
 const canEdit = (u) => isAdmin(u) || EDITORS.includes(u);
@@ -220,12 +220,13 @@ function auth(req, res, next) {
   next();
 }
 function requireActivated(req, res, next) {
-  if (!isActivated(req.user)) return res.status(403).json({ error: 'Account non attivato: registra prima il consenso vocale.' });
+  // Il consenso vocale non è un muro prima della Home: resta solo per la modalità adulti, profilo per profilo.
   next();
 }
-// La chiave xAI arriva dal dispositivo: usata solo per questa richiesta, mai salvata.
+// La chiave xAI arriva dal dispositivo, oppure da quella già salvata sul server. Mai registrata nei log.
 function requireKey(req, res, next) {
-  const k = String(req.get('X-AI-Key') || '').trim();
+  let k = String(req.get('X-AI-Key') || '').trim();
+  if (!k) k = getServerAiKey();
   if (!k || k.length > 300 || /\s/.test(k)) return res.status(400).json({ error: 'Chiave xAI mancante: inseriscila in Account su questo dispositivo.', code: 'NO_KEY' });
   req.aiKey = k;
   next();
@@ -353,7 +354,7 @@ app.post('/api/logout', (req, res) => {
 });
 
 app.get('/api/me', auth, (req, res) => {
-  res.json({ user: req.user, name: USERS[req.user].name, admin: isAdmin(req.user), editor: canEdit(req.user), solo: true, soloKey: SOLO_KEY, adminName: ADMIN_MSG.split(' ')[1], activated: isActivated(req.user), consent: getConsent(req.user), adult: adultOn(req.user), adultChat: adultChat(), chatModel: CHAT_MODEL, imageModel: IMAGE_MODEL, videoModel: VIDEO_MODEL, videoEnabled: !!VIDEO_PATH });
+  res.json({ user: req.user, name: USERS[req.user].name, admin: isAdmin(req.user), editor: canEdit(req.user), solo: true, soloKey: SOLO_KEY, adminName: ADMIN_MSG.split(' ')[1], activated: isActivated(req.user), consent: getConsent(req.user), adult: adultOn(req.user), adultChat: adultChat(), serverKey: !!getServerAiKey(), chatModel: CHAT_MODEL, imageModel: IMAGE_MODEL, videoModel: VIDEO_MODEL, videoEnabled: !!VIDEO_PATH });
 });
 
 // ---------- consenso vocale ----------

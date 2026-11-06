@@ -5,7 +5,6 @@ App.avatarEditor = new TalkingAvatar($('#editor-canvas'));
 
 App.boot = async function () {
   try { App.me = await App.api('/api/me'); } catch { App.showLogin(); return; }
-  if (!App.me.activated) return App.showActivation();
   if (App.me.consent) App.ls.set('consent', { activatedAt: App.me.consent.activatedAt });
   App.showView('app'); $('#who').textContent = App.me.name;
   App.opts = await App.api('/api/characters/options');
@@ -45,7 +44,7 @@ App.applyStyle = function () {
 
 // Cambi automatici: al primo avvio del giorno (o secondo la frequenza scelta), piccole variazioni plausibili
 App.autoChanges = async function () {
-  if (!App.key() || !(App.me && (App.me.admin || App.me.editor))) return; // v8.4: le modifiche dei personaggi le fa solo Nicola
+  if (!App.hasAi() || !(App.me && (App.me.admin || App.me.editor))) return;
   for (const c of App.chars) {
     const ac = c.autoChanges || {};
     if (!ac.enabled || !/^\/api\/avatars\//.test(c.avatar)) continue;

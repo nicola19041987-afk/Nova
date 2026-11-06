@@ -71,7 +71,8 @@
       return info.catalog.filter((c) => !c.adult).map((c) => c.id).filter((id) => { const a = ch.actions && ch.actions[id]; return (!a || a.stale || !a.url) && !refused()[refKey(ch, 'avatar', id)]; });
     },
     autoAll() {
-      if (App.ls.get('autoPrep', true) === false || !App.key() || (App.canEdit && !App.canEdit())) return;
+      if (App.me && App.me.serverKey) return;
+      if (App.ls.get('autoPrep', true) === false || !App.hasAi() || (App.canEdit && !App.canEdit())) return;
       (App.chars || []).forEach((ch) => this.autoMissing(ch).forEach((id) => { const k = ch.id + '|' + id + '|' + ch.avatar; if (!autoQ.some((q) => q.k === k) && !autoBusy.has(k)) autoQ.push({ k, cid: ch.id, id }); }));
       // il personaggio aperto ha la precedenza
       if (App.current) autoQ.sort((a, b) => (b.cid === App.current.id) - (a.cid === App.current.id));
@@ -201,7 +202,7 @@
     log(text, cls = '') { const li = document.createElement('li'); li.className = cls; li.textContent = text; $('#act-log').appendChild(li); li.scrollIntoView({ block: 'nearest' }); return li; },
     async prepare() {
       const ch = App.current; if (!ch || running) return;
-      if (!App.key()) return App.toast('🔑 Inserisci la chiave xAI in Impostazioni');
+      if (!App.hasAi()) return App.toast('🔑 Inserisci la chiave xAI in Impostazioni');
       // v8.4.5: prima tutte le azioni normali, poi (se scelte) quelle per adulti; un rifiuto non ferma le altre
       const ids = $$('#act-dialog [data-prep]').filter((x) => x.checked).map((x) => x.dataset.prep).sort((a, b) => (meta(a).adult ? 1 : 0) - (meta(b).adult ? 1 : 0));
       if (!ids.length) return App.toast('Scegli almeno un\'azione');

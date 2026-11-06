@@ -139,7 +139,7 @@ App.chat = {
     if (!photo && App.kwSet && text.length <= 80) { // parola chiave: confronto sul server (hash), mai in chat né all'IA
       try { const k = await App.api('/api/adult-keyword/check', { method: 'POST', body: { text } }); if (k.match) return this.askAdult(k.token); } catch { /* prosegui */ }
     }
-    if (!noAI && !App.key()) return App.toast('🔑 Inserisci la chiave xAI in Impostazioni (oppure usa 💬 per scrivere solo all\'altra persona)');
+    if (!noAI && !App.hasAi()) return App.toast('🔑 Inserisci la chiave xAI in Impostazioni (oppure usa 💬 per scrivere solo all\'altra persona)');
     this.busy = true; const ch = App.current;
     const meName = App.me.name;
     const local = this.addMsg({ role: 'user', author: App.me.user, authorName: meName, content: text, noAI, at: new Date().toISOString(), ...(photo ? { photo: { localSrc: photo.url, localThumb: photo.thumb, kind: photo.kind, w: photo.w, h: photo.h } } : {}) });
@@ -160,7 +160,7 @@ App.chat = {
       if (!r.ok) {
         const j = await r.json().catch(() => ({}));
         if (j.message) this.claim(local, j.message.id); // il tuo messaggio è comunque salvato nella chat condivisa
-        if (r.status === 403) App.showActivation();
+        if (r.status === 403 && /non attivato/.test(j.error || '')) App.showActivation();
         throw new Error(j.error || `Errore ${r.status}`);
       }
       if ((r.headers.get('Content-Type') || '').includes('application/json')) { // parola chiave riconosciuta dal server

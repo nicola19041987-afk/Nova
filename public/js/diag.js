@@ -24,7 +24,7 @@
     const miss = need.filter(([, v]) => !v).map(([k]) => k);
     row(miss.length ? 'err' : 'ok', 'Compatibilità', miss.length ? 'manca: ' + miss.join(', ') : 'WebSocket, AudioWorklet, microfono, HTTPS' + (navigator.audioSession ? ' · sessione audio iOS ' + navigator.audioSession.type : ''));
     row('ok', 'Impostazione chiamate', App.ls.get('callEngine', 'realtime') === 'realtime' ? '⚡ tempo reale' : 'classica (scelta nelle Impostazioni)');
-    if (!App.key()) { row('err', 'Chiave xAI', 'mancante: inseriscila sopra'); btn.disabled = false; btn.textContent = '🩺 Diagnostica voce'; draw(); return; }
+    if (!App.hasAi()) { row('err', 'Chiave xAI', 'mancante: inseriscila sopra'); btn.disabled = false; btn.textContent = '🩺 Diagnostica voce'; draw(); return; }
     row('ok', 'Chiave xAI', 'presente su questo telefono');
     // 1) server -> xAI
     try { const t = performance.now(); const r = await App.api('/api/ai-warm', { method: 'POST', ai: true }); row(r.status === 200 ? 'ok' : 'warn', 'Server → xAI', `${ms(t)} (HTTP ${r.status || '?'}${r.status === 200 ? '' : ' · chiave non valida?'}) · modello chiamate: ${r.callModel || '?'}`); } catch (e) { row('err', 'Server → xAI', e.message); }

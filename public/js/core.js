@@ -19,12 +19,17 @@ App.ls = {
   del(k) { localStorage.removeItem(`ap:${App.me.user}:${k}`); },
 };
 App.key = () => (App.me ? App.ls.get('key', '') : '');
+App.hasAi = () => !!(App.key() || (App.me && App.me.serverKey));
 
 // fetch verso il nostro server. opts.ai = true aggiunge la chiave xAI del dispositivo (mai salvata dal server).
 App.api = async function (path, { method = 'GET', body, ai = false, raw = false, headers = {} } = {}) {
   const h = { 'X-Requested-With': 'app-privata', ...headers };
   if (body !== undefined && !(body instanceof Blob)) h['Content-Type'] = 'application/json';
-  if (ai) { const k = App.key(); if (!k) { App.toast('🔑 Inserisci la chiave xAI in Impostazioni'); throw new Error('NO_KEY'); } h['X-AI-Key'] = k; }
+  if (ai) {
+    const k = App.key();
+    if (k) h['X-AI-Key'] = k;
+    else if (!App.hasAi()) { App.toast('🔑 Inserisci la chiave xAI in Impostazioni'); throw new Error('NO_KEY'); }
+  }
   const r = await fetch(path, { method, headers: h, credentials: 'same-origin', body: body instanceof Blob ? body : body !== undefined ? JSON.stringify(body) : undefined });
   if (r.status === 401 && !['/api/login', '/api/pin/setup'].includes(path)) { App.showLogin(); throw new Error('Accesso richiesto'); }
   if (raw) return r;

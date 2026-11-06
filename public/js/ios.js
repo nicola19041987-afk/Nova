@@ -85,7 +85,7 @@
     App.call.start(li.dataset.m === 'voice' ? 'voice' : 'video');
   });
   // ---------- permessi: Nicola amministratore, Luisa utente ----------
-  const NOTE = 'Solo Nicola può modificare questa parte';
+  const NOTE = 'Serve un accesso per modificare questa parte';
   App.isAdmin = () => !!(App.me && App.me.admin);
   App.canEdit = () => !!(App.me && (App.me.admin || App.me.editor)); // v8.5.2: Luisa modifica i personaggi
   App.roles = {

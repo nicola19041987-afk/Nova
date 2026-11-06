@@ -84,7 +84,7 @@
   async function start(m) {
     const ch = App.current; if (!ch) return;
     if (on) return setMode(m || mode);
-    if (!App.key()) return App.toast('🔑 Per la videochiamata serve la chiave xAI (Impostazioni)');
+    if (!App.hasAi()) return App.toast('🔑 Per la videochiamata serve la chiave xAI (Impostazioni)');
     const useRt = App.rt && App.rt.enabled();
     if ((SR || useRt || (App.callMic && App.callMic.supported())) && !App.ls.get('micOn', false)) {
       if (!confirm('La videochiamata usa il microfono per ascoltarti (il riconoscimento resta sul telefono / nel browser). Attivarlo?')) return;
@@ -112,7 +112,7 @@
       try { await p; if (!on) { App.rt.stop(); return; } rt = true; connecting = false; badge('rt'); state(); return; }
       catch (e) { connecting = false; if (!on) return; console.warn('Tempo reale non disponibile:', e.message); App.toast('⚡ Tempo reale non disponibile: ' + e.message + ' · uso la chiamata classica (dettagli: Impostazioni → Diagnostica voce)', 6000); classic(greet, e.message); return; }
     }
-    classic(greet, !App.key() ? 'manca la chiave xAI' : App.ls.get('callEngine', 'realtime') !== 'realtime' ? 'scelta nelle Impostazioni' : App.rt && !App.rt.supported() ? 'browser non compatibile con il tempo reale' : '');
+    classic(greet, !App.hasAi() ? 'manca la chiave xAI' : App.ls.get('callEngine', 'realtime') !== 'realtime' ? 'scelta nelle Impostazioni' : App.rt && !App.rt.supported() ? 'browser non compatibile con il tempo reale' : '');
   }
   // chiamata classica: riconoscimento vocale del telefono + risposta in streaming + voce frase per frase
   // v8.4.1: microfono continuo + nostro rilevatore del parlato + trascrizione xAI (niente bip); riserva: riconoscimento continuo
