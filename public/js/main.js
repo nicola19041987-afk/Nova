@@ -29,6 +29,7 @@ App.boot = async function () {
   if (!document.body.classList.contains('solo-mode')) document.body.dataset.tab = 'chat';
   else if (document.body.dataset.tab !== 'account') document.body.dataset.tab = 'conv';
   if (App.roles) App.roles.apply(); if (App.home) App.home.boot();
+  try { if (App.archive && App.archive.wanted()) await App.archive.open(); } catch (e) { console.warn(e); }
 };
 // Modalità adulti (per utente): solo effetti locali sull'avatar (espressioni/movimenti più sensuali, canvas).
 App.applyAdult = function () {

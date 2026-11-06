@@ -267,6 +267,11 @@
 
       <!-- account -->
       <div id="tab-account" class="tab" hidden>
+        <div class="card">
+          <h3>Galleria totale</h3>
+          <p class="muted small">Tutte le foto e i video salvati sul server, dal primo giorno. Solo lettura: non si cancella nulla.</p>
+          <a id="open-archive" class="arch-link" href="#galleria">Apri la galleria totale</a>
+        </div>
         <div class="card" id="solo-settings-card">
           <h3>✨ Nova</h3>
           <p class="muted small">Aspetto, richieste e scorciatoie. La personalità è fissa.</p>
@@ -640,6 +645,21 @@
     <form id="presence-chat" class="composer presence-composer"><input id="presence-input" placeholder="Parlale…"><button class="primary">➤</button></form>
   </div>
 
+  <section id="archive-page" class="archive-page" hidden>
+    <header class="archive-bar">
+      <button type="button" id="archive-back">‹ Home</button>
+      <h2>Galleria totale</h2>
+    </header>
+    <div id="archive-totals" class="archive-totals"></div>
+    <div id="archive-grid" class="archive-grid"></div>
+    <section id="archive-telegram" class="archive-tg"></section>
+  </section>
+  <dialog id="archive-view" class="archive-view">
+    <button type="button" id="archive-view-x" aria-label="Chiudi">✕</button>
+    <img id="archive-full" alt="" hidden>
+    <video id="archive-video" controls playsinline hidden></video>
+    <p id="archive-cap"></p>
+  </dialog>
   <div id="toast" class="toast" hidden></div>
   <button type="button" id="audio-unlock" class="audio-unlock" hidden>🔊 Tocca per attivare l'audio</button>
 </div>
@@ -669,6 +689,7 @@
   <script src="/js/frame.js"></script>
   <script src="/js/live.js" type="module"></script>
   <script src="/js/close.js"></script>
+  <script src="/js/archive.js"></script>
   <script src="/js/main.js"></script>
 </body>
 </html>

@@ -854,4 +854,23 @@ body.solo-mode #tab-conv:not([hidden]),body.solo-mode .conv:not([hidden]){
   display:flex!important;flex-direction:column!important;grid-template-columns:none!important;
 }
 body.solo-mode #stage{width:auto!important;grid-column:auto!important;grid-row:auto!important}
+a.arch-link{display:block;text-align:center;text-decoration:none;padding:12px 14px;border-radius:12px;background:#1E6FD9;color:#fff;font-weight:650}
+.archive-page{position:fixed;inset:0;z-index:450;background:#F4F6F8;color:#1A1D21;display:flex;flex-direction:column;overflow:auto;padding:12px 12px calc(env(safe-area-inset-bottom) + 16px)}
+.archive-page[hidden]{display:none!important}
+.archive-bar{display:flex;align-items:center;gap:8px;position:sticky;top:0;background:#F4F6F8;z-index:1;padding-bottom:8px}
+.archive-bar h2{margin:0;font-size:1.15rem}
+.archive-bar button{border:0;background:#E8F1FC;color:#1E6FD9;border-radius:999px;padding:8px 12px;font-weight:650}
+.archive-totals{margin:0 0 10px}
+.archive-totals p{margin:0 0 4px}
+.archive-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.arch-item{display:flex;flex-direction:column;gap:4px;border:0;border-radius:12px;background:#fff;padding:6px;text-align:left;min-width:0}
+.arch-item img,.arch-play{width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px;background:#E4E7EB}
+.arch-play{display:flex;align-items:center;justify-content:center;font-size:28px;color:#1E6FD9}
+.arch-meta{font-size:12px;line-height:1.3;color:#344054}
+.archive-tg{margin-top:16px;padding:10px;border-radius:12px;background:#fff}
+.archive-tg h3{margin:0 0 6px;font-size:1rem}
+.archive-tg article{margin-top:8px;padding-top:8px;border-top:1px solid #E4E7EB}
+.archive-view{border:0;border-radius:16px;padding:12px;max-width:100%;width:min(420px, calc(100vw - 24px));background:#111;color:#fff}
+.archive-view img,.archive-view video{width:100%;max-height:70vh;object-fit:contain;background:#000;border-radius:8px}
+.archive-view button{border:0;background:#fff;color:#1E6FD9;border-radius:50%;width:36px;height:36px;font-size:18px}
 
