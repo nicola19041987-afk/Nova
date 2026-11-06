@@ -766,6 +766,33 @@ body.solo-mode #hot-btn{display:inline-flex!important}
 .mood-row b{display:block;height:100%;background:#1E6FD9;border-radius:99px}
 .mood-row em{font-style:normal;color:var(--muted);text-align:right}
 #mood-chart{display:block;height:160px;margin:8px 0 14px;background:#F7F8FA}
+
+/* v8.6.6: bolle a tutta larghezza, niente pin sovrapposti, chat sopra dock e barra Safari */
+#tab-conv .messages{display:flex;flex-direction:column;align-items:stretch;width:100%;box-sizing:border-box;padding:8px 10px calc(12px + env(safe-area-inset-bottom));gap:0}
+#tab-conv .msg{max-width:80%;width:fit-content;margin:8px 0 0;padding:8px 10px 16px;box-sizing:border-box}
+#tab-conv .msg.user:not(.other){margin-left:auto;margin-right:0}
+#tab-conv .msg.assistant,#tab-conv .msg.user.other{margin-left:0;margin-right:auto}
+#tab-conv .msg.user:not(.other)+.msg.assistant,#tab-conv .msg.assistant+.msg.user,#tab-conv .msg.user.other+.msg.user:not(.other),#tab-conv .msg.user:not(.other)+.msg.user.other,#tab-conv .msg.assistant+.msg.user.other,#tab-conv .msg.user.other+.msg.assistant{margin-top:12px}
+#tab-conv .msg .pin{display:none!important}
+body.solo-mode #view-app{height:var(--app-h,100dvh);max-height:var(--app-h,100dvh);padding-bottom:calc(64px + env(safe-area-inset-bottom))}
+body.solo-mode #messages{padding:8px 10px calc(12px + env(safe-area-inset-bottom))}
+body.solo-mode.in-call .topbar{display:none!important}
+body.solo-mode.in-call #stage{flex:0 0 auto!important;height:auto!important;max-height:none!important;min-height:0!important;background:#0b141a!important}
+body.solo-mode.in-call #call-ui{position:relative!important;inset:auto!important;height:auto!important;padding:calc(env(safe-area-inset-top) + 8px) 12px 12px;background:#0b141a;justify-content:flex-start}
+body.solo-mode.in-call .call-ui.voice .call-top{margin-top:0!important}
+body.solo-mode.in-call #tab-conv #kb-hide{width:40px;height:40px;flex:0 0 40px}
+body.solo-mode.in-call #stage #avatar-canvas,body.solo-mode.in-call #stage .av-backdrop{display:none!important}
+body.solo-mode.in-call .call-portrait{display:none!important}
+body.solo-mode.in-call .call-bar{display:none!important}
+body.solo-mode.in-call #chat-form.composer{display:flex!important;visibility:visible!important}
+body.solo-mode.in-call.call-min .topbar{display:flex!important}
+body.solo-mode.in-call.call-min #stage{flex:0 0 42dvh!important;height:42dvh!important;max-height:42dvh!important;background:#E8EBF0!important}
+body.solo-mode.in-call.call-min #stage #avatar-canvas,body.solo-mode.in-call.call-min #stage .av-backdrop{display:block!important}
+.call-top{position:relative;width:100%;padding-top:52px;box-sizing:border-box}
+.call-head-actions{position:absolute;top:calc(env(safe-area-inset-top) + 6px);right:8px;display:flex;gap:8px;z-index:6;pointer-events:auto}
+.call-x{width:40px;height:40px;border-radius:50%;border:1px solid #D0D5DD;background:#fff;color:#1E6FD9;font:700 20px/40px -apple-system,sans-serif;padding:0}
+.call-hangup{width:40px;height:40px;border-radius:50%;border:0;background:#e0303f;color:#fff;font-size:18px;padding:0;transform:rotate(135deg)}
+#kb-hide{border-radius:50%;width:40px;height:40px;flex:0 0 40px;background:#E4E7EB;color:#1A1D21;font-size:22px;padding:0}
 /* v8.6.5: X di chiusura, sempre in alto a destra nell'area sicura */
 .layer-x{
   position:fixed;top:calc(env(safe-area-inset-top, 0px) + 8px);right:calc(env(safe-area-inset-right, 0px) + 10px);
@@ -778,4 +805,22 @@ body.solo-mode #hot-btn{display:inline-flex!important}
 dialog > .layer-x{position:absolute;top:10px;right:10px}
 dialog:has(> .layer-x){padding-top:54px}
 body.av-full-on .stage-tools,body.avatar-fs-on .stage-tools{right:calc(env(safe-area-inset-right) + 58px)!important}
+
+/* v8.6.6: sempre il layout del telefono. Su schermi larghi la colonna è centrata, senza cornice. */
+html,body{background:#000}
+#app-shell{
+  width:100%;max-width:430px;margin:0 auto;position:relative;
+  min-height:var(--app-h,100dvh);height:var(--app-h,100dvh);max-height:var(--app-h,100dvh);
+  background:var(--bg);overflow:hidden;
+}
+@media (min-width:500px){
+  #app-shell{transform:translateZ(0)}
+}
+body.solo-mode #stage.av-full{
+  position:absolute!important;inset:0!important;width:auto!important;height:auto!important;max-width:none!important;max-height:none!important;
+}
+body.solo-mode #tab-conv,body.solo-mode .conv{
+  display:flex!important;flex-direction:column!important;grid-template-columns:none!important;
+}
+body.solo-mode #stage{width:auto!important;grid-column:auto!important;grid-row:auto!important}
 

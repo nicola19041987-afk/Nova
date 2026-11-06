@@ -131,3 +131,19 @@ App.fitFrame = function () {
   document.addEventListener('fullscreenchange', () => setTimeout(App.fitFrame, 50));
   App.fitFrame();
 })();
+// v8.6.6: la barra di Safari cambia l'altezza visibile; il dock e il composer restano sopra di essa.
+(function () {
+  const apply = () => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    document.documentElement.style.setProperty('--app-h', Math.round(vv.height) + 'px');
+    const covered = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+    document.documentElement.style.setProperty('--vv-bottom', Math.round(covered) + 'px');
+  };
+  apply();
+  if (window.visualViewport) {
+    visualViewport.addEventListener('resize', apply);
+    visualViewport.addEventListener('scroll', apply);
+  }
+  addEventListener('orientationchange', () => setTimeout(apply, 250));
+})();

@@ -117,7 +117,7 @@
     autoPill() {
       let el = document.getElementById('auto-prep');
       const left = autoQ.length + autoBusy.size;
-      if (!el) { el = document.createElement('div'); el.id = 'auto-prep'; el.className = 'auto-prep'; document.body.appendChild(el); }
+      if (!el) { el = document.createElement('div'); el.id = 'auto-prep'; el.className = 'auto-prep'; (document.getElementById('app-shell') || document.body).appendChild(el); }
       el.hidden = !left; if (!left) { if (autoFail && autoFail !== failToast) { failToast = autoFail; App.toast(`⚠️ Movimenti: ${autoFail} non preparati · motivo: ${lastWhy}`, 6000); } autoTotal = 0; autoDone = 0; return; }
       el.innerHTML = `<i style="width:${Math.round((autoDone / Math.max(1, autoTotal)) * 100)}%"></i><span>🎭 Movimenti ${autoDone}/${autoTotal}</span>`;
     },

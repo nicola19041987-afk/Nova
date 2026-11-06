@@ -27,6 +27,7 @@
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
+<div id="app-shell">
   <!-- v8.4: barra di stato in stile iPhone (solo nel browser: nell'app installata c'è quella vera) -->
   <div id="ios-status" class="ios-status" aria-hidden="true"><span id="sb-time" class="sb-time">9:41</span><span class="sb-island"></span>
     <span class="sb-right"><svg class="sb-signal" viewBox="0 0 18 12"><rect x="0" y="8" width="3" height="4" rx="1"/><rect x="5" y="5.5" width="3" height="6.5" rx="1"/><rect x="10" y="3" width="3" height="9" rx="1"/><rect x="15" y="0" width="3" height="12" rx="1"/></svg>
@@ -120,7 +121,13 @@
         <div class="stage" id="stage">
           <canvas id="avatar-canvas" width="300" height="300"></canvas>
           <div id="call-ui" class="call-ui" hidden>
-            <div class="call-top"><span id="call-kind" class="call-kind">Videochiamata</span><b id="call-name"></b><span id="call-timer" class="call-timer">00:00</span><button type="button" id="call-badge" class="call-badge" hidden></button><span id="call-state" class="call-state">…</span></div>
+            <div class="call-top">
+              <div class="call-head-actions">
+                <button type="button" id="call-min" class="call-x" aria-label="Riduci chiamata" title="Torna alla chat">✕</button>
+                <button type="button" id="call-hangup" class="call-hangup" aria-label="Riaggancia" title="Riaggancia">📞</button>
+              </div>
+              <span id="call-kind" class="call-kind">Videochiamata</span><b id="call-name"></b><span id="call-timer" class="call-timer">00:00</span><button type="button" id="call-badge" class="call-badge" hidden></button><span id="call-state" class="call-state">…</span>
+            </div>
             <div id="call-portrait" class="call-portrait" hidden><canvas id="call-face" width="320" height="320"></canvas></div>
             <video id="call-self" class="call-self" playsinline muted autoplay hidden></video>
             <p id="call-caption" class="call-caption" hidden></p>
@@ -169,6 +176,7 @@
         <p id="typing" class="typing-line muted small" hidden></p>
         <form id="chat-form" class="composer">
           <textarea id="chat-input" rows="1" placeholder="Scrivi nella chat di coppia…" required></textarea>
+          <button type="button" id="kb-hide" hidden title="Chiudi tastiera" aria-label="Chiudi tastiera">⌄</button>
           <button type="button" id="chat-only" title="Solo messaggio: lo vede l'altra persona, l'IA non risponde" aria-label="Solo messaggio">💬</button>
           <button class="primary" type="submit" aria-label="Invia (risponde il personaggio)">➤</button>
         </form>
@@ -626,6 +634,7 @@
 
   <div id="toast" class="toast" hidden></div>
   <button type="button" id="audio-unlock" class="audio-unlock" hidden>🔊 Tocca per attivare l'audio</button>
+</div>
   <script src="/avatar.js"></script>
   <script src="/js/core.js"></script>
   <script src="/js/auth.js"></script>

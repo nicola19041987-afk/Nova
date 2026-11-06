@@ -4,7 +4,7 @@
 (function () {
   const stage = $('#stage'), ui = $('#call-ui');
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  let on = false, t0 = 0, tick = 0, prevTts = null, prevAuto = null, cam = null, muted = false, lastNod = 0;
+  let on = false, t0 = 0, tick = 0, prevTts = null, prevAuto = null, cam = null, muted = false, lastNod = 0, minimized = false;
   let rt = false, everVideo = false, warm = 0, connecting = false; // v8.4: conversazione in tempo reale (xAI Voice Agent)
   let why = '', micMode = ''; // v8.4.1: motivo della chiamata classica e microfono usato ('vad' = nostro, 'sr' = riconoscimento del telefono)
   // v8.4.1: indicatore sempre visibile del motore della chiamata (tocca per il motivo)
@@ -140,11 +140,29 @@
     App.audio.callSession(false);
     const ch = App.current, secs = Math.round((Date.now() - t0) / 1000); // v8.4: registro chiamate (scheda Chiamate)
     if (ch) App.api('/api/calls', { method: 'POST', body: { characterId: ch.id, mode: everVideo ? 'video' : 'voice', startedAt: new Date(t0).toISOString(), seconds: secs } }).catch(() => {});
-    stopCam(); ui.hidden = true; stage.classList.remove('fs', 'call'); document.body.classList.remove('avatar-fs-on', 'in-call');
+    stopCam(); ui.hidden = true; stage.classList.remove('fs', 'call'); document.body.classList.remove('avatar-fs-on', 'in-call', 'call-min'); minimized = false;
     if (prevTts === false && App.voice.ttsOn()) $('#tts-btn').click();
     if (prevAuto !== null) $('#auto-send').checked = prevAuto;
     App.toast((mode === 'voice' ? '📞 Chiamata vocale terminata · ' : '📹 Videochiamata terminata · ') + fmt(Date.now() - t0));
-    requestAnimationFrame(() => App.fitFrame && App.fitFrame()); App.chat.header && App.chat.header();
+    requestAnimationFrame(() => { App.fitFrame && App.fitFrame(); App.chat.scroll && App.chat.scroll(); }); App.chat.header && App.chat.header();
+  }
+  function minimize() {
+    if (!on) return;
+    minimized = true;
+    ui.hidden = true;
+    stage.classList.remove('fs');
+    document.body.classList.remove('avatar-fs-on');
+    document.body.classList.add('call-min');
+    requestAnimationFrame(() => { App.fitFrame && App.fitFrame(); App.chat.scroll && App.chat.scroll(); });
+  }
+  function restore() {
+    if (!on) return;
+    minimized = false;
+    ui.hidden = false;
+    document.body.classList.remove('call-min');
+    stage.classList.add('fs', 'call');
+    document.body.classList.add('avatar-fs-on', 'in-call');
+    requestAnimationFrame(() => { App.fitFrame && App.fitFrame(); App.chat.scroll && App.chat.scroll(); });
   }
   // v8.4.4: fotocamera nella videochiamata (anche Safari/iPhone): chiesta passando a video (getUserMedia SOLO video: il microfono
   // della chiamata resta quello, mai fermato), anteprima piccola in alto (playsinline + muted + autoplay). Se negata: istruzioni chiare.
@@ -181,6 +199,8 @@
     why: () => why, micMode: () => micMode,
     // tempo reale caduto a chiamata in corso: si continua con la chiamata classica, senza chiudere
     fallback(w) { if (!on || !rt) return; App.rt.stop(); rt = false; App.toast('⚡ ' + (w || 'Tempo reale interrotto') + ': continuo con la chiamata classica', 5000); App.audio.callSession(true); classic(null, w || 'tempo reale interrotto'); },
+    get minimized() { return minimized; },
+    minimize, restore,
     // mentre parli: ogni tanto annuisce (ascolto attivo), mai a raffica
     onInterim(text) { if (!on || !text) return; const now = Date.now(); if (now - lastNod > 2600 + Math.random() * 1500) { lastNod = now; App.avatarConv.react(Math.random() < 0.75 ? 'nod' : 'tilt'); } },
     // sottotitolo breve della sua risposta (utile anche ad audio spento)
@@ -193,6 +213,8 @@
   $('#call-tovideo').addEventListener('click', (e) => { e.stopPropagation(); setMode('video'); });
   $('#call-speaker').addEventListener('click', (e) => { e.stopPropagation(); setSpeaker(!speaker); });
   $('#call-end').addEventListener('click', (e) => { e.stopPropagation(); end(); });
+  $('#call-hangup').addEventListener('click', (e) => { e.stopPropagation(); end(); });
+  $('#call-min').addEventListener('click', (e) => { e.stopPropagation(); minimize(); });
   $('#call-mute').addEventListener('click', (e) => { e.stopPropagation(); muted = !muted; if (rt) App.rt.setMuted(muted); else if (micMode === 'vad') App.callMic.setMuted(muted); state(); }); // v8.4.4: muto via software (il microfono resta aperto)
   const eb = $('#call-badge'); if (eb) eb.addEventListener('click', (e) => { e.stopPropagation(); App.toast(eb.title || eb.textContent, 5000); });
   $('#call-cam').addEventListener('click', (e) => { e.stopPropagation(); toggleCam(); });

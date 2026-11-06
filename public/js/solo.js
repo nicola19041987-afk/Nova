@@ -79,7 +79,8 @@
         const ch = soloChar(); if (!ch) return;
         if (App.current?.id !== ch.id) App.chat.open(ch.id);
         if (App.call && App.call.active) {
-          if (App.call.mode === 'voice') { /* already */ }
+          if (App.call.minimized && App.call.restore) App.call.restore();
+          else if (App.call.mode === 'voice') { /* già in chiamata vocale */ }
           else if ($('#call-tovoice') || true) { try { App.call.start('voice'); } catch {} }
         } else {
           try { App.call.start('voice'); } catch (e) { App.toast(e.message || 'Microfono non avviato'); }
@@ -141,7 +142,7 @@
           <div class="row"><button type="submit" value="ok" class="primary">✨ Aggiorna</button>
           <button type="submit" value="cancel">Annulla</button></div>
         </form>`;
-        document.body.appendChild(dlg);
+        (document.getElementById('app-shell') || document.body).appendChild(dlg);
         dlg.addEventListener('close', async () => {
           if (dlg.returnValue !== 'ok') return;
           const f = dlg.querySelector('form');

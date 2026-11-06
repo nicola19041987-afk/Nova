@@ -18,7 +18,7 @@
       <canvas id="mood-chart" width="640" height="220"></canvas>
       <button type="submit" class="block">Chiudi</button>
     </form>`;
-    document.body.appendChild(d);
+    (document.getElementById('app-shell') || document.body).appendChild(d);
     return d;
   }
   function bars(values) {

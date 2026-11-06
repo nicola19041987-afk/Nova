@@ -21,7 +21,7 @@
         <button type="submit" value="cancel" class="block">Chiudi</button>
       </div>
     </form>`;
-    document.body.appendChild(d);
+    (document.getElementById('app-shell') || document.body).appendChild(d);
     $('#support-mic').addEventListener('click', () => start($('#support-text'), $('#support-status')));
     $('#support-stop').addEventListener('click', () => stop());
     d.addEventListener('close', () => { stop(); if (d.returnValue === 'send') send($('#support-text').value); });

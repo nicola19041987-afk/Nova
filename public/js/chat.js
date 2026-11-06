@@ -71,9 +71,14 @@ App.chat = {
       if (m.content) d.append(body);
       d.append(meta);
     } else d.append(who, body, meta);
-    const pin = document.createElement('button'); pin.className = 'pin'; pin.type = 'button'; pin.textContent = '📌'; pin.title = 'Ricorda questo';
-    pin.onclick = () => { const t = prompt('Cosa devo ricordare?', body.textContent.slice(0, 280)); if (t) App.account.remember(t); };
-    d.appendChild(pin); $('#messages').appendChild(d); return d;
+    const remember = () => { const t = prompt('Cosa devo ricordare?', body.textContent.slice(0, 280)); if (t) App.account.remember(t); };
+    let hold = 0;
+    d.addEventListener('pointerdown', (e) => { if (e.target.closest('button,a,video,input')) return; hold = setTimeout(remember, 480); });
+    d.addEventListener('pointerup', () => clearTimeout(hold));
+    d.addEventListener('pointercancel', () => clearTimeout(hold));
+    d.addEventListener('pointermove', () => clearTimeout(hold));
+    d.addEventListener('contextmenu', (e) => { e.preventDefault(); clearTimeout(hold); remember(); });
+    $('#messages').appendChild(d); return d;
   },
   // spunte: due spunte quando il server ha il messaggio, blu quando dopo c'è una risposta (del personaggio o dell'altra persona)
   ticks() {
@@ -285,6 +290,9 @@ $('#back-btn').addEventListener('click', () => App.chat.close());
 $('#chat-form').addEventListener('submit', (e) => { e.preventDefault(); const i = $('#chat-input'); const t = i.value; i.value = ''; App.chat.send(t); });
 $('#chat-only').addEventListener('click', () => { const i = $('#chat-input'); const t = i.value; if (!t.trim()) return App.toast('Scrivi prima il messaggio'); i.value = ''; App.chat.send(t, true); });
 $('#chat-input').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !/Mobi/.test(navigator.userAgent)) { e.preventDefault(); $('#chat-form').requestSubmit(); } });
+$('#chat-input').addEventListener('focus', () => { const b = $('#kb-hide'); if (b) b.hidden = false; });
+$('#chat-input').addEventListener('blur', () => { const b = $('#kb-hide'); if (b) b.hidden = true; setTimeout(() => App.chat && App.chat.scroll && App.chat.scroll(), 80); });
+$('#kb-hide').addEventListener('click', () => { $('#chat-input').blur(); });
 $('#clear-chat').addEventListener('click', async () => {
   if (!App.current || !confirm('Cancellare questa conversazione? Sparisce per entrambi (Nico e Luisa).')) return;
   await App.api(`/api/chats/${App.current.id}`, { method: 'DELETE' }); $('#messages').innerHTML = ''; App.chat.ids = new Set(); App.chat.poll(true);
