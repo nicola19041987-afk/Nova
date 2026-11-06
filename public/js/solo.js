@@ -2,7 +2,7 @@
 (function () {
   const $ = (s, r = document) => r.querySelector(s);
   function soloChar() {
-    return (App.chars || []).find((c) => c.ready === 'greta') || (App.chars || []).find((c) => /greta/i.test(c.name || '')) || App.chars[0];
+    return (App.chars || []).find((c) => c.ready === 'greta') || (App.chars || []).find((c) => /^(nova|greta)$/i.test(String(c.name || '').trim())) || App.chars[0];
   }
   function fit() { if (App.fitFrame) App.fitFrame(); }
 
@@ -131,7 +131,7 @@
       if (!dlg) {
         dlg = document.createElement('dialog'); dlg.id = 'solo-look-dialog'; dlg.className = 'sheet';
         dlg.innerHTML = `<form method="dialog" class="solo-look-form">
-          <h3>Aspetto di Greta</h3>
+          <h3>Aspetto di Nova</h3>
           <p class="muted small">Solo testo → nuova foto inventata (stesso volto AI).</p>
           <label>Capelli <input name="hair" placeholder="es. biondo miele a spalle con frangia"></label>
           <label>Occhi <input name="eyes" placeholder="es. verdi"></label>

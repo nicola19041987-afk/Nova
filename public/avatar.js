@@ -300,7 +300,7 @@
       if (this._errs >= 2 && !this._safe) { this._safe = true; this.breathOn = false; if (this.breather) this.breather.ok = false; this._fallback = 'semplice (senza WebGL né ritocchi del viso)'; }
       try { this.ctx.restore(); this.ctx.setTransform(1, 0, 0, 1, 0, 0); this.ctx.globalAlpha = 1; this.ctx.filter = 'none'; } catch {}
       // il canvas non riesce proprio a disegnare: la foto diventa lo sfondo CSS del canvas (che il movimento CSS fa respirare)
-      if (this._errs >= 6 && !this._cssPhoto && this.img && this.img.src) { this._cssPhoto = true; this._fallback = 'foto CSS (canvas non disponibile)'; try { this.ctx.clearRect(0, 0, this.c.width, this.c.height); } catch {} this._cssBg = `#000 url("${String(this.img.src).replace(/"/g, '%22')}") center 20% / cover no-repeat`; this.c.style.background = this._cssBg; }
+      if (this._errs >= 6 && !this._cssPhoto && this.img && this.img.src) { this._cssPhoto = true; this._fallback = 'foto CSS (canvas non disponibile)'; try { this.ctx.clearRect(0, 0, this.c.width, this.c.height); } catch {} this._cssBg = `#000 url("${String(this.img.src).replace(/"/g, '%22')}") center 22% / cover no-repeat`; this.c.style.background = this._cssBg; }
     }
     // v8.4.5: «cane da guardia»: se i fotogrammi si fermano (iOS Risparmio energetico, errore, rAF sospeso) riparte il ciclo e
     // il movimento CSS (respiro/ondeggiamento sul canvas, gestito dal compositore del browser) diventa più evidente
@@ -453,14 +453,14 @@
         // v8.3: scena seduta al tavolo (foto 9:16) disegnata come la foto dell'avatar: intera, respiro da seduta, viso animato, gesti
         const sv = [this.img, this.lm, this.lidColor];
         this.img = scn.img; this.lm = scn.landmarks; this.lidColor = scn.lids || sv[2];
-        try { const r = this.paintAvatar(ctx, { x: 0, y: 0, w: CW, h: CH }, A, true); this.featherEdges(ctx, r, CW, CH); }
+        try { const r = this.paintAvatar(ctx, { x: 0, y: 0, w: CW, h: CH }, A, true); if (!this.soloFill()) this.featherEdges(ctx, r, CW, CH); }
         finally { this.img = sv[0]; this.lm = sv[1]; this.lidColor = sv[2]; }
       } else if (scn) this.paintScene(ctx, CW, CH, A, scn);
       else {
         // con la foto: canvas trasparente intorno, sotto c'è lo sfondo sfocato CSS (syncBackdrop); senza foto (emoji): colore pieno
         if (!this.transparent && !this.img) { ctx.fillStyle = col.background; ctx.fillRect(0, 0, CW, CH); }
         const r = this.paintAvatar(ctx, { x: 0, y: 0, w: CW, h: CH }, A, true);
-        if (this.img) { if (this.transparent) featherRect(ctx, r); else this.featherEdges(ctx, r, CW, CH); }
+        if (this.img) { if (this.transparent) featherRect(ctx, r); else if (!this.soloFill()) this.featherEdges(ctx, r, CW, CH); }
       }
       // cambio foto: dissolvenza dall'ultima immagine (niente salti di dimensione)
       if (this._snap) {
@@ -499,7 +499,36 @@
     // Il riquadro della foto NON si muove: il movimento è una deformazione interna (strisce orizzontali) che fa ondeggiare busto e testa.
     // v8.4: riempimento intelligente della cornice 9:16: "cover" ancorato al viso, ma al massimo ~12% tagliato per lato
     // e mai la testa; se la foto è troppo diversa dalla cornice restano bande riempite col colore dei bordi (mai sfocate).
+    soloFill() {
+      return typeof document !== 'undefined' && document.body && document.body.classList.contains('solo-mode') && this.c && this.c.id === 'avatar-canvas';
+    }
+    // v8.6.1: cover sul palco intero, ancorato al viso (circa 22% dall'alto). La testa resta nel riquadro.
+    soloCover(box, E) {
+      const S = VS, lm = this.lm || {};
+      const eL = lm.eyeL || { x: 0.42, y: 0.38 }, eR = lm.eyeR || { x: 0.58, y: 0.38 };
+      const ed = Math.max(1, Math.hypot(eR.x - eL.x, eR.y - eL.y) * S);
+      const fx = ((eL.x + eR.x) / 2) * S, fy = Math.min(eL.y, eR.y) * S;
+      const headTop = fy - ed * 1.75;
+      const chin = (lm.mouth && lm.mouth.y ? lm.mouth.y * S : fy + ed) + ed * 0.35;
+      const fit = Math.max(box.w / Math.max(1, E.w), box.h / Math.max(1, E.h));
+      const W = E.w * fit, H = E.h * fit;
+      const ovw = Math.max(0, W - box.w), ovh = Math.max(0, H - box.h);
+      const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+      const imgY = (y) => ((y - E.y0) / E.h) * H;
+      const eyeX = ((fx - E.x0) / E.w) * W;
+      const cl = ovw > 0 ? clamp(eyeX - box.w / 2, 0, ovw) : -(box.w - W) / 2;
+      let ct = ovh > 0 ? clamp(imgY(E.y0 + E.h * 0.22) - box.h * 0.22, 0, ovh) : -(box.h - H) / 2;
+      if (ovh > 0) {
+        const margin = box.h * 0.02;
+        const ctMax = clamp(imgY(headTop) - margin, 0, ovh);
+        const ctMin = clamp(imgY(chin) - (box.h - margin), 0, ovh);
+        ct = ctMin <= ctMax ? clamp(ct, ctMin, ctMax) : ctMax;
+      }
+      this._headFrac = (ed * 3.6 * fit) / Math.max(1, box.h);
+      return { fit, ox: box.x - cl - E.x0 * fit, oy: box.y - ct - E.y0 * fit };
+    }
     photoRect(box, E, alignBottom) {
+      if (this.soloFill() && this.img && !this.transparent && !this.noCover) return this.soloCover(box, E);
       const fc = Math.max(1e-6, Math.min(box.w / E.w, box.h / E.h));
       if (!this.img || this.transparent || this.noCover) {
         const pad = Math.min(box.w, box.h) * 0.006, fit = Math.max(1e-6, Math.min((box.w - 2 * pad) / E.w, (box.h - 2 * pad) / E.h));

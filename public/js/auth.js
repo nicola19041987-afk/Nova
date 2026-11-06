@@ -7,7 +7,7 @@ App.showLogin = async function () {
   try {
     const { profiles, setupCode } = await App.api('/api/profiles'); needsSetupCode = setupCode;
     $('#profile-pick').hidden = false;
-    $('#profile-pick').innerHTML = profiles.map((p) => `<button type="button" data-profile="${p.id}" data-has="${p.hasPin}" data-name="${esc(p.name)}">${p.id === 'luisa' ? '🌸' : '🌙'} ${esc(p.name)}<small>${p.hasPin ? 'Inserisci il PIN' : 'Primo accesso: crea il PIN'}</small></button>`).join('');
+    $('#profile-pick').innerHTML = profiles.map((p) => `<button type="button" class="login-profile" data-profile="${p.id}" data-has="${p.hasPin}" data-name="${esc(p.name)}">${esc(p.name)}<small>${p.hasPin ? 'Inserisci il PIN' : 'Primo accesso'}</small></button>`).join('');
     const last = localStorage.getItem('ap:lastProfile');
     const lp = profiles.find((p) => p.id === last && p.hasPin); if (lp) pickProfile(lp.id, true, lp.name);
   } catch (e) { $('#login-error').textContent = e.message; }
@@ -18,7 +18,7 @@ function pickProfile(id, hasPin, name) {
   $('#pin-title').textContent = pinSetup ? `Ciao ${name}! Scegli il tuo PIN a 4 cifre (si imposta una sola volta).` : `Ciao ${name}, inserisci il PIN`;
   $('#pin-confirm').hidden = !pinSetup; $('#pin-confirm').required = pinSetup;
   $('#setup-code').hidden = !(pinSetup && needsSetupCode);
-  $('#pin-submit').textContent = pinSetup ? 'Imposta PIN ed entra' : 'Entra';
+  $('#pin-submit').textContent = 'Continua';
   $('#pin-input').value = ''; $('#pin-confirm').value = ''; $('#pin-input').focus();
 }
 $('#profile-pick').addEventListener('click', (e) => {

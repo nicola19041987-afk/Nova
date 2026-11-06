@@ -1,4 +1,5 @@
 /* main.js — avvio, navigazione a schede, cambi automatici giornalieri, service worker. */
+document.title = 'Nova';
 App.avatarConv = new TalkingAvatar($('#avatar-canvas'));
 App.avatarEditor = new TalkingAvatar($('#editor-canvas'));
 
@@ -63,12 +64,13 @@ App.openTab = function (t) {
   if (App.home) App.home.hide();
   $$('.tabbar button').forEach((x) => x.classList.toggle('active', x.dataset.tab === t));
   ['chat', 'conv', 'calls', 'feed', 'images', 'account'].forEach((n) => { const el = $(`#tab-${n}`); if (el) el.hidden = true; });
+  document.title = 'Nova';
   const solo = document.body.classList.contains('solo-mode');
   if (solo && t === 'chat') {
     const ch = App.solo && App.solo.char && App.solo.char();
     if (ch && (!App.current || App.current.id !== ch.id)) App.chat.open(ch.id);
     $('#tab-conv').hidden = false; $('#back-btn').hidden = true;
-    $('#title').textContent = (App.current && App.current.name) || 'Greta';
+    $('#title').textContent = (App.current && App.current.name) || 'Nova';
     document.body.dataset.tab = 'conv'; $('#large-title').hidden = true;
     if (App.solo && App.solo.setDock) App.solo.setDock('home');
     if (App.chat && App.chat.header) App.chat.header();
@@ -106,7 +108,15 @@ App.fitFrame = function () {
   const cs = getComputedStyle(st);
   const W = st.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight), H = st.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
   if (W < 10 || H < 10) return;
-  // v8.6.1: in metà schermo / fullscreen riempie l'altezza (9:16), senza ritagliare il volto (object-position top)
+  // v8.6.1: in solo (metà schermo e schermo intero) il canvas copre tutto il palco, bordo a bordo.
+  // Il ritratto dentro è "cover" ancorato al viso (vedi TalkingAvatar.soloCover).
+  if (document.body.classList.contains('solo-mode')) {
+    const left = Math.round(parseFloat(cs.paddingLeft) || 0);
+    const top = Math.round(parseFloat(cs.paddingTop) || 0);
+    Object.assign(c.style, { width: Math.floor(W) + 'px', height: Math.floor(H) + 'px', left: left + 'px', top: top + 'px', right: 'auto', bottom: 'auto', transform: 'none', translate: 'none', aspectRatio: 'auto', maxWidth: 'none', maxHeight: 'none', borderRadius: '0', objectFit: 'cover', objectPosition: 'center 22%' });
+    if (App.avatarConv && App.avatarConv.syncBackdrop) App.avatarConv.syncBackdrop(true);
+    return;
+  }
   let h = H, w = h * 9 / 16; if (w > W) { w = W; h = w * 16 / 9; }
   w = Math.floor(w); h = Math.floor(h);
   const left = Math.round(parseFloat(cs.paddingLeft) + (W - w) / 2);

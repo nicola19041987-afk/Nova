@@ -711,9 +711,16 @@ body.solo-mode #typing{flex:0 0 auto;margin:0 10px}
 /* fullscreen avatar overlay (metà → tutto) */
 body.solo-mode #stage.av-full{
   position:fixed;inset:0;z-index:70;flex:none!important;max-height:none!important;height:100dvh!important;height:100vh!important;
-  background:#1A1D21;border:0;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  background:#1A1D21;border:0;padding:0!important;
 }
-body.solo-mode #stage.av-full #avatar-canvas{border-radius:12px!important;height:calc(100% - 12px)!important}
+body.solo-mode #stage #avatar-canvas,body.solo-mode #stage .av-backdrop{
+  left:0!important;top:0!important;width:100%!important;height:100%!important;
+  max-width:none!important;max-height:none!important;margin:0!important;
+  border-radius:0!important;object-fit:cover!important;object-position:center 22%!important;
+  box-shadow:none!important;
+}
+body.solo-mode #stage.av-full #avatar-canvas{border-radius:0!important;height:100%!important}
+body.solo-mode #stage .stage-tools{z-index:5;top:calc(env(safe-area-inset-top) + 8px);right:calc(env(safe-area-inset-right) + 8px)}
 body.solo-mode.av-full-on .solo-dock,body.solo-mode.av-full-on .topbar,body.solo-mode.av-full-on #messages,body.solo-mode.av-full-on #chat-form,body.solo-mode.av-full-on #typing{visibility:hidden}
 body.solo-mode.av-full-on #stage.av-full .stage-tools{visibility:visible}
 .solo-dock{
@@ -735,4 +742,28 @@ body.solo-mode.av-full-on #stage.av-full .stage-tools{visibility:visible}
 #av-expand{background:#ffffffcc!important;color:#1A1D21!important}
 body.solo-mode #act-btn,body.solo-mode #scene-btn,body.solo-mode #call-btn{display:none!important}
 body.solo-mode #hot-btn{display:inline-flex!important}
+
+/* login Nova: wordmark, un campo, un pulsante */
+.login-screen{position:relative;min-height:100dvh;min-height:100vh;background:var(--bg);color:var(--text);align-items:center;justify-content:center;padding:64px 28px calc(72px + env(safe-area-inset-bottom))}
+.login-wrap{width:min(420px,100%);margin:auto;display:flex;flex-direction:column;align-items:center;text-align:center}
+.login-wordmark{margin:0 0 56px;font-size:68px;font-weight:600;letter-spacing:-.045em;line-height:1;color:#1A1D21}
+.login-screen .profiles{flex-direction:column;width:100%;gap:10px;margin:0}
+.login-screen .profiles button{width:100%;border-radius:999px;background:#fff;border:1px solid var(--line);color:var(--text);padding:16px 18px;font-size:17px;font-weight:600}
+.login-screen .profiles button small{font-weight:500}
+.login-screen #pin-form{width:100%;display:flex;flex-direction:column;gap:12px;margin-top:12px}
+.login-hint{margin:0 0 4px;color:var(--muted);font-size:15px}
+.login-screen #pin-input,.login-screen #pin-confirm,.login-screen #setup-code{margin:0;border-radius:999px;background:#fff;border:1px solid var(--line);padding:16px 22px;text-align:center}
+.login-screen #setup-code{letter-spacing:normal}
+.login-pill{width:100%;border:0!important;border-radius:999px!important;background:var(--accent)!important;color:#fff!important;font-weight:600;font-size:17px;padding:16px 20px;margin-top:6px}
+.login-screen .link{background:none;border:0;color:var(--muted)}
+.login-screen .error{min-height:1.2em;color:var(--danger);margin:8px 0 0}
+.login-foot{position:absolute;left:0;right:0;bottom:calc(18px + env(safe-area-inset-bottom));margin:0;text-align:center;color:#8B949E;font-size:13px}
+.support-ic{border:0;background:transparent;font-size:20px;width:44px;height:44px;padding:0;color:var(--text)}
+#support-dialog textarea,#mood-dialog canvas{width:100%;border-radius:12px;border:1px solid var(--line);background:#fff}
+.mood-summary{font-size:1.05em;margin:8px 0 14px}
+.mood-row{display:grid;grid-template-columns:92px 1fr 32px;gap:8px;align-items:center;margin:6px 0;font-size:14px}
+.mood-row i{display:block;height:8px;background:#E4E7EB;border-radius:99px;overflow:hidden}
+.mood-row b{display:block;height:100%;background:#1E6FD9;border-radius:99px}
+.mood-row em{font-style:normal;color:var(--muted);text-align:right}
+#mood-chart{display:block;height:160px;margin:8px 0 14px;background:#F7F8FA}
 

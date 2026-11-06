@@ -1,6 +1,6 @@
 {
-  "name": "App Privata",
-  "short_name": "Privata",
+  "name": "Nova",
+  "short_name": "Nova",
   "description": "Chat e immagini AI private per Nicola e Luisa",
   "lang": "it",
   "start_url": "/",

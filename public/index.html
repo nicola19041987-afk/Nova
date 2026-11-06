@@ -7,9 +7,9 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="Privata">
+  <meta name="apple-mobile-web-app-title" content="Nova">
   <meta name="robots" content="noindex, nofollow">
-  <title>App Privata</title>
+  <title>Nova</title>
   <link rel="manifest" href="/manifest.json">
   <link rel="icon" type="image/svg+xml" href="/icons/favicon.svg?v=843">
   <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png?v=843">
@@ -23,22 +23,21 @@
     <svg id="sb-wifi" class="sb-wifi" viewBox="0 0 16 12"><path d="M8 2.2c2.4 0 4.6.9 6.2 2.5l1.3-1.3C13.6 1.4 10.9.3 8 .3S2.4 1.4.5 3.4l1.3 1.3C3.4 3.1 5.6 2.2 8 2.2zm0 3.6c1.4 0 2.7.5 3.7 1.5L13 6c-1.3-1.3-3.1-2.1-5-2.1S4.3 4.7 3 6l1.3 1.3c1-1 2.3-1.5 3.7-1.5zm0 3.5c.5 0 1 .2 1.3.5L8 11.7 6.7 9.8c.3-.3.8-.5 1.3-.5z"/></svg>
     <span class="sb-batt"><span id="sb-batt-lvl" class="sb-batt-lvl"></span></span></span></div>
   <!-- LOGIN -->
-  <section id="view-login" class="view center" hidden>
-    <div class="card narrow">
-      <div class="logo">💜</div>
-      <h1>App Privata</h1>
-      <p class="muted">Accesso riservato a Nico e Luisa</p>
+  <section id="view-login" class="view login-screen" hidden>
+    <div class="login-wrap">
+      <h1 class="login-wordmark">Nova</h1>
       <div id="profile-pick" class="profiles"></div>
       <form id="pin-form" hidden autocomplete="off">
-        <p id="pin-title"></p>
+        <p id="pin-title" class="login-hint"></p>
         <input id="pin-input" type="password" inputmode="numeric" pattern="\d{4}" maxlength="4" placeholder="••••" autocomplete="one-time-code" required>
         <input id="pin-confirm" type="password" inputmode="numeric" pattern="\d{4}" maxlength="4" placeholder="Ripeti PIN" hidden>
         <input id="setup-code" type="password" placeholder="Codice di configurazione" hidden>
-        <button class="primary block" type="submit" id="pin-submit">Entra</button>
+        <button class="primary login-pill" type="submit" id="pin-submit">Continua</button>
         <button type="button" class="link" id="pin-back">Cambia profilo</button>
       </form>
       <p class="error" id="login-error"></p>
     </div>
+    <p class="login-foot">Solo per Nico e Luisa</p>
   </section>
 
   <!-- ATTIVAZIONE: consenso vocale (una sola volta) -->
@@ -88,7 +87,8 @@
       <button id="home-link" class="home-link" type="button" aria-label="Torna alla Home"><svg viewBox="0 0 12 20"><path d="M10 2L2 10l8 8" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Home</span></button>
       <button id="back-btn" class="icon" hidden aria-label="Indietro">‹</button>
       <div id="wa-photo" class="wa-photo" aria-hidden="true"></div>
-      <div class="wa-title"><h2 id="title">Chat</h2><span id="wa-status" class="wa-status">online</span></div>
+      <div class="wa-title"><h2 id="title">Nova</h2><span id="wa-status" class="wa-status">online</span></div>
+      <button type="button" id="support-note-btn" class="support-ic" title="Appunto per assistenza" aria-label="Appunto per assistenza">📝</button>
       <span id="who" class="muted small"></span>
       <button type="button" id="wa-voice" class="wa-ic" title="Chiamata vocale" aria-label="Chiamata vocale">📞</button>
       <button type="button" id="wa-video" class="wa-ic" title="Videochiamata" aria-label="Videochiamata">📹</button>
@@ -247,12 +247,14 @@
       <!-- account -->
       <div id="tab-account" class="tab" hidden>
         <div class="card" id="solo-settings-card">
-          <h3>✨ Greta</h3>
+          <h3>✨ Nova</h3>
           <p class="muted small">Aspetto, richieste e scorciatoie. La personalità è fissa.</p>
           <button type="button" id="set-look-btn" class="primary block">✨ Modifica aspetto</button>
           <label>Richieste <textarea id="set-requests" rows="3" maxlength="4000" placeholder="Es. chiamami amore, parla del vino…"></textarea></label>
           <button type="button" id="set-requests-save" class="block">Salva richieste</button>
           <button type="button" id="set-hot-btn" class="hot-btn block">🔥 Hot</button>
+          <button type="button" id="mood-open" class="block">Umore di Nova</button>
+          <button type="button" id="support-note-settings" class="block">Appunto per assistenza</button>
           <p class="muted small">Galleria e Diario restano nelle sezioni qui sotto / da Home.</p>
         </div>
         <div class="card">
@@ -635,6 +637,8 @@
   <script src="/js/gallery.js"></script>
   <script src="/js/presets.js"></script>
   <script src="/js/solo.js"></script>
+  <script src="/js/mood.js"></script>
+  <script src="/js/support.js"></script>
   <script src="/js/frame.js"></script>
   <script src="/js/live.js" type="module"></script>
   <script src="/js/main.js"></script>

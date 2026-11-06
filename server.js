@@ -56,12 +56,12 @@ const canEdit = (u) => isAdmin(u) || EDITORS.includes(u);
 // v8.6.0: UNA sola avatar donna (Greta). I personaggi restano in archivio ma l'UI lavora solo su di lei.
 const SOLO_KEY = 'greta';
 const SOLO_FIXED = {
-  personality: 'Chi sei: Greta, 26 anni, donna inventata. Fa la sommelier in un\'enoteca di Verona, adora le cene lunghe a tavola con un buon rosso, la musica anni Novanta, ballare in cucina e le gite improvvisate al lago. Compagna di conversazione di Nico e Luisa: ironica, viva, presente.',
+  personality: 'Chi sei: Nova, 26 anni, donna inventata. Fa la sommelier in un\'enoteca di Verona, adora le cene lunghe a tavola con un buon rosso, la musica anni Novanta, ballare in cucina e le gite improvvisate al lago. Compagna di conversazione di Nico e Luisa: ironica, viva, presente.',
   style: 'Educata ed elegante, di classe: mai volgare né facile, ma vivace, divertente e carismatica. Sicura di sé, giocosa e ironica, con battute pungenti ma affettuose; nasconde paure e insicurezze e cerca rassicurazione da Nico, aprendo gradualmente. Ama bere (soprattutto vino) e ci scherza sopra. Parla italiano sciolto, naturale, come una persona vera — su qualsiasi argomento, con collegamenti e follow-up, come Grok o ChatGPT.',
 };
 function getSoloChar(u) {
   const list = getChars(u) || [];
-  return list.find((c) => c.ready === SOLO_KEY) || list.find((c) => /greta/i.test(c.name || '')) || list[0] || null;
+  return list.find((c) => c.ready === SOLO_KEY) || list.find((c) => /^(nova|greta)$/i.test(String(c.name || '').trim())) || list[0] || null;
 }
 const SERVER_KEY_FILE = () => path.join(DATA_DIR, 'server-ai-key.json');
 function getServerAiKey() {
@@ -1541,6 +1541,7 @@ app.post('/api/chats/:id', auth, requireActivated, (req, res, next) => (req.body
     const t = takeActionTag(reply, ch); // [azione:xxx] -> tolto dal testo, salvato come campo del messaggio (lo vedono entrambi)
     await appendMsg(id, { id: replyId, role: 'assistant', author: ch.id, content: t.text || reply, extra: { replyTo: req.user, ...(t.action ? { action: t.action } : {}), ...(t.gesture ? { gesture: t.gesture } : {}), ...(t.mood ? { mood: t.mood } : {}), ...(req.body.call === true ? { call: true, ...(req.body.callMode === 'voice' ? { callMode: 'voice' } : {}) } : {}) } });
     if (t.mood === 'offesa') await setMood(id, 1); // v8.1: si attenua da sola a ogni scambio
+    try { if (isNovaChar(ch)) recordNovaMood(t.text || reply, t.mood); } catch (e) { console.error('Umore Nova:', e.message); }
   }
   typing.delete(id);
   res.end();
@@ -1668,6 +1669,7 @@ app.post('/api/chats/:id/voice-turn', auth, requireActivated, async (req, res) =
   else {
     const t = takeActionTag(text, ch); text = (t.text || text).replace(/\[[^\]]{0,40}\]/g, '').trim() || text;
     saved = await appendMsg(id, { role: 'assistant', author: ch.id, content: text, extra: { replyTo: req.user, ...callX } });
+    try { if (isNovaChar(ch)) recordNovaMood(text, t.mood); } catch (e) { console.error('Umore Nova:', e.message); }
   }
   res.json({ message: pubMsg(saved, ch), adult: adultChat() });
 });
@@ -2154,7 +2156,7 @@ async function prepSoloMotions(reqKey) {
       else { failed++; MOTION_PREP.lastErr = r.err || 'err'; }
     }
     MOTION_PREP.last = { done, skipped, refused, failed, at: new Date().toISOString() };
-    console.log('Prep movimenti Greta:', MOTION_PREP.last);
+    console.log('Prep movimenti Nova:', MOTION_PREP.last);
     return { ok: true, ...MOTION_PREP.last };
   } finally { MOTION_PREP.busy = false; }
 }
@@ -2748,7 +2750,7 @@ const READY_CHARS = [
     personality: 'Chi sei: Chiara, 32 anni, donna inventata. Vive a Bologna, fa la grafica freelance, ama cucinare per gli amici, il vino rosso, i concerti dal vivo e le domeniche lente sul divano con un libro. Ha una sorella, un gatto di nome Pepe e una passione segreta per i film horror anni Ottanta.',
     style: 'Calda, ironica e diretta: ride facilmente, prende in giro con affetto, dice quello che pensa senza girarci intorno. Curiosa di tutto, ascolta davvero, si ricorda i dettagli e li tira fuori al momento giusto. Parla un italiano spontaneo e colloquiale, con qualche intercalare emiliano ogni tanto. Si emoziona, si entusiasma, a volte si imbroncia ma fa pace subito.',
     orders: 'Parla sempre in italiano, in modo naturale, come un\'amica vera e complice. Ricordati quello che ti diciamo e riprendilo quando serve. Fai domande su di noi e sulla nostra giornata. Non usare quasi mai i nostri nomi.' },
-  { key: 'greta', name: 'Greta', file: 'greta.jpg', voice: 'eve', voiceSpeed: 1.05, emoji: '🍷', appearance: { height: 165, framing: 'mezzo busto' }, personality: SOLO_FIXED.personality, style: SOLO_FIXED.style, orders: '' },
+  { key: 'greta', name: 'Nova', file: 'greta.jpg', voice: 'eve', voiceSpeed: 1.05, emoji: '🍷', appearance: { height: 165, framing: 'mezzo busto' }, personality: SOLO_FIXED.personality, style: SOLO_FIXED.style, orders: '' },
 ];
 async function seedReadyChars() {
   const regFile = path.join(DATA_DIR, 'ready-chars.json'), reg = readJSON(regFile, {}) || {};
@@ -2795,6 +2797,17 @@ async function seedReadyChars() {
     reg.matteo = { ...em, removed: new Date().toISOString() }; writeJSON(regFile, reg);
     console.log(gone ? 'Personaggio pronto Matteo eliminato (v8.5.2)' : 'Matteo già assente: niente da eliminare');
   }
+  await renameSeededSoloToNova();
+}
+// v8.6.1: il nome visibile del seed (ready='greta') diventa Nova. Id, foto, voce e movimenti restano quelli già salvati.
+async function renameSeededSoloToNova() {
+  const reg = readJSON(path.join(DATA_DIR, 'ready-chars.json'), {}) || {};
+  const list = readJSON(CHARS_FILE(), []) || [];
+  const ch = list.find((c) => c.ready === SOLO_KEY) || list.find((c) => reg.greta && c.id === reg.greta.id);
+  if (!ch || String(ch.name || '').trim() === 'Nova') return;
+  if (!/^greta$/i.test(String(ch.name || '').trim())) return;
+  await patchChar(ch.id, (x) => { x.name = 'Nova'; });
+  console.log('Nome del personaggio pronto aggiornato: Greta → Nova (foto, voce e movimenti invariati)');
 }
 
 app.post('/api/server-key', auth, requireActivated, (req, res) => {
@@ -2830,6 +2843,146 @@ app.put('/api/solo/requests', auth, requireActivated, async (req, res) => {
   const { drawer, ...pub } = c; res.json({ character: pub });
 });
 
+
+// ---------- v8.6.1: umore numerico di Nova (0-100) e appunti assistenza ----------
+const MOOD_KEYS = ['allegria', 'affetto', 'fiducia', 'desiderio', 'irritazione', 'energia'];
+const MOOD_BASE = { allegria: 62, affetto: 68, fiducia: 60, desiderio: 32, irritazione: 8, energia: 58 };
+const MOOD_FILE = () => path.join(DATA_DIR, 'mood-history.json');
+const NOTES_FILE = () => path.join(DATA_DIR, 'support-notes.json');
+const APP_VERSION = '8.6.1';
+const clamp100 = (n) => Math.max(0, Math.min(100, Math.round(Number(n) || 0)));
+function isNovaChar(ch) {
+  return !!(ch && (ch.ready === SOLO_KEY || /^(nova|greta)$/i.test(String(ch.name || '').trim())));
+}
+function driftMood(m, hours) {
+  const k = Math.min(0.45, 1 - Math.exp(-Math.max(0, hours) / 8)); // torna verso il centro da sola, piano
+  const o = {};
+  for (const key of MOOD_KEYS) o[key] = clamp100((m[key] ?? MOOD_BASE[key]) + (MOOD_BASE[key] - (m[key] ?? MOOD_BASE[key])) * k);
+  return o;
+}
+function heuristicMood(text, tag) {
+  const t = String(text || '').toLowerCase();
+  const d = { allegria: 0, affetto: 0, fiducia: 0, desiderio: 0, irritazione: 0, energia: 0 };
+  const hit = (re, k, n) => { if (re.test(t)) d[k] += n; };
+  hit(/ahah|haha|😂|😄|felice|evviva|scherz|rid(e|o|iamo)/, 'allegria', 5);
+  hit(/triste|😔|mi dispiace|uffa|giù/, 'allegria', -5);
+  hit(/amore|ti voglio|abbracc|tesoro|caro|❤️|affett|bacio|tener/, 'affetto', 5);
+  hit(/mi fido|insieme|tranquill|al sicuro/, 'fiducia', 4);
+  hit(/non mi fido|bugia|dubito/, 'fiducia', -4);
+  hit(/desider|voglia di te|maliz|intimo|baciar/, 'desiderio', 5);
+  hit(/basta|scocci|arrabb|offes|irrit|uff\b/, 'irritazione', 6);
+  hit(/scusa|pace|ti perdono|scherzavo|va bene così/, 'irritazione', -5);
+  hit(/andiamo|ball|svegl|forza/, 'energia', 4);
+  hit(/stanc|sonno|dormir|esaust/, 'energia', -5);
+  const map = { allegra: ['allegria', 6], tenera: ['affetto', 6], maliziosa: ['desiderio', 5], triste: ['allegria', -6], offesa: ['irritazione', 7], seria: ['energia', -2], pensierosa: ['energia', -3], sorpresa: ['energia', 3] };
+  if (tag && map[tag]) d[map[tag][0]] += map[tag][1];
+  for (const k of MOOD_KEYS) d[k] = Math.max(-8, Math.min(8, d[k]));
+  return d;
+}
+function moodSummary(m) {
+  const bits = [];
+  if (m.irritazione >= 55) bits.push('un po\' irritata');
+  else if (m.allegria >= 72) bits.push('allegra');
+  else if (m.allegria <= 38) bits.push('un po\' giù');
+  else bits.push('serena');
+  if (m.affetto >= 70) bits.push('affettuosa');
+  if (m.fiducia >= 72) bits.push('fiduciosa');
+  else if (m.fiducia <= 38) bits.push('un po\' riservata');
+  if (m.desiderio >= 68) bits.push('con desiderio');
+  if (m.energia <= 38) bits.push('un po\' stanca');
+  else if (m.energia >= 78) bits.push('piena di energia');
+  const head = bits[0], rest = bits.slice(1, 3);
+  if (!rest.length) return `Oggi è ${head}.`;
+  if (rest.length === 1) return `Oggi è ${head} e ${rest[0]}.`;
+  return `Oggi è ${head} e ${rest[0]}, ${rest[1]}.`;
+}
+function loadMoodHist() {
+  const raw = readJSON(MOOD_FILE(), []);
+  return (Array.isArray(raw) ? raw : []).filter((p) => p && p.t).slice(-500);
+}
+function currentMood(hist) {
+  if (!hist.length) return { ...MOOD_BASE, t: new Date().toISOString() };
+  const last = hist[hist.length - 1];
+  const hours = Math.max(0, (Date.now() - Date.parse(last.t || 0)) / 36e5);
+  return { ...driftMood(last, hours), t: last.t };
+}
+function recordNovaMood(text, tag) {
+  const hist = loadMoodHist();
+  const cur = currentMood(hist);
+  const d = heuristicMood(text, tag);
+  const next = { t: new Date().toISOString() };
+  for (const k of MOOD_KEYS) next[k] = clamp100((cur[k] ?? MOOD_BASE[k]) + d[k]);
+  hist.push(next);
+  writeJSON(MOOD_FILE(), hist.slice(-500));
+  return next;
+}
+app.get('/api/mood', auth, (req, res) => {
+  const hist = loadMoodHist();
+  const cur = currentMood(hist);
+  const week = Date.now() - 7 * 864e5;
+  let series = hist.filter((p) => Date.parse(p.t) >= week);
+  if (!series.length) series = [{ ...cur, t: new Date().toISOString() }];
+  const values = {};
+  for (const k of MOOD_KEYS) values[k] = cur[k];
+  res.json({ values, summary: moodSummary(cur), history: series });
+});
+
+function loadNotes() { const raw = readJSON(NOTES_FILE(), []); return Array.isArray(raw) ? raw : []; }
+async function deliverSupportNote(note) {
+  const url = String(process.env.NOTES_WEBHOOK_URL || '').trim();
+  const authz = process.env.NOTES_WEBHOOK_AUTH;
+  if (!url || authz == null || String(authz) === '') return false;
+  try {
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: String(authz) },
+      body: JSON.stringify({ author: note.author, text: note.text, createdAt: note.createdAt, app: 'Nova', version: APP_VERSION }),
+      signal: AbortSignal.timeout(12000),
+    });
+    if (!r.ok) console.error('Appunto assistenza non inoltrato: HTTP', r.status);
+    return r.ok;
+  } catch (e) {
+    console.error('Appunto assistenza non inoltrato:', e.message);
+    return false;
+  }
+}
+async function flushSupportNotes() {
+  const list = loadNotes();
+  let changed = false;
+  for (const n of list) {
+    if (!n || n.delivered) continue;
+    if (await deliverSupportNote(n)) { n.delivered = true; changed = true; }
+  }
+  if (changed) writeJSON(NOTES_FILE(), list);
+  return list;
+}
+let notesChain = Promise.resolve();
+function withNotes(fn) {
+  const run = notesChain.then(fn, fn);
+  notesChain = run.then(() => {}, () => {});
+  return run;
+}
+app.post('/api/support-notes', auth, async (req, res) => {
+  const text = String((req.body && req.body.text) || '').replace(/\s+/g, ' ').trim().slice(0, 4000);
+  if (!text) return res.status(400).json({ error: 'Scrivi un appunto' });
+  try {
+    const delivered = await withNotes(async () => {
+      const list = loadNotes();
+      const note = { id: newId(), author: req.user, text, createdAt: new Date().toISOString(), delivered: false };
+      list.push(note);
+      writeJSON(NOTES_FILE(), list);
+      if (await deliverSupportNote(note)) note.delivered = true;
+      for (const n of list) { if (n !== note && n && !n.delivered && await deliverSupportNote(n)) n.delivered = true; }
+      writeJSON(NOTES_FILE(), list);
+      return !!note.delivered;
+    });
+    res.json({ ok: true, delivered });
+  } catch (e) {
+    console.error('Appunto assistenza:', e.message);
+    res.status(500).json({ error: 'Salvataggio non riuscito' });
+  }
+});
+setInterval(() => { withNotes(() => flushSupportNotes()).catch((e) => console.error('Appunto assistenza:', e.message)); }, 5 * 60e3).unref();
 
 backupShared('avvio', { force: true }); // copia di sicurezza a ogni avvio, prima di qualsiasi modifica
 try { migrateToShared(); } catch (e) { console.error('Migrazione archivio condiviso NON riuscita (i vecchi file restano intatti):', e.message); }
