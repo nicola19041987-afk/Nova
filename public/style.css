@@ -744,9 +744,9 @@ body.solo-mode #act-btn,body.solo-mode #scene-btn,body.solo-mode #call-btn{displ
 body.solo-mode #hot-btn{display:inline-flex!important}
 
 /* login Nova: wordmark, un campo, un pulsante */
-.login-screen{position:relative;min-height:100dvh;min-height:100vh;background:var(--bg);color:var(--text);align-items:center;justify-content:center;padding:64px 28px calc(72px + env(safe-area-inset-bottom))}
+.login-screen{position:relative;min-height:100dvh;min-height:100vh;background:#000;color:#fff;align-items:center;justify-content:center;padding:64px 28px calc(72px + env(safe-area-inset-bottom))}
 .login-wrap{width:min(420px,100%);margin:auto;display:flex;flex-direction:column;align-items:center;text-align:center}
-.login-wordmark{margin:0 0 56px;font-size:68px;font-weight:600;letter-spacing:-.045em;line-height:1;color:#1A1D21}
+.login-wordmark{margin:0 0 56px;font-size:68px;font-weight:600;letter-spacing:-.045em;line-height:1;color:#4FC3F7}
 .login-screen .profiles{flex-direction:column;width:100%;gap:10px;margin:0}
 .login-screen .profiles button{width:100%;border-radius:999px;background:#fff;border:1px solid var(--line);color:var(--text);padding:16px 18px;font-size:17px;font-weight:600}
 .login-screen .profiles button small{font-weight:500}
@@ -754,7 +754,7 @@ body.solo-mode #hot-btn{display:inline-flex!important}
 .login-hint{margin:0 0 4px;color:var(--muted);font-size:15px}
 .login-screen #pin-input,.login-screen #pin-confirm,.login-screen #setup-code{margin:0;border-radius:999px;background:#fff;border:1px solid var(--line);padding:16px 22px;text-align:center}
 .login-screen #setup-code{letter-spacing:normal}
-.login-pill{width:100%;border:0!important;border-radius:999px!important;background:var(--accent)!important;color:#fff!important;font-weight:600;font-size:17px;padding:16px 20px;margin-top:6px}
+.login-pill{width:100%;border:0!important;border-radius:999px!important;background:#4FC3F7!important;color:#041018!important;font-weight:600;font-size:17px;padding:16px 20px;margin-top:6px}
 .login-screen .link{background:none;border:0;color:var(--muted)}
 .login-screen .error{min-height:1.2em;color:var(--danger);margin:8px 0 0}
 .login-foot{position:absolute;left:0;right:0;bottom:calc(18px + env(safe-area-inset-bottom));margin:0;text-align:center;color:#8B949E;font-size:13px}
