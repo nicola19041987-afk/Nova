@@ -37,6 +37,38 @@
         App.api('/api/solo/prep', { method: 'POST', ai: true, body: { store: true } }).catch(() => {});
       }
       this.setDock('home');
+      const rt = $('#solo-rt'); if (rt) rt.hidden = false;
+    },
+    async toggleRt() {
+      const btn = $('#solo-rt');
+      const status = $('#voice-status');
+      const off = () => {
+        document.body.classList.remove('solo-rt');
+        if (btn) { btn.classList.remove('on'); btn.setAttribute('aria-pressed', 'false'); }
+        if (status) { status.hidden = true; status.textContent = ''; }
+      };
+      if (document.body.classList.contains('solo-rt')) {
+        if (App.rt && App.rt.stop) App.rt.stop();
+        off();
+        return;
+      }
+      const ch = soloChar();
+      if (!ch || !App.current || App.current.id !== ch.id) return;
+      if (App.call && App.call.active) return;
+      if (App.voice && App.voice.isListening && App.voice.isListening()) App.voice.stop();
+      if (!App.key || !App.key()) return App.toast('🔑 Per la voce in tempo reale serve la chiave xAI in Impostazioni');
+      if (!App.rt || !App.rt.supported || !App.rt.supported()) return App.toast('Questo browser non supporta la voce in tempo reale');
+      document.body.classList.add('solo-rt');
+      if (btn) { btn.classList.add('on'); btn.setAttribute('aria-pressed', 'true'); }
+      if (status) { status.hidden = false; status.textContent = '⚡ Collegamento…'; }
+      try {
+        await App.rt.start(ch, 'voice', '');
+        if (!document.body.classList.contains('solo-rt')) { if (App.rt.stop) App.rt.stop(); return; }
+        if (status) status.textContent = '⚡ In ascolto';
+      } catch (e) {
+        off();
+        App.toast('⚡ Voce in tempo reale non disponibile' + (e && e.message ? ': ' + e.message : ''));
+      }
     },
     syncChar() {
       const ch = soloChar();
@@ -74,6 +106,7 @@
           this.toggleFull();
         });
       }
+      const rt = $('#solo-rt'); if (rt) rt.addEventListener('click', () => this.toggleRt());
       const look = $('#set-look-btn'); if (look) look.onclick = () => this.openLook();
       const save = $('#set-requests-save'); if (save) save.onclick = () => this.saveRequests();
       const hot = $('#set-hot-btn'); if (hot) hot.onclick = () => { const h = $('#hot-btn'); if (h) h.click(); else if (App.actions && App.actions.openHot) App.actions.openHot(); };

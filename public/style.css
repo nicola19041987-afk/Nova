@@ -709,6 +709,8 @@ body.solo-mode #stage #avatar-canvas{
 body.solo-mode #stage .stage-tools{top:calc(env(safe-area-inset-top) + 6px);right:8px}
 body.solo-mode #messages{flex:1 1 auto;min-height:120px;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:8px 10px 6px;background:var(--bg)}
 body.solo-mode #chat-form.composer{flex:0 0 auto;padding:6px 8px 8px;margin:0;padding-bottom:8px}
+body.solo-mode #solo-rt{display:inline-flex;align-items:center;justify-content:center;border-radius:50%;width:40px;height:40px;flex:0 0 40px;padding:0;background:#E4E7EB;color:#1E6FD9;font-size:18px}
+body.solo-mode.solo-rt #solo-rt{background:#1E6FD9;color:#fff}
 body.solo-mode #typing{flex:0 0 auto;margin:0 10px}
 /* fullscreen avatar overlay (metà → tutto) */
 body.solo-mode #stage.av-full{

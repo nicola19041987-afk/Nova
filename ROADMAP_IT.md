@@ -5,7 +5,8 @@
 Solo ciò che i test di questo branch hanno eseguito. Il tag `stable-v8.6.6` resta il baseline su `main`.
 
 - **UI una sola avatar, parte home.** Pubblicata su `main` (`87ed29c` più la cache `app-privata-v8-6-7` in `6ecc87b`). All’ingresso la schermata è la conversazione di Nova (`ready: greta`), non la lista e non Chiara. `#tab-chat` (lista, Nuovo, preset) non è visibile in `solo-mode`. Una seconda lettura dei personaggi non riapre la chat.
-- **Dock e thread.** Il microfono del dock accende e spegne il dettato nel composer (`#chat-input`) e non chiama `App.call.start`. Home, anche tornando da Impostazioni, non richiama `chat.open` e non svuota `#messages`. `npm run check` ok. Playwright Chromium e WebKit a 390×844: 6/6 (login, home Nova, dettato e thread). Il riconoscimento del test è finto. Non verificato: sessione voce realtime, trascrizione xAI, microfono fisico, invio di un messaggio vero, consenso vocale, iPhone.
+- **Dock e thread.** Il microfono del dock accende e spegne il dettato nel composer (`#chat-input`) e non chiama `App.call.start`. Home, anche tornando da Impostazioni, non richiama `chat.open` e non svuota `#messages`.
+- **Voce in tempo reale nella chat.** Il tasto ⚡ del composer (`#solo-rt`) avvia e ferma la sessione; non è il microfono del dock e non entra in `in-call`. Il thread resta in `#messages`. L’invio in chat riceve lo stream di testo (xAI imitato). `npm run check` ok. Playwright Chromium e WebKit a 390×844: 8/8. Non verificato: WebSocket xAI vero, microfono fisico, labiale misurato, consenso vocale, iPhone.
 
 ## Cosa c’è in produzione (v8.5.2, live / in pubblicazione)
 

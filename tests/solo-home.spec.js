@@ -188,3 +188,103 @@ test('il microfono del dock detta nel composer e Home non svuota il thread', asy
   expect(snap.micOff).toBe(true);
   expect(snap.inCallAfter).toBe(false);
 });
+
+test('la voce in tempo reale resta in chat e un messaggio arriva da xAI', async ({ page }) => {
+  await mockApp(page);
+  await page.route('**/api/realtime/session', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({
+      url: 'wss://example.test/rt',
+      token: 'tok',
+      adult: false,
+      session: { instructions: 'Sei Nova', voice: 'ara', turn_detection: { type: 'server_vad' } },
+    }),
+  }));
+  await page.route('**/api/chats/**', async (route) => {
+    if (route.request().method() !== 'POST') return route.fallback();
+    return route.fulfill({
+      status: 200,
+      headers: { 'Content-Type': 'text/plain; charset=utf-8', 'X-Msg-Id': 'u1', 'X-Reply-Id': 'a1' },
+      body: 'Ciao, sono Nova.',
+    });
+  });
+  await page.goto('/');
+  await page.waitForFunction(() => document.body.classList.contains('solo-mode') && document.getElementById('title').textContent === 'Nova');
+  const snap = await page.evaluate(async () => {
+    App.ls.set('key', 'sk-test');
+    App.ls.set('callEngine', 'realtime');
+    const m = document.createElement('div');
+    m.id = 'keep-me';
+    m.textContent = 'resta';
+    document.querySelector('#messages').appendChild(m);
+    window.__callStarted = 0;
+    App.call.start = () => { window.__callStarted += 1; };
+    const ac = new (window.AudioContext || window.webkitAudioContext)();
+    const dest = ac.createMediaStreamDestination();
+    navigator.mediaDevices = navigator.mediaDevices || {};
+    navigator.mediaDevices.getUserMedia = async () => dest.stream;
+    class FakeWS {
+      constructor(url, protocols) {
+        this.url = url;
+        this.protocol = protocols && protocols[0];
+        this.readyState = 0;
+        window.__ws = this;
+        setTimeout(() => { this.readyState = 1; if (this.onopen) this.onopen(); this.onmessage && this.onmessage({ data: JSON.stringify({ type: 'session.created' }) }); }, 0);
+      }
+      send(raw) {
+        let msg = {}; try { msg = JSON.parse(raw); } catch { return; }
+        if (msg.type === 'session.update') setTimeout(() => { if (this.onmessage) this.onmessage({ data: JSON.stringify({ type: 'session.updated' }) }); }, 0);
+      }
+      close() { this.readyState = 3; if (this.onclose) this.onclose({ code: 1000, reason: '' }); }
+    }
+    window.WebSocket = FakeWS;
+    const btn = document.getElementById('solo-rt');
+    if (btn.hidden) throw new Error('controllo voce nascosto');
+    let err = '';
+    const toast = App.toast;
+    App.toast = (m) => { err = String(m); return toast(m); };
+    await App.solo.toggleRt();
+    const started = {
+      err,
+      on: document.body.classList.contains('solo-rt'),
+      pressed: btn.getAttribute('aria-pressed'),
+      active: !!(App.rt && App.rt.active),
+      inCall: document.body.classList.contains('in-call'),
+      calls: window.__callStarted,
+      kept: document.getElementById('keep-me').textContent,
+      title: document.getElementById('title').textContent,
+      status: document.getElementById('voice-status').textContent,
+    };
+    document.getElementById('chat-input').value = 'Ciao Nova';
+    await App.chat.send('Ciao Nova');
+    const texts = [...document.querySelectorAll('#messages .msg .body')].map((el) => el.textContent);
+    await App.solo.toggleRt();
+    return {
+      started,
+      texts,
+      kept: document.getElementById('keep-me').textContent,
+      off: !document.body.classList.contains('solo-rt'),
+      stopped: !(App.rt && App.rt.active),
+      inCall: document.body.classList.contains('in-call'),
+    };
+  });
+  expect(snap.started.err || '').toBe('');
+  expect(snap.started).toEqual({
+    err: '',
+    on: true,
+    pressed: 'true',
+    active: true,
+    inCall: false,
+    calls: 0,
+    kept: 'resta',
+    title: 'Nova',
+    status: '⚡ In ascolto',
+  });
+  expect(snap.texts).toContain('Ciao Nova');
+  expect(snap.texts).toContain('Ciao, sono Nova.');
+  expect(snap.kept).toBe('resta');
+  expect(snap.off).toBe(true);
+  expect(snap.stopped).toBe(true);
+  expect(snap.inCall).toBe(false);
+});

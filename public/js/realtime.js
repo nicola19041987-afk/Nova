@@ -236,7 +236,18 @@
   async function dropped(s) { // connessione persa a chiamata in corso: un nuovo tentativo, poi la chiamata classica
     if (s.closed || s.retrying) return; s.retrying = true; s.ready = false; stopPlayback(s);
     try { await open(s, 1); s.retrying = false; App.toast('🔄 Ricollegata', 1800); }
-    catch (e) { s.retrying = false; if (App.call && App.call.fallback) App.call.fallback('Connessione persa: ' + ((e && e.message) || s.closeWhy || '')); }
+    catch (e) {
+      s.retrying = false;
+      const why = 'Connessione persa: ' + ((e && e.message) || s.closeWhy || '');
+      if (App.call && App.call.active && App.call.fallback) App.call.fallback(why);
+      else {
+        App.rt.stop();
+        document.body.classList.remove('solo-rt');
+        const btn = document.getElementById('solo-rt'); if (btn) { btn.classList.remove('on'); btn.setAttribute('aria-pressed', 'false'); }
+        const status = document.getElementById('voice-status'); if (status) { status.hidden = true; status.textContent = ''; }
+        App.toast('⚡ ' + why);
+      }
+    }
   }
   async function open(s, tries = 3) {
     let last;
@@ -284,7 +295,11 @@
       try { s.ws && s.ws.close(); } catch {}
       stopPlayback(s);
       try { s.node && s.node.disconnect(); s.src && s.src.disconnect(); } catch {}
-      if (s.offLost) s.offLost(); // v8.4.4: il microfono resta aperto (lo chiude solo la fine della chiamata)
+      if (s.offLost) s.offLost(); // in chiamata il microfono resta aperto (lo chiude solo la fine della chiamata)
+      if (!(App.call && App.call.active) && App.audio) {
+        if (App.audio.releaseMic) App.audio.releaseMic();
+        if (App.audio.callSession) App.audio.callSession(false);
+      }
       if (s.resp && s.resp.text && !s.resp.saved) { s.resp.saved = true; save(s, 'assistant', s.resp.text + '…', { interrupted: true }); }
       return { lat: s.lat };
     },

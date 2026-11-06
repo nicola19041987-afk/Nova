@@ -16,9 +16,9 @@ Branch di lavoro: `nova-8.6-stabilizzazione`.
 
 La home non era bloccata su Nova. Cause, insieme: `soloChar()` / `getSoloChar()` prendevano il primo personaggio se `greta` mancava; il CSS non nascondeva `#tab-chat`; `display:flex!important` su `#tab-conv` batteva `[hidden]`; dopo il boot `data-tab` tornava `chat`; ogni `loadChars` rilanciava `boot()` e riapriva la chat; `setDock` chiamava `$$`, che esiste solo in `core.js`, e il `ReferenceError` chiudeva il boot. Il branch tiene solo Nova (`ready === 'greta'` o nome Nova/Greta), nasconde la lista, lascia chiudere la conversazione quando serve, non riapre la chat alle letture successive e segna il dock senza `$$`. Verifica: `npm run check`; Playwright Chromium e WebKit a 390×844 (login reale; home Nova con Chiara presente nella lista mock).
 
-## Corretto su questo branch (priorità 2, questo intervento)
+## Corretto su questo branch (priorità 2)
 
-Il microfono del dock chiamava `App.call.start('voice')`: apriva la chiamata e nascondeva l’avatar. Home chiamava `App.chat.open`, che azzera `#messages` anche se Nova è già aperta. Ora il dock accende o spegne l’ascolto e il testo finisce nel composer, senza invio automatico e senza chiamata. Home mostra di nuovo la conversazione già aperta. Verifica: `npm run check`; Playwright Chromium e WebKit a 390×844, 6/6. Il test usa un riconoscimento vocale finto. Non eseguiti: trascrizione xAI, microfono del dispositivo, invio di un messaggio vero, sessione realtime.
+Il microfono del dock chiamava `App.call.start('voice')` e Home richiamava `chat.open`. Ora il dock detta nel composer e Home non svuota il thread. La voce in tempo reale partiva solo dalla chiamata, che in solo nasconde avatar e barra e, se cade, passa alla chiamata classica. Il tasto ⚡ nel composer (`#solo-rt`) avvia e ferma `App.rt` senza `in-call`. Se il collegamento cade fuori da una chiamata, la sessione si chiude e il microfono si rilascia; la chat resta. L’invio di un messaggio usa `POST /api/chats/:id` e mostra la risposta nel thread. Verifica: `npm run check`; Playwright Chromium e WebKit a 390×844, 8/8, con WebSocket, microfono e stream xAI imitati. Non eseguiti: WebSocket xAI vero, microfono del dispositivo, labiale misurato, iPhone.
 
 ## Incompleto o rotto
 
@@ -34,12 +34,12 @@ Il microfono del dock chiamava `App.call.start('voice')`: apriva la chiamata e n
 
 ## Dipendenze tra i pezzi
 
-Login (`auth.js`) → `App.boot` → `loadChars` (wrapper solo) → `solo.boot` → `chat.open` → palco `TalkingAvatar` (`avatar.js` / `fitFrame` in `main.js`). Il dock Microfono passa da `voice.js` (dettato nel composer). La Camera passa ancora da `call.js` e da lì a `realtime.js` / `voice.js` (labiale). I movimenti stanno in `actions.js` + clip server (`prepSoloMotions`). L’aspetto testuale è il dialogo in `solo.js` che chiama `POST /api/characters/:id/regenerate`. Il service worker tiene la shell: un fix client non arriva finché la cache non cambia.
+Login (`auth.js`) → `App.boot` → `loadChars` (wrapper solo) → `solo.boot` → `chat.open` → palco `TalkingAvatar` (`avatar.js` / `fitFrame` in `main.js`). Il dock Microfono passa da `voice.js` (dettato nel composer). Il tasto ⚡ del composer avvia `App.rt` e lascia i messaggi in chat. La Camera passa ancora da `call.js`. I movimenti stanno in `actions.js` + clip server (`prepSoloMotions`). L’aspetto testuale è il dialogo in `solo.js` che chiama `POST /api/characters/:id/regenerate`. Il service worker tiene la shell: un fix client non arriva finché la cache non cambia.
 
 ## Priorità 8.6 (bloccanti, in quest’ordine)
 
 1. **UI principale con l’unica avatar (Nova, id `greta`).** La home è verificata sul branch (vedi sopra). Restano fuori da questa verifica face-swap, lista azioni e menu Prepara.
-2. **Chat stabile + voce realtime.** Il dettato del dock e il thread di Home sono verificati. La sessione realtime, il labiale e l’invio vero di un messaggio restano bloccati.
+2. **Chat stabile + voce realtime.** Dettato del dock, thread di Home, sessione realtime dal tasto ⚡ e invio in chat con risposta imitata sono verificati. Restano il collegamento xAI vero, il microfono del dispositivo e il labiale misurato.
 3. **Sync voce / labbra / movimento.** Non misurato su 8.6.6.
 4. **Movimento naturale senza jitter né sovrapposizioni.** Misura vecchia (v8.5.2). Clip e CSS di fallback convivono.
 5. **Personalizzazione aspetto.** Il dialogo «Aspetto di Nova» c’è; non è verificato end-to-end (serve chiave xAI).
