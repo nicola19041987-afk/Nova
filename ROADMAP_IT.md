@@ -1,10 +1,10 @@
 # Nova — roadmap (snapshot WIP)
 
-## Verificato sul branch `nova-8.6-stabilizzazione` (non pubblicato)
+## Verificato e pubblicato su `main` (cache `app-privata-v8-6-9`)
 
 Solo ciò che i test di questo branch hanno eseguito. Il tag `stable-v8.6.6` resta il baseline su `main`.
 
-- **UI una sola avatar, parte home.** Pubblicata su `main` (`87ed29c` più la cache `app-privata-v8-6-7` in `6ecc87b`). All’ingresso la schermata è la conversazione di Nova (`ready: greta`), non la lista e non Chiara. `#tab-chat` (lista, Nuovo, preset) non è visibile in `solo-mode`. Una seconda lettura dei personaggi non riapre la chat.
+- **UI una sola avatar, parte home.** Pubblicata su `main` insieme alla voce ⚡ (`b92e73d` / `f2d3fb8`) e al labiale (`cfa1908`), cache `app-privata-v8-6-9`. All’ingresso la schermata è la conversazione di Nova (`ready: greta`), non la lista e non Chiara. `#tab-chat` (lista, Nuovo, preset) non è visibile in `solo-mode`. Una seconda lettura dei personaggi non riapre la chat.
 - **Dock e thread.** Il microfono del dock accende e spegne il dettato nel composer (`#chat-input`) e non chiama `App.call.start`. Home, anche tornando da Impostazioni, non richiama `chat.open` e non svuota `#messages`.
 - **Voce in tempo reale nella chat.** Il tasto ⚡ del composer (`#solo-rt`) avvia e ferma la sessione; non è il microfono del dock e non entra in `in-call`. Il thread resta in `#messages`. L’invio in chat riceve lo stream di testo (xAI imitato).
 - **Labiale e movimento sulla sessione ⚡.** L’apertura segue l’inviluppo del PCM (non solo l’analizzatore, muto su Safari) ed è centrata sulla mezzeria degli occhi, ruotata con la linea degli occhi. Senza WebGL e senza clip il busto si alza in modo liscio, ancorato in basso. Misura Playwright a 390×844: correlazione bocca/inviluppo, differenza di fotogramma, simmetria sinistra/destra, jitter sotto la differenza parlato/silenzio, chat sotto il palco. Chromium misura anche apertura e chiusura sul PCM della sessione. WebKit chiude il renderer se si schedula quel buffer: quel solo controllo è saltato. `npm run check` ok. Suite: 11 passati, 1 saltato. Non verificato: iPhone fisico, WebSocket xAI vero, microfono del dispositivo.

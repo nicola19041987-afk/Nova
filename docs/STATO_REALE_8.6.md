@@ -1,6 +1,6 @@
 # Stato reale — 8.6.6 (baseline `stable-v8.6.6`)
 
-Riferimento ripristinabile: tag `stable-v8.6.6` sul commit `bde54667b2a3c643d8b5b4b13096a4244439f996`. `main` pubblicato dopo l’autorizzazione di Nicola: `6ecc87baec8ee0895b0d7d8f55880e1360408568` (intervento 1 `87ed29c` più cache service worker `app-privata-v8-6-7`). `ROADMAP_IT.md` e `ARCHITETTURA_IT.md` descrivono ancora, più sotto, lo snapshot v8.6.0.
+Riferimento ripristinabile: tag `stable-v8.6.6` sul commit `bde54667b2a3c643d8b5b4b13096a4244439f996`. `main` pubblicato dopo l’autorizzazione di Nicola: sopra `f2d3fb8` c’è il labiale `cfa1908`, cache service worker `app-privata-v8-6-9`. `ROADMAP_IT.md` e `ARCHITETTURA_IT.md` descrivono ancora, più sotto, lo snapshot v8.6.0.
 
 Branch di lavoro: `nova-8.6-stabilizzazione`.
 
@@ -9,7 +9,7 @@ Branch di lavoro: `nova-8.6-stabilizzazione`.
 - Login PIN e schermata nera con wordmark Nova. Il blocco di `close.js` (MutationObserver che riscriveva `hidden` a ogni mutazione e congelava il login prima di `DOMContentLoaded`) è corretto da v8.6.5.1: scrittura solo se cambia, osservatore staccato durante la scrittura, richieste accorpate con `requestAnimationFrame`. `stage.js` ha un osservatore diverso, che non scrive `hidden` nel callback.
 - Un solo personaggio di prodotto: id interno `greta`, file `assets/ready/greta.jpg`, nome visibile Nova (`SOLO_KEY`, migrazione del solo nome seedato).
 - Dopo l’accesso la shell aggiunge `body.solo-mode`, apre la conversazione e mostra palco, chat, composer e dock (Home, Microfono, Camera, Impostazioni). Su viewport >500px la colonna è centrata, max 430px, sfondo nero.
-- Chat condivisa con polling, note di assistenza, foglio umore. Cache service worker su `main`: `app-privata-v8-6-7`.
+- Chat condivisa con polling, note di assistenza, foglio umore. Cache service worker su `main`: `app-privata-v8-6-9`.
 - `npm run check` è l’unico controllo automatico storico: sintassi di server, script e JS pubblici.
 
 ## Corretto su questo branch (priorità 1)
