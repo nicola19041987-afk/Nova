@@ -7,14 +7,17 @@ const MARA = 'ffffffffffffffff';
 const ESTATE = 'dddddddddddddddd';
 const INVERNO = 'eeeeeeeeeeeeeeee';
 
+const LUNA = '1111111111111111';
+
 function seed() {
   return [
-    { id: CHIARA, name: 'Chiara', ready: 'chiara', createdBy: 'nicola', avatar: '🌿', personality: 'x', style: '', orders: '', requests: '' },
-    { id: NOVA, name: 'Nova', ready: 'greta', createdBy: 'nicola', avatar: '🍷', personality: 'Chi sei: Nova', style: '', orders: '', requests: '' },
-    { id: GRETA, name: 'Greta', avatar: 'G', personality: 'vecchia', style: '', orders: '', requests: '' },
-    { id: MARA, name: 'Mara', createdBy: 'luisa', avatar: 'M', personality: 'di luisa', style: '', orders: '', requests: '' },
-    { id: ESTATE, name: 'Estate', createdBy: 'nicola', avatar: 'E', personality: 'salvata', style: '', orders: '', requests: '' },
-    { id: INVERNO, name: 'Inverno', createdBy: 'nicola', avatar: 'I', personality: 'salvata', style: '', orders: '', requests: '' },
+    { id: CHIARA, name: 'Chiara', ready: 'chiara', createdBy: 'nicola', avatar: '🌿', messages: 80, nicolaMessages: 40 },
+    { id: NOVA, name: 'Nova', ready: 'greta', createdBy: 'nicola', avatar: '🍷', personality: 'Chi sei: Nova', messages: 90, nicolaMessages: 40 },
+    { id: GRETA, name: 'Greta', avatar: 'G', messages: 0, nicolaMessages: 0 },
+    { id: MARA, name: 'Mara', createdBy: 'luisa', avatar: 'M', messages: 5, nicolaMessages: 0 },
+    { id: ESTATE, name: 'Estate', createdBy: 'nicola', avatar: 'E', messages: 2, nicolaMessages: 1 },
+    { id: INVERNO, name: 'Inverno', createdBy: 'nicola', avatar: 'I', messages: 0, nicolaMessages: 0 },
+    { id: LUNA, name: 'Luna', avatar: 'L', messages: 40, nicolaMessages: 18 },
   ];
 }
 
@@ -67,6 +70,7 @@ test('il foglio avatar elenca, attiva, annulla la cancellazione e si chiude con 
     const sheet = document.getElementById('avatar-sheet');
     const row = (id) => sheet.querySelector(`li[data-id="${id}"]`);
     const names = [...sheet.querySelectorAll('li b')].map((b) => b.textContent);
+    const counts = [...sheet.querySelectorAll('.av-msgs')].map((el) => el.textContent);
     const activeBefore = sheet.querySelector('li.on');
     row(ids.estate).querySelector('[data-act]').click();
     for (let i = 0; i < 40 && document.getElementById('title').textContent !== 'Estate'; i++) await new Promise((ok) => setTimeout(ok, 25));
@@ -83,6 +87,7 @@ test('il foglio avatar elenca, attiva, annulla la cancellazione e si chiude con 
     return {
       opened,
       names,
+      counts,
       activeBefore: !!activeBefore,
       activeName,
       delLocked,
@@ -96,7 +101,8 @@ test('il foglio avatar elenca, attiva, annulla la cancellazione e si chiude con 
       x: sheet.querySelector('.avatar-x').getAttribute('aria-label'),
     };
   }, { estate: ESTATE, inverno: INVERNO });
-  expect(r.names).toEqual(['Estate', 'Inverno']);
+  expect(r.names).toEqual(['Luna', 'Estate', 'Greta', 'Inverno']);
+  expect(r.counts).toEqual(['40', '2', '0', '0']);
   expect(r.activeBefore).toBe(false);
   expect(r.activeName).toBe('Estate');
   expect(r.delLocked).toBe(true);
@@ -105,7 +111,7 @@ test('il foglio avatar elenca, attiva, annulla la cancellazione e si chiude con 
   expect(r.active).toBe(ESTATE);
   expect(r.photo).toBe('E');
   expect(r.asks).toEqual(['Cancellare definitivamente Inverno?']);
-  expect(r.still).toBe(2);
+  expect(r.still).toBe(4);
   expect(state.puts).toEqual([ESTATE]);
   expect(state.deleted).toEqual([]);
   expect(r.opened).toBe(true);

@@ -145,8 +145,9 @@
     setRhythm(period, strength) { this.rhythm = period ? { period: Math.min(2400, Math.max(330, period)), strength: Math.min(1, strength || 0.5) } : null; }
     setLandmarks(lm) {
       const next = JSON.parse(JSON.stringify(lm));
-      // v8.5.2: i punti nuovi arrivano con una dissolvenza (niente salti del warp quando il telefono rivaluta il viso)
-      if (this.lm && this.lm.eyeL && next && next.eyeL) {
+      // Dissolvenza solo se i punti sono della stessa foto. Un'altra foto non eredita la bocca precedente.
+      const same = this.lm && next && this.lm.src && next.src && this.lm.src === next.src;
+      if (same && this.lm.eyeL && next.eyeL) {
         this._lmFrom = JSON.parse(JSON.stringify(this.lm)); this._lmTo = next; this._lmT0 = performance.now(); this._lmDur = 420;
       } else { this.lm = next; this._lmFrom = this._lmTo = null; }
       this.sampleLids(); this._trustKey = '';
@@ -167,13 +168,17 @@
       const key = (img._src || '') + '|' + JSON.stringify([lm.eyeL, lm.eyeR, lm.mouth, lm.auto, lm.src]);
       if (this._trustKey === key) return this._trust;
       const fk = (x) => (window.App && App.faceKey ? App.faceKey(x) : String(x));
-      let ok = !!(lm.eyeL && lm.eyeR && lm.mouth);
+      // Il labiale si accende solo se i punti sono stati misurati su QUESTA foto (src uguale) e hanno i due angoli della bocca.
+      // Senza src, con i punti di un'altra foto, o con i predefiniti: niente warp. La foto resta ferma finché MediaPipe non misura questa immagine.
+      let ok = !!(lm.auto === true && lm.src && lm.src === fk(img._src) && lm.eyeL && lm.eyeR && lm.mouth && lm.mouthL && lm.mouthR);
       if (ok) {
-        const mine = lm.auto === true ? (!lm.src || lm.src === fk(img._src)) : lm.auto === false; // predefiniti (senza «auto») = incerti
         const ed = Math.hypot(lm.eyeR.x - lm.eyeL.x, lm.eyeR.y - lm.eyeL.y), ang = Math.atan2(lm.eyeR.y - lm.eyeL.y, lm.eyeR.x - lm.eyeL.x);
         const my = (lm.eyeL.y + lm.eyeR.y) / 2, mx = (lm.eyeL.x + lm.eyeR.x) / 2;
-        const sane = ed > 0.006 && ed < 0.7 && Math.abs(ang) < 0.45 && lm.mouth.y > my + ed * 0.45 && lm.mouth.y < my + ed * 2.2 && Math.abs(lm.mouth.x - mx) < ed * 0.6;
-        ok = mine && sane;
+        const midX = (lm.mouthL.x + lm.mouthR.x) / 2, midY = (lm.mouthL.y + lm.mouthR.y) / 2;
+        const span = Math.hypot(lm.mouthR.x - lm.mouthL.x, lm.mouthR.y - lm.mouthL.y);
+        const sane = ed > 0.006 && ed < 0.7 && Math.abs(ang) < 0.45 && lm.mouth.y > my + ed * 0.45 && lm.mouth.y < my + ed * 2.2 && Math.abs(lm.mouth.x - mx) < ed * 0.6
+          && span > 0.02 && span < 0.45 && Math.hypot(lm.mouth.x - midX, lm.mouth.y - midY) <= span * 0.35;
+        ok = sane;
       }
       this._trustKey = key; this._trust = ok;
       if (!ok) this.detectFace();
@@ -959,13 +964,11 @@
   // Apertura simmetrica attorno alla bocca vera, perpendicolare alla linea delle labbra già nella foto.
   // Non usa l'inclinazione degli occhi: la bocca non si raddrizza da sola e non si storce da un lato.
   function paintMouth(ctx, img, lm, open, wide) {
-    const S = VS, c = lm.mouth; if (!c) return;
-    const span0 = Math.max(S * 0.05, (lm.mouthW || 0.14) * S);
-    const L = lm.mouthL || { x: c.x - (lm.mouthW || 0.14) / 2, y: c.y };
-    const R = lm.mouthR || { x: c.x + (lm.mouthW || 0.14) / 2, y: c.y };
+    const S = VS, L = lm && lm.mouthL, R = lm && lm.mouthR;
+    if (!L || !R || !(open > 0)) return; // senza gli angoli veri non si inventa una bocca
     const ang = Math.atan2((R.y - L.y) * S, (R.x - L.x) * S);
-    const len = Math.max(span0, Math.hypot((R.x - L.x) * S, (R.y - L.y) * S));
-    const cx = c.x * S, cy = c.y * S;
+    const len = Math.max(S * 0.04, Math.hypot((R.x - L.x) * S, (R.y - L.y) * S));
+    const cx = (L.x + R.x) / 2 * S, cy = (L.y + R.y) / 2 * S; // centro = punto medio dei due angoli
     const wF = 1 + (Math.max(0, Math.min(1, wide)) - 0.5) * 0.18;
     const half = len * 0.52 * wF;
     const jaw = open * len * 0.46, upper = open * len * 0.14;

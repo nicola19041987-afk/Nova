@@ -22,7 +22,8 @@ test('la bocca di Nova resta sul centro vero, simmetrica e ferma a riposo', asyn
     const avg = (ids) => ids.reduce((o, i) => { const p = P(i); o.x += p.x; o.y += p.y; return o; }, { x: 0, y: 0 });
     const nAvg = (ids) => { const o = avg(ids); return { x: o.x / ids.length, y: o.y / ids.length }; };
     let mL = P(61), mR = P(291); if (mL.x > mR.x) [mL, mR] = [mR, mL];
-    const lm = { auto: true, v: 3, eyeL: nAvg([33, 133, 159, 145]), eyeR: nAvg([362, 263, 386, 374]), mouth: nAvg([13, 14]), mouthL: mL, mouthR: mR, lipU: P(13), lipL: P(14), mouthW: Math.hypot(mR.x - mL.x, mR.y - mL.y) };
+    const lm = { auto: true, v: 3, src: 'greta-check', eyeL: nAvg([33, 133, 159, 145]), eyeR: nAvg([362, 263, 386, 374]), mouth: nAvg([13, 14]), mouthL: mL, mouthR: mR, lipU: P(13), lipL: P(14), mouthW: Math.hypot(mR.x - mL.x, mR.y - mL.y) };
+    img._src = 'greta-check';
     document.body.classList.add('solo-mode');
     const prev = document.getElementById('avatar-canvas'); if (prev) prev.id = 'avatar-canvas-app';
     const c = document.createElement('canvas');
@@ -41,7 +42,6 @@ test('la bocca di Nova resta sul centro vero, simmetrica e ferma a riposo', asyn
       return av.ctx.getImageData(0, 0, c.width, c.height);
     };
     const rest = shoot(0, 0.5);
-    av._trustKey = ''; av.lm = { ...lm, auto: false };
     const plain = shoot(0, 0.5);
     av.lm = lm; av._trustKey = '';
     const opens = [0.3, 0.6, 1];

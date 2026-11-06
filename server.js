@@ -901,8 +901,19 @@ app.post('/api/characters/:id/memory-base', auth, async (req, res) => {
   res.json({ added: memView(r.added) });
 });
 
+function chatCounts(id) {
+  let messages = 0, nicolaMessages = 0;
+  try {
+    for (const m of readChat(id).messages || []) {
+      if (!m) continue;
+      messages++;
+      if (m.author === 'nicola') nicolaMessages++;
+    }
+  } catch { /* chat assente: zero, senza toccare i file */ }
+  return { messages, nicolaMessages };
+}
 app.get('/api/characters', auth, (req, res) => {
-  const list = getChars(req.user).map(({ drawer, ...c }) => ({ ...c, scenes: cleanScenes(c.scenes), actions: visibleActions(c), seated: visibleSeated(c), adultActionsOk: aiFace(c) })); // il vecchio campo del comodino non viene esposto
+  const list = getChars(req.user).map(({ drawer, ...c }) => ({ ...c, ...chatCounts(c.id), scenes: cleanScenes(c.scenes), actions: visibleActions(c), seated: visibleSeated(c), adultActionsOk: aiFace(c) })); // il vecchio campo del comodino non viene esposto; i conteggi non si scrivono sul disco
   res.setHeader('X-Version', fileRev(CHARS_FILE())); res.json(list);
 });
 app.get('/api/characters/options', auth, (req, res) => res.json(OPT));

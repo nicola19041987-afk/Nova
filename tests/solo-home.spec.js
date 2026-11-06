@@ -334,9 +334,10 @@ test('labiale e movimento della sessione ⚡ seguono l’audio, senza coprire la
     g.fillStyle = '#2a211c'; g.fillRect(70, 88, 26, 8); g.fillRect(144, 88, 26, 8);
     g.fillStyle = '#7a3038'; g.fillRect(78, 150, 84, 8);
     const im = new Image(); im.src = src.toDataURL(); await im.decode();
+    im._src = 'live-face';
     const av = new TalkingAvatar(c);
     av.img = im;
-    av.lm = { auto: true, eyeL: { x: 0.34, y: 0.36 }, eyeR: { x: 0.66, y: 0.40 }, mouth: { x: 0.5, y: 0.64 }, mouthL: { x: 0.40, y: 0.64 }, mouthR: { x: 0.60, y: 0.64 }, mouthW: 0.2 };
+    av.lm = { auto: true, src: 'live-face', eyeL: { x: 0.34, y: 0.36 }, eyeR: { x: 0.66, y: 0.40 }, mouth: { x: 0.5, y: 0.64 }, mouthL: { x: 0.40, y: 0.64 }, mouthR: { x: 0.60, y: 0.64 }, mouthW: 0.2 };
     av._trustKey = '';
     av.breathOn = false;
     av.resize();
@@ -429,4 +430,28 @@ test('il PCM della sessione ⚡ apre e chiude la bocca', async ({ page, browserN
   expect(live.shut).toBeLessThan(live.open * 0.65);
   expect(live.on).toBe(false);
   expect(live.inCall).toBe(false);
+});
+
+test('a schermo intero resta una sola X, quella globale', async ({ page }) => {
+  await mockApp(page);
+  await page.goto('/');
+  await page.waitForFunction(() => document.body.classList.contains('solo-mode') && document.getElementById('title').textContent === 'Nova');
+  const xs = await page.evaluate(async () => {
+    App.solo.toggleFull(true);
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    const vis = (el) => {
+      if (!el) return false;
+      const s = getComputedStyle(el);
+      const r = el.getBoundingClientRect();
+      return s.display !== 'none' && s.visibility !== 'hidden' && r.width > 2 && r.height > 2;
+    };
+    return {
+      full: document.body.classList.contains('av-full-on'),
+      layer: vis(document.getElementById('layer-x')),
+      expand: vis(document.getElementById('av-expand')),
+    };
+  });
+  expect(xs.full).toBe(true);
+  expect(xs.layer).toBe(true);
+  expect(xs.expand).toBe(false);
 });

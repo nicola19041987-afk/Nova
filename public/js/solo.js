@@ -12,8 +12,17 @@
     return list.find((c) => c.ready === 'greta') || list.find((c) => /^(nova|greta)$/i.test(String(c.name || '').trim())) || null;
   }
   function fit() { if (App.fitFrame) App.fitFrame(); }
-  // Solo gli avatar che Nicola ha creato e salvato. Fuori: seed di sistema (Nova, Chiara, ready), il predefinito e quelli di Luisa o senza autore.
-  function ownSaved(c) { return !!(c && c.createdBy === 'nicola' && !c.ready); }
+  // Foglio: niente seed di sistema. Dentro: creati da Nicola, senza autore (es. Luna), oppure con messaggi di Nicola. Fuori: quelli di Luisa se Nicola non ci ha mai scritto.
+  function sheetOk(c) {
+    if (!c || c.ready) return false;
+    const by = c.createdBy || '';
+    const nico = Number(c.nicolaMessages) || 0;
+    if (by === 'luisa' && nico <= 0) return false;
+    return by === 'nicola' || !by || nico > 0;
+  }
+  function sheetList() {
+    return (App.chars || []).filter(sheetOk).sort((a, b) => (Number(b.messages) || 0) - (Number(a.messages) || 0) || String(a.name || '').localeCompare(String(b.name || ''), 'it'));
+  }
 
   App.solo = {
     char: soloChar,
@@ -231,14 +240,15 @@
       const ul = $('#avatar-sheet-list'); if (!ul) return;
       const active = soloChar();
       const aid = active && active.id;
-      const mine = (App.chars || []).filter(ownSaved);
+      const mine = sheetList();
       ul.innerHTML = mine.map((c) => {
         const on = c.id === aid;
-        return `<li data-id="${esc(c.id)}" class="${on ? 'on' : ''}">${App.avatarHtml(c, 'av-pick-face')}<b>${esc(c.name || 'Avatar')}</b><button type="button" data-act${on ? ' disabled' : ''}>Attiva</button><button type="button" data-del${on ? ' disabled' : ''}>Cancella</button></li>`;
-      }).join('') || '<li class="muted">Nessun avatar salvato da Nicola</li>';
+        const n = Number(c.messages) || 0;
+        return `<li data-id="${esc(c.id)}" class="${on ? 'on' : ''}">${App.avatarHtml(c, 'av-pick-face')}<b>${esc(c.name || 'Avatar')}</b><span class="av-msgs">${n}</span><button type="button" data-act${on ? ' disabled' : ''}>Attiva</button><button type="button" data-del${on ? ' disabled' : ''}>Cancella</button></li>`;
+      }).join('') || '<li class="muted">Nessun avatar</li>';
     },
     async activate(id) {
-      const ch = App.charById(id); if (!ch || !ownSaved(ch)) return;
+      const ch = App.charById(id); if (!ch || !sheetOk(ch)) return;
       try {
         App.settings = await App.api('/api/settings', { method: 'PUT', body: { ...(App.settings || {}), activeChar: id } });
         App.ls.set('settings', App.settings);
@@ -254,7 +264,7 @@
     async removeChar(id) {
       const active = soloChar();
       if (!id || (active && active.id === id)) return;
-      const ch = App.charById(id); if (!ch || !ownSaved(ch)) return;
+      const ch = App.charById(id); if (!ch || !sheetOk(ch)) return;
       if (!confirm(`Cancellare definitivamente ${ch.name}?`)) return;
       try { await App.api(`/api/characters/${id}`, { method: 'DELETE' }); }
       catch (e) { App.toast(e.message || 'Non cancellato'); return; }
