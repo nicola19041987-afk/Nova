@@ -251,7 +251,7 @@ app.use((req, res, next) => {
   res.setHeader('Referrer-Policy', 'no-referrer');
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Permissions-Policy', 'microphone=(self), camera=(self)');
-  res.setHeader('Content-Security-Policy', `default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; connect-src 'self' ${RT_ORIGIN} https://api.simli.ai wss://api.simli.ai stun:stun.l.google.com:19302`);
+  res.setHeader('Content-Security-Policy', `default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; connect-src 'self' blob: ${RT_ORIGIN} https://api.simli.ai wss://api.simli.ai stun:stun.l.google.com:19302`);
   next();
 });
 app.use(cookieParser());
@@ -2674,7 +2674,7 @@ app.get('/manifest.json', (req, res, next) => { res.type('application/manifest+j
 app.use(express.static(path.join(__dirname, 'public'), {
   setHeaders(res, file) {
     if (file.endsWith('.wasm')) res.setHeader('Content-Type', 'application/wasm');
-    else if (file.endsWith('.vrm')) res.setHeader('Content-Type', 'model/gltf-binary');
+    else if (file.endsWith('.vrm') || file.endsWith('.glb')) res.setHeader('Content-Type', 'model/gltf-binary');
     else if (file.endsWith('.mjs')) res.setHeader('Content-Type', 'text/javascript; charset=utf-8');
     else if (file.endsWith('.task')) res.setHeader('Content-Type', 'application/octet-stream');
     if (file.includes(`${path.sep}vendor${path.sep}mediapipe${path.sep}`)) res.setHeader('Cache-Control', 'public, max-age=604800');

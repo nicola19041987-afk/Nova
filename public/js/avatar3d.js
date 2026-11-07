@@ -1,6 +1,6 @@
-/* Prototipo avatar 3D (three.js + three-vrm, file locali). La foto resta il default. */
+/* Avatar 3D realistico (GLB locale, three.js). La foto resta il default. */
 (function () {
-  const MODEL = '/models/nova-base.vrm';
+  const MODEL = '/models/nova.glb';
   const FULL = { alzati: 1, siedi: 1, gira: 1, cammina: 1, stira: 1 };
   const GEST = {
     saluto: { dur: 2.8, label: '👋 Saluta' },
@@ -20,7 +20,16 @@
     ['capelli', ['pettin', 'capell']],
     ['saluto', ['ciao con la mano', 'salut']],
   ];
-  let view = 'photo', lib = null, vrm = null, renderer, scene, camera, raf = 0, last = 0, acc = 0;
+  const MAP = {
+    hips: 'Bip01_Pelvis', spine: 'Bip01_Spine', chest: 'Bip01_Spine1',
+    head: 'Bip01_Head', jaw: 'Bip01_MJaw',
+    leftUpperArm: 'Bip01_L_UpperArm', leftLowerArm: 'Bip01_L_Forearm',
+    rightUpperArm: 'Bip01_R_UpperArm', rightLowerArm: 'Bip01_R_Forearm',
+    leftUpperLeg: 'Bip01_L_Thigh', leftLowerLeg: 'Bip01_L_Calf',
+    rightUpperLeg: 'Bip01_R_Thigh', rightLowerLeg: 'Bip01_R_Calf',
+    blinkL: 'Bip01_LEyeBlinkTop', blinkR: 'Bip01_REyeBlinkTop',
+  };
+  let view = 'photo', lib = null, model = null, renderer, scene, camera, raf = 0, last = 0, acc = 0;
   let readyP = null, failed = '', base = 'stand', clip = null, mouth = 0, wide = 0.5, speaking = false;
   let restoreFull = false;
   const rest = new Map();
@@ -31,88 +40,83 @@
   function canvas() { return document.getElementById('vrm-view'); }
   function stage() { return document.getElementById('stage'); }
   function smooth(u) { const x = Math.max(0, Math.min(1, u)); return x * x * (3 - 2 * x); }
-  function bone(name) { return vrm && vrm.humanoid && vrm.humanoid.getNormalizedBoneNode(name); }
+  function bone(name) { return model && model.getObjectByName(MAP[name] || name); }
   function remember() {
     rest.clear();
-    ['hips', 'spine', 'chest', 'upperChest', 'neck', 'head', 'leftUpperArm', 'leftLowerArm', 'leftHand', 'rightUpperArm', 'rightLowerArm', 'rightHand', 'leftUpperLeg', 'leftLowerLeg', 'leftFoot', 'rightUpperLeg', 'rightLowerLeg', 'rightFoot'].forEach((name) => {
-      const n = bone(name); if (n) rest.set(name, n.quaternion.clone());
-    });
+    Object.keys(MAP).forEach((name) => { const n = bone(name); if (n) rest.set(name, n.quaternion.clone()); });
   }
   function applyBone(name, x, y, z) {
     const n = bone(name), q0 = rest.get(name); if (!n || !q0) return;
-    const e = new lib.THREE.Euler(x || 0, y || 0, z || 0, 'XYZ');
-    n.quaternion.copy(q0).multiply(new lib.THREE.Quaternion().setFromEuler(e));
+    n.quaternion.copy(q0).multiply(new lib.THREE.Quaternion().setFromEuler(new lib.THREE.Euler(x || 0, y || 0, z || 0)));
   }
   function resetBones() { rest.forEach((q, name) => { const n = bone(name); if (n) n.quaternion.copy(q); }); }
-  function tint() {
+  function dropArms() {
     const THREE = lib.THREE;
-    const brown = new THREE.Color('#6b3a22'), eye = new THREE.Color('#c5e4f5'), skin = new THREE.Color('#f3d7cb');
-    vrm.scene.traverse((o) => {
-      if (!o.isMesh) return;
-      const list = Array.isArray(o.material) ? o.material : [o.material];
-      const next = list.map((m) => {
-        if (!m) return m;
-        const blob = ((o.name || '') + ' ' + (m.name || '')).toLowerCase();
-        const mat = new THREE.MeshStandardMaterial({
-          map: m.map || null,
-          color: m.color ? m.color.clone() : skin.clone(),
-          roughness: 0.82,
-          metalness: 0,
-        });
-        mat.name = m.name || '';
-        if (/hair|kami/.test(blob)) mat.color.lerp(brown, 0.72);
-        else if (/iris|hitomi/.test(blob)) mat.color.lerp(eye, 0.7);
-        else if (/skin|face|body|hada/.test(blob) && !m.map) mat.color.lerp(skin, 0.5);
-        return mat;
+    ['leftUpperArm', 'rightUpperArm'].forEach((name) => {
+      const n = bone(name); if (!n) return;
+      let child = null;
+      n.traverse((c) => { if (!child && c !== n && /Forearm/.test(c.name || '')) child = c; });
+      if (!child) return;
+      const start = n.quaternion.clone();
+      let best = start.clone(), bestY = Infinity;
+      const axis = new THREE.Vector3();
+      ['x', 'y', 'z'].forEach((ax) => {
+        for (let deg = -180; deg <= 180; deg += 10) {
+          n.quaternion.copy(start);
+          axis.set(ax === 'x' ? 1 : 0, ax === 'y' ? 1 : 0, ax === 'z' ? 1 : 0);
+          n.rotateOnAxis(axis, deg * Math.PI / 180);
+          n.updateWorldMatrix(true, true);
+          const hand = new THREE.Vector3(), shoulder = new THREE.Vector3();
+          child.getWorldPosition(hand); n.getWorldPosition(shoulder);
+          const down = hand.y - shoulder.y;
+          if (down < bestY) { bestY = down; best = n.quaternion.clone(); }
+        }
       });
-      o.material = Array.isArray(o.material) ? next : next[0];
+      n.quaternion.copy(best);
     });
   }
-  function expr(name, value) {
-    const m = vrm && vrm.expressionManager; if (!m) return;
-    try { m.setValue(name, Math.max(0, Math.min(1, value))); } catch { /* espressione assente */ }
+  function fitModel() {
+    const THREE = lib.THREE;
+    model.updateWorldMatrix(true, true);
+    const box = new THREE.Box3().setFromObject(model);
+    const size = box.getSize(new THREE.Vector3());
+    const s = 1.68 / Math.max(0.01, size.y);
+    model.scale.setScalar(s);
+    model.updateWorldMatrix(true, true);
+    const box2 = new THREE.Box3().setFromObject(model);
+    model.position.y -= box2.min.y;
   }
   function lips(level, shape, on) {
     mouth = Math.max(0, Math.min(1, level || 0));
     wide = shape == null ? 0.5 : Math.max(0, Math.min(1, shape));
     speaking = !!on && mouth > 0.04;
   }
-  function visemes() {
-    ['aa', 'ih', 'ou', 'ee', 'oh'].forEach((n) => expr(n, 0));
-    if (!speaking) return;
-    const open = mouth;
-    if (wide > 0.72) expr(open > 0.45 ? 'ee' : 'ih', open);
-    else if (wide > 0.38) expr('aa', open);
-    else expr(open > 0.55 ? 'oh' : 'ou', open);
-  }
   function offsets(name, u) {
     const s = Math.sin(Math.max(0, Math.min(1, u)) * Math.PI), w = Math.sin(u * Math.PI * 5);
     const o = {};
-    if (name === 'saluto') { o.rightUpperArm = [0.15, 0, -1.15 * s]; o.rightLowerArm = [0, 0, (-0.35 - 0.45 * w) * s]; }
-    if (name === 'capelli') { o.rightUpperArm = [-0.4 * s, 0, -0.9 * s]; o.rightLowerArm = [-1.1 * s, 0.2 * s, 0]; o.head = [0.08 * s, -0.12 * s, 0]; }
-    if (name === 'stira') { o.leftUpperArm = [0.2 * s, 0, 1.3 * s]; o.rightUpperArm = [0.2 * s, 0, -1.3 * s]; o.spine = [-0.12 * s, 0, 0]; }
+    if (name === 'saluto') { o.rightUpperArm = [0.2, 0, -1.05 * s]; o.rightLowerArm = [0, 0.15 * w * s, -0.9 * s]; }
+    if (name === 'capelli') { o.rightUpperArm = [-0.5 * s, 0, -0.7 * s]; o.rightLowerArm = [-1.15 * s, 0, 0]; o.head = [0.08 * s, -0.15 * s, 0]; }
+    if (name === 'stira') { o.leftUpperArm = [0.15 * s, 0, 2.4 * s]; o.rightUpperArm = [0.15 * s, 0, -2.4 * s]; o.spine = [-0.12 * s, 0, 0]; }
     if (name === 'gira') { o.hips = [0, u * Math.PI * 2, 0]; }
     if (name === 'cammina') {
       const step = Math.sin(u * Math.PI * 4);
-      o.leftUpperLeg = [0.55 * step, 0, 0]; o.rightUpperLeg = [-0.55 * step, 0, 0];
-      o.leftLowerLeg = [Math.max(0, -step) * 0.7, 0, 0]; o.rightLowerLeg = [Math.max(0, step) * 0.7, 0, 0];
-      o.leftUpperArm = [-0.35 * step, 0, 0.15]; o.rightUpperArm = [0.35 * step, 0, -0.15];
+      o.leftUpperLeg = [0.6 * step, 0, 0]; o.rightUpperLeg = [-0.6 * step, 0, 0];
+      o.leftLowerLeg = [Math.max(0, -step) * 0.8, 0, 0]; o.rightLowerLeg = [Math.max(0, step) * 0.8, 0, 0];
+      o.leftUpperArm = [0.35 * step, 0, 0]; o.rightUpperArm = [-0.35 * step, 0, 0];
     }
     const held = name === 'siedi' ? smooth(u) : (name === 'alzati' ? 1 - smooth(u) : (base === 'sit' ? 1 : 0));
-    const sit = held;
-    if (sit) {
-      o.hips = [(o.hips && o.hips[0] || 0) - 0.15 * sit, (o.hips && o.hips[1] || 0), 0];
-      o.leftUpperLeg = [(o.leftUpperLeg && o.leftUpperLeg[0] || 0) - 1.15 * sit, 0, 0.08 * sit];
-      o.rightUpperLeg = [(o.rightUpperLeg && o.rightUpperLeg[0] || 0) - 1.15 * sit, 0, -0.08 * sit];
-      o.leftLowerLeg = [(o.leftLowerLeg && o.leftLowerLeg[0] || 0) + 1.25 * sit, 0, 0];
-      o.rightLowerLeg = [(o.rightLowerLeg && o.rightLowerLeg[0] || 0) + 1.25 * sit, 0, 0];
+    if (held) {
+      o.hips = [(o.hips && o.hips[0] || 0) - 0.2 * held, (o.hips && o.hips[1] || 0), 0];
+      o.leftUpperLeg = [(o.leftUpperLeg && o.leftUpperLeg[0] || 0) - 1.2 * held, 0, 0.06 * held];
+      o.rightUpperLeg = [(o.rightUpperLeg && o.rightUpperLeg[0] || 0) - 1.2 * held, 0, -0.06 * held];
+      o.leftLowerLeg = [(o.leftLowerLeg && o.leftLowerLeg[0] || 0) + 1.3 * held, 0, 0];
+      o.rightLowerLeg = [(o.rightLowerLeg && o.rightLowerLeg[0] || 0) + 1.3 * held, 0, 0];
     }
     return o;
   }
   function playGesture(id) {
     if (!GEST[id] || view !== '3d') return false;
-    const full = !!FULL[id];
-    if (full && App.solo && App.solo.toggleFull && !App.solo.full) { restoreFull = true; App.solo.toggleFull(true); }
+    if (FULL[id] && App.solo && App.solo.toggleFull && !App.solo.full) { restoreFull = true; App.solo.toggleFull(true); }
     else restoreFull = false;
     clip = { id, t0: performance.now(), dur: GEST[id].dur * 1000 };
     return true;
@@ -136,46 +140,45 @@
     renderer.setSize(w, h, false);
     camera.aspect = w / h; camera.updateProjectionMatrix();
     const full = document.body.classList.contains('av-full-on');
-    camera.position.set(0, full ? 0.95 : 1.35, full ? 3.15 : 1.7);
-    camera.lookAt(0, full ? 0.9 : 1.25, 0);
+    camera.position.set(0, full ? 0.86 : 1.42, full ? 3.6 : 1.35);
+    camera.lookAt(0, full ? 0.84 : 1.38, 0);
   }
   function frame(now) {
     raf = requestAnimationFrame(frame);
-    if (view !== '3d' || !vrm) return;
+    if (view !== '3d' || !model) return;
     const dt = Math.min(0.05, last ? (now - last) / 1000 : 0); last = now;
     acc += dt; if (acc < 1 / 30) return;
-    const step = acc; acc = 0;
+    acc = 0;
+    resize();
     const t = now / 1000;
     resetBones();
-    const idle = clip ? offsets(base === 'sit' ? 'siedi' : 'alzati', base === 'sit' ? 1 : 0) : offsets(base === 'sit' ? 'siedi' : '', 1);
-    let pose = idle;
+    let pose = offsets(base === 'sit' ? 'siedi' : '', base === 'sit' ? 1 : 0);
     if (clip) {
       const u = (now - clip.t0) / clip.dur;
       if (u >= 1) endClip();
-      else pose = offsets(clip.id, smooth(u));
+      else pose = offsets(clip.id, u);
     }
     Object.entries(pose).forEach(([name, e]) => applyBone(name, e[0], e[1], e[2]));
     if (!clip) {
-      applyBone('chest', Math.sin(t * 1.5) * 0.035, 0, 0);
-      applyBone('head', Math.sin(t * 0.35) * 0.04, Math.sin(t * 0.22) * 0.22, 0);
+      applyBone('chest', Math.sin(t * 1.5) * 0.03, 0, 0);
+      applyBone('head', Math.sin(t * 0.35) * 0.03, Math.sin(t * 0.22) * 0.18, 0);
     }
-    const blink = (Math.sin(t * 1.7) > 0.97) ? 1 : 0;
-    expr('blink', blink);
-    visemes();
-    if (vrm.expressionManager) vrm.expressionManager.update();
-    if (clip && clip.id === 'cammina' && vrm.scene) vrm.scene.position.x = Math.sin(((now - clip.t0) / clip.dur) * Math.PI) * 0.28;
-    else if (vrm.scene) vrm.scene.position.x += (0 - vrm.scene.position.x) * 0.15;
-    vrm.update(step);
+    const blink = Math.sin(t * 1.3) > 0.985 ? 0.45 : 0;
+    applyBone('blinkL', blink, 0, 0);
+    applyBone('blinkR', blink, 0, 0);
+    const jaw = bone('jaw'), qj = rest.get('jaw');
+    if (jaw && qj) { jaw.quaternion.copy(qj); jaw.rotateX(speaking ? mouth * 0.4 : 0); }
+    if (clip && clip.id === 'cammina') model.position.x = Math.sin(((now - clip.t0) / clip.dur) * Math.PI) * 0.28;
+    else model.position.x += (0 - model.position.x) * 0.12;
     renderer.render(scene, camera);
   }
   async function ensureLibs() {
     if (lib) return lib;
-    const [THREE, gltf, VRM] = await Promise.all([
+    const [THREE, gltf] = await Promise.all([
       import('/vendor/three/build/three.module.js'),
       import('/vendor/three/examples/jsm/loaders/GLTFLoader.js'),
-      import('/vendor/three-vrm/three-vrm.module.js'),
     ]);
-    lib = { THREE, GLTFLoader: gltf.GLTFLoader, VRMLoaderPlugin: VRM.VRMLoaderPlugin, VRMUtils: VRM.VRMUtils };
+    lib = { THREE, GLTFLoader: gltf.GLTFLoader };
     return lib;
   }
   function showCanvas(on) {
@@ -184,32 +187,28 @@
     document.body.classList.toggle('vrm-on', !!on);
   }
   async function load() {
-    if (vrm) { showCanvas(true); resize(); return true; }
+    if (model) { showCanvas(true); resize(); return true; }
     if (readyP) return readyP;
     readyP = (async () => {
       const st = stage(), c = canvas(); if (!st || !c) throw new Error('Palco assente');
-      const { THREE, GLTFLoader, VRMLoaderPlugin, VRMUtils } = await ensureLibs();
+      const { THREE, GLTFLoader } = await ensureLibs();
       renderer = new THREE.WebGLRenderer({ canvas: c, antialias: false, alpha: false, powerPreference: 'high-performance' });
       renderer.setClearColor(0xe8ebf0, 1);
       renderer.outputColorSpace = THREE.SRGBColorSpace;
       scene = new THREE.Scene();
-      camera = new THREE.PerspectiveCamera(28, 1, 0.1, 20);
-      scene.add(new THREE.HemisphereLight(0xfff4ea, 0xb9c0c8, 1.15));
-      const key = new THREE.DirectionalLight(0xffffff, 1.1); key.position.set(0.4, 1.6, 1.2); scene.add(key);
-      const loader = new GLTFLoader();
-      loader.register((parser) => new VRMLoaderPlugin(parser));
-      const gltf = await loader.loadAsync(MODEL);
-      vrm = gltf.userData.vrm;
-      if (!vrm) throw new Error('File VRM senza avatar');
-      if (VRMUtils.removeUnnecessaryVertices) VRMUtils.removeUnnecessaryVertices(gltf.scene);
-      vrm.scene.traverse((o) => { o.frustumCulled = false; });
-      vrm.scene.rotation.y = Math.PI;
-      scene.add(vrm.scene);
-      tint();
+      camera = new THREE.PerspectiveCamera(30, 1, 0.05, 30);
+      scene.add(new THREE.HemisphereLight(0xfff6ee, 0xb7c0c8, 1.2));
+      const key = new THREE.DirectionalLight(0xffffff, 1.15); key.position.set(0.6, 1.8, 1.4); scene.add(key);
+      const gltf = await new GLTFLoader().loadAsync(MODEL);
+      model = gltf.scene;
+      model.traverse((o) => { o.frustumCulled = false; if (o.material) { const mats = Array.isArray(o.material) ? o.material : [o.material]; mats.forEach((m) => { if (m) { m.metalness = 0; m.roughness = Math.min(1, m.roughness || 0.8); } }); } });
+      scene.add(model);
+      dropArms();
+      fitModel();
       remember();
       showCanvas(true); resize();
       last = 0; if (!raf) raf = requestAnimationFrame(frame);
-      status('Avatar 3D: Sendagaya Shino (CC0), capelli scuriti.');
+      status('Avatar 3D: Female Adult 02 (Microsoft Rocketbox, MIT).');
       return true;
     })().catch((e) => { failed = (e && e.message) || '3D non caricato'; status(failed); showCanvas(false); readyP = null; throw e; });
     return readyP;
@@ -257,6 +256,6 @@
   window.addEventListener('resize', resize);
   App.avatar3d = {
     mode, apply, lips, play: playGesture, match: match3d,
-    ready: () => !!vrm, failed: () => failed, current: () => clip && clip.id,
+    ready: () => !!model, failed: () => failed, current: () => clip && clip.id,
   };
 })();

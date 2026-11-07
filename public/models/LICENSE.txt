@@ -1,16 +1,1 @@
-Sendagaya Shino (nova-base.vrm)
-
-Source: VRoid Studio beta sample model, redistributed as Sendagaya_Shino.vrm
-from https://github.com/madjin/vrm-samples (path vroid/beta/Sendagaya_Shino.vrm).
-Official note: https://vroid.pixiv.help/hc/en-us/articles/360013482714-Sendagaya-Shino
-
-License: CC0 1.0 Universal
-https://creativecommons.org/publicdomain/zero/1.0/
-pixiv Inc. waived copyright and related rights in this sample, to the extent possible under law.
-The model is clothed. This prototype does not alter the outfit.
-
-The mesh has long straight hair, not a ponytail. On load the app tints the hair brown
-and the irises lighter so the figure is closer to the Nova photo. That recolor is ours.
-
-three.js (MIT) and @pixiv/three-vrm 3.5.5 (MIT) are vendored under public/vendor/.
-They are loaded from this origin. No CDN at runtime.
+See CREDITS.txt. The 3D character is Female Adult 02 from the Microsoft Rocketbox library, MIT license.
