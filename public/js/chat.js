@@ -287,8 +287,23 @@ $('#char-list').addEventListener('click', (e) => {
 });
 $('#new-char').addEventListener('click', () => App.editor.open(null));
 $('#back-btn').addEventListener('click', () => App.chat.close());
-$('#chat-form').addEventListener('submit', (e) => { e.preventDefault(); const i = $('#chat-input'); const t = i.value; i.value = ''; App.chat.send(t); });
-$('#chat-only').addEventListener('click', () => { const i = $('#chat-input'); const t = i.value; if (!t.trim()) return App.toast('Scrivi prima il messaggio'); i.value = ''; App.chat.send(t, true); });
+// In solo il campo resta su una riga e cresce al massimo a due; oltre, scorre dentro.
+function fitComposer() {
+  const i = $('#chat-input'); if (!i) return;
+  if (!document.body.classList.contains('solo-mode')) { i.style.height = ''; i.style.overflowY = ''; return; }
+  const cs = getComputedStyle(i);
+  const lh = parseFloat(cs.lineHeight) || 20;
+  const pad = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
+  const border = (parseFloat(cs.borderTopWidth) || 0) + (parseFloat(cs.borderBottomWidth) || 0);
+  const max = lh * 2 + pad + border;
+  i.style.height = 'auto';
+  const next = Math.min(i.scrollHeight, max);
+  i.style.height = next + 'px';
+  i.style.overflowY = i.scrollHeight > max + 1 ? 'auto' : 'hidden';
+}
+$('#chat-form').addEventListener('submit', (e) => { e.preventDefault(); const i = $('#chat-input'); const t = i.value; i.value = ''; fitComposer(); App.chat.send(t); });
+$('#chat-only').addEventListener('click', () => { const i = $('#chat-input'); const t = i.value; if (!t.trim()) return App.toast('Scrivi prima il messaggio'); i.value = ''; fitComposer(); App.chat.send(t, true); });
+$('#chat-input').addEventListener('input', fitComposer);
 $('#chat-input').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !/Mobi/.test(navigator.userAgent)) { e.preventDefault(); $('#chat-form').requestSubmit(); } });
 $('#chat-input').addEventListener('focus', () => { const b = $('#kb-hide'); if (b) b.hidden = false; });
 $('#chat-input').addEventListener('blur', () => { const b = $('#kb-hide'); if (b) b.hidden = true; setTimeout(() => App.chat && App.chat.scroll && App.chat.scroll(), 80); });

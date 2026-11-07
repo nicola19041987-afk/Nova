@@ -369,6 +369,7 @@ test('labiale e movimento della sessione ⚡ seguono l’audio, senza coprire la
       inCall: document.body.classList.contains('in-call'),
       chatBelow: stage.bottom <= msgs.top + 8,
       chatH: msgs.height,
+      chatShare: msgs.height / window.innerHeight,
     };
   });
   expect(snap.trusted).toBe(true);
@@ -381,7 +382,7 @@ test('labiale e movimento della sessione ⚡ seguono l’audio, senza coprire la
   expect(snap.maxStep).toBeLessThan(0.3);
   expect(snap.inCall).toBe(false);
   expect(snap.chatBelow).toBe(true);
-  expect(snap.chatH).toBeGreaterThan(40);
+  expect(snap.chatShare).toBeLessThan(0.36);
 });
 
 test('il PCM della sessione ⚡ apre e chiude la bocca', async ({ page, browserName }) => {
