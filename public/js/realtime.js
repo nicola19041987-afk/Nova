@@ -78,6 +78,7 @@
     const fresh = !(s.playT > c.currentTime + 0.002), t = Math.max(c.currentTime + 0.025, s.playT || 0);
     if (fresh) { const g = o.g.gain; g.cancelScheduledValues(t); g.setValueAtTime(0, t); g.linearRampToValueAtTime(s.volume, t + 0.015); } // dissolvenza in entrata: niente click
     src.start(t); s.playT = t + n / RATE;
+    if (App.simli && App.simli.feedPcm24) App.simli.feedPcm24(buf);
     if (!s.env) s.env = [];
     s.env.push({ t0: t, t1: s.playT, rms, shape });
     const cut = c.currentTime - 0.25;

@@ -222,6 +222,11 @@ details.card summary{font-weight:600}
 #stage.call{background:#000}
 #stage.call .av-backdrop{left:0!important;top:0!important;width:100%!important;height:100%!important;border-radius:0!important}
 #stage.call #avatar-canvas{border-radius:0;box-shadow:none!important}
+#simli-video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center 18%;z-index:2;background:#111;pointer-events:none}
+#simli-video[hidden]{display:none!important}
+body.simli-on #avatar-canvas{visibility:hidden}
+body.solo-mode.in-call.simli-on #stage{flex:1 1 auto!important;min-height:46dvh!important;position:relative}
+body.solo-mode.in-call.simli-on #call-ui{position:absolute!important;inset:0!important;height:100%!important;background:linear-gradient(to bottom,rgba(11,20,26,.12),rgba(11,20,26,.55))}
 .call-ui{position:absolute;inset:0;z-index:5;display:flex;flex-direction:column;justify-content:space-between;pointer-events:auto;color:#fff;
   padding:calc(env(safe-area-inset-top) + 10px) calc(env(safe-area-inset-right) + 12px) calc(env(safe-area-inset-bottom) + 16px) calc(env(safe-area-inset-left) + 12px)}
 .call-top{display:flex;flex-direction:column;align-items:center;gap:2px;text-shadow:0 1px 6px #000c;pointer-events:none}

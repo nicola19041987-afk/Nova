@@ -52,6 +52,7 @@
     cancelAnimationFrame(raf); if (mode === 'voice') raf = requestAnimationFrame(portrait);
     requestAnimationFrame(() => App.fitFrame && App.fitFrame());
     if (on) { state(); App.chat.header && App.chat.header(); }
+    if (App.simli) { if (on && mode === 'video') App.simli.start(); else App.simli.stop(); }
   }
   // Ritratto rotondo: copiato a ogni fotogramma dal canvas dell'avatar (respiro, labiale, sguardo continuano);
   // l'alone pulsa con la voce. Il canvas grande resta dietro, sfocato, a tutto schermo.
@@ -136,6 +137,7 @@
     if (App.tts) App.tts.volume = 1;
     clearInterval(tick); clearInterval(warm); App.voice.cancel(); if (App.callMic) App.callMic.stop(); micMode = ''; badge('');
     if (rt) { App.rt.stop(); rt = false; } connecting = false; ui.classList.remove('rt');
+    if (App.simli) App.simli.stop();
     App.audio.releaseMic(); // v8.4.4: il microfono si chiude solo qui, riattaccando
     App.audio.callSession(false);
     const ch = App.current, secs = Math.round((Date.now() - t0) / 1000); // v8.4: registro chiamate (scheda Chiamate)

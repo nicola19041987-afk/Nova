@@ -218,7 +218,7 @@ app.use((req, res, next) => {
   res.setHeader('Referrer-Policy', 'no-referrer');
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Permissions-Policy', 'microphone=(self), camera=(self)');
-  res.setHeader('Content-Security-Policy', `default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; connect-src 'self' ${RT_ORIGIN}`);
+  res.setHeader('Content-Security-Policy', `default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; connect-src 'self' ${RT_ORIGIN} https://api.simli.ai wss://api.simli.ai stun:stun.l.google.com:19302`);
   next();
 });
 app.use(cookieParser());
@@ -1731,6 +1731,40 @@ app.post('/api/realtime/session', auth, requireActivated, requireKey, async (req
   } catch (e) { console.error('Errore AI tempo reale:', e.message); res.status(502).json({ error: 'Servizio voce in tempo reale non raggiungibile' }); }
 });
 // istruzioni aggiornate durante la chiamata (es. modalità adulti cambiata, nuovi ricordi): nessuna chiamata a xAI
+// Volto in tempo reale (Simli). La chiave resta sul server: al telefono arriva solo un token di pochi minuti.
+const SIMLI_API = 'https://api.simli.ai';
+const SIMLI_STOCK_FACE = 'bf13113a-355a-4d97-8b90-4edccd1da7b2';
+function simliFaceId() {
+  const id = String(process.env.SIMLI_FACE_ID || '').trim();
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id) ? id : SIMLI_STOCK_FACE;
+}
+app.post('/api/simli/session', auth, requireActivated, async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const key = String(process.env.SIMLI_API_KEY || '').trim();
+  if (!key) return res.status(503).json({ error: 'Simli non configurato', fallback: true });
+  try {
+    const headers = { 'x-simli-api-key': key };
+    const [tokenRes, iceRes] = await Promise.all([
+      fetch(`${SIMLI_API}/compose/token`, {
+        method: 'POST',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ faceId: simliFaceId(), handleSilence: true, maxSessionLength: 300, maxIdleTime: 90 }),
+        signal: AbortSignal.timeout(12000),
+      }),
+      fetch(`${SIMLI_API}/compose/ice`, { headers, signal: AbortSignal.timeout(12000) }),
+    ]);
+    if (!tokenRes.ok) { console.error('Simli token: HTTP', tokenRes.status); return res.status(502).json({ error: 'Sessione Simli non creata', fallback: true }); }
+    const j = await tokenRes.json().catch(() => ({}));
+    const session_token = j.session_token;
+    if (!session_token || typeof session_token !== 'string') return res.status(502).json({ error: 'Token Simli assente', fallback: true });
+    let iceServers = [{ urls: ['stun:stun.l.google.com:19302'] }];
+    if (iceRes.ok) { const ice = await iceRes.json().catch(() => null); if (Array.isArray(ice) && ice.length) iceServers = ice; }
+    res.json({ session_token, iceServers, fallback: false });
+  } catch (e) {
+    console.error('Simli non raggiungibile:', e.message);
+    res.status(502).json({ error: 'Simli non raggiungibile', fallback: true });
+  }
+});
 app.post('/api/realtime/instructions', auth, requireActivated, (req, res) => {
   const ch = getChars(req.user).find((c) => c.id === String(req.body.characterId || ''));
   if (!ch) return res.status(404).json({ error: 'Personaggio non trovato' });

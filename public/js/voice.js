@@ -130,6 +130,7 @@
     const t = c.currentTime + 0.02, end = t + buf.duration, gg = g.gain;
     gg.setValueAtTime(0, t); gg.linearRampToValueAtTime(vol, t + 0.012); gg.setValueAtTime(vol, Math.max(t + 0.013, end - 0.018)); gg.linearRampToValueAtTime(0, end);
     src.start(t);
+    if (App.simli && App.simli.feedBuffer) App.simli.feedBuffer(buf);
     const el = { get currentTime() { return Math.max(0, c.currentTime - t); }, paused: false, ended: false }; // per il labiale (come un <audio>)
     const h = { src, g, el, t0: t, stop() { if (el.ended) return; el.ended = true; const n = c.currentTime; try { gg.cancelScheduledValues(n); gg.setValueAtTime(gg.value, n); gg.linearRampToValueAtTime(0, n + 0.03); src.onended = null; src.stop(n + 0.035); } catch {} } };
     return h;
@@ -359,7 +360,7 @@
     streamStart() { if (!speakOn() || !NX.enabled()) return false; if (SS && (SS.speaking || SS.pending)) SS.cancel(); NX.begin(); return true; },
     streamFeed(delta) { NX.feed(delta); },
     streamEnd() { NX.end(); },
-    cancel() { NX.stop(); if (SS && (SS.speaking || SS.pending)) try { SS.cancel(); } catch {} }, // v8.4.5: niente cancel() a vuoto (in chiamata nessun tocco alla sintesi del telefono)
+    cancel() { NX.stop(); if (App.simli) App.simli.interrupt(); if (SS && (SS.speaking || SS.pending)) try { SS.cancel(); } catch {} }, // v8.4.5: niente cancel() a vuoto (in chiamata nessun tocco alla sintesi del telefono)
     engine: () => (NX.enabled() ? 'xai' : 'device'),
   };
   $('#mic-btn').addEventListener('click', () => (on ? App.voice.stop() : App.voice.start()));
