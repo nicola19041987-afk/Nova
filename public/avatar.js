@@ -6,6 +6,7 @@
  */
 (function () {
   const VOWEL_OPEN = { a: 1, à: 1, e: 0.7, è: 0.75, é: 0.7, o: 0.8, ò: 0.85, ó: 0.8, i: 0.45, ì: 0.45, u: 0.5, ù: 0.5 };
+  const VOWEL_WIDE = { a: 0.55, à: 0.52, e: 0.9, è: 0.86, é: 0.9, i: 0.94, ì: 0.94, o: 0.16, ò: 0.14, ó: 0.18, u: 0.1, ù: 0.12 };
   const CLOSERS = /[mbp]/i; // consonanti bilabiali: bocca chiusa
 
   // Stima i keyframe del labiale per una parola (visemi approssimati per sillaba)
@@ -19,9 +20,10 @@
     syl.forEach((s, i) => {
       const t = start + i * step;
       const vowel = (s.match(/[aeiouàèéìòóù]/) || ['a'])[0];
-      if (CLOSERS.test(s[0] || '')) kf.push({ t, v: 0.05 });
-      kf.push({ t: t + step * 0.35, v: VOWEL_OPEN[vowel] || 0.6 });
-      kf.push({ t: t + step * 0.9, v: 0.15 });
+      const wide = VOWEL_WIDE[vowel] == null ? 0.55 : VOWEL_WIDE[vowel];
+      if (CLOSERS.test(s[0] || '')) kf.push({ t, v: 0.05, w: wide });
+      kf.push({ t: t + step * 0.35, v: VOWEL_OPEN[vowel] || 0.6, w: wide });
+      kf.push({ t: t + step * 0.9, v: 0.12, w: wide });
     });
     kf.push({ t: start + dur + 40, v: 0 });
     return kf;
@@ -286,7 +288,7 @@
       const period = 155;
       const p = ((now - t0) % period) / period;
       const env = p < 0.42 ? p / 0.42 : Math.max(0, 1 - (p - 0.42) / 0.58);
-      const shapes = [0.55, 0.84, 0.2, 0.62, 0.8];
+      const shapes = [0.55, 0.9, 0.16, 0.58, 0.1]; // A, E, O, A, U
       this.vWide = shapes[Math.floor((now - t0) / period) % shapes.length];
       return 0.26 + 0.64 * env;
     }
@@ -320,9 +322,10 @@
         if (kf.length) {
           while (kf.length > 1 && kf[1].t <= now) kf.shift();
           const a = kf[0], b = kf[1];
-          if (!b) { if (a.t <= now) { this.kf = []; v = a.v; } else v = 0; }
+          const useW = (p) => { if (a && a.w != null) this.vWide = b && b.w != null ? a.w + (b.w - a.w) * p : a.w; };
+          if (!b) { if (a.t <= now) { useW(1); this.kf = []; v = a.v; } else v = 0; }
           else if (now < a.t) v = 0;
-          else v = a.v + (b.v - a.v) * ((now - a.t) / (b.t - a.t));
+          else { const p = (now - a.t) / (b.t - a.t); useW(p); v = a.v + (b.v - a.v) * p; }
         }
       }
       if (v > 0.06) { this._lipHeard = now; return v; }
@@ -412,10 +415,10 @@
       const ctx = this.ctx, S = VS; // spazio virtuale; la trasformazione porta tutto alle dimensioni reali del canvas
       const dt = Math.min(100, now - (this._last || now)); this._last = now;
       const kf = (a) => 1 - Math.pow(1 - a, dt / 16.67); // v8.4.1: smorzamenti indipendenti dal frame rate (uguali a 30, 60 o 120 Hz)
-      { const tg = this.target(now); this.mouth += (tg - this.mouth) * kf(tg > this.mouth ? 0.5 : 0.28); // apertura rapida, chiusura morbida
+      { const tg = this.target(now); const raw = (tg - this.mouth) * kf(tg > this.mouth ? 0.36 : 0.2); const cap = 0.16; this.mouth += Math.max(-cap * 0.75, Math.min(cap, raw)); // apertura morbida, mai a scatti
         // v8.4.5: parla ma la bocca resta chiusa (audio non analizzabile, es. iOS): passa al labiale stimato dal testo
         if (this.speaking && this._env) { if (tg > 0.05) this._openAt = now; else if (!this._simFb && this._spkText && now - Math.max(this._spkAt || 0, this._openAt || 0) > 900) { this._simFb = true; this._env = null; this.simulateText(this._spkText, 1); } } }
-      this.wide = (this.wide || 0.5) + (((this.speaking ? this.vWide : 0.5) ?? 0.5) - (this.wide || 0.5)) * kf(0.25); // forma della bocca interpolata
+      { const tw = ((this.speaking ? this.vWide : 0.5) ?? 0.5); const rawW = (tw - (this.wide || 0.5)) * kf(0.18); this.wide = (this.wide || 0.5) + Math.max(-0.12, Math.min(0.12, rawW)); } // O/U e E/I cambiano forma senza scatti
       this._dEff += (this.dist - this._dEff) * (1 - Math.exp(-dt / 260)); // distanza: avvicinamento/allontanamento morbido
       this._mh += (this.mouth - this._mh) * (1 - Math.exp(-dt / 140));
       // ritmo: se l'utente si muove a tempo, l'oscillazione segue il suo periodo (fase continua, niente scatti)
@@ -482,15 +485,25 @@
       const idleN = (Math.sin(now / 1730) * 0.5 + Math.sin(now / 2970 + 1.3) * 0.3 + Math.sin(now / 5310 + 2.1) * 0.2) * (this.speaking ? 0.6 : 1);
       const nodT = A_nod * 1.0 + idleN * 0.07 + this._mh * 0.16;
       { const K = 70, D = 2 * Math.sqrt(K) * 0.9, sd = dt / 1000; this._nodV += ((nodT - this._nod) * K - this._nodV * D) * sd; this._nod += this._nodV * sd; }
-      // battito di ciglia (in modalità sensuale: più lento, palpebre un po' abbassate)
-      // ammiccamenti variabili: durata 120–240 ms, a volte doppi o a metà; più frequenti mentre parla
-      // v8.4: ogni 2–6 s (a volte doppio); chiusura rapida (~150 ms) e riapertura più lenta (curva asimmetrica)
+      // Ammiccamento: chiusura e riapertura a curva, ogni 2–6 s, a volte doppio.
       if (now > this.nextBlink) {
-        this.blinkStart = now; this.blinkDur = 100 + Math.random() * 100; this.blinkAmp = 1; this.blinkDouble = 0;
-        this.nextBlink = now + 3000 + Math.random() * 1000; // ogni 3–4 s, 100–200 ms
+        const pair = this.blinkDouble === 1;
+        this.blinkStart = now; this.blinkDur = 160 + Math.random() * 70; this.blinkAmp = 1;
+        if (!pair && Math.random() < 0.28) {
+          this.blinkDouble = 1;
+          this.nextBlink = now + this.blinkDur + 70 + Math.random() * 90;
+        } else {
+          this.blinkDouble = 0;
+          this.nextBlink = now + 2000 + Math.random() * 4000;
+        }
       }
-      const bt = (now - this.blinkStart) / this.blinkDur, BC = 0.36;
-      let blink = bt < 0 || bt >= 1 ? 0 : (bt < BC ? Math.sin((bt / BC) * Math.PI / 2) ** 1.6 : 1 - ease((bt - BC) / (1 - BC))) * this.blinkAmp;
+      const bt = this.blinkDur > 0 ? (now - this.blinkStart) / this.blinkDur : 2;
+      const closeP = 0.34, holdP = 0.08;
+      let blink = 0;
+      if (bt >= 0 && bt < 1) {
+        const shaped = bt < closeP ? ease(bt / closeP) : bt < closeP + holdP ? 1 : 1 - ease((bt - closeP - holdP) / (1 - closeP - holdP));
+        blink = shaped * this.blinkAmp;
+      }
       // palpebre rilassate: a riposo a volte un filo abbassate (mai mentre parla con enfasi)
       if (now > (mc.nextLid || 0)) { mc.lidT = Math.random() < 0.45 ? 0 : 0.06 + Math.random() * 0.1; mc.nextLid = now + 3500 + Math.random() * 5500; }
       mc.lid = (mc.lid || 0) + (((this.speaking ? 0 : mc.lidT) || 0) - (mc.lid || 0)) * Math.min(1, dt / 700);
@@ -503,13 +516,13 @@
       // sguardo: saccadi rapide verso punti vicini, poi fissazione; con l'imitazione tende a guardare l'utente
       // v8.4: mentre parla guarda in camera (saccadi piccole); i grandi spostamenti di sguardo spesso portano un ammiccamento
       if (now > mc.nextSacc) {
-        const r = R ? 0.35 : this.speaking ? 0.28 : 1, ox = mc.gtx, oy = mc.gty;
-        mc.gtx = (Math.random() * 2 - 1) * r - (R ? R.yaw * 0.3 : 0); mc.gty = (Math.random() * 2 - 1) * 0.5 * r;
-        if (Math.random() < (this.speaking ? 0.6 : 0.35)) { mc.gtx = 0; mc.gty = 0; }
-        if (Math.hypot(mc.gtx - ox, mc.gty - oy) > 0.55 && Math.random() < 0.45 && now - this.blinkStart > 700) this.nextBlink = now + 20;
-        mc.nextSacc = now + (this.speaking ? 900 : 700) + Math.random() * 2600;
+        const r = R ? 0.22 : this.speaking ? 0.2 : 0.34, ox = mc.gtx, oy = mc.gty;
+        mc.gtx = (Math.random() * 2 - 1) * r - (R ? R.yaw * 0.15 : 0); mc.gty = (Math.random() * 2 - 1) * 0.4 * r;
+        if (Math.random() < (this.speaking ? 0.7 : 0.5)) { mc.gtx *= 0.2; mc.gty *= 0.2; }
+        if (Math.hypot(mc.gtx - ox, mc.gty - oy) > 0.26 && Math.random() < 0.3 && now - this.blinkStart > 700) this.nextBlink = now + 30;
+        mc.nextSacc = now + (this.speaking ? 1200 : 1600) + Math.random() * 2400;
       }
-      if (now > (mc.nextMicro || 0)) { mc.mx = (Math.random() * 2 - 1) * 0.07; mc.my = (Math.random() * 2 - 1) * 0.05; mc.nextMicro = now + 280 + Math.random() * 420; } // micro-saccadi
+      if (now > (mc.nextMicro || 0)) { mc.mx = (Math.random() * 2 - 1) * 0.035; mc.my = (Math.random() * 2 - 1) * 0.025; mc.nextMicro = now + 340 + Math.random() * 520; }
       const sk = Math.min(1, dt / 30); mc.gx += (mc.gtx + (mc.mx || 0) - mc.gx) * sk; mc.gy += (mc.gty + (mc.my || 0) - mc.gy) * sk;
       // sorrisi accennati spontanei (più spesso in modalità sensuale)
       if (now > mc.nextSmile) { mc.smileT = 0.2 + Math.random() * 0.25; mc.smileUntil = now + 1200 + Math.random() * 1800; mc.nextSmile = now + (sens ? 6000 : 9000) + Math.random() * 12000; }
@@ -846,13 +859,10 @@
       // Parlando, mascella e labbra si aprono in modo simmetrico attorno alla bocca vera, lungo la sua linea
       // (non la linea degli occhi). Nessuna rotazione solo della bocca: se la testa è inclinata, la bocca resta con il viso.
       if (open > 0.02) paintMouth(ctx, img, lm, open, Math.max(0, Math.min(1, (this.wide ?? 0.5) + smile * 0.06)));
-      const gxp = mc.gx * F * 0.0045, gyp = mc.gy * F * 0.0025, bup = mc.brow * F * 0.007, px = F * 0.0006;
+      const gxp = mc.gx * EW * 0.1, gyp = mc.gy * Math.max(EH, EW * 0.2) * 0.14, bup = mc.brow * F * 0.007, px = F * 0.0006;
+      const roll = Math.atan2(lm.eyeR.y - lm.eyeL.y, lm.eyeR.x - lm.eyeL.x);
       [lm.eyeL, lm.eyeR].forEach((e, ei) => {
-        if (Math.abs(gxp) > px || Math.abs(gyp) > px) {
-          const w = EW * 1.04, h = Math.max(EH * 1.4, EW * 0.45), b = F * 0.006;
-          ctx.save(); ctx.beginPath(); ctx.ellipse(e.x * S, e.y * S, w / 2, h / 2, 0, 0, Math.PI * 2); ctx.clip();
-          ctx.translate(gxp, gyp); drawCover(ctx, img, S, { sx: e.x * S - w / 2 - b, sy: e.y * S - h / 2 - b, sw: w + 2 * b, sh: h + 2 * b }); ctx.restore();
-        }
+        if ((Math.abs(gxp) > px || Math.abs(gyp) > px) && e) paintGaze(ctx, img, e.x * S, e.y * S, roll, EW * 0.55, Math.max(EH * 1.15, EW * 0.22), gxp, gyp);
         if (bup > px && lm.browL && lm.browR) {
           const br = ei ? lm.browR : lm.browL; // v8: posizione vera del sopracciglio, se rilevata
           const w = Math.max(F * 0.1, EW * 1.6), h = w * 0.37, cx = br ? br.x * S : e.x * S, cy = br ? br.y * S : e.y * S - F * 0.075; // sopra la palpebra, senza toccare l'occhio
@@ -860,50 +870,7 @@
           ctx.translate(0, -bup); drawCover(ctx, img, S, { sx: cx - w / 2, sy: cy - h / 2, sw: w, sh: h + bup + F * 0.006 }); ctx.restore();
         }
       });
-      if (blink > 0.035) {
-        // v8.4: palpebra superiore vera: la pelle sopra l'occhio (dalla foto) scende seguendo la forma dell'occhio,
-        // con ombra sul bordo e ciglia; inclinata come la linea degli occhi. Tutto ancorato ai punti del viso.
-        const roll = Math.atan2(lm.eyeR.y - lm.eyeL.y, lm.eyeR.x - lm.eyeL.x);
-        [lm.eyeL, lm.eyeR].forEach((e, i) => {
-          const ex = e.x * S, ey = e.y * S, hw = EW * 0.6, eh = Math.max(EH * 0.62, EW * 0.16), b = Math.min(1, blink);
-          const up = (t) => ey - eh * Math.sqrt(Math.max(0, 1 - t * t)) * (1 - 0.12 * t * (i ? -1 : 1)); // bordo superiore (un po' asimmetrico)
-          const lo = (t) => ey + eh * 0.72 * Math.sqrt(Math.max(0, 1 - t * t));
-          const edge = (t) => up(t) + (lo(t) - up(t)) * b, skin = eh * 1.5, N = 14;
-          ctx.save(); ctx.translate(ex, ey); ctx.rotate(roll); ctx.translate(-ex, -ey);
-          ctx.beginPath(); ctx.moveTo(ex - hw * 1.08, ey);
-          for (let k = 0; k <= N; k++) { const t = -1 + (2 * k) / N; ctx.lineTo(ex + t * hw * 1.04, up(t) - skin * Math.sqrt(Math.max(0, 1 - t * t)) * 0.9); }
-          ctx.lineTo(ex + hw * 1.08, ey);
-          for (let k = N; k >= 0; k--) { const t = -1 + (2 * k) / N; ctx.lineTo(ex + t * hw, Math.max(edge(t), up(t))); }
-          ctx.closePath(); ctx.clip();
-          // pelle della palpebra: la fascia sopra l'occhio, allungata verso il basso fino al bordo
-          const sy0 = ey - eh - skin, sh0 = skin, dh = skin + eh * 1.72 * b + eh * 0.12 * b;
-          if (img.naturalWidth) { const sq = Math.min(img.naturalWidth, img.naturalHeight), k = sq / S, ox = (img.naturalWidth - sq) / 2, oy = (img.naturalHeight - sq) / 2;
-            ctx.drawImage(img, ox + (ex - hw * 1.1) * k, oy + sy0 * k, hw * 2.2 * k, sh0 * k, ex - hw * 1.1, sy0, hw * 2.2, dh); }
-          const mm = /^rgb\((\d+),(\d+),(\d+)\)$/.exec(String(lids && lids[i]).replace(/\s/g, ''));
-          const rgb = mm ? `${mm[1]},${mm[2]},${mm[3]}` : '200,150,150';
-          // un velo del colore della pelle (uniforma) e ombra verso il bordo della palpebra
-          const g = ctx.createLinearGradient(0, sy0, 0, ey + eh);
-          g.addColorStop(0, `rgba(${rgb},0)`); g.addColorStop(0.45, `rgba(${rgb},${0.4 * b})`); g.addColorStop(1, `rgba(${rgb},${0.55 * b})`);
-          ctx.fillStyle = g; ctx.fillRect(ex - hw * 1.2, sy0, hw * 2.4, ey + eh * 2 - sy0);
-          ctx.restore();
-          // piega e ciglia sul bordo
-          ctx.save(); ctx.translate(ex, ey); ctx.rotate(roll); ctx.translate(-ex, -ey);
-          ctx.lineCap = 'round';
-          ctx.strokeStyle = `rgba(60,30,30,${0.18 * b})`; ctx.lineWidth = Math.max(F * 0.0015, eh * 0.12);
-          ctx.beginPath(); for (let k = 2; k <= N - 2; k++) { const t = -1 + (2 * k) / N, y = edge(t) - eh * 0.35 * Math.sqrt(1 - t * t); k === 2 ? ctx.moveTo(ex + t * hw * 0.95, y) : ctx.lineTo(ex + t * hw * 0.95, y); } ctx.stroke();
-          const la = Math.min(0.9, 0.25 + b * 0.75), outer = i ? 1 : -1; // le ciglia si infittiscono verso l'angolo esterno
-          const pathE = (t0, t1) => { ctx.beginPath(); for (let k = 0; k <= 16; k++) { const t = t0 + (t1 - t0) * k / 16, x = ex + t * hw * 0.98, y = Math.max(edge(t), up(t)) + eh * 0.03; k ? ctx.lineTo(x, y) : ctx.moveTo(x, y); } };
-          ctx.lineJoin = 'round';
-          ctx.strokeStyle = `rgba(28,16,16,${la * 0.85})`; ctx.lineWidth = Math.max(F * 0.0012, eh * 0.1); pathE(-0.92, 0.92); ctx.stroke();
-          ctx.strokeStyle = `rgba(22,12,12,${la * 0.7})`; ctx.lineWidth = Math.max(F * 0.0016, eh * 0.15); outer > 0 ? pathE(0.25, 0.97) : pathE(-0.97, -0.25); ctx.stroke(); // angolo esterno più folto
-          if (b > 0.6) { // ciglia chiuse: piccole punte verso il basso, sottili e sfumate
-            ctx.lineWidth = Math.max(F * 0.0007, eh * 0.04); ctx.strokeStyle = `rgba(30,18,18,${(b - 0.6) * 1.2})`;
-            for (let k = 2; k < N - 1; k++) { const t = -1 + (2 * k) / N, x = ex + t * hw * 0.98, y = edge(t) + eh * 0.03, w8 = 0.5 + 0.7 * Math.max(0, t * outer);
-              ctx.beginPath(); ctx.moveTo(x, y); ctx.quadraticCurveTo(x + outer * eh * 0.06, y + eh * 0.16 * w8, x + (t * 0.12 + outer * 0.1) * eh * w8, y + eh * 0.24 * w8); ctx.stroke(); }
-          }
-          ctx.restore();
-        });
-      }
+      if (blink > 0.04) paintLids(ctx, img, lm, blink, fs);
     }
 
     // ---- scena cinematografica: figura intera in una stanza ----
@@ -1011,24 +978,122 @@
     if (sw <= 0 || sh <= 0 || dw <= 0 || dh <= 0) return;
     ctx.drawImage(img, ox + sx * k, oy + sy * k, sw * k, sh * k, dx, dy, dw, dh);
   }
-  // Apertura sulla asse della bocca: labbra che si separano, interno sfumato, bordi morbidi.
-  // L'ampiezza è una frazione della larghezza delle labbra (non un rettangolo fisso).
+  // Apertura sulla linea delle labbra. O/U più rotonde e strette, E/I più larghe e piatte, A più alta.
+  // Angoli fermi, mento che segue, a riposo non si disegna nulla. L'interno ha un accenno di denti, non un buco nero.
   const mouthBuf = { src: null, out: null };
+  const eyeBuf = { gaze: null, lid: null };
+  function bufCanvas(slot, w, h) {
+    const c = eyeBuf[slot];
+    if (c && c.width === w && c.height === h) return c;
+    const n = document.createElement('canvas'); n.width = w; n.height = h;
+    eyeBuf[slot] = n; return n;
+  }
+  function paintGaze(ctx, img, ex, ey, roll, hw, hh, dx, dy) {
+    if (!img.naturalWidth || Math.hypot(dx, dy) < 0.35) return;
+    const pad = 2, tw = Math.max(4, Math.ceil(hw * 2 + pad * 2)), th = Math.max(4, Math.ceil(hh * 2 + pad * 2));
+    const buf = bufCanvas('gaze', tw, th), g = buf.getContext('2d');
+    const side = Math.min(img.naturalWidth, img.naturalHeight);
+    const iox = (img.naturalWidth - side) / 2, ioy = (img.naturalHeight - side) / 2;
+    g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, tw, th);
+    g.save();
+    g.translate(tw / 2 + dx, th / 2 + dy);
+    g.rotate(-roll); g.translate(-ex, -ey);
+    const gk = VS / side;
+    g.drawImage(img, -iox * gk, -ioy * gk, img.naturalWidth * gk, img.naturalHeight * gk);
+    g.restore();
+    g.globalCompositeOperation = 'destination-in';
+    g.save(); g.translate(tw / 2, th / 2); g.rotate(roll); g.scale(hw, hh);
+    const rad = g.createRadialGradient(0, 0, 0.62, 0, 0, 1);
+    rad.addColorStop(0, 'rgba(0,0,0,1)'); rad.addColorStop(0.78, 'rgba(0,0,0,1)'); rad.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = rad; g.fillRect(-2, -2, 4, 4); g.restore();
+    g.globalCompositeOperation = 'source-over';
+    ctx.save(); ctx.translate(ex, ey); ctx.rotate(roll); ctx.drawImage(buf, -tw / 2, -th / 2); ctx.restore();
+  }
+  function paintLids(ctx, img, lm, blink, fs) {
+    const b = Math.max(0, Math.min(1, blink));
+    if (b < 0.04 || !img.naturalWidth || !lm.eyeL || !lm.eyeR) return;
+    const S = VS, roll = Math.atan2(lm.eyeR.y - lm.eyeL.y, lm.eyeR.x - lm.eyeL.x);
+    const F = S * (fs || 1);
+    const EW = lm.eyeW ? lm.eyeW * S : F * 0.072;
+    const EH = lm.eyeH ? Math.max(lm.eyeH * S, EW * 0.22) : F * 0.026;
+    const side = Math.min(img.naturalWidth, img.naturalHeight);
+    const iox = (img.naturalWidth - side) / 2, ioy = (img.naturalHeight - side) / 2;
+    [lm.eyeL, lm.eyeR].forEach((e) => {
+      const ex = e.x * S, ey = e.y * S;
+      const hw = EW * 0.5, eh = Math.max(EH * 0.72, EW * 0.16), skin = eh * 1.7, pad = 2;
+      const tw = Math.max(8, Math.ceil(hw * 2.5 + pad * 2)), th = Math.max(8, Math.ceil(skin + eh * 2.6 + pad * 2));
+      const buf = bufCanvas('lid', tw, th), g = buf.getContext('2d');
+      const ox = tw / 2, oy = pad + skin;
+      g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, tw, th);
+      g.save(); g.translate(ox, oy); g.rotate(-roll); g.translate(-ex, -ey);
+      const k = S / side;
+      g.drawImage(img, -iox * k, -ioy * k, img.naturalWidth * k, img.naturalHeight * k);
+      g.restore();
+      const src = g.getImageData(0, 0, tw, th);
+      const out = g.createImageData(tw, th);
+      const s = src.data, d = out.data;
+      const sample = (x, y) => {
+        if (x < 0 || y < 0 || x >= tw || y >= th) return null;
+        const i = ((y | 0) * tw + (x | 0)) * 4;
+        if (s[i + 3] < 16) return null;
+        return [s[i], s[i + 1], s[i + 2], s[i + 3]];
+      };
+      for (let x = 0; x < tw; x++) {
+        const t = (x - ox) / hw;
+        if (t < -1.08 || t > 1.08) continue;
+        const tt = Math.max(-1, Math.min(1, t));
+        const arc = Math.sqrt(Math.max(0, 1 - tt * tt));
+        const upper = oy - eh * arc, lower = oy + eh * 1.05 * arc;
+        const edge = upper + (lower - upper) * Math.pow(b, 0.72);
+        const fadeX = Math.max(0, Math.min(1, (1.02 - Math.abs(t)) / 0.16));
+        const s0 = upper - skin * 0.92, s1 = upper + eh * 0.08;
+        const rows = Math.max(1, s1 - s0), dest0 = s0, dest1 = edge;
+        const yEnd = Math.min(th - 1, Math.ceil(edge + eh * 0.2));
+        for (let y = Math.max(0, Math.floor(dest0)); y <= yEnd; y++) {
+          const u = (y - dest0) / Math.max(1, dest1 - dest0);
+          if (u < 0.32) continue;
+          let a = fadeX;
+          if (u > 1) a *= Math.max(0, 1 - (y - edge) / (eh * 0.22));
+          else if (u < 0.58) a *= (u - 0.32) / 0.26;
+          if (a < 0.02) continue;
+          const sy = s0 + Math.max(0, Math.min(rows - 0.01, Math.min(u, 1) * rows));
+          const px = sample(x, sy);
+          if (!px) continue;
+          const shade = u > 0.78 && u < 1.12 ? ((Math.min(u, 1) - 0.78) / 0.22) * 0.16 * b : 0;
+          const i = (y * tw + x) * 4;
+          d[i] = px[0] * (1 - shade); d[i + 1] = px[1] * (1 - shade); d[i + 2] = px[2] * (1 - shade);
+          d[i + 3] = Math.round(a * px[3]);
+        }
+      }
+      g.putImageData(out, 0, 0);
+      ctx.save(); ctx.translate(ex, ey); ctx.rotate(roll); ctx.drawImage(buf, -ox, -oy); ctx.restore();
+    });
+  }
   function paintMouth(ctx, img, lm, open, wide) {
     const S = VS, L = lm && lm.mouthL, R = lm && lm.mouthR;
-    if (!L || !R || !(open > 0) || !img.naturalWidth) return;
-    const cx = (L.x + R.x) / 2 * S, cy = (L.y + R.y) / 2 * S;
+    if (!L || !R || !(open > 0.02) || !img.naturalWidth) return;
+    const openAmt = Math.max(0, Math.min(1, open));
+    const w = Math.max(0, Math.min(1, wide == null ? 0.55 : wide));
+    const round = 1 - w;
+    const aShape = 1 - Math.min(1, Math.abs(w - 0.55) / 0.55);
     const vx = (R.x - L.x) * S, vy = (R.y - L.y) * S;
     const len = Math.max(S * 0.04, Math.hypot(vx, vy));
     const lip = Math.atan2(vy, vx);
-    const wF = 1 + (Math.max(0, Math.min(1, wide || 0.5)) - 0.5) * 0.08;
-    const half = len * 0.52 * wF;
-    const jaw = Math.min(open * len * 0.13, len * 0.16);
-    const above = len * 0.16, below = len * 0.22;
-    const cols = 24, colW = (half * 2) / cols, pad = 4;
+    const ax = L.x * S, ay = L.y * S;
+    const px = (lm.mouth && lm.mouth.x != null ? lm.mouth.x : (L.x + R.x) / 2) * S;
+    const py = (lm.mouth && lm.mouth.y != null ? lm.mouth.y : (L.y + R.y) / 2) * S;
+    const along = Math.max(0.35, Math.min(0.65, ((px - ax) * vx + (py - ay) * vy) / (len * len)));
+    const cx = ax + vx * along, cy = ay + vy * along;
+    const half = len * (0.28 + w * 0.1);
+    const heightK = 0.58 + aShape * 0.42 + round * 0.16;
+    const jaw = Math.min(openAmt * len * 0.1 * heightK, len * 0.13);
+    const lift = jaw * (0.26 + round * 0.1);
+    if (jaw < 0.4) return;
+    const above = len * 0.2, below = len * 0.36;
+    const cols = 40, colW = (half * 2) / cols, pad = 4;
     const tw = Math.max(8, Math.ceil(half * 2 + pad * 2));
     const th = Math.max(8, Math.ceil(above + below + pad * 2));
-    const oh = Math.ceil(th + jaw + 6);
+    const oh = Math.ceil(th + jaw + 8);
     if (!mouthBuf.src || mouthBuf.src.width !== tw || mouthBuf.src.height !== th) {
       mouthBuf.src = document.createElement('canvas'); mouthBuf.src.width = tw; mouthBuf.src.height = th;
     }
@@ -1039,48 +1104,62 @@
     const iox = (img.naturalWidth - side) / 2, ioy = (img.naturalHeight - side) / 2;
     const ts = mouthBuf.src.getContext('2d');
     ts.setTransform(1, 0, 0, 1, 0, 0); ts.clearRect(0, 0, tw, th);
-    ts.save();
-    ts.translate(tw / 2, pad + above);
-    ts.rotate(-lip);
-    ts.translate(-cx, -cy);
-    ts.drawImage(img, iox, ioy, side, side, 0, 0, S, S);
-    ts.restore();
+    ts.save(); ts.translate(tw / 2, pad + above); ts.rotate(-lip); ts.translate(-cx, -cy);
+    ts.drawImage(img, iox, ioy, side, side, 0, 0, S, S); ts.restore();
     const o = mouthBuf.out.getContext('2d');
     o.setTransform(1, 0, 0, 1, 0, 0); o.clearRect(0, 0, tw, oh);
     const mx = tw / 2, my = pad + above;
-    const ink = ts.getImageData(Math.max(0, Math.min(tw - 1, Math.round(mx))), Math.max(0, Math.min(th - 1, Math.round(my))), 1, 1).data;
-    const dr = Math.round(ink[0] * 0.42), dg = Math.round(ink[1] * 0.28), db = Math.round(ink[2] * 0.3);
+    const ink = ts.getImageData(Math.max(0, Math.min(tw - 1, Math.round(mx))), Math.max(0, Math.min(th - 1, Math.round(my - 1))), 1, 1).data;
+    const tooth = [Math.round(ink[0] * 0.28 + 228), Math.round(ink[1] * 0.28 + 210), Math.round(ink[2] * 0.28 + 196)];
+    const cave = [Math.round(ink[0] * 0.22 + 64), Math.round(ink[1] * 0.16 + 26), Math.round(ink[2] * 0.16 + 32)];
+    const lipc = [ink[0], ink[1], ink[2]];
     for (let i = 0; i < cols; i++) {
       const u = ((i + 0.5) / cols) * 2 - 1;
-      const att = Math.pow(Math.max(0, 1 - u * u), 1.2);
+      const att = Math.pow(Math.max(0, 1 - u * u), 0.9 + round * 0.65);
       const x = mx - half + i * colW;
-      const drop = jaw * att, up = drop * 0.34;
-      if (drop < 0.35) continue;
+      const drop = jaw * att, up = lift * att;
+      if (drop < 0.4) continue;
+      const gapTop = my - up, gapBot = my + drop, gapH = Math.max(1, gapBot - gapTop);
+      o.save(); o.globalAlpha = 0.9;
+      o.drawImage(mouthBuf.src, x, my - 1.2, colW + 0.8, 2.4, x, gapTop, colW + 0.8, gapH * 0.72);
+      o.restore();
+      const cg = o.createLinearGradient(0, gapTop, 0, gapBot);
+      cg.addColorStop(0, `rgba(${cave[0]},${cave[1]},${cave[2]},0)`);
+      cg.addColorStop(0.4, `rgba(${cave[0]},${cave[1]},${cave[2]},${(0.42 * att).toFixed(3)})`);
+      cg.addColorStop(1, `rgba(${cave[0]},${cave[1]},${cave[2]},${(0.08 * att).toFixed(3)})`);
+      o.fillStyle = cg; o.fillRect(x, gapTop, colW + 0.8, gapH);
+      if (openAmt > 0.2 && att > 0.25) {
+        const teethH = Math.max(1.2, gapH * (0.16 + aShape * 0.08 + round * 0.06));
+        const tg = o.createLinearGradient(0, gapTop, 0, gapTop + teethH);
+        tg.addColorStop(0, `rgba(${tooth[0]},${tooth[1]},${tooth[2]},0)`);
+        tg.addColorStop(0.45, `rgba(${tooth[0]},${tooth[1]},${tooth[2]},${(0.62 * att).toFixed(3)})`);
+        tg.addColorStop(1, `rgba(${tooth[0]},${tooth[1]},${tooth[2]},0)`);
+        o.fillStyle = tg; o.fillRect(x, gapTop, colW + 0.8, teethH);
+      }
       o.drawImage(mouthBuf.src, x, my - above, colW + 0.8, above, x, my - above - up, colW + 0.8, above);
-      o.drawImage(mouthBuf.src, x, my + 0.4, colW + 0.8, below, x, my + drop, colW + 0.8, below);
-      const g = o.createLinearGradient(0, my - up, 0, my + drop);
-      g.addColorStop(0, `rgba(${dr},${dg},${db},0)`);
-      g.addColorStop(0.42, `rgba(${dr},${dg},${db},${(0.22 * att).toFixed(3)})`);
-      g.addColorStop(0.62, `rgba(${Math.round(dr * 0.7)},${Math.round(dg * 0.65)},${Math.round(db * 0.65)},${(0.38 * att).toFixed(3)})`);
-      g.addColorStop(1, `rgba(${dr},${dg},${db},0)`);
-      o.fillStyle = g;
-      o.fillRect(x, my - up, colW + 0.8, drop + up);
+      o.drawImage(mouthBuf.src, x, my + 0.6, colW + 0.8, below, x, my + drop, colW + 0.8, below);
+      const soft = Math.max(1.4, drop * 0.22);
+      o.save(); o.globalCompositeOperation = 'destination-out';
+      const sg = o.createLinearGradient(0, my + drop, 0, my + drop + soft);
+      sg.addColorStop(0, 'rgba(0,0,0,0.72)'); sg.addColorStop(1, 'rgba(0,0,0,0)');
+      o.fillStyle = sg; o.fillRect(x, my + drop, colW + 0.8, soft);
+      const ug = o.createLinearGradient(0, my - up - soft * 0.6, 0, my - up);
+      ug.addColorStop(0, 'rgba(0,0,0,0)'); ug.addColorStop(1, 'rgba(0,0,0,0.45)');
+      o.fillStyle = ug; o.fillRect(x, my - up - soft * 0.6, colW + 0.8, soft * 0.6);
+      o.restore();
+      const blend = o.createLinearGradient(0, my + drop, 0, my + drop + soft);
+      blend.addColorStop(0, `rgba(${lipc[0]},${lipc[1]},${lipc[2]},${(0.28 * att).toFixed(3)})`);
+      blend.addColorStop(1, `rgba(${lipc[0]},${lipc[1]},${lipc[2]},0)`);
+      o.fillStyle = blend; o.fillRect(x, my + drop, colW + 0.8, soft);
     }
     o.globalCompositeOperation = 'destination-in';
     const fade = o.createLinearGradient(mx - half, 0, mx + half, 0);
-    fade.addColorStop(0, 'rgba(0,0,0,0)');
-    fade.addColorStop(0.16, 'rgba(0,0,0,1)');
-    fade.addColorStop(0.84, 'rgba(0,0,0,1)');
-    fade.addColorStop(1, 'rgba(0,0,0,0)');
-    o.fillStyle = fade;
-    o.fillRect(0, 0, tw, oh);
+    fade.addColorStop(0, 'rgba(0,0,0,0)'); fade.addColorStop(0.22, 'rgba(0,0,0,1)');
+    fade.addColorStop(0.78, 'rgba(0,0,0,1)'); fade.addColorStop(1, 'rgba(0,0,0,0)');
+    o.fillStyle = fade; o.fillRect(0, 0, tw, oh);
     o.globalCompositeOperation = 'source-over';
-    ctx.save();
-    ctx.translate(cx, cy);
-    ctx.rotate(lip);
-    ctx.translate(-tw / 2, -(pad + above));
-    ctx.drawImage(mouthBuf.out, 0, 0);
-    ctx.restore();
+    ctx.save(); ctx.translate(cx, cy); ctx.rotate(lip); ctx.translate(-tw / 2, -(pad + above));
+    ctx.drawImage(mouthBuf.out, 0, 0); ctx.restore();
   }
 
   // Editor dei punti del viso: trascina 👁 👁 👄
