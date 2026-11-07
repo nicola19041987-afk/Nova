@@ -60,6 +60,63 @@ test('chiavi di soli spazi contano come assenti: Simli torna alla foto e xAI usa
   }
 });
 
+test('la chiave Simli si salva, lo stato non la mostra, e la sessione la usa se l’ambiente è vuoto', async ({ browserName }) => {
+  test.skip(browserName === 'webkit', 'stesso server del test Chromium: il limite PIN è per dispositivo');
+  test.setTimeout(40000);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nova-simli-key-'));
+  const port = 22000 + Math.floor(Math.random() * 20000);
+  const secret = 'simli-secret-not-in-json-9f3a';
+  const face = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+  const child = spawn(process.execPath, ['server.js'], {
+    cwd: ROOT,
+    env: { ...process.env, DATA_DIR: dir, PORT: String(port), SIMLI_API_KEY: '   ', SIMLI_FACE_ID: '  ' },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  let log = '';
+  child.stdout.on('data', (b) => { log += b; });
+  child.stderr.on('data', (b) => { log += b; });
+  const api = await apiRequest.newContext({ baseURL: `http://127.0.0.1:${port}` });
+  try {
+    const ready = Date.now();
+    while (!log.includes('App privata avviata')) {
+      if (child.exitCode != null) throw new Error(log || 'server spento');
+      if (Date.now() - ready > 15000) throw new Error(log || 'avvio lento');
+      await new Promise((ok) => setTimeout(ok, 50));
+    }
+    const anon = await api.get('/api/simli/key/status');
+    expect(anon.status()).toBe(401);
+    const pin = await api.post('/api/pin/setup', { data: { user: 'nicola', pin: '1357' }, headers: HEAD });
+    expect(pin.ok(), await pin.text()).toBeTruthy();
+    const before = await (await api.get('/api/simli/key/status')).json();
+    expect(before).toEqual({ configured: false, fromEnv: false, stored: false });
+    const none = await api.post('/api/simli/session', { headers: HEAD, data: {} });
+    expect(none.status()).toBe(503);
+    expect((await none.json()).fallback).toBe(true);
+    const bad = await api.post('/api/simli/key', { headers: HEAD, data: { key: secret, faceId: 'nope' } });
+    expect(bad.status()).toBe(400);
+    const saved = await api.post('/api/simli/key', { headers: HEAD, data: { key: secret, faceId: face } });
+    const savedText = await saved.text();
+    expect(saved.ok(), savedText).toBeTruthy();
+    expect(savedText).not.toContain(secret);
+    const statusRes = await api.get('/api/simli/key/status');
+    const statusText = await statusRes.text();
+    expect(statusText).not.toContain(secret);
+    expect(JSON.parse(statusText)).toEqual({ configured: true, fromEnv: false, stored: true });
+    const onDisk = JSON.parse(fs.readFileSync(path.join(dir, 'server-simli-key.json'), 'utf8'));
+    expect(onDisk.key).toBe(secret);
+    expect(onDisk.faceId).toBe(face);
+    const session = await api.post('/api/simli/session', { headers: HEAD, data: {} });
+    expect(session.status()).not.toBe(503);
+    const sessionText = await session.text();
+    expect(sessionText).not.toContain(secret);
+    expect(sessionText).not.toMatch(/x-simli-api-key|SIMLI_API_KEY/i);
+    expect(log).not.toContain(secret);
+  } finally {
+    await api.dispose();
+    child.kill();
+  }
+});
+
 test('la videochiamata usa Simli se il token c’è e torna alla foto se manca', async ({ page }) => {
   await page.addInitScript(() => {
     if (navigator.serviceWorker) navigator.serviceWorker.register = () => new Promise(() => {});

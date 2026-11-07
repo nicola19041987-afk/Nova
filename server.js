@@ -92,6 +92,32 @@ function setServerAiKey(key) {
   if (!k || k.length > 300 || /\s/.test(k)) throw Object.assign(new Error('Chiave non valida'), { status: 400 });
   writeJSON(SERVER_KEY_FILE(), { key: k, at: new Date().toISOString() });
 }
+const SERVER_SIMLI_FILE = () => path.join(DATA_DIR, 'server-simli-key.json');
+const SIMLI_FACE_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function readSimliFile() {
+  try {
+    const j = readJSON(SERVER_SIMLI_FILE(), null);
+    if (!j || typeof j !== 'object') return { key: '', faceId: '' };
+    return { key: String(j.key || '').trim(), faceId: String(j.faceId || '').trim() };
+  } catch { return { key: '', faceId: '' }; }
+}
+function getSimliKey() {
+  const env = envSecret('SIMLI_API_KEY');
+  if (env) return env;
+  return readSimliFile().key;
+}
+function setSimliKey(key, faceId) {
+  const k = String(key || '').trim();
+  if (!k || k.length > 400 || /\s/.test(k)) throw Object.assign(new Error('Chiave non valida'), { status: 400 });
+  const prev = readSimliFile();
+  let face = prev.faceId;
+  if (faceId !== undefined) {
+    const f = String(faceId == null ? '' : faceId).trim();
+    if (f && !SIMLI_FACE_RE.test(f)) throw Object.assign(new Error('Id volto non valido'), { status: 400 });
+    face = f;
+  }
+  writeJSON(SERVER_SIMLI_FILE(), { key: k, faceId: face, at: new Date().toISOString() });
+}
 
 const USER_ALIASES = { nico: 'nicola', nicola: 'nicola', luisa: 'luisa' };
 // Facoltativo: se impostato, serve anche questo codice per creare il PIN la prima volta.
@@ -1742,12 +1768,33 @@ app.post('/api/realtime/session', auth, requireActivated, requireKey, async (req
 const SIMLI_API = 'https://api.simli.ai';
 const SIMLI_STOCK_FACE = 'bf13113a-355a-4d97-8b90-4edccd1da7b2';
 function simliFaceId() {
-  const id = String(process.env.SIMLI_FACE_ID || '').trim();
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id) ? id : SIMLI_STOCK_FACE;
+  const env = envSecret('SIMLI_FACE_ID');
+  if (SIMLI_FACE_RE.test(env)) return env;
+  const stored = readSimliFile().faceId;
+  return SIMLI_FACE_RE.test(stored) ? stored : SIMLI_STOCK_FACE;
 }
+function simliStatus() {
+  const fromEnv = !!envSecret('SIMLI_API_KEY');
+  const stored = !!readSimliFile().key;
+  return { configured: fromEnv || stored, fromEnv, stored };
+}
+app.post('/api/simli/key', auth, (req, res) => {
+  if (!isAdmin(req.user)) return res.status(403).json({ error: ADMIN_MSG, code: 'ADMIN_ONLY' });
+  res.setHeader('Cache-Control', 'no-store');
+  try {
+    const body = req.body || {};
+    setSimliKey(body.key, Object.prototype.hasOwnProperty.call(body, 'faceId') ? body.faceId : undefined);
+    res.json({ ok: true, ...simliStatus() });
+  } catch (e) { res.status(e.status || 400).json({ error: e.message || 'Chiave non valida' }); }
+});
+app.get('/api/simli/key/status', auth, (req, res) => {
+  if (!isAdmin(req.user)) return res.status(403).json({ error: ADMIN_MSG, code: 'ADMIN_ONLY' });
+  res.setHeader('Cache-Control', 'no-store');
+  res.json(simliStatus());
+});
 app.post('/api/simli/session', auth, requireActivated, async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
-  const key = envSecret('SIMLI_API_KEY');
+  const key = getSimliKey();
   if (!key) return res.status(503).json({ error: 'Simli non configurato', fallback: true });
   try {
     const headers = { 'x-simli-api-key': key };

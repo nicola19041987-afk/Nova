@@ -4,6 +4,11 @@ App.account = {
     // chiave
     $('#key-input').value = App.key();
     $('#key-status').textContent = App.key() ? 'Chiave salvata su questo dispositivo.' : (App.me && App.me.serverKey ? 'Chiave già configurata sul server, condivisa.' : 'Nessuna chiave su questo dispositivo.');
+    try {
+      const simli = await App.api('/api/simli/key/status');
+      const line = $('#simli-key-status');
+      if (line) line.textContent = simli.configured ? 'Chiave Simli configurata sul server.' : 'Nessuna chiave Simli: in videochiamata resta la foto.';
+    } catch { /* lo stato Simli non blocca il resto */ }
     $('#key-warning').hidden = App.hasAi();
     // privacy (server) + preferenze locali
     App.settings = await App.api('/api/settings'); App.ls.set('settings', App.settings);
@@ -82,6 +87,22 @@ $('#key-save').addEventListener('click', () => {
   App.ls.set('key', k); App.account.load(); App.toast('🔑 Chiave salvata solo su questo dispositivo');
 });
 $('#key-clear').addEventListener('click', () => { App.ls.del('key'); $('#key-input').value = ''; App.account.load(); });
+const simliToggle = document.getElementById('simli-key-toggle');
+if (simliToggle) simliToggle.addEventListener('click', () => { const i = $('#simli-key-input'); i.type = i.type === 'password' ? 'text' : 'password'; });
+const simliSave = document.getElementById('simli-key-save');
+if (simliSave) simliSave.addEventListener('click', async () => {
+  const key = ($('#simli-key-input').value || '').trim();
+  const faceId = ($('#simli-face-input').value || '').trim();
+  if (!/^\S{8,400}$/.test(key)) return App.toast('Chiave Simli non valida');
+  try {
+    const body = { key };
+    if (faceId) body.faceId = faceId;
+    const st = await App.api('/api/simli/key', { method: 'POST', body });
+    $('#simli-key-input').value = '';
+    $('#simli-key-status').textContent = st.configured ? 'Chiave Simli configurata sul server.' : 'Nessuna chiave Simli: in videochiamata resta la foto.';
+    App.toast('Chiave Simli salvata sul server');
+  } catch (e) { App.toast(e.message || 'Chiave Simli non salvata'); }
+});
 const pinChange = document.getElementById('pin-change');
 if (pinChange) pinChange.addEventListener('click', async () => {
   const current = (document.getElementById('pin-now').value || '').trim();
