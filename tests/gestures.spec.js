@@ -2,7 +2,7 @@ const { test, expect } = require('./harness');
 
 const HEAD = { 'X-Requested-With': 'app-privata' };
 
-test('il catalogo ha saluto, capelli, bere e lo stiramento a tutto schermo', async ({ request, browserName }) => {
+test('il catalogo ha solo saluto e capelli', async ({ request, browserName }) => {
   test.skip(browserName === 'webkit', 'stesso server del test Chromium: il limite PIN è per dispositivo');
   const setup = await request.post('/api/pin/setup', { data: { user: 'nicola', pin: '1357' }, headers: HEAD });
   if (setup.status() === 409) {
@@ -10,14 +10,13 @@ test('il catalogo ha saluto, capelli, bere e lo stiramento a tutto schermo', asy
     expect(login.ok(), await login.text()).toBeTruthy();
   } else expect(setup.ok(), await setup.text()).toBeTruthy();
   const list = await (await request.get('/api/gestures')).json();
-  expect(list.map((g) => g.id).sort()).toEqual(['bere', 'capelli', 'saluto', 'stiracchiarsi']);
-  expect(list.find((g) => g.id === 'stiracchiarsi').full).toBe(true);
-  expect(list.filter((g) => g.id !== 'stiracchiarsi').every((g) => g.full === false)).toBe(true);
+  expect(list.map((g) => g.id).sort()).toEqual(['capelli', 'saluto']);
+  expect(list.every((g) => g.full === false)).toBe(true);
   const vid = await request.get('/api/gestures/saluto');
   expect(vid.ok()).toBeTruthy();
   expect(vid.headers()['content-type'] || '').toContain('video');
-  expect((await request.get('/api/gestures/bere')).ok()).toBeTruthy();
-  expect((await request.get('/api/gestures/manca')).status()).toBe(404);
+  expect((await request.get('/api/gestures/bere')).status()).toBe(404);
+  expect((await request.get('/api/gestures/stiracchiarsi')).status()).toBe(404);
 });
 
 async function mockApp(page) {
@@ -41,8 +40,6 @@ async function mockApp(page) {
     if (p === '/api/gestures') return json([
       { id: 'saluto', label: 'Saluta con la mano', emoji: '👋', full: false, keys: ['ciao con la mano', 'salut'], url: '/api/gestures/saluto' },
       { id: 'capelli', label: 'Si sistema i capelli', emoji: '💇‍♀️', full: false, keys: ['pettin', 'capell'], url: '/api/gestures/capelli' },
-      { id: 'bere', label: 'Beve', emoji: '🥛', full: false, keys: ['bevi', 'bere'], url: '/api/gestures/bere' },
-      { id: 'stiracchiarsi', label: 'Si stiracchia', emoji: '🙆‍♀️', full: true, keys: ['stiracchi', 'stirati'], url: '/api/gestures/stiracchiarsi' },
     ]);
     if (p === '/api/e2e/reset-login-limit') return json({ ok: true });
     return json({});
@@ -68,9 +65,7 @@ test('un gesto non copre la bocca mentre parla e torna alla foto alla fine', asy
       capelli: App.gestures.match('sistemati i capelli'),
       pettina: App.gestures.match('pettinati'),
       bere: App.gestures.match('bevi un sorso'),
-      bere2: App.gestures.match('vuoi bere'),
       stira: App.gestures.match('stiracchiati'),
-      stira2: App.gestures.match('stirati'),
     };
     App.avatarConv.speaking = true;
     const whileTalk = App.gestures.hear('salutami');
@@ -87,26 +82,19 @@ test('un gesto non copre la bocca mentre parla e torna alla foto alla fine', asy
     const dbg = { hidden: v.hidden, cls: v.className, src: v.getAttribute('src'), pending: App.gestures.state().pending, playing: App.gestures.state().playing, speak: App.avatarConv.speaking, busy: App.chat.busy, ss: !!(window.speechSynthesis && window.speechSynthesis.speaking) };
     v.onended();
     const back = v.hidden && !v.classList.contains('gesture-on');
-    const fullEvents = [];
-    App.solo.full = false;
-    App.solo.toggleFull = (on) => { App.solo.full = !!on; fullEvents.push(!!on); };
-    App.gestures.request('stiracchiarsi');
-    v.onended();
-    const stretched = fullEvents[0] === true && fullEvents[1] === false && String(v.src || '').includes('stiracchiarsi');
     App.current = App.current || { id: 'bbbbbbbbbbbbbbbb', actions: {} };
     if (App.actions) App.actions.render();
     document.body.classList.add('simli-on');
     const blocked = App.gestures.hear('pettinati');
     document.body.classList.remove('simli-on');
-    return { words, whileTalk, hiddenWhile, stillHidden, shown, back, stretched, blocked, dbg, menu: document.getElementById('act-list').textContent };
+    return { words, whileTalk, hiddenWhile, stillHidden, shown, back, blocked, dbg, menu: document.getElementById('act-list').textContent };
   });
-  expect(snap.words).toEqual({ saluta: 'saluto', ciao: null, mano: 'saluto', capelli: 'capelli', pettina: 'capelli', bere: 'bere', bere2: 'bere', stira: 'stiracchiarsi', stira2: 'stiracchiarsi' });
+  expect(snap.words).toEqual({ saluta: 'saluto', ciao: null, mano: 'saluto', capelli: 'capelli', pettina: 'capelli', bere: null, stira: null });
   expect(snap.whileTalk).toBe('queued');
   expect(snap.hiddenWhile).toBe(true);
   expect(snap.stillHidden).toBe(true);
   expect(snap.shown, JSON.stringify(snap.dbg)).toBe(true);
   expect(snap.back).toBe(true);
-  expect(snap.stretched).toBe(true);
   expect(snap.blocked).toBe(null);
   expect(snap.menu).toContain('Saluta');
   expect(snap.menu).toContain('capelli');

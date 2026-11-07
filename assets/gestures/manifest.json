@@ -14,21 +14,5 @@
     "emoji": "💇‍♀️",
     "full": false,
     "keys": ["pettin", "capell"]
-  },
-  {
-    "id": "bere",
-    "file": "bere.mp4",
-    "label": "Beve",
-    "emoji": "🥛",
-    "full": false,
-    "keys": ["bevi", "bere"]
-  },
-  {
-    "id": "stiracchiarsi",
-    "file": "stiracchiarsi.mp4",
-    "label": "Si stiracchia",
-    "emoji": "🙆‍♀️",
-    "full": true,
-    "keys": ["stiracchi", "stirati"]
   }
 ]
