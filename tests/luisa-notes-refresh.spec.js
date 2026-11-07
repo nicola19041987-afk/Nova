@@ -157,7 +157,7 @@ test('Invia salva l’appunto e Chiudi chiude il foglio', async ({ page, browser
   await expect(page.locator('#support-thread')).toContainText('Prendo in considerazione e vi aggiorno appena è pronto.');
   await expect(page.locator('#support-thread')).toContainText('inviato');
   await expect(page.locator('#support-text')).toHaveValue('');
-  await page.locator('#support-x').click();
+  await page.locator('#support-dialog .layer-x').click();
   await expect(page.locator('#support-dialog')).toBeHidden();
   await page.locator('#support-note-btn').click();
   await expect(page.locator('#support-thread')).toContainText('Nessun appunto');

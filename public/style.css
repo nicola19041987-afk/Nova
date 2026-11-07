@@ -889,5 +889,42 @@ a.arch-link{display:block;text-align:center;text-decoration:none;padding:12px 14
 .archive-tg article{margin-top:8px;padding-top:8px;border-top:1px solid #E4E7EB}
 .archive-view{border:0;border-radius:16px;padding:12px;max-width:100%;width:min(420px, calc(100vw - 24px));background:#111;color:#fff}
 .archive-view img,.archive-view video{width:100%;max-height:70vh;object-fit:contain;background:#000;border-radius:8px}
-.archive-view button{border:0;background:#fff;color:#1E6FD9;border-radius:50%;width:36px;height:36px;font-size:18px}
+.archive-view button{border:0;background:#fff;color:#1E6FD9;border-radius:50%;width:44px;height:44px;font-size:18px}
+
+/* v8.6.11: stessi colori chiari, tocchi da 44 px, chiamata senza Simli sulla foto */
+button{color:var(--text)}
+button.primary,a.arch-link,.login-pill,.hot-btn,.call-hangup{color:#fff}
+.sheet-body button,.sheet-cancel,button.link{color:var(--accent)}
+.call-btn{color:#fff}
+body:not(.wa-conv) .topbar h2,body.wa-conv .topbar h2{color:var(--text)!important}
+#tab-conv .composer textarea,body.solo-mode #tab-conv #chat-input{background:#fff;color:var(--text);border:1px solid var(--line)}
+.seg{background:var(--card2)}
+.seg button{color:var(--text);min-height:44px}
+.seg button.on{background:var(--accent);color:#fff}
+div.sheet{background:#0006!important}
+dialog.sheet{background:var(--card)!important;color:var(--text);width:min(420px,calc(100vw - 16px));max-height:calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom));overflow:auto}
+.support-thread{max-height:22dvh}
+#support-dialog textarea{min-height:88px;max-height:22dvh}
+.sheet-body{background:#fff;color:var(--text)}
+.sheet-body button{min-height:44px}
+.sheet-cancel{background:#fff;color:var(--accent);border:1px solid var(--line);min-height:44px}
+.scene-menu{background:#fff;color:var(--text);border:1px solid var(--line)}
+.scene-menu button{background:var(--card2);color:var(--text);min-height:44px}
+.scene-menu p,.scene-menu label{color:var(--text)}
+body.solo-mode #tab-conv .composer button,#solo-rt,#app-refresh,.layer-x,.call-x,.call-hangup,.avatar-x,#kb-hide{width:44px;height:44px;min-width:44px;min-height:44px;flex-basis:44px;line-height:42px}
+#app-refresh{flex:0 0 44px}
+body.wa-conv .wa-photo .wa-av{width:44px;height:44px}
+#gal-add,.gal-toolbar .primary{min-height:44px}
+#avatar-sheet-list button{min-height:44px;padding:8px 12px}
+.avatar-sheet{bottom:calc(8px + env(safe-area-inset-bottom))}
+.login-screen{padding:calc(env(safe-area-inset-top) + 48px) max(28px, env(safe-area-inset-right)) calc(72px + env(safe-area-inset-bottom)) max(28px, env(safe-area-inset-left))}
+.solo-dock{bottom:var(--vv-bottom, 0px)}
+body.solo-mode #tab-conv #messages{padding-bottom:8px}
+#support-x{display:none}
+body.solo-mode.in-call:not(.simli-on) #stage{flex:1 1 auto!important;height:auto!important;max-height:none!important;min-height:0!important;background:#E8EBF0!important;position:relative}
+body.solo-mode.in-call:not(.simli-on) #stage #avatar-canvas,body.solo-mode.in-call:not(.simli-on) #stage .av-backdrop{display:block!important}
+body.solo-mode.in-call:not(.simli-on) #call-ui{position:absolute!important;inset:0!important;height:100%!important;background:linear-gradient(to bottom,rgba(11,20,26,.5),rgba(11,20,26,0) 46%);pointer-events:none}
+body.solo-mode.in-call .call-head-actions,body.solo-mode.in-call .call-top button{pointer-events:auto}
+body.solo-mode.in-call .call-top{padding:52px 96px 0;align-items:flex-start;text-align:left;color:#fff}
+body.solo-mode.in-call.call-min:not(.simli-on) #stage{flex:0 0 42dvh!important;height:42dvh!important;max-height:42dvh!important}
 

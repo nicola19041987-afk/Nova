@@ -75,8 +75,15 @@ function getSoloChar(u) {
   return list.find((c) => c.ready === 'nova-scelta') || list.find((c) => c.ready === 'nova-bionda') || list.find((c) => c.ready === 'nova-unico') || list.find((c) => c.ready === SOLO_KEY) || list.find((c) => /^nova$/i.test(String(c.name || '').trim())) || null;
 }
 const SERVER_KEY_FILE = () => path.join(DATA_DIR, 'server-ai-key.json');
+function envSecret(...names) {
+  for (const name of names) {
+    const v = String(process.env[name] == null ? '' : process.env[name]).trim();
+    if (v) return v;
+  }
+  return '';
+}
 function getServerAiKey() {
-  const env = String(process.env.XAI_API_KEY || process.env.AI_KEY || '').trim();
+  const env = envSecret('XAI_API_KEY', 'AI_KEY');
   if (env) return env;
   try { const j = readJSON(SERVER_KEY_FILE(), null); return j && String(j.key || '').trim(); } catch { return ''; }
 }
@@ -1740,7 +1747,7 @@ function simliFaceId() {
 }
 app.post('/api/simli/session', auth, requireActivated, async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
-  const key = String(process.env.SIMLI_API_KEY || '').trim();
+  const key = envSecret('SIMLI_API_KEY');
   if (!key) return res.status(503).json({ error: 'Simli non configurato', fallback: true });
   try {
     const headers = { 'x-simli-api-key': key };
@@ -2659,7 +2666,7 @@ app.post('/api/server-key', auth, requireActivated, (req, res) => {
 });
 app.get('/api/server-key', auth, (req, res) => {
   if (!isAdmin(req.user)) return res.status(403).json({ error: ADMIN_MSG, code: 'ADMIN_ONLY' });
-  res.json({ stored: !!getServerAiKey(), fromEnv: !!(process.env.XAI_API_KEY || process.env.AI_KEY) });
+  res.json({ stored: !!getServerAiKey(), fromEnv: !!envSecret('XAI_API_KEY', 'AI_KEY') });
 });
 app.post('/api/solo/prep', auth, requireActivated, async (req, res) => {
   const key = String(req.get('X-AI-Key') || getServerAiKey() || '').trim();
