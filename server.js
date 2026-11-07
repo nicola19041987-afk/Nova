@@ -2262,7 +2262,7 @@ async function prepSoloMotions(reqKey) {
   MOTION_PREP.busy = true; MOTION_PREP.lastAt = new Date().toISOString();
   try {
     let ch = getSoloChar(ADMIN_USER); if (!ch) return { ok: false, reason: 'no solo' };
-    // La foto unica si muove sul disegno (bocca, respiro, sguardo). Le clip video la coprirebbero e qui non si generano da sole.
+    // La foto unica non genera clip xAI (coprirebbero bocca e occhi). I gesti già pronti stanno in assets/gestures.
     if (ch.ready === 'nova-unico' || ch.ready === 'nova-bionda' || ch.ready === 'nova-scelta') return { ok: true, still: true };
     const ids = Object.keys(ACTIONS).filter((id) => actionAllowed(ch, id));
     let done = 0, skipped = 0, refused = 0, failed = 0;
@@ -2280,6 +2280,27 @@ async function prepSoloMotions(reqKey) {
   } finally { MOTION_PREP.busy = false; }
 }
 
+function stillGestures() {
+  try {
+    const list = JSON.parse(fs.readFileSync(path.join(__dirname, 'assets', 'gestures', 'manifest.json'), 'utf8'));
+    return Array.isArray(list) ? list : [];
+  } catch { return []; }
+}
+function publicGesture(g) {
+  if (!g || !/^[a-z0-9_-]+$/i.test(g.id || '') || !/^[a-z0-9_-]+\.mp4$/i.test(g.file || '')) return null;
+  const file = path.join(__dirname, 'assets', 'gestures', g.file);
+  if (!file.startsWith(path.join(__dirname, 'assets', 'gestures') + path.sep) || !fs.existsSync(file)) return null;
+  return { id: g.id, label: g.label || g.id, emoji: g.emoji || '🎭', full: !!g.full, keys: Array.isArray(g.keys) ? g.keys.map(String) : [], url: `/api/gestures/${g.id}` };
+}
+app.get('/api/gestures', auth, (req, res) => {
+  res.json(stillGestures().map(publicGesture).filter(Boolean));
+});
+app.get('/api/gestures/:id', auth, (req, res) => {
+  const g = stillGestures().map(publicGesture).find((x) => x && x.id === req.params.id);
+  const raw = stillGestures().find((x) => x && x.id === req.params.id);
+  if (!g || !raw) return res.status(404).end();
+  sendPrivateFile(req, res, path.join(__dirname, 'assets', 'gestures', raw.file));
+});
 app.get('/api/actions', auth, (req, res) => {
   const adult = adultChat();
   res.json({ video: !!VIDEO_PATH, adult, seconds: ACTION_SECONDS,

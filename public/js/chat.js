@@ -135,6 +135,7 @@ App.chat = {
   // noAI = true: "solo messaggio" all'altra persona, l'IA non risponde (non serve la chiave).
   async send(text, noAI = false, photo = null) {
     text = (text || '').trim(); if ((!text && !photo) || !App.current || this.busy) return;
+    if (text && App.gestures && App.gestures.hear) App.gestures.hear(text, { defer: !noAI });
     if (!photo && this.pendingAdult) return this.answerAdult(text); // risposta sì/no alla domanda di conferma (resta sul telefono)
     if (!photo && App.kwSet && text.length <= 80) { // parola chiave: confronto sul server (hash), mai in chat né all'IA
       try { const k = await App.api('/api/adult-keyword/check', { method: 'POST', body: { text } }); if (k.match) return this.askAdult(k.token); } catch { /* prosegui */ }

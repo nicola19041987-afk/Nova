@@ -313,6 +313,7 @@
     const inp = $('#chat-input'); if (!inp || !t) return;
     inp.value = (inp.value ? inp.value + ' ' : '') + t;
     try { inp.dispatchEvent(new Event('input', { bubbles: true })); } catch {}
+    if (App.gestures && App.gestures.hear) App.gestures.hear(t);
   }
   App.voice = {
     start(opts = {}) {

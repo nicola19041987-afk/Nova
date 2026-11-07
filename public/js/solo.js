@@ -23,6 +23,7 @@
   }
   function showStage(ch) {
     const v = document.getElementById('stage-video'); if (!v || !ch) return;
+    if (App.gestures && App.gestures.playing && App.gestures.playing()) return;
     const clip = stageClip(ch);
     if (!clip) { try { v.pause(); } catch {} v.hidden = true; if (v.getAttribute('src')) v.removeAttribute('src'); return; }
     if (v.getAttribute('src') !== clip.url) v.src = clip.url;

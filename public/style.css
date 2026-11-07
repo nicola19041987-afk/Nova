@@ -721,7 +721,8 @@ body.solo-mode #stage #avatar-canvas{
   max-width:100%!important;max-height:100%!important;
   border-radius:0!important;
 }
-body.solo-mode #stage-video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center 22%;z-index:2;background:#111}
+body.solo-mode #stage-video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center 22%;z-index:2;background:#111;opacity:0;transition:opacity .45s ease}
+body.solo-mode #stage-video.gesture-on{opacity:1}
 body.solo-mode #stage-video[hidden]{display:none!important}
 body.solo-mode #stage .stage-tools{top:calc(env(safe-area-inset-top) + 6px);right:8px}
 body.solo-mode #messages{

@@ -51,13 +51,14 @@
       },
     };
   })();
-  const meta = (id) => info.catalog.find((c) => c.id === id) || { id, label: id, emoji: '🎭' };
+  const meta = (id) => info.catalog.find((c) => c.id === id) || (App.gestures && App.gestures.list && App.gestures.list().find((g) => g.id === id)) || { id, label: id, emoji: '🎭' };
 
   App.actions = {
     strip(t) { return String(t || '').replace(TAG, '').replace(/\s*\[(?:gesto|umore):\s*[a-zà-ù]*\s*\]\s*/gi, ' ').replace(/\s*\[(?:azione|gesto|umore):[^\]]*$/i, '').replace(/\s*\[[a-zà-ù]{0,6}$/i, '').trim(); }, // v8: anche i tag di gesto/umore // anche un tag a metà durante lo streaming
     tag(t) { const m = /\[azione:\s*([a-zà-ù]+)\s*\]/i.exec(String(t || '')); return m ? m[1].toLowerCase() : null; },
     fromReply(t) { const a = this.tag(t); if (a) this.play(a, 'chat'); },
     async load() {
+      try { if (App.gestures) await App.gestures.load(); } catch { /* offline */ }
       try { info = await App.api('/api/actions'); } catch { /* offline */ }
       const A = av(); if (!info.adult && A.act && A.act.adult) A.stopAction(true); // modalità adulti spenta: via subito
       this.render(); this.autoAll(); setTimeout(() => App.actionCache.syncAll(), 4000);
@@ -131,6 +132,7 @@
     refresh() { this.load(); },
     // riproduce un'azione pronta del personaggio aperto (mai durante la scena cinematografica o se ne sta già facendo una)
     async play(aid, why = 'manuale') {
+      if (App.gestures && App.gestures.has(aid)) return App.gestures.request(aid);
       const ch = App.current; if (!ch) return false;
       const A = av(); if (A.actionBusy()) return false;
       // seduta al tavolo: solo le clip preparate da quella foto; scena vecchia (senza punti completi): niente azioni
@@ -168,7 +170,9 @@
     render() {
       const ch = App.current, list = $('#act-list'); if (!list) return;
       const acts = Object.entries((ch && (seatedOn() ? ch.seated : ch.actions)) || {}).filter(([, a]) => a && a.url); // v8.3: seduta al tavolo -> i suoi gesti
-      list.innerHTML = acts.length ? acts.map(([id, a]) => { const m = meta(id); return `<button type="button" data-act="${esc(id)}" class="${a.stale ? 'stale' : ''}" title="${a.stale ? 'Preparata con un avatar precedente: rifalla' : esc(m.label)}">${m.emoji} ${esc(m.label)}</button>`; }).join('') : '';
+      const bundled = (!seatedOn() && App.gestures && App.gestures.list ? App.gestures.list() : []).filter((g) => !acts.some(([id]) => id === g.id));
+      const buttons = bundled.map((g) => `<button type="button" data-act="${esc(g.id)}" title="${esc(g.label)}">${g.emoji} ${esc(g.label)}</button>`).concat(acts.map(([id, a]) => { const m = meta(id); return `<button type="button" data-act="${esc(id)}" class="${a.stale ? 'stale' : ''}" title="${a.stale ? 'Preparata con un avatar precedente: rifalla' : esc(m.label)}">${m.emoji} ${esc(m.label)}</button>`; }));
+      list.innerHTML = buttons.join('');
       const n = ready(ch).length;
       $('#act-info').textContent = !ch ? '' : !/^\/api\/avatars\//.test(ch.avatar || '') ? 'Serve un avatar immagine per le azioni.' : n ? `${n} azioni pronte${acts.length > n ? ` · ${acts.length - n} da rifare (avatar cambiato)` : ''}` : 'Nessuna azione pronta: usa «Prepara azioni».';
       // v8.3.1: modalità adulti attiva solo per uno dei due -> spiega cosa manca (le azioni per adulti restano nascoste)
@@ -298,7 +302,8 @@
   async function hot(e) {
     if (e) e.stopPropagation(); App.actions.activity();
     const ch = App.current; if (!ch) return;
-    const list = (seatedOn() ? readySeated(ch) : ready(ch).filter(([, a]) => a && a.url)).sort(([a], [b]) => (meta(b).adult ? 1 : 0) - (meta(a).adult ? 1 : 0));
+    const bundled = (!seatedOn() && App.gestures && App.gestures.list ? App.gestures.list() : []).map((g) => [g.id, { url: g.url }]);
+    const list = bundled.concat(seatedOn() ? readySeated(ch) : ready(ch).filter(([, a]) => a && a.url)).sort(([a], [b]) => (meta(b).adult ? 1 : 0) - (meta(a).adult ? 1 : 0));
     if (!list.length) { App.toast(App.actions.queueText ? App.actions.queueText() : '🎭 Le azioni si stanno preparando da sole…', 3000); return; }
     const v = await App.sheet('🔥 Hot', list.map(([id]) => { const m = meta(id); return { label: `${m.emoji} ${m.label}`, value: id }; }));
     if (v) App.actions.play(v);
