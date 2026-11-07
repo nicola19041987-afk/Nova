@@ -22,7 +22,7 @@
   if (SS) { loadVoices(); try { SS.addEventListener('voiceschanged', loadVoices); } catch { SS.onvoiceschanged = loadVoices; } }
   const pickVoice = () => { if (!voices.length) loadVoices(); const v = voices.filter((x) => x.lang && x.lang.toLowerCase().replace('_', '-').startsWith('it')); return v.find((x) => /female|donna|alice|elsa|federica|paola/i.test(x.name)) || v[0] || null; };
   App.audio = {
-    unlocked: false, ctx: null, inCall: false,
+    unlocked: false, ctx: null, inCall: false, _born: null,
     // v8.4.1: per tutta la chiamata una sola sessione audio iOS "play-and-record" (microfono + voce insieme): cambiarla a ogni frase
     // faceva sentire il "suono di attacco e stacco". A chiamata finita si torna a "playback" (suona anche col tasto silenzioso).
     callSession(on) { this.inCall = !!on; if (!on) this._reacq = false; try { if (navigator.audioSession) navigator.audioSession.type = (on || this.micLive() || this._micP || (App.micAnyLive && App.micAnyLive())) ? 'play-and-record' : 'playback'; } catch {} }, // v8.5.0: mai 'playback' col microfono aperto
@@ -42,7 +42,8 @@
       this.micStats.session = prevType;
       this._micP = navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } })
         .then((st) => {
-          if (navigator.audioSession && prevType !== 'play-and-record' && this.ctx) this.renewCtx('sessione cambiata');
+          // Il contesto nato in 'playback' (lo sblocco del tocco arriva prima della sessione) su iPhone riceve solo silenzio.
+          if (navigator.audioSession && this.ctx && (prevType !== 'play-and-record' || this._born !== 'play-and-record')) this.renewCtx(prevType !== 'play-and-record' ? 'sessione cambiata' : 'contesto nato prima del microfono');
           this._mic = st;
           st.getAudioTracks().forEach((t) => { t.onmute = () => { this.micStats.muted = (this.micStats.muted || 0) + 1; }; });
           st.getAudioTracks().forEach((t) => { t.onended = () => { if (this._mic !== st) return; this._mic = null; this.micStats.lost++; if (this.inCall) this._micL.forEach((f) => { try { f(); } catch {} }); }; });
@@ -53,7 +54,7 @@
     // v8.4.7: nuovo AudioContext (dopo il microfono, con la sessione giusta); chi lo usa lo rilegge da App.audio.ctx
     renewCtx(why) {
       const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return null;
-      const old = this.ctx; this.ctx = new AC(); this.ctx.resume().catch(() => {}); this.micStats.renew = (this.micStats.renew || 0) + 1; this.micStats.renewWhy = why;
+      const old = this.ctx; this.ctx = new AC(); this.ctx.resume().catch(() => {}); this.noteCtx(); this.micStats.renew = (this.micStats.renew || 0) + 1; this.micStats.renewWhy = why;
       if (old) setTimeout(() => { try { old.close(); } catch { /* */ } }, 300);
       return this.ctx;
     },
@@ -67,13 +68,14 @@
       this._micL.forEach((f) => { try { f(); } catch { /* */ } });
       return st;
     },
+    noteCtx() { try { this._born = (navigator.audioSession && navigator.audioSession.type) || 'none'; } catch { this._born = 'none'; } },
     onMicLost(f) { this._micL.add(f); return () => this._micL.delete(f); },
     releaseMic() { const s = this._mic; this._mic = null; this._micL.clear(); if (s) s.getTracks().forEach((t) => { this.micStats.stops++; t.onended = null; t.stop(); }); },
     unlock() {
       try {
         const AC = window.AudioContext || window.webkitAudioContext;
-        if (AC) {
-          if (!this.ctx) this.ctx = new AC();
+          if (AC) {
+          if (!this.ctx) { this.ctx = new AC(); this.noteCtx(); }
           if (this.ctx.state !== 'running') this.ctx.resume().catch(() => {});
           const b = this.ctx.createBuffer(1, 1, 22050), src = this.ctx.createBufferSource(); src.buffer = b; src.connect(this.ctx.destination); src.start(0); // buffer muto
         }
@@ -320,9 +322,9 @@
       // ("Foglia", "Gatto") e faceva il "bip" a ogni riavvio. Il riconoscimento del telefono resta solo come riserva.
       if (App.hasAi && App.hasAi() && App.callMic && App.callMic.supported() && !xFailed && !(App.call && App.call.active)) {
         if (!allow) return App.toast('Attiva il microfono in Impostazioni');
-        try { App.audio.unlock(); } catch {} // dentro il tocco, PRIMA di passare alla sessione con microfono
+        App.audio.callSession(true); // prima dello sblocco: il contesto non deve nascere in «playback»
+        try { App.audio.unlock(); } catch {}
         on = true; xMode = true; setBtn(); status(composerOnly ? '🎙️ Dettato…' : '🎙️ In ascolto… (trascrizione xAI)'); document.body.classList.add('voice-live');
-        App.audio.callSession(true); // v8.4.5: una sola sessione «registra + riproduci» finché la modalità voce è attiva
         const onText = (t) => { if (!on) return; status(composerOnly ? '🎙️ Dettato…' : '🎙️ In ascolto… (trascrizione xAI)'); if (composerOnly) putComposer(t); else if ($('#auto-send').checked) { $('#chat-input').value = ''; App.chat.send(t); } else { const inp = $('#chat-input'); inp.value = (inp.value ? inp.value + ' ' : '') + t; } };
         const onFail = (e) => { console.warn('Trascrizione xAI non disponibile, uso il riconoscimento del telefono:', e && e.message); xFailed = true; App.callMic.stop(); xMode = false; if (!(App.call && App.call.active)) App.audio.callSession(false); if (on) { const keep = composerOnly; on = false; App.voice.start(keep ? { composer: true } : undefined); } };
         App.callMic.start({ onText, onFail, noBarge: true, onState: (st) => { if (on && xMode) status(st === 'speech' ? '🎙️ Ti ascolto…' : '🎙️ In ascolto… (trascrizione xAI)'); } }).catch((e) => { if (e && (e.name === 'NotAllowedError' || e.name === 'SecurityError')) { on = false; xMode = false; setBtn(); status('Permesso microfono negato.'); document.body.classList.remove('voice-live'); } else onFail(e); });

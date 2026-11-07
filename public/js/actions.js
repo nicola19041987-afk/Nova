@@ -113,7 +113,13 @@
         if (/chiave|401|403|crediti|402/i.test(e.message || '')) { autoQ.length = 0; } // chiave o crediti: si ferma la coda
       }
     },
-    queueText() { const left = autoQ.length + autoBusy.size; return left ? `🎭 Preparo i movimenti in background: ${autoDone}/${autoTotal}…` : '🎭 Nessuna azione pronta: si preparano da sole appena c\'è la chiave xAI'; },
+    queueText() {
+      const left = autoQ.length + autoBusy.size;
+      if (left) return `🎭 Preparo i movimenti in background: ${autoDone}/${autoTotal}…`;
+      const ready = (App.current && App.current.ready) || '';
+      if (ready === 'nova-scelta' || ready === 'nova-unico' || ready === 'nova-bionda') return '🎭 Su questa foto i movimenti sono respiro, sguardo e bocca. Le clip non si generano: coprirebbero il viso.';
+      return '🎭 Nessuna azione pronta: si preparano da sole appena c\'è la chiave xAI';
+    },
     autoState() { return { queued: autoQ.length, busy: autoBusy.size, done: autoDone, total: autoTotal, fail: autoFail, log: prepLog.slice(-20) }; },
     autoPill() {
       let el = document.getElementById('auto-prep');
