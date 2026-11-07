@@ -121,7 +121,8 @@
       <div id="tab-conv" class="tab conv" hidden>
         <div class="stage" id="stage">
           <canvas id="avatar-canvas" width="300" height="300"></canvas>
-          <video id="simli-video" playsinline autoplay muted hidden></video>
+          <video id="simli-video" playsinline webkit-playsinline autoplay muted hidden></video>
+          <p id="simli-status" class="simli-status" hidden></p>
           <video id="stage-video" playsinline muted loop hidden></video>
           <div id="call-ui" class="call-ui" hidden>
             <div class="call-top">
@@ -310,6 +311,8 @@
           <label>Volto, facoltativo <input id="simli-face-input" placeholder="id del volto" autocomplete="off" spellcheck="false"></label>
           <button id="simli-key-save" class="primary block" type="button">Salva chiave Simli</button>
           <p id="simli-key-status" class="muted small"></p>
+          <p class="muted small">Registro videochiamata</p>
+          <ol id="simli-log" class="simli-log"></ol>
         </div>
 
         <div class="card" id="voice-card">

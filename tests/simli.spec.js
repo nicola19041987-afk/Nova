@@ -171,21 +171,34 @@ test('la videochiamata usa Simli se il token c’è e torna alla foto se manca',
     App.call.active = true; App.call.mode = 'video';
     const started = await App.simli.start();
     const ws = window.__ws[0];
+    const waiting = document.getElementById('simli-status').textContent;
+    ws._msg({ data: JSON.stringify({ destination: 'edge', session_id: 'abc' }) });
+    ws._msg({ data: JSON.stringify({ video_metadata: { width: 768, height: 768, fps: 25 } }) });
+    ws._msg({ data: 'SILENT' });
+    const alive = App.simli.active();
     ws._msg({ data: 'START' });
     const buf = new ArrayBuffer(240 * 2);
     App.simli.feedPcm24(buf);
+    const video = document.getElementById('simli-video');
+    const before = document.body.classList.contains('simli-on');
+    video.srcObject = new MediaStream();
+    video.dispatchEvent(new Event('playing'));
     let lines = '';
     for (const sheet of document.styleSheets) {
       let rules; try { rules = sheet.cssRules; } catch { continue; }
       for (const r of rules) if (r.selectorText && r.selectorText.includes('#chat-input') && r.style && r.style.maxHeight) lines = r.style.maxHeight;
     }
-    const video = document.getElementById('simli-video');
     const on = document.body.classList.contains('simli-on') && video && !video.hidden;
+    const logged = App.simli.log().map((x) => x.line).join(' ');
     window.dispatchEvent(new Event('pagehide'));
-    return { started, on, url: ws.url, texts: ws.texts.slice(), bytes: ws.binary.slice(), closed: !App.simli.active(), lines, key: JSON.stringify(ws.texts).includes('SIMLI') };
+    return { started, waiting, alive, before, on, url: ws.url, texts: ws.texts.slice(), bytes: ws.binary.slice(), closed: !App.simli.active(), lines, key: JSON.stringify(ws.texts).includes('SIMLI'), logged };
   });
   expect(up.started).toBe(true);
+  expect(up.waiting).toBe('Connessione video…');
+  expect(up.alive).toBe(true);
+  expect(up.before).toBe(false);
   expect(up.on).toBe(true);
+  expect(up.logged).not.toContain('tok-test');
   expect(up.url).toContain('wss://api.simli.ai/compose/webrtc/p2p');
   expect(up.url).toContain('session_token=tok-test');
   expect(up.texts[0]).toContain('"type":"offer"');
