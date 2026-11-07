@@ -2674,6 +2674,7 @@ app.get('/manifest.json', (req, res, next) => { res.type('application/manifest+j
 app.use(express.static(path.join(__dirname, 'public'), {
   setHeaders(res, file) {
     if (file.endsWith('.wasm')) res.setHeader('Content-Type', 'application/wasm');
+    else if (file.endsWith('.vrm')) res.setHeader('Content-Type', 'model/gltf-binary');
     else if (file.endsWith('.mjs')) res.setHeader('Content-Type', 'text/javascript; charset=utf-8');
     else if (file.endsWith('.task')) res.setHeader('Content-Type', 'application/octet-stream');
     if (file.includes(`${path.sep}vendor${path.sep}mediapipe${path.sep}`)) res.setHeader('Cache-Control', 'public, max-age=604800');

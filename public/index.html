@@ -121,6 +121,7 @@
       <div id="tab-conv" class="tab conv" hidden>
         <div class="stage" id="stage">
           <canvas id="avatar-canvas" width="300" height="300"></canvas>
+          <canvas id="vrm-view" hidden></canvas>
           <video id="simli-video" playsinline webkit-playsinline autoplay muted hidden></video>
           <p id="simli-status" class="simli-status" hidden></p>
           <video id="stage-video" playsinline muted loop hidden></video>
@@ -277,6 +278,14 @@
         <div class="card" id="solo-settings-card">
           <h3>✨ Nova</h3>
           <p class="muted small">Aspetto, richieste e scorciatoie. La personalità è fissa.</p>
+          <label>Avatar
+            <select id="avatar-view">
+              <option value="photo">Foto</option>
+              <option value="video">Video</option>
+              <option value="3d">3D</option>
+            </select>
+          </label>
+          <p id="avatar-view-status" class="muted small">Foto e videochiamata, come sempre. Il 3D è un prototipo a figura intera.</p>
           <button type="button" id="set-look-btn" class="primary block">✨ Modifica aspetto</button>
           <label>Richieste <textarea id="set-requests" rows="3" maxlength="4000" placeholder="Es. chiamami amore, parla del vino…"></textarea></label>
           <button type="button" id="set-requests-save" class="block">Salva richieste</button>
@@ -705,6 +714,7 @@
   <script src="/js/live.js" type="module"></script>
   <script src="/js/close.js"></script>
   <script src="/js/archive.js"></script>
+  <script src="/js/avatar3d.js"></script>
   <script src="/js/main.js"></script>
 </body>
 </html>

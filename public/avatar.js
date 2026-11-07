@@ -419,6 +419,7 @@
         // v8.4.5: parla ma la bocca resta chiusa (audio non analizzabile, es. iOS): passa al labiale stimato dal testo
         if (this.speaking && this._env) { if (tg > 0.05) this._openAt = now; else if (!this._simFb && this._spkText && now - Math.max(this._spkAt || 0, this._openAt || 0) > 900) { this._simFb = true; this._env = null; this.simulateText(this._spkText, 1); } } }
       { const tw = ((this.speaking ? this.vWide : 0.5) ?? 0.5); const rawW = (tw - (this.wide || 0.5)) * kf(0.18); this.wide = (this.wide || 0.5) + Math.max(-0.12, Math.min(0.12, rawW)); } // O/U e E/I cambiano forma senza scatti
+      if (this === (window.App && App.avatarConv) && App.avatar3d && App.avatar3d.lips) App.avatar3d.lips(this.mouth, this.wide, !!this.speaking);
       this._dEff += (this.dist - this._dEff) * (1 - Math.exp(-dt / 260)); // distanza: avvicinamento/allontanamento morbido
       this._mh += (this.mouth - this._mh) * (1 - Math.exp(-dt / 140));
       // ritmo: se l'utente si muove a tempo, l'oscillazione segue il suo periodo (fase continua, niente scatti)

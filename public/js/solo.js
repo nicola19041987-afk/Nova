@@ -65,6 +65,7 @@
       this.setDock('home');
       showStage(ch);
       const rt = $('#solo-rt'); if (rt) rt.hidden = false;
+      if (App.avatar3d && App.avatar3d.apply) App.avatar3d.apply();
     },
     async toggleRt() {
       const btn = $('#solo-rt');

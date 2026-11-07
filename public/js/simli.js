@@ -138,6 +138,7 @@
     note(text, 'log');
   }
   async function start() {
+    if (App.avatar3d && App.avatar3d.mode && App.avatar3d.mode() === '3d') return false;
     if (!wanted()) return false;
     if (session && !session.closed) return true;
     if (starting) return starting;
