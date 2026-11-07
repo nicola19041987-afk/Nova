@@ -6,6 +6,8 @@
   const FALLBACK = [
     { id: 'saluto', label: 'Saluta con la mano', emoji: '👋', full: false, keys: ['ciao con la mano', 'salut'], url: '/api/gestures/saluto' },
     { id: 'capelli', label: 'Si sistema i capelli', emoji: '💇‍♀️', full: false, keys: ['pettin', 'capell'], url: '/api/gestures/capelli' },
+    { id: 'bere', label: 'Beve', emoji: '🥛', full: false, keys: ['bevi', 'bere'], url: '/api/gestures/bere' },
+    { id: 'stiracchiarsi', label: 'Si stiracchia', emoji: '🙆‍♀️', full: true, keys: ['stiracchi', 'stirati'], url: '/api/gestures/stiracchiarsi' },
   ];
   let clips = FALLBACK.slice(), pending = null, playing = null, lastPlay = 0, lastTalk = Date.now(), quietSince = 0, lastIdleId = '';
   const video = () => document.getElementById('stage-video');
