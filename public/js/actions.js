@@ -305,7 +305,7 @@
     const bundled = (!seatedOn() && App.gestures && App.gestures.list ? App.gestures.list() : []).map((g) => [g.id, { url: g.url }]);
     const list = bundled.concat(seatedOn() ? readySeated(ch) : ready(ch).filter(([, a]) => a && a.url)).sort(([a], [b]) => (meta(b).adult ? 1 : 0) - (meta(a).adult ? 1 : 0));
     if (!list.length) { App.toast(App.actions.queueText ? App.actions.queueText() : '🎭 Le azioni si stanno preparando da sole…', 3000); return; }
-    const v = await App.sheet('🔥 Hot', list.map(([id]) => { const m = meta(id); return { label: `${m.emoji} ${m.label}`, value: id }; }));
+    const v = await App.sheet('Gesti', list.map(([id]) => { const m = meta(id); return { label: `${m.emoji} ${m.label}`, value: id }; }));
     if (v) App.actions.play(v);
   }
   $('#hot-btn').addEventListener('click', hot);

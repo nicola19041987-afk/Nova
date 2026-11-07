@@ -87,7 +87,9 @@ test('un gesto non copre la bocca mentre parla e torna alla foto alla fine', asy
     document.body.classList.add('simli-on');
     const blocked = App.gestures.hear('pettinati');
     document.body.classList.remove('simli-on');
-    return { words, whileTalk, hiddenWhile, stillHidden, shown, back, blocked, dbg, menu: document.getElementById('act-list').textContent };
+    const hot = document.getElementById('hot-btn');
+    const act = document.getElementById('act-btn');
+    return { words, whileTalk, hiddenWhile, stillHidden, shown, back, blocked, dbg, menu: document.getElementById('act-list').textContent, hotHidden: !!(hot && (hot.hidden || getComputedStyle(hot).display === 'none')), hotWord: !/Hot/i.test((hot && hot.textContent) || ''), gestures: !!(act && getComputedStyle(act).display !== 'none') };
   });
   expect(snap.words).toEqual({ saluta: 'saluto', ciao: null, mano: 'saluto', capelli: 'capelli', pettina: 'capelli', bere: null, stira: null });
   expect(snap.whileTalk).toBe('queued');
@@ -98,4 +100,7 @@ test('un gesto non copre la bocca mentre parla e torna alla foto alla fine', asy
   expect(snap.blocked).toBe(null);
   expect(snap.menu).toContain('Saluta');
   expect(snap.menu).toContain('capelli');
+  expect(snap.hotHidden).toBe(true);
+  expect(snap.hotWord).toBe(true);
+  expect(snap.gestures).toBe(true);
 });

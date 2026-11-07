@@ -932,4 +932,6 @@ body.solo-mode.in-call:not(.simli-on) #call-ui{position:absolute!important;inset
 body.solo-mode.in-call .call-head-actions,body.solo-mode.in-call .call-top button{pointer-events:auto}
 body.solo-mode.in-call .call-top{padding:52px 96px 0;align-items:flex-start;text-align:left;color:#fff}
 body.solo-mode.in-call.call-min:not(.simli-on) #stage{flex:0 0 42dvh!important;height:42dvh!important;max-height:42dvh!important}
+#hot-btn,#set-hot-btn,#call-hot{display:none!important}
+body.solo-mode #act-btn{display:inline-flex!important;align-items:center;justify-content:center}
 
