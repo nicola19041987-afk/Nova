@@ -286,7 +286,7 @@ app.use('/api', (req, res, next) => {
 // v8.5.2: rotte dei personaggi aperte anche agli EDITORS (Luisa); eliminare un personaggio solo se l'ha creato lei
 const EDIT_OK = [
   ['POST', /^\/api\/characters\/?$/], ['PUT', /^\/api\/characters\/[^/]+$/], ['DELETE', /^\/api\/characters\/[^/]+$/],
-  ['POST', /^\/api\/characters\/[^/]+\/(regenerate|scene-image|auto-change|memory-base|frame-extend|revert\/[^/]+|actions\/[^/]+)$/],
+  ['POST', /^\/api\/characters\/[^/]+\/(regenerate|photo-edit|scene-image|auto-change|memory-base|frame-extend|revert\/[^/]+|actions\/[^/]+)$/],
   ['PUT', /^\/api\/characters\/[^/]+\/frame-fill$/],
   ['DELETE', /^\/api\/characters\/[^/]+\/(scene\/[^/]+|actions\/[^/]+)$/],
 ];
@@ -1180,6 +1180,28 @@ app.post('/api/characters/:id/regenerate', auth, requireActivated, requireKey, a
     if (updated.ready === SOLO_KEY || ch.ready === SOLO_KEY) setImmediate(() => prepSoloMotions(req.aiKey).catch((e) => console.error('Prep dopo look:', e.message)));
     res.json({ character: updated });
   } catch (e) { res.status(502).json({ error: e.message || 'Servizio AI non raggiungibile' }); }
+});
+
+// Modifica la foto attiva con il testo dell'utente (xAI /images/edits). La foto precedente resta in lookHistory.
+// Un rifiuto di xAI si mostra così com'è: niente generazione sostitutiva.
+app.post('/api/characters/:id/photo-edit', auth, requireActivated, requireKey, async (req, res) => {
+  const note = String((req.body && (req.body.prompt || req.body.note)) || '').replace(/\s+/g, ' ').trim().slice(0, 400);
+  if (!note) return res.status(400).json({ error: 'Scrivi cosa vuoi cambiare nella foto.' });
+  if (hasYouth(note)) return res.status(400).json({ error: 'Descrizione non consentita: i personaggi devono essere adulti (25+).' });
+  const ch = getChars(req.user).find((c) => c.id === req.params.id);
+  if (!ch) return res.status(404).json({ error: 'Personaggio non trovato' });
+  const m = AV_RE.exec(String(ch.avatar || ''));
+  const file = m && avatarPath(m[1]);
+  if (!file || !fs.existsSync(file)) return res.status(400).json({ error: 'Serve una foto attiva da modificare.' });
+  try {
+    const prompt = `Edit this existing photo of the same adult. Keep the same person, the same face and identity. Apply only this change, and keep the result realistic and fully clothed: ${note}`;
+    const gen = await editImage(req.aiKey, prompt, [fileToDataUrl(file)], false);
+    const url = saveAvatarBuffer(req.user, gen.buf);
+    const updated = await updateChar(req.user, ch.id, (cur) => ({ ...cur, avatar: url, avatarSource: cur.avatarSource === 'upload' ? 'upload' : 'ai' }), `foto: ${note}`.slice(0, 40));
+    res.json({ character: updated });
+  } catch (e) {
+    res.status(502).json({ error: e.message || 'Servizio AI non raggiungibile' });
+  }
 });
 
 // Genera la versione "scena" (figura intera, seduta in una stanza, 16:9) ancorata all'identità del personaggio.

@@ -227,7 +227,14 @@
       dlg.id = 'avatar-sheet';
       dlg.className = 'avatar-sheet';
       dlg.hidden = true;
-      dlg.innerHTML = `<button type="button" class="avatar-x" aria-label="Chiudi">×</button><h3 id="avatar-sheet-title">Avatar</h3><ul id="avatar-sheet-list"></ul>`;
+      dlg.innerHTML = `<button type="button" class="avatar-x" aria-label="Chiudi">×</button><h3 id="avatar-sheet-title">Avatar</h3>
+        <div class="avatar-edit">
+          <label for="avatar-edit-note">Modifica la foto</label>
+          <input id="avatar-edit-note" type="text" maxlength="400" placeholder="es. maglietta rossa, capelli corti" autocomplete="off">
+          <button type="button" id="avatar-edit-go">Aggiorna immagine</button>
+          <p id="avatar-edit-status" class="muted small" hidden></p>
+        </div>
+        <ul id="avatar-sheet-list"></ul>`;
       dlg.setAttribute('role', 'dialog');
       dlg.setAttribute('aria-modal', 'true');
       dlg.setAttribute('aria-labelledby', 'avatar-sheet-title');
@@ -235,6 +242,8 @@
       dlg.addEventListener('click', (e) => {
         if (e.target === dlg || e.target.closest('.avatar-x')) dlg.hidden = true;
       });
+      const go = $('#avatar-edit-go');
+      if (go) go.addEventListener('click', (e) => { e.stopPropagation(); this.editPhoto(); });
       const ul = $('#avatar-sheet-list');
       if (ul) ul.addEventListener('click', (e) => {
         const li = e.target.closest('li[data-id]'); if (!li) return;
@@ -284,6 +293,39 @@
       App.chars = (App.chars || []).filter((c) => c.id !== id);
       if (App.chat && App.chat.renderList) App.chat.renderList();
       this.renderPicker();
+    },
+    async editPhoto() {
+      const input = $('#avatar-edit-note');
+      const note = (input && input.value || '').trim();
+      const status = $('#avatar-edit-status');
+      const btn = $('#avatar-edit-go');
+      if (!note) return;
+      const ch = soloChar();
+      if (!ch || !/^\/api\/avatars\//.test(ch.avatar || '')) {
+        if (status) { status.hidden = false; status.textContent = 'Serve una foto attiva da modificare.'; }
+        return;
+      }
+      if (btn) btn.disabled = true;
+      if (status) { status.hidden = false; status.textContent = 'Aggiorno la foto…'; }
+      try {
+        const r = await App.api(`/api/characters/${ch.id}/photo-edit`, { method: 'POST', ai: true, body: { prompt: note } });
+        const next = r && r.character;
+        if (!next || !next.avatar) throw new Error('Nessuna foto ricevuta');
+        const i = (App.chars || []).findIndex((c) => c.id === next.id);
+        if (i >= 0) App.chars[i] = next;
+        if (App.current && App.current.id === next.id) App.current = next;
+        if (App.avatarConv) App.avatarConv.setCharacter(next);
+        if (App.chat && App.chat.header) App.chat.header();
+        showStage(next);
+        if (input) input.value = '';
+        if (status) status.textContent = 'Foto aggiornata. La precedente resta nello storico.';
+        this.renderPicker();
+      } catch (e) {
+        const msg = (e && e.message) || 'Modifica non riuscita';
+        if (status) { status.hidden = false; status.textContent = msg; }
+      } finally {
+        if (btn) btn.disabled = false;
+      }
     },
     openLook() {
       const ch = soloChar(); if (!ch) return;
