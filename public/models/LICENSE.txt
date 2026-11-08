@@ -1,0 +1,1 @@
+See CREDITS.txt. The 3D character is Female Adult 02 from the Microsoft Rocketbox library, MIT license.
