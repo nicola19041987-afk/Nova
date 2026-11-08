@@ -116,14 +116,14 @@ if (pinChange) pinChange.addEventListener('click', async () => {
   } catch (e) { App.toast(e.message || 'PIN non cambiato'); }
 });
 
-async function saveSettings() {
-  App.settings = await App.api('/api/settings', { method: 'PUT', body: { ...App.settings, adultMode: $('#set-adult').checked, noBrakes: $('#set-adult').checked && $('#set-nobrakes').checked, autoSave: $('#set-autosave').checked, allowExport: $('#set-export').checked, videoModel: $('#set-video-model').value.trim(), videoDuration: Number($('#set-video-duration').value) } });
+async function saveSettings(extra) {
+  App.settings = await App.api('/api/settings', { method: 'PUT', body: { ...App.settings, adultMode: $('#set-adult').checked, noBrakes: $('#set-adult').checked && $('#set-nobrakes').checked, autoSave: $('#set-autosave').checked, allowExport: $('#set-export').checked, videoModel: $('#set-video-model').value.trim(), videoDuration: Number($('#set-video-duration').value), ...(extra || {}) } });
   App.ls.set('settings', App.settings); App.media && App.media.renderAll(); App.feed && App.feed.render();
 }
 $('#set-autosave').addEventListener('change', saveSettings);
 $('#set-export').addEventListener('change', saveSettings);
 $('#set-video-save').addEventListener('click', async () => { await saveSettings(); App.toast('Salvato'); });
-$('#set-mic').addEventListener('change', (e) => { App.ls.set('micOn', e.target.checked); if (!e.target.checked && App.voice) App.voice.stop(); App.applyDevicePrefs(); });
+$('#set-mic').addEventListener('change', (e) => { App.ls.set('micPicked', true); App.ls.set('micOn', e.target.checked); if (!e.target.checked && App.voice) App.voice.stop(); App.applyDevicePrefs(); });
 $('#set-cam').addEventListener('change', (e) => { App.ls.set('camOn', e.target.checked); if (!e.target.checked && App.media) App.media.stopCamera(); App.applyDevicePrefs(); });
 $('#set-gestures').addEventListener('change', (e) => { App.ls.set('gestures', e.target.checked); App.applyDevicePrefs(); });
 // Gesti delle mani / imitazione: MediaPipe locale (public/js/motion.js), attivi nella modalità Presenza. Servono anche "Usa la fotocamera".
@@ -204,7 +204,7 @@ $('#set-adult').addEventListener('change', async (e) => {
   if (e.target.checked && App.me && !App.me.activated) { e.target.checked = false; App.showActivation(); return; }
   if (e.target.checked && !confirm('Attivare la modalità adulti (18+)? Contenuti espliciti solo tra adulti consenzienti e con personaggi inventati adulti (25+). Puoi disattivarla quando vuoi.')) { e.target.checked = false; return; }
   try {
-    await saveSettings(); App.applyAdult && App.applyAdult();
+    await saveSettings({ adultPicked: e.target.checked }); App.applyAdult && App.applyAdult();
     const st = await App.account.adultStatus();
     if (e.target.checked && st) App.toast(st.chat ? '🔓 Modalità adulti attiva per entrambi' : `✅ Attiva per te · manca il consenso di ${st.missing.filter((m) => !m.me).map((m) => m.name).join(' e ')} (vedi sotto)`, 6000);
     App.sync && App.sync(); App.actions && App.actions.refresh();
@@ -238,5 +238,5 @@ App.adultText = function (st, html) {
 
 // v8.5.0: «Senza freni» (solo Nicola, visibile solo con la modalità adulti attiva per entrambi)
 $('#set-nobrakes').addEventListener('change', async (e) => {
-  try { await saveSettings(); App.toast(e.target.checked ? '🔥 Senza freni: attivo' : 'Senza freni: spento'); } catch (err) { e.target.checked = !e.target.checked; App.toast(err.message); }
+  try { await saveSettings({ noBrakesPicked: e.target.checked }); App.toast(e.target.checked ? '🔥 Senza freni: attivo' : 'Senza freni: spento'); } catch (err) { e.target.checked = !e.target.checked; App.toast(err.message); }
 });

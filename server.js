@@ -286,7 +286,7 @@ app.use('/api', (req, res, next) => {
 // v8.5.2: rotte dei personaggi aperte anche agli EDITORS (Luisa); eliminare un personaggio solo se l'ha creato lei
 const EDIT_OK = [
   ['POST', /^\/api\/characters\/?$/], ['PUT', /^\/api\/characters\/[^/]+$/], ['DELETE', /^\/api\/characters\/[^/]+$/],
-  ['POST', /^\/api\/characters\/[^/]+\/(regenerate|scene-image|auto-change|memory-base|frame-extend|revert\/[^/]+|actions\/[^/]+)$/],
+  ['POST', /^\/api\/characters\/[^/]+\/(regenerate|photo-edit|scene-image|auto-change|memory-base|frame-extend|revert\/[^/]+|actions\/[^/]+)$/],
   ['PUT', /^\/api\/characters\/[^/]+\/frame-fill$/],
   ['DELETE', /^\/api\/characters\/[^/]+\/(scene\/[^/]+|actions\/[^/]+)$/],
 ];
@@ -438,6 +438,8 @@ app.post('/api/consent', auth, express.raw({ type: ['audio/*', 'video/webm', 'vi
   fs.writeFileSync(path.join(userDir(req.user, 'consent'), file), req.body);
   const rec = { activatedAt: now.toISOString(), file, mime, phrase: CONSENT_PHRASE(USERS[req.user].name), bytes: req.body.length };
   writeJSON(consentFile(req.user), rec);
+  const cur = readJSON(settingsFile(req.user), {}) || {};
+  if (cur.adultPicked !== false) writeJSON(settingsFile(req.user), { ...cur, adultMode: true, noBrakes: cur.noBrakesPicked === false ? cur.noBrakes === true : true });
   res.json({ ok: true, consent: rec });
 });
 
@@ -450,7 +452,20 @@ app.get('/api/consent/audio', auth, (req, res) => {
 
 // ---------- privacy (per utente): tutto OFF di default ----------
 const settingsFile = (u) => path.join(userDir(u), 'settings.json');
-const getSettings = (u) => { const s = { autoSave: false, allowExport: false, adultMode: false, videoModel: '', videoDuration: 6, ...readJSON(settingsFile(u), {}) }; delete s.drawerScene; return s; }; // drawerScene (vecchio comodino, rimosso): ignorato
+const getSettings = (u) => {
+  const raw = readJSON(settingsFile(u), {}) || {};
+  const s = { autoSave: false, allowExport: false, adultMode: false, noBrakes: false, videoModel: '', videoDuration: 6, ...raw };
+  delete s.drawerScene;
+  // Chi ha già il consenso trova la modalità sbloccata accesa, finché non la spegne a mano.
+  if (isActivated(u) && raw.adultPicked !== false) {
+    const noBrakes = raw.noBrakesPicked === false ? raw.noBrakes === true : true;
+    if (s.adultMode !== true || s.noBrakes !== noBrakes) {
+      s.adultMode = true; s.noBrakes = noBrakes;
+      writeJSON(settingsFile(u), { ...raw, adultMode: true, noBrakes });
+    }
+  }
+  return s;
+};
 // Avatar mostrata in Home: scelta del profilo. Vale solo se quel personaggio è ancora nell'archivio.
 function shownCharId(u) {
   const chars = (getChars(u) || []).filter(liveChar);
@@ -487,11 +502,13 @@ app.put('/api/settings', auth, (req, res) => {
   if (!isAdmin(req.user)) { // v8.4: Luisa può solo dare o ritirare il PROPRIO consenso alla modalità adulti (e scegliere la sua avatar)
     const cur = getSettings(req.user), keys = ['autoSave', 'allowExport', 'videoModel', 'videoDuration'];
     if (keys.some((k) => req.body[k] !== undefined && String(req.body[k]) !== String(cur[k]))) return res.status(403).json({ error: ADMIN_MSG + ' Tu puoi solo dare o ritirare il tuo consenso alla modalità adulti.', code: 'ADMIN_ONLY' });
-    const s = { ...cur, adultMode: req.body.adultMode === true, activeChar: keepActive(req.user, req.body, cur) }; writeJSON(settingsFile(req.user), s); return res.json(s);
+    const s = { ...cur, adultMode: req.body.adultMode === true, activeChar: keepActive(req.user, req.body, cur), adultPicked: req.body.adultPicked === true ? true : req.body.adultPicked === false ? false : cur.adultPicked, noBrakes: req.body.noBrakes === true && req.body.adultMode === true, noBrakesPicked: req.body.noBrakesPicked === true ? true : req.body.noBrakesPicked === false ? false : cur.noBrakesPicked }; writeJSON(settingsFile(req.user), s); return res.json(s);
   }
   const cur = getSettings(req.user);
   const s = { autoSave: req.body.autoSave === true, allowExport: req.body.allowExport === true, adultMode: req.body.adultMode === true,
-    noBrakes: req.body.noBrakes === true && req.body.adultMode === true, // v8.5.0: «Senza freni» (solo Nicola, solo con la modalità adulti)
+    noBrakes: req.body.noBrakes === true && req.body.adultMode === true, // «Senza freni», insieme alla modalità adulti
+    adultPicked: req.body.adultPicked === true ? true : req.body.adultPicked === false ? false : cur.adultPicked,
+    noBrakesPicked: req.body.noBrakesPicked === true ? true : req.body.noBrakesPicked === false ? false : cur.noBrakesPicked,
     videoModel: /^[\w.\-]{0,60}$/.test(req.body.videoModel || '') ? String(req.body.videoModel || '') : '',
     videoDuration: num(req.body.videoDuration, 1, 15, 6),
     activeChar: keepActive(req.user, req.body, cur) };
@@ -1180,6 +1197,28 @@ app.post('/api/characters/:id/regenerate', auth, requireActivated, requireKey, a
     if (updated.ready === SOLO_KEY || ch.ready === SOLO_KEY) setImmediate(() => prepSoloMotions(req.aiKey).catch((e) => console.error('Prep dopo look:', e.message)));
     res.json({ character: updated });
   } catch (e) { res.status(502).json({ error: e.message || 'Servizio AI non raggiungibile' }); }
+});
+
+// Modifica la foto attiva con il testo dell'utente (xAI /images/edits). La foto precedente resta in lookHistory.
+// Un rifiuto di xAI si mostra così com'è: niente generazione sostitutiva.
+app.post('/api/characters/:id/photo-edit', auth, requireActivated, requireKey, async (req, res) => {
+  const note = String((req.body && (req.body.prompt || req.body.note)) || '').replace(/\s+/g, ' ').trim().slice(0, 400);
+  if (!note) return res.status(400).json({ error: 'Scrivi cosa vuoi cambiare nella foto.' });
+  if (hasYouth(note)) return res.status(400).json({ error: 'Descrizione non consentita: i personaggi devono essere adulti (25+).' });
+  const ch = getChars(req.user).find((c) => c.id === req.params.id);
+  if (!ch) return res.status(404).json({ error: 'Personaggio non trovato' });
+  const m = AV_RE.exec(String(ch.avatar || ''));
+  const file = m && avatarPath(m[1]);
+  if (!file || !fs.existsSync(file)) return res.status(400).json({ error: 'Serve una foto attiva da modificare.' });
+  try {
+    const prompt = `Edit this existing photo of the same adult. Keep the same person, the same face and identity. Apply only this change, and keep the result realistic and fully clothed: ${note}`;
+    const gen = await editImage(req.aiKey, prompt, [fileToDataUrl(file)], false);
+    const url = saveAvatarBuffer(req.user, gen.buf);
+    const updated = await updateChar(req.user, ch.id, (cur) => ({ ...cur, avatar: url, avatarSource: cur.avatarSource === 'upload' ? 'upload' : 'ai' }), `foto: ${note}`.slice(0, 40));
+    res.json({ character: updated });
+  } catch (e) {
+    res.status(502).json({ error: e.message || 'Servizio AI non raggiungibile' });
+  }
 });
 
 // Genera la versione "scena" (figura intera, seduta in una stanza, 16:9) ancorata all'identità del personaggio.

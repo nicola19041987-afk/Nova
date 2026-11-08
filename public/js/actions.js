@@ -117,9 +117,15 @@
     queueText() {
       const left = autoQ.length + autoBusy.size;
       if (left) return `🎭 Preparo i movimenti in background: ${autoDone}/${autoTotal}…`;
-      const ready = (App.current && App.current.ready) || '';
-      if (ready === 'nova-scelta' || ready === 'nova-unico' || ready === 'nova-bionda') return '🎭 Su questa foto i movimenti sono respiro, sguardo e bocca. Le clip non si generano: coprirebbero il viso.';
-      return '🎭 Nessuna azione pronta: si preparano da sole appena c\'è la chiave xAI';
+      const ch = (App.current && App.current.id && App.charById && App.charById(App.current.id)) || App.current || (App.solo && App.solo.char && App.solo.char()) || null;
+      const ready = String((ch && ch.ready) || '');
+      const avatar = String((ch && ch.avatar) || '');
+      const still = ready === 'nova-scelta' || ready === 'nova-unico' || ready === 'nova-bionda' || ready === 'still' || !!(ch && ch.still === true) || /nova-scelta|a11cea7a10000001|b10b1a0000000001|5ce17a0000000001/.test(avatar);
+      if (still) return '🎭 Con questa foto Nova usa respiro, sguardo e bocca; i gesti completi sono nell\'avatar 3D';
+      const localKey = App.key && String(App.key() || '').trim();
+      const serverKey = !!(App.me && App.me.serverKey);
+      if (!localKey && !serverKey) return '🎭 Nessuna azione pronta: si preparano da sole appena c\'è la chiave xAI';
+      return '🎭 Nessuna azione pronta.';
     },
     autoState() { return { queued: autoQ.length, busy: autoBusy.size, done: autoDone, total: autoTotal, fail: autoFail, log: prepLog.slice(-20) }; },
     autoPill() {

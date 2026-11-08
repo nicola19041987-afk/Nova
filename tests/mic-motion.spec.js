@@ -117,6 +117,6 @@ test('dettato e videochiamata tengono il microfono acceso, i movimenti di base p
   });
   expect(motion.loop).toBe(true);
   expect(motion.resumed).toBe(true);
-  expect(motion.still).toContain('respiro');
+  expect(motion.still).toContain('Con questa foto Nova usa respiro, sguardo e bocca');
   expect(motion.still).not.toContain('chiave xAI');
 });

@@ -3,9 +3,50 @@ document.title = 'Nova';
 App.avatarConv = new TalkingAvatar($('#avatar-canvas'));
 App.avatarEditor = new TalkingAvatar($('#editor-canvas'));
 
+App.applySessionDefaults = function () {
+  if (!App.me) return;
+  if (App.ls.get('micPicked') !== true) App.ls.set('micOn', true);
+  const engine = App.ls.get('callEngine', null);
+  if (engine == null || engine === '') App.ls.set('callEngine', 'realtime');
+};
+App.armMic = function (fromGesture) {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    if (fromGesture) App.toast('Microfono non disponibile su questo browser.');
+    return Promise.resolve(false);
+  }
+  const p = navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
+    App._micPrime = stream;
+    return true;
+  }).catch((e) => {
+    App._micPrime = null;
+    if (!fromGesture) return false;
+    const denied = !e || e.name === 'NotAllowedError' || e.name === 'SecurityError' || e.name === 'PermissionDeniedError';
+    const ios = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+    App.toast(denied
+      ? (ios ? 'Microfono non consentito. Su iPhone: Impostazioni → Safari → Microfono → Consenti, poi tocca di nuovo il profilo.' : 'Microfono non consentito. Consenti il microfono per questo sito e tocca di nuovo il profilo.')
+      : ('Microfono non avviato. ' + ((e && e.message) || '')));
+    return false;
+  });
+  App._micPrimeP = p;
+  return p;
+};
+App.askConsentOnce = function () {
+  const bar = document.getElementById('adult-ask');
+  if (!bar || !App.me) return;
+  if (App.me.activated || App.ls.get('consentAsked')) { bar.hidden = true; return; }
+  bar.hidden = false;
+};
+App.startLiveDefaults = function () {
+  if (navigator.webdriver) return;
+  if (App.ls.get('micOn') !== false && App.voice && App.voice.start && !(App.voice.isListening && App.voice.isListening())) App.voice.start();
+  if (App.ls.get('soloRtOff') === true || App.ls.get('callEngine', 'realtime') === 'classic') return;
+  if (App.solo && App.solo.toggleRt && !document.body.classList.contains('solo-rt')) App.solo.toggleRt();
+};
 App.boot = async function () {
   try { App.me = await App.api('/api/me'); } catch { App.showLogin(); return; }
   if (App.me.consent) App.ls.set('consent', { activatedAt: App.me.consent.activatedAt });
+  App.applySessionDefaults();
+  App.askConsentOnce();
   App.showView('app'); $('#who').textContent = App.me.name;
   App.opts = await App.api('/api/characters/options');
   await App.loadChars();
@@ -13,6 +54,7 @@ App.boot = async function () {
   await App.account.load();
   App.chat.renderList();
   try { if (App.solo) await App.solo.boot(); } catch (e) { console.warn(e); }
+  try { App.startLiveDefaults(); } catch (e) { console.warn(e); }
   App.media.load().catch(() => {}); App.feed.load().catch(() => {});
   App.applyAdult();
   App.motionStyle = null; // v8.6.0: niente apprendimento dai movimenti in camera
@@ -125,6 +167,13 @@ App.refreshApp = async function () {
 const refreshBtn = document.getElementById('app-refresh');
 if (refreshBtn) refreshBtn.addEventListener('click', () => App.refreshApp());
 App.boot();
+(function () {
+  const go = document.getElementById('adult-ask-go');
+  const later = document.getElementById('adult-ask-later');
+  const hide = () => { const bar = document.getElementById('adult-ask'); if (bar) bar.hidden = true; if (App.ls && App.me) App.ls.set('consentAsked', true); };
+  if (go) go.addEventListener('click', () => { hide(); if (App.armMic) App.armMic(true); App.showActivation(); });
+  if (later) later.addEventListener('click', hide);
+})();
 
 // v7.1: cornice dell'avatar FISSA e verticale (9:16, come lo schermo del telefono), la più grande possibile nello spazio del palco.
 // Nessuna trasformazione animata sul riquadro: solo dimensione e posizione calcolate a ogni ridimensionamento.

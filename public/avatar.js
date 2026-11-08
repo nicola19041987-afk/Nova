@@ -370,35 +370,46 @@
       if (st && st.classList && st.classList.contains('av-stalled') !== !!this._stalledOn) st.classList.toggle('av-stalled', !!this._stalledOn);
     }
     // Movimento di una persona vera, ridotto per una foto 2D: la foto si muove tutta insieme (niente mesh che storce il viso).
+    // Onde lunghe non multiple: il respiro e i micro-movimenti non tornano uguali dopo pochi secondi.
+    wave(now, a, b, c) { return Math.sin(now / a) * 0.5 + Math.sin(now / b + 1.7) * 0.32 + Math.sin(now / c + 2.4) * 0.18; }
     livePose(now, dt) {
-      const P = this._pose || (this._pose = { roll: 0, pitch: 0, yaw: 0, lean: 1, torso: 0, breath: 0, tRoll: 0, tPitch: 0, tYaw: 0, tLean: 1, next: 0 });
+      const P = this._pose || (this._pose = { roll: 0, pitch: 0, yaw: 0, lean: 1, torso: 0, breath: 0, tRoll: 0, tPitch: 0, tYaw: 0, tLean: 1, tTorso: 0, next: 0 });
       const talk = this.speaking ? Math.min(1, Math.max(this.mouth || 0, this._mh || 0)) : 0;
       const deg = Math.PI / 180;
-      const idleRoll = 0;
+      const w = (a, b, c) => this.wave(now, a, b, c);
+      const idlePitch = w(6400, 10100, 15700) * 0.012;
+      const idleYaw = w(8600, 13100, 5300) * 0.005;
+      const idleLean = 1 + w(7600, 11800, 16900) * 0.007;
+      const idleTorso = w(9100, 5700, 14300) * 0.004;
       if (talk > 0.42 && now > P.next) {
-        const sign = Math.random() < 0.5 ? -1 : 1;
         // Niente roll/yaw casuali mentre parla: su WebKit spostano il mento di lato e la bocca non è più simmetrica.
         P.tRoll = 0;
-        P.tPitch = (0.006 + Math.random() * 0.008) * (Math.random() < 0.7 ? 1 : -0.4);
+        P.tPitch = (Math.random() < 0.5 ? -1 : 1) * (0.016 + Math.random() * 0.008);
         P.tYaw = 0;
         P.tLean = 1 + (0.01 + Math.random() * 0.01) * (Math.random() < 0.5 ? 1 : -1);
-        P.next = now + 1000 + Math.random() * 1000;
-      } else if (talk < 0.08 && now > P.next) {
-        P.tRoll = 0; P.tPitch = 0; P.tYaw = 0; P.tLean = 1;
-        P.next = now + 400;
+        P.tTorso = idleTorso;
+        P.next = now + 1400 + Math.random() * 1600;
       }
       const step = Math.max(0, Math.min(80, dt || 16));
-      const easeT = 1 - Math.exp(-step / (talk > 0.2 ? 220 : 480));
-      P.roll += ((talk > 0.2 ? P.tRoll : idleRoll) - P.roll) * easeT;
-      P.pitch += ((talk > 0.2 ? P.tPitch : 0) - P.pitch) * easeT;
-      P.yaw += ((talk > 0.2 ? P.tYaw : 0) - P.yaw) * easeT;
-      P.lean += ((talk > 0.2 ? P.tLean : 1) - P.lean) * easeT;
-      P.torso = 0;
-      P.breath = Math.sin(now / (60000 / 13.5) * Math.PI * 2);
+      const easeIdle = 1 - Math.exp(-step / 780);
+      const easeTalk = 1 - Math.exp(-step / 180);
+      const talkOn = talk > 0.2;
+      if (P.iPitch == null) P.iPitch = 0;
+      if (P.kPitch == null) P.kPitch = 0;
+      P.iPitch += (idlePitch - P.iPitch) * easeIdle;
+      P.kPitch += ((talkOn ? P.tPitch : 0) - P.kPitch) * easeTalk;
+      P.roll += (0 - P.roll) * easeIdle;
+      P.pitch = P.iPitch + P.kPitch;
+      P.yaw += ((idleYaw + (talkOn ? P.tYaw : 0)) - P.yaw) * easeIdle;
+      P.lean += ((idleLean + (talkOn ? (P.tLean - 1) : 0)) - P.lean) * easeIdle;
+      P.torso += (idleTorso - P.torso) * easeIdle;
+      const breathT = 60000 / 13.5;
+      P.breath = Math.sin(now / breathT * Math.PI * 2) * 0.78 + Math.sin(now / 7300 + 0.4) * 0.15 + Math.sin(now / 12100 + 1.1) * 0.07;
       P.roll = Math.max(-1.6 * deg, Math.min(1.6 * deg, P.roll));
       P.pitch = Math.max(-0.03, Math.min(0.03, P.pitch));
       P.yaw = Math.max(-0.03, Math.min(0.03, P.yaw));
-      P.lean = Math.max(0.98, Math.min(1.02, P.lean));
+      P.lean = Math.max(0.985, Math.min(1.015, P.lean));
+      P.torso = Math.max(-0.012, Math.min(0.012, P.torso));
       return P;
     }
     frame(now) {
@@ -432,11 +443,11 @@
       this._ph = ((this._ph || 0) + dt / this.swayPeriod) % 1;
       const styleAmp = 0.75 + ST.headAmp * 0.9 + ST.energy * 0.35; // chi si muove di più → lei un po' più mobile
       const rAmp = (this.rhythm ? 0.034 + this.rhythm.strength * 0.022 : sens ? 0.05 : 0.042) * (this.rhythm ? 1 : styleAmp);
-      const breath = Math.sin(now / (sens ? 5200 : 4000) * Math.PI * 2) * (sens ? 1.4 : 1);
+      const breath = this.wave(now, sens ? 5600 : 4300, 8900, 13700) * (sens ? 1.15 : 1);
       // v8.1: respiro accoppiato al parlato (inspira prima, espira piano mentre parla, riprende fiato tra le frasi)
       if (this.speaking !== this._wasSpk) { this._wasSpk = this.speaking; if (this.speaking) this.breathM.speechStart(now); else this.breathM.speechEnd(now); }
       const vol = this.breathM.vol(now);
-      let sway = Math.sin(this._ph * Math.PI * 2) * rAmp + Math.sin(now / 2300) * 0.014 + Math.sin(now / 9100 + 2) * 0.01;
+      let sway = Math.sin(this._ph * Math.PI * 2) * rAmp * 0.35 + this.wave(now, 6100, 10400, 15800) * 0.02;
       let bob = this.rhythm ? Math.abs(Math.sin(this._ph * Math.PI * 2)) * this.rhythm.strength * S * 0.008 : 0;
       const talkNod = this.mouth * 0.02 + (this.speaking ? Math.sin(now / 330) * 0.008 : 0);
       // imitazione naturale: legge il campione di 300–800 ms fa (ritardo che varia), ne prende solo una parte (35–65%)
@@ -451,21 +462,21 @@
       const spring = (cur, tgt, key, K) => { const D = 2 * Math.sqrt(K) * 0.95; V[key] += ((tgt - cur) * K - V[key] * D) * sdt; return cur + V[key] * sdt; };
       // a riposo: ogni tanto lei guarda altrove (girata e inclinazione leggere, ampiezza secondo lo stile appreso)
       const mc = this.micro;
-      if (now > mc.nextLook) { mc.lookT = Math.random() < 0.35 ? 0 : (Math.random() * 2 - 1) * (0.5 + ST.headAmp); mc.nextLook = now + 2000 + Math.random() * 4000 * (1.2 - ST.energy); }
-      mc.look += (mc.lookT - mc.look) * Math.min(1, dt / 600);
+      mc.lookT = this.wave(now, 9200, 15100, 21400) * (0.45 + ST.headAmp * 0.35);
+      mc.look += (mc.lookT - mc.look) * Math.min(1, dt / 900);
       const idle = R ? 0.25 : 1;
       const tgtTilt = (R ? R.tilt * g : 0) + mc.look * 0.35 * idle, tgtYaw = (R ? R.yaw * g : 0) + mc.look * 0.9 * idle, tgtPitch = R ? R.pitch * g : 0;
       M.tilt = spring(M.tilt, tgtTilt, 'tilt', 26); M.yaw = spring(M.yaw, tgtYaw, 'yaw', 22); M.pitch = spring(M.pitch, tgtPitch, 'pitch', 26);
       // piccole alzate di braccio a riposo, più frequenti per chi gesticola di più (solo mezzo busto / figura intera)
-      if (now > mc.nextIdleLift) { mc.idleLiftT = Math.random() * (0.25 + ST.energy * 0.35); mc.nextIdleLift = now + (mc.idleLiftT > 0.05 ? 1600 : 0) + 60000 / Math.max(1, ST.gestPerMin + 4) * (0.6 + Math.random()); setTimeout(() => { mc.idleLiftT = 0; }, 1400 + Math.random() * 900); }
+      mc.idleLiftT = Math.max(0, this.wave(now, 11000, 17300, 8200)) * (0.12 + ST.energy * 0.08);
       M.lift[0] = Math.max(0, spring(M.lift[0], R ? R.lift[0] * (g + 0.1) : 0, 'l0', 18));
       M.lift[1] = Math.max(0, spring(M.lift[1], R ? R.lift[1] * (g + 0.1) : mc.idleLiftT * (R ? 0 : 1), 'l1', 18));
       M.energy += ((R ? R.energy * g : ST.energy * 0.12 * learned) - M.energy) * Math.min(1, dt / 500);
       sway += M.tilt * 0.12;
       bob += M.pitch * S * 0.02 + breath * S * 0.004;
-      const shiftX = M.yaw * S * 0.04 + Math.sin(now / 5200) * S * 0.012 * idle; // girata + spostamento del peso
-      // spalle: una sale mentre l'altra scende (lento), più marcato quando alza un braccio
-      const skew = Math.max(-SKEW_MAX, Math.min(SKEW_MAX, Math.sin(now / 3700 + 1) * 0.011 * idle + (M.lift[1] - M.lift[0]) * 0.01 + M.tilt * 0.004));
+      const shiftX = M.yaw * S * 0.04 + this.wave(now, 7800, 12600, 18900) * S * 0.01 * idle; // girata + spostamento del peso
+      // spalle: una sale mentre l'altra scende, lento e senza un periodo corto
+      const skew = Math.max(-SKEW_MAX, Math.min(SKEW_MAX, this.wave(now, 6900, 11200, 16400) * 0.012 * idle + (M.lift[1] - M.lift[0]) * 0.01 + M.tilt * 0.004));
       // reazione in corso
       let rx = 0, ry = 0, rRot = 0, smile = sens ? 0.25 : 0, wave = 0, A_nod = 0;
       const re = this.reaction;
@@ -483,7 +494,7 @@
       }
       // v8.4.1: cenni del capo (solo verticali, nessun movimento laterale): reazioni "annuisce", micro-movimenti a riposo con
       // rumore a strati (3 sinusoidi lente non multiple), leggero accento sulle sillabe mentre parla; tutto con una molla smorzata
-      const idleN = (Math.sin(now / 1730) * 0.5 + Math.sin(now / 2970 + 1.3) * 0.3 + Math.sin(now / 5310 + 2.1) * 0.2) * (this.speaking ? 0.6 : 1);
+      const idleN = this.wave(now, 5400, 9100, 14600) * (this.speaking ? 0.55 : 1);
       const nodT = A_nod * 1.0 + idleN * 0.07 + this._mh * 0.16;
       { const K = 70, D = 2 * Math.sqrt(K) * 0.9, sd = dt / 1000; this._nodV += ((nodT - this._nod) * K - this._nodV * D) * sd; this._nod += this._nodV * sd; }
       // Ammiccamento: chiusura e riapertura a curva, ogni 2–6 s, a volte doppio.
@@ -523,8 +534,9 @@
         if (Math.hypot(mc.gtx - ox, mc.gty - oy) > 0.26 && Math.random() < 0.3 && now - this.blinkStart > 700) this.nextBlink = now + 30;
         mc.nextSacc = now + (this.speaking ? 1200 : 1600) + Math.random() * 2400;
       }
-      if (now > (mc.nextMicro || 0)) { mc.mx = (Math.random() * 2 - 1) * 0.035; mc.my = (Math.random() * 2 - 1) * 0.025; mc.nextMicro = now + 340 + Math.random() * 520; }
-      const sk = Math.min(1, dt / 30); mc.gx += (mc.gtx + (mc.mx || 0) - mc.gx) * sk; mc.gy += (mc.gty + (mc.my || 0) - mc.gy) * sk;
+      mc.mx = this.wave(now, 4800, 7600, 11900) * 0.05;
+      mc.my = this.wave(now, 5600, 9300, 14100) * 0.035;
+      const sk = Math.min(1, dt / 42); mc.gx += (mc.gtx + (mc.mx || 0) - mc.gx) * sk; mc.gy += (mc.gty + (mc.my || 0) - mc.gy) * sk;
       // sorrisi accennati spontanei (più spesso in modalità sensuale)
       if (now > mc.nextSmile) { mc.smileT = 0.2 + Math.random() * 0.25; mc.smileUntil = now + 1200 + Math.random() * 1800; mc.nextSmile = now + (sens ? 6000 : 9000) + Math.random() * 12000; }
       if (now > mc.smileUntil) mc.smileT = 0;
