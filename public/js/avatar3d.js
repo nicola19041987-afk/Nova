@@ -1,4 +1,4 @@
-/* Avatar 3D realistico (GLB locale, three.js). La foto resta il default. */
+/* Avatar 3D realistico (GLB locale, three.js). Il 3D è il default. */
 (function () {
   const MODEL = '/models/nova.glb';
   const FULL = { alzati: 1, siedi: 1, gira: 1, cammina: 1, stira: 1 };
@@ -22,17 +22,21 @@
   ];
   const MAP = {
     hips: 'Bip01_Pelvis', spine: 'Bip01_Spine', chest: 'Bip01_Spine1',
-    head: 'Bip01_Head', jaw: 'Bip01_MJaw',
+    upper: 'Bip01_Spine2', head: 'Bip01_Head', jaw: 'Bip01_MJaw',
+    clavL: 'Bip01_L_Clavicle', clavR: 'Bip01_R_Clavicle',
+    eyeL: 'Bip01_LEye', eyeR: 'Bip01_REye',
     leftUpperArm: 'Bip01_L_UpperArm', leftLowerArm: 'Bip01_L_Forearm',
     rightUpperArm: 'Bip01_R_UpperArm', rightLowerArm: 'Bip01_R_Forearm',
     leftUpperLeg: 'Bip01_L_Thigh', leftLowerLeg: 'Bip01_L_Calf',
     rightUpperLeg: 'Bip01_R_Thigh', rightLowerLeg: 'Bip01_R_Calf',
     blinkL: 'Bip01_LEyeBlinkTop', blinkR: 'Bip01_REyeBlinkTop',
   };
-  let view = 'photo', lib = null, model = null, renderer, scene, camera, raf = 0, last = 0, acc = 0;
+  let view = '3d', lib = null, model = null, renderer, scene, camera, raf = 0, last = 0, acc = 0;
   let readyP = null, failed = '', base = 'stand', clip = null, mouth = 0, wide = 0.5, speaking = false;
-  let restoreFull = false;
+  let restoreFull = false, blinkAt = -10, nextBlink = 1.6;
   const rest = new Map();
+  const posed = {};
+  const gaze = { x: 0, y: 0, tx: 0, ty: 0, next: 0.8 };
 
   function mode() { return view; }
   function select() { return document.getElementById('avatar-view'); }
@@ -133,6 +137,60 @@
     if (restoreFull && App.solo && App.solo.toggleFull) App.solo.toggleFull(false);
     restoreFull = false; clip = null;
   }
+  function noise(t, seed) {
+    const s = seed || 0;
+    return Math.sin(t * 0.23 + s) * 0.42
+      + Math.sin(t * 0.51 + s * 1.7) * 0.28
+      + Math.sin(t * 0.11 + s * 2.4) * 0.18
+      + Math.sin(t * 0.87 + s * 0.6) * 0.12;
+  }
+  function stepGaze(t) {
+    if (t >= gaze.next) {
+      gaze.tx = noise(t, 8.2) * 0.08;
+      gaze.ty = noise(t, 5.4) * 0.05;
+      gaze.next = t + 1.6 + Math.abs(noise(t, 3.3)) * 2.8;
+    }
+    gaze.x += (gaze.tx - gaze.x) * 0.06;
+    gaze.y += (gaze.ty - gaze.y) * 0.06;
+  }
+  function blinkAmt(t) {
+    if (t >= nextBlink) { blinkAt = t; nextBlink = t + 2.4 + Math.abs(noise(t, 6.5)) * 3.6; }
+    const u = (t - blinkAt) / 0.16;
+    if (u <= 0 || u >= 1) return 0;
+    return Math.sin(u * Math.PI);
+  }
+  function idleOffsets(t, talking) {
+    const breath = 0.55 + 0.45 * noise(t * 0.72, 1.1);
+    const o = {
+      hips: [0.012 * noise(t, 2.2), 0.02 * noise(t, 1.4), 0.035 * noise(t, 4.1)],
+      spine: [0.02 * breath, 0.012 * noise(t, 3.2), 0.018 * noise(t, 2.8)],
+      chest: [0.032 * breath, 0, 0.014 * noise(t, 6.1)],
+      upper: [0.016 * noise(t, 7.2), 0.01 * noise(t, 1.9), 0],
+      clavL: [0, 0, 0.02 * noise(t, 5.5)],
+      clavR: [0, 0, -0.02 * noise(t, 5.5)],
+      head: [
+        0.04 * noise(t, 2.6) + (talking ? mouth * 0.07 : 0),
+        0.07 * noise(t, 1.2) + (talking ? noise(t, 9.1) * 0.03 : 0),
+        0.015 * noise(t, 4.4),
+      ],
+      eyeL: [gaze.y, gaze.x, 0],
+      eyeR: [gaze.y, gaze.x, 0],
+    };
+    if (!clip) {
+      o.leftUpperArm = [0.015 * noise(t, 8.8), 0, 0.012 * noise(t, 3.7)];
+      o.rightUpperArm = [0.015 * noise(t, 9.4), 0, -0.012 * noise(t, 3.7)];
+    }
+    return o;
+  }
+  function addEuler(a, b) {
+    return [(a && a[0] || 0) + (b && b[0] || 0), (a && a[1] || 0) + (b && b[1] || 0), (a && a[2] || 0) + (b && b[2] || 0)];
+  }
+  function blendBone(name, target, rate) {
+    const c = posed[name] || [0, 0, 0];
+    const n = [0, 1, 2].map((i) => c[i] + ((target[i] || 0) - c[i]) * rate);
+    posed[name] = n;
+    applyBone(name, n[0], n[1], n[2]);
+  }
   function resize() {
     const st = stage(), c = canvas(); if (!renderer || !st || !c) return;
     const w = Math.max(2, st.clientWidth), h = Math.max(2, st.clientHeight);
@@ -151,25 +209,31 @@
     acc = 0;
     resize();
     const t = now / 1000;
+    stepGaze(t);
     resetBones();
     let pose = offsets(base === 'sit' ? 'siedi' : '', base === 'sit' ? 1 : 0);
     if (clip) {
       const u = (now - clip.t0) / clip.dur;
       if (u >= 1) endClip();
-      else pose = offsets(clip.id, u);
+      else pose = offsets(clip.id, smooth(Math.max(0, Math.min(1, u))));
     }
-    Object.entries(pose).forEach(([name, e]) => applyBone(name, e[0], e[1], e[2]));
-    if (!clip) {
-      applyBone('chest', Math.sin(t * 1.5) * 0.03, 0, 0);
-      applyBone('head', Math.sin(t * 0.35) * 0.03, Math.sin(t * 0.22) * 0.18, 0);
-    }
-    const blink = Math.sin(t * 1.3) > 0.985 ? 0.45 : 0;
-    applyBone('blinkL', blink, 0, 0);
-    applyBone('blinkR', blink, 0, 0);
+    const idle = idleOffsets(t, speaking);
+    const names = new Set([...Object.keys(pose), ...Object.keys(idle), ...Object.keys(posed)]);
+    names.forEach((name) => blendBone(name, addEuler(pose[name], idle[name]), clip ? 0.22 : 0.16));
+    const blink = blinkAmt(t) * 0.42;
+    applyBone('blinkL', (posed.blinkL ? posed.blinkL[0] : 0) + blink, 0, 0);
+    applyBone('blinkR', (posed.blinkR ? posed.blinkR[0] : 0) + blink, 0, 0);
     const jaw = bone('jaw'), qj = rest.get('jaw');
-    if (jaw && qj) { jaw.quaternion.copy(qj); jaw.rotateX(speaking ? mouth * 0.4 : 0); }
+    if (jaw && qj) {
+      const open = speaking ? mouth * 0.42 : 0;
+      const cur = posed.jaw ? posed.jaw[0] : 0;
+      const next = cur + (open - cur) * 0.45;
+      posed.jaw = [next, 0, 0];
+      jaw.quaternion.copy(qj);
+      jaw.rotateX(next);
+    }
     if (clip && clip.id === 'cammina') model.position.x = Math.sin(((now - clip.t0) / clip.dur) * Math.PI) * 0.28;
-    else model.position.x += (0 - model.position.x) * 0.12;
+    else model.position.x += ((noise(t, 2.2) * 0.012) - model.position.x) * 0.08;
     renderer.render(scene, camera);
   }
   async function ensureLibs() {
@@ -237,20 +301,30 @@
       App.gestures._vrm = true;
     }
   }
+  function explicitView() {
+    if (!(App.ls && App.me)) return '';
+    const pick = App.ls.get('avatarViewPick', '');
+    if (pick === 'photo' || pick === 'video' || pick === '3d') return pick;
+    const legacy = App.ls.get('avatarView', '');
+    if (legacy === 'video' || legacy === '3d') return legacy;
+    return '';
+  }
   async function apply(next) {
     const sel = select();
-    view = next || (App.ls && App.me ? App.ls.get('avatarView', 'photo') : (sel && sel.value) || 'photo');
-    if (!['photo', 'video', '3d'].includes(view)) view = 'photo';
+    view = (next === 'photo' || next === 'video' || next === '3d') ? next : (explicitView() || '3d');
     if (sel && sel.value !== view) sel.value = view;
-    if (App.ls && App.me) App.ls.set('avatarView', view);
+    if (App.ls && App.me && (view === 'video' || view === '3d' || App.ls.get('avatarViewPick', ''))) App.ls.set('avatarView', view);
     hook();
-    if (view !== '3d') { showCanvas(false); if (view === 'photo') status('Foto e videochiamata, come sempre.'); else status('Videochiamata: volto Simli se la chiave c’è, altrimenti la foto.'); return; }
+    if (view !== '3d') { showCanvas(false); if (view === 'photo') status('Foto. Il 3D resta nel menu Avatar.'); else status('Videochiamata: volto Simli se la chiave c’è, altrimenti la foto.'); return; }
     status('Carico il modello 3D…');
     try { await load(); } catch { /* status già scritto */ }
   }
   function bind() {
     const sel = select(); if (!sel || sel._vrm) return; sel._vrm = true;
-    sel.addEventListener('change', () => apply(sel.value));
+    sel.addEventListener('change', () => {
+      if (App.ls && App.me) App.ls.set('avatarViewPick', sel.value);
+      apply(sel.value);
+    });
   }
   bind();
   window.addEventListener('resize', resize);

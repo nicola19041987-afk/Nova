@@ -28,6 +28,9 @@ async function mockApp(page) {
 
 test('la chat in basso non copre viso e bocca e il campo resta su due righe', async ({ page }, testInfo) => {
   await mockApp(page);
+  if (testInfo.project.name === 'webkit') {
+    await page.addInitScript(() => { localStorage.setItem('ap:nicola:avatarViewPick', JSON.stringify('photo')); });
+  }
   await page.goto('/');
   await page.waitForFunction(() => document.body.classList.contains('solo-mode') && document.getElementById('title').textContent === 'Nova');
   const stopAvatar = () => page.evaluate(() => {

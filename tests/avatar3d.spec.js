@@ -1,10 +1,11 @@
 const { test, expect } = require('./harness');
 
-test('il 3D è spento di default e, se scelto, carica il modello', async ({ page, browserName }) => {
+test('il 3D è il default e una scelta esplicita resta', async ({ page, browserName }) => {
   test.skip(browserName === 'webkit', 'Questo WebKit chiude il processo sulla home con l’avatar. Il caricamento è verificato su Chromium.');
   test.setTimeout(60000);
   await page.addInitScript(() => {
     if (navigator.serviceWorker) navigator.serviceWorker.register = () => new Promise(() => {});
+    localStorage.setItem('ap:nicola:avatarView', JSON.stringify('photo'));
   });
   await page.route('**/api/**', async (route) => {
     const p = new URL(route.request().url()).pathname;
@@ -24,17 +25,16 @@ test('il 3D è spento di default e, se scelto, carica il modello', async ({ page
     return json({});
   });
   await page.goto('/');
-  await page.waitForFunction(() => document.body.classList.contains('solo-mode') && App.avatar3d);
+  await page.waitForFunction(() => document.body.classList.contains('solo-mode') && App.avatar3d && App.avatar3d.ready());
   const before = await page.evaluate(() => ({
     value: document.getElementById('avatar-view').value,
     mode: App.avatar3d.mode(),
     on: document.body.classList.contains('vrm-on'),
   }));
-  expect(before).toEqual({ value: 'photo', mode: 'photo', on: false });
-  const loaded = await page.evaluate(async () => {
-    await App.avatar3d.apply('3d');
-    return { ready: App.avatar3d.ready(), failed: App.avatar3d.failed(), mode: App.avatar3d.mode(), on: document.body.classList.contains('vrm-on') };
-  });
+  expect(before).toEqual({ value: '3d', mode: '3d', on: true });
+  const loaded = await page.evaluate(async () => ({
+    ready: App.avatar3d.ready(), failed: App.avatar3d.failed(), mode: App.avatar3d.mode(), on: document.body.classList.contains('vrm-on'),
+  }));
   expect(loaded.failed, loaded.failed).toBe('');
   expect(loaded.ready).toBe(true);
   expect(loaded.mode).toBe('3d');
@@ -46,4 +46,14 @@ test('il 3D è spento di default e, se scelto, carica il modello', async ({ page
   expect(moved.heard).toBe('play');
   expect(moved.clip).toBe('cammina');
   expect(moved.full).toBe(true);
+  const picked = await page.evaluate(async () => {
+    App.ls.set('avatarViewPick', 'photo');
+    await App.avatar3d.apply();
+    const photo = { mode: App.avatar3d.mode(), on: document.body.classList.contains('vrm-on') };
+    App.ls.set('avatarViewPick', 'video');
+    await App.avatar3d.apply();
+    return { photo, video: App.avatar3d.mode() };
+  });
+  expect(picked.photo).toEqual({ mode: 'photo', on: false });
+  expect(picked.video).toBe('video');
 });

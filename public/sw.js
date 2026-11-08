@@ -1,5 +1,5 @@
 // Service worker: mette in cache solo la "scocca" dell'app (nessun dato privato).
-const CACHE = 'app-privata-v8-6-33';
+const CACHE = 'app-privata-v8-6-34';
 const SHELL = ['/', '/index.html', '/style.css', '/avatar.js', '/js/core.js', '/js/simli.js', '/js/auth.js', '/js/account.js', '/js/chat.js', '/js/voice.js', '/js/editor.js', '/js/docs.js', '/js/media.js', '/js/feed.js', '/js/motion.js', '/js/stage.js', '/js/gestures.js', '/js/actions.js', '/js/realtime.js', '/js/rt-worklet.js', '/js/callmic.js', '/js/diag.js', '/js/call.js', '/js/ios.js', '/js/gallery.js', '/js/presets.js', '/js/solo.js', '/js/mood.js', '/js/support.js', '/js/close.js', '/js/archive.js', '/js/frame.js', '/js/live.js', '/js/avatar3d.js', '/js/main.js', '/manifest.json', '/icons/icon-192.png', '/icons/icon-512.png', '/icons/icon-180.png'];
 
 self.addEventListener('install', (e) => {

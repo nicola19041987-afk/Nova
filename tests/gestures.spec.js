@@ -52,6 +52,7 @@ test('un gesto non copre la bocca mentre parla e torna alla foto alla fine', asy
   await page.goto('/');
   await page.waitForFunction(() => document.body.classList.contains('solo-mode') && App.gestures);
   const snap = await page.evaluate(async () => {
+    if (App.avatar3d) await App.avatar3d.apply('photo');
     const v = document.getElementById('stage-video');
     v.play = () => Promise.resolve();
     v.load = () => {};
