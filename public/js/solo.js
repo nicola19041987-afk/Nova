@@ -75,10 +75,12 @@
         if (status) { status.hidden = true; status.textContent = ''; }
       };
       if (document.body.classList.contains('solo-rt')) {
+        if (App.ls && App.me) App.ls.set('soloRtOff', true);
         if (App.rt && App.rt.stop) App.rt.stop();
         off();
         return;
       }
+      if (App.ls && App.me) App.ls.set('soloRtOff', false);
       const ch = soloChar();
       if (!ch || !App.current || App.current.id !== ch.id) return;
       if (App.call && App.call.active) return;

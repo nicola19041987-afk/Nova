@@ -438,6 +438,8 @@ app.post('/api/consent', auth, express.raw({ type: ['audio/*', 'video/webm', 'vi
   fs.writeFileSync(path.join(userDir(req.user, 'consent'), file), req.body);
   const rec = { activatedAt: now.toISOString(), file, mime, phrase: CONSENT_PHRASE(USERS[req.user].name), bytes: req.body.length };
   writeJSON(consentFile(req.user), rec);
+  const cur = readJSON(settingsFile(req.user), {}) || {};
+  if (cur.adultPicked !== false) writeJSON(settingsFile(req.user), { ...cur, adultMode: true, noBrakes: cur.noBrakesPicked === false ? cur.noBrakes === true : true });
   res.json({ ok: true, consent: rec });
 });
 
@@ -450,7 +452,20 @@ app.get('/api/consent/audio', auth, (req, res) => {
 
 // ---------- privacy (per utente): tutto OFF di default ----------
 const settingsFile = (u) => path.join(userDir(u), 'settings.json');
-const getSettings = (u) => { const s = { autoSave: false, allowExport: false, adultMode: false, videoModel: '', videoDuration: 6, ...readJSON(settingsFile(u), {}) }; delete s.drawerScene; return s; }; // drawerScene (vecchio comodino, rimosso): ignorato
+const getSettings = (u) => {
+  const raw = readJSON(settingsFile(u), {}) || {};
+  const s = { autoSave: false, allowExport: false, adultMode: false, noBrakes: false, videoModel: '', videoDuration: 6, ...raw };
+  delete s.drawerScene;
+  // Chi ha già il consenso trova la modalità sbloccata accesa, finché non la spegne a mano.
+  if (isActivated(u) && raw.adultPicked !== false) {
+    const noBrakes = raw.noBrakesPicked === false ? raw.noBrakes === true : true;
+    if (s.adultMode !== true || s.noBrakes !== noBrakes) {
+      s.adultMode = true; s.noBrakes = noBrakes;
+      writeJSON(settingsFile(u), { ...raw, adultMode: true, noBrakes });
+    }
+  }
+  return s;
+};
 // Avatar mostrata in Home: scelta del profilo. Vale solo se quel personaggio è ancora nell'archivio.
 function shownCharId(u) {
   const chars = (getChars(u) || []).filter(liveChar);
@@ -487,11 +502,13 @@ app.put('/api/settings', auth, (req, res) => {
   if (!isAdmin(req.user)) { // v8.4: Luisa può solo dare o ritirare il PROPRIO consenso alla modalità adulti (e scegliere la sua avatar)
     const cur = getSettings(req.user), keys = ['autoSave', 'allowExport', 'videoModel', 'videoDuration'];
     if (keys.some((k) => req.body[k] !== undefined && String(req.body[k]) !== String(cur[k]))) return res.status(403).json({ error: ADMIN_MSG + ' Tu puoi solo dare o ritirare il tuo consenso alla modalità adulti.', code: 'ADMIN_ONLY' });
-    const s = { ...cur, adultMode: req.body.adultMode === true, activeChar: keepActive(req.user, req.body, cur) }; writeJSON(settingsFile(req.user), s); return res.json(s);
+    const s = { ...cur, adultMode: req.body.adultMode === true, activeChar: keepActive(req.user, req.body, cur), adultPicked: req.body.adultPicked === true ? true : req.body.adultPicked === false ? false : cur.adultPicked, noBrakes: req.body.noBrakes === true && req.body.adultMode === true, noBrakesPicked: req.body.noBrakesPicked === true ? true : req.body.noBrakesPicked === false ? false : cur.noBrakesPicked }; writeJSON(settingsFile(req.user), s); return res.json(s);
   }
   const cur = getSettings(req.user);
   const s = { autoSave: req.body.autoSave === true, allowExport: req.body.allowExport === true, adultMode: req.body.adultMode === true,
-    noBrakes: req.body.noBrakes === true && req.body.adultMode === true, // v8.5.0: «Senza freni» (solo Nicola, solo con la modalità adulti)
+    noBrakes: req.body.noBrakes === true && req.body.adultMode === true, // «Senza freni», insieme alla modalità adulti
+    adultPicked: req.body.adultPicked === true ? true : req.body.adultPicked === false ? false : cur.adultPicked,
+    noBrakesPicked: req.body.noBrakesPicked === true ? true : req.body.noBrakesPicked === false ? false : cur.noBrakesPicked,
     videoModel: /^[\w.\-]{0,60}$/.test(req.body.videoModel || '') ? String(req.body.videoModel || '') : '',
     videoDuration: num(req.body.videoDuration, 1, 15, 6),
     activeChar: keepActive(req.user, req.body, cur) };
