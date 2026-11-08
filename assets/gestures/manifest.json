@@ -1,0 +1,18 @@
+[
+  {
+    "id": "saluto",
+    "file": "saluto.mp4",
+    "label": "Saluta con la mano",
+    "emoji": "👋",
+    "full": false,
+    "keys": ["ciao con la mano", "salut"]
+  },
+  {
+    "id": "capelli",
+    "file": "capelli.mp4",
+    "label": "Si sistema i capelli",
+    "emoji": "💇‍♀️",
+    "full": false,
+    "keys": ["pettin", "capell"]
+  }
+]

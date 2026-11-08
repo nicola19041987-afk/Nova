@@ -1,0 +1,23 @@
+Female Adult 02 — Microsoft Rocketbox Avatar Library
+
+Source: https://github.com/microsoft/Microsoft-Rocketbox
+File: Assets/Avatars/Adults/Female_Adult_02/Export/Female_Adult_02.fbx
+Preview: Assets/Avatars/Adults/Female_Adult_02/Female_Adult_02.png
+Textures: f002_body_color.tga, f002_head_color.tga, f002_opacity_color.tga
+(resized to 768 px and packed into public/models/nova.glb)
+
+License: MIT
+Copyright (c) 2020 Microsoft
+https://github.com/microsoft/Microsoft-Rocketbox/blob/master/LICENSE.md
+
+Permission is granted to use, copy, modify, and distribute this model,
+including in a private app, provided the copyright notice and permission
+notice are included. This file is that notice.
+
+The character is an adult woman in casual clothes (sweater, denim skirt, shoes).
+The original export is a T-pose. The app rotates the upper arms down for the rest pose.
+Lip sync uses the jaw bone (Bip01 MJaw). The facial blendshape export was not used,
+because the converter dropped the viseme names.
+
+three.js (MIT) is vendored under public/vendor/three and loaded from this origin.
+No CDN at runtime.

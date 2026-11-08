@@ -1,0 +1,740 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#ECEFF3">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Nova">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Nova</title>
+  <link rel="manifest" href="/manifest.json">
+  <link rel="icon" type="image/svg+xml" href="/icons/favicon.svg?v=864">
+  <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png?v=864">
+  <link rel="apple-touch-icon" sizes="180x180" href="/icons/icon-180.png?v=864">
+  <link rel="apple-touch-startup-image" media="screen and (device-width: 440px) and (device-height: 956px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/splash/iphone-16-pro-max.png?v=864">
+  <link rel="apple-touch-startup-image" media="screen and (device-width: 402px) and (device-height: 874px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/splash/iphone-16-pro.png?v=864">
+  <link rel="apple-touch-startup-image" media="screen and (device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/splash/iphone-14-pro-max.png?v=864">
+  <link rel="apple-touch-startup-image" media="screen and (device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/splash/iphone-14-pro.png?v=864">
+  <link rel="apple-touch-startup-image" media="screen and (device-width: 428px) and (device-height: 926px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/splash/iphone-plus.png?v=864">
+  <link rel="apple-touch-startup-image" media="screen and (device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/splash/iphone-14.png?v=864">
+  <link rel="apple-touch-startup-image" media="screen and (device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/splash/iphone-xs-max.png?v=864">
+  <link rel="apple-touch-startup-image" media="screen and (device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" href="/splash/iphone-xr.png?v=864">
+  <link rel="apple-touch-startup-image" media="screen and (device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/splash/iphone-x.png?v=864">
+  <link rel="apple-touch-startup-image" media="screen and (device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" href="/splash/iphone-8.png?v=864">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div id="app-shell">
+  <!-- v8.4: barra di stato in stile iPhone (solo nel browser: nell'app installata c'è quella vera) -->
+  <div id="ios-status" class="ios-status" aria-hidden="true"><span id="sb-time" class="sb-time">9:41</span><span class="sb-island"></span>
+    <span class="sb-right"><svg class="sb-signal" viewBox="0 0 18 12"><rect x="0" y="8" width="3" height="4" rx="1"/><rect x="5" y="5.5" width="3" height="6.5" rx="1"/><rect x="10" y="3" width="3" height="9" rx="1"/><rect x="15" y="0" width="3" height="12" rx="1"/></svg>
+    <svg id="sb-wifi" class="sb-wifi" viewBox="0 0 16 12"><path d="M8 2.2c2.4 0 4.6.9 6.2 2.5l1.3-1.3C13.6 1.4 10.9.3 8 .3S2.4 1.4.5 3.4l1.3 1.3C3.4 3.1 5.6 2.2 8 2.2zm0 3.6c1.4 0 2.7.5 3.7 1.5L13 6c-1.3-1.3-3.1-2.1-5-2.1S4.3 4.7 3 6l1.3 1.3c1-1 2.3-1.5 3.7-1.5zm0 3.5c.5 0 1 .2 1.3.5L8 11.7 6.7 9.8c.3-.3.8-.5 1.3-.5z"/></svg>
+    <span class="sb-batt"><span id="sb-batt-lvl" class="sb-batt-lvl"></span></span></span></div>
+  <!-- LOGIN -->
+  <section id="view-login" class="view login-screen" hidden>
+    <div class="login-wrap">
+      <h1 class="login-wordmark">Nova</h1>
+      <div id="profile-pick" class="profiles"></div>
+      <form id="pin-form" hidden autocomplete="off">
+        <p id="pin-title" class="login-hint"></p>
+        <input id="pin-input" type="password" inputmode="numeric" pattern="\d{4}" maxlength="4" placeholder="••••" autocomplete="one-time-code" required>
+        <input id="pin-confirm" type="password" inputmode="numeric" pattern="\d{4}" maxlength="4" placeholder="Ripeti PIN" hidden>
+        <input id="setup-code" type="password" placeholder="Codice di configurazione" hidden>
+        <button class="primary login-pill" type="submit" id="pin-submit">Continua</button>
+        <button type="button" class="link" id="pin-back">Cambia profilo</button>
+      </form>
+      <p class="error" id="login-error"></p>
+    </div>
+    <p class="login-foot">Solo per Nico e Luisa</p>
+  </section>
+
+  <!-- ATTIVAZIONE: consenso vocale (una sola volta) -->
+  <section id="view-activate" class="view center" hidden>
+    <div class="card narrow">
+      <h1>Attiva il tuo account</h1>
+      <p>Prima del primo utilizzo serve il tuo <b>consenso vocale</b>. Lo registri una volta sola: poi l'app è sempre attiva.</p>
+      <p class="muted">Leggi ad alta voce questa frase:</p>
+      <blockquote id="consent-phrase">…</blockquote>
+      <button id="rec-btn" class="primary">🎙️ Registra consenso vocale</button>
+      <p id="rec-status" class="muted"></p>
+      <audio id="rec-preview" controls hidden></audio>
+      <div class="row" id="rec-actions" hidden>
+        <button id="rec-redo">Rifai</button>
+        <button id="rec-save" class="primary">Conferma e attiva</button>
+      </div>
+      <p class="error" id="rec-error"></p>
+      <button class="link" data-action="logout">Esci</button>
+    </div>
+  </section>
+
+  <!-- APP -->
+  <section id="view-app" class="view" hidden>
+    <!-- v8.4: schermata Home (orologio, icone, dock) -->
+    <section id="home" class="home" hidden>
+      <div class="home-page">
+        <div class="widget-clock" id="home-clock"><div class="wc-date" id="wc-date"></div><div class="wc-time" id="wc-time"></div><div class="wc-sub" id="wc-sub"></div></div>
+        <div class="home-grid">
+          <button class="app-ic" data-open="feed"><span class="ic ic-diary"><svg viewBox="0 0 40 40"><rect x="10" y="7" width="20" height="26" rx="3" fill="#fff"/><path d="M14 13h12M14 18h12M14 23h8" stroke="#ff9f0a" stroke-width="2.4" stroke-linecap="round"/></svg></span><span class="lbl">Diario</span></button>
+          <button class="app-ic" data-open="grok"><span class="ic ic-grok"><svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="10" fill="none" stroke="#fff" stroke-width="3"/><path d="M11 30L31 10" stroke="#fff" stroke-width="3" stroke-linecap="round"/></svg></span><span class="lbl">Grok</span></button>
+          <button class="app-ic deco" data-deco="calc"><span class="ic ic-calc"><svg viewBox="0 0 40 40"><circle cx="13" cy="13" r="4" fill="#a5a5a5"/><circle cx="27" cy="13" r="4" fill="#ff9f0a"/><circle cx="13" cy="27" r="4" fill="#505050"/><circle cx="27" cy="27" r="4" fill="#ff9f0a"/></svg></span><span class="lbl">Calcolatrice</span></button>
+          <button class="app-ic deco" data-deco="notes"><span class="ic ic-notes"><svg viewBox="0 0 40 40"><rect x="6" y="6" width="28" height="28" rx="6" fill="#fff"/><rect x="6" y="6" width="28" height="8" rx="4" fill="#ffd60a"/><path d="M11 20h18M11 25h18M11 30h12" stroke="#c7c7cc" stroke-width="1.6"/></svg></span><span class="lbl">Appunti</span></button>
+          <button class="app-ic deco" data-deco="mail"><span class="ic ic-mail"><svg viewBox="0 0 40 40"><rect x="7" y="11" width="26" height="18" rx="3" fill="#fff"/><path d="M8 12.5l12 9 12-9" fill="none" stroke="#1a7cf5" stroke-width="2"/></svg></span><span class="lbl">Mail</span></button>
+          <button class="app-ic" data-open="create"><span class="ic ic-create"><svg viewBox="0 0 40 40"><path d="M20 8l2.8 7.2L30 18l-7.2 2.8L20 28l-2.8-7.2L10 18l7.2-2.8z" fill="#fff"/><circle cx="29" cy="28" r="2.5" fill="#fff"/></svg></span><span class="lbl">Crea</span></button>
+        </div>
+        <div class="home-dots"><i class="on"></i><i></i></div>
+      </div>
+      <div class="dock">
+        <button class="app-ic" data-open="chat"><span class="ic ic-chat"><svg viewBox="0 0 28 28"><path d="M14 4C8 4 3.5 7.9 3.5 12.8c0 2.6 1.3 5 3.5 6.6-.2 1.6-1 3.2-2.3 4.3 2.4 0 4.6-.9 6.1-2.3 1 .2 2.1.4 3.2.4 6 0 10.5-3.9 10.5-8.9S20 4 14 4z" fill="currentColor"/></svg></span><span class="lbl">Chat</span><b class="badge-n" id="home-badge" hidden></b></button>
+        <button class="app-ic" data-open="calls"><span class="ic ic-calls"><svg viewBox="0 0 28 28"><path d="M9.2 4.3c.6-.2 1.3.1 1.6.7l2 4.3c.3.6.1 1.3-.4 1.7l-2 1.6c1.1 2.4 3 4.3 5.4 5.4l1.6-2c.4-.5 1.1-.7 1.7-.4l4.3 2c.6.3.9 1 .7 1.6l-.9 2.9c-.2.6-.8 1-1.4 1C11.7 22.9 5.1 16.3 4.9 8.2c0-.6.4-1.2 1-1.4z" fill="currentColor"/></svg></span><span class="lbl">Chiamate</span></button>
+        <button class="app-ic" data-open="images"><span class="ic ic-photos"><svg viewBox="0 0 40 40"><g transform="translate(20 20)"><ellipse rx="4" ry="9" cy="-7" fill="#ff9f0a" opacity=".9"/><ellipse rx="4" ry="9" cy="-7" fill="#ffd60a" opacity=".9" transform="rotate(45)"/><ellipse rx="4" ry="9" cy="-7" fill="#30d158" opacity=".9" transform="rotate(90)"/><ellipse rx="4" ry="9" cy="-7" fill="#64d2ff" opacity=".9" transform="rotate(135)"/><ellipse rx="4" ry="9" cy="-7" fill="#0a84ff" opacity=".9" transform="rotate(180)"/><ellipse rx="4" ry="9" cy="-7" fill="#bf5af2" opacity=".9" transform="rotate(225)"/><ellipse rx="4" ry="9" cy="-7" fill="#ff375f" opacity=".9" transform="rotate(270)"/><ellipse rx="4" ry="9" cy="-7" fill="#ff453a" opacity=".9" transform="rotate(315)"/></g></svg></span><span class="lbl">Galleria</span></button>
+        <button class="app-ic" data-open="account"><span class="ic ic-settings"><svg viewBox="0 0 28 28"><path d="M14 9.2a4.8 4.8 0 100 9.6 4.8 4.8 0 000-9.6zm0 7.2a2.4 2.4 0 110-4.8 2.4 2.4 0 010 4.8z" fill="currentColor"/><path d="M24 15.3v-2.6l-2.6-.6a7.6 7.6 0 00-.8-1.9l1.4-2.3-1.8-1.8-2.3 1.4c-.6-.3-1.2-.6-1.9-.8L15.3 4h-2.6l-.6 2.7c-.7.2-1.3.4-1.9.8L7.9 6.1 6.1 7.9l1.4 2.3c-.3.6-.6 1.2-.8 1.9l-2.7.6v2.6l2.7.6c.2.7.4 1.3.8 1.9l-1.4 2.3 1.8 1.8 2.3-1.4c.6.3 1.2.6 1.9.8l.6 2.7h2.6l.6-2.7c.7-.2 1.3-.4 1.9-.8l2.3 1.4 1.8-1.8-1.4-2.3c.3-.6.6-1.2.8-1.9z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg></span><span class="lbl">Impostazioni</span></button>
+      </div>
+    </section>
+
+    <header class="topbar">
+      <button id="home-link" class="home-link" type="button" aria-label="Torna alla Home"><svg viewBox="0 0 12 20"><path d="M10 2L2 10l8 8" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Home</span></button>
+      <button id="back-btn" class="icon" hidden aria-label="Indietro">‹</button>
+      <div id="wa-photo" class="wa-photo" role="button" tabindex="0" aria-label="Scegli avatar"></div>
+      <div class="wa-title"><h2 id="title">Nova</h2><span id="wa-status" class="wa-status">online</span></div>
+      <button type="button" id="support-note-btn" class="support-ic" title="Appunto per assistenza" aria-label="Appunto per assistenza">📝</button>
+      <button type="button" id="app-refresh" title="Aggiorna" aria-label="Aggiorna">↻</button>
+      <span id="who" class="muted small"></span>
+      <button type="button" id="wa-voice" class="wa-ic" title="Chiamata vocale" aria-label="Chiamata vocale">📞</button>
+      <button type="button" id="wa-video" class="wa-ic" title="Videochiamata" aria-label="Videochiamata">📹</button>
+    </header>
+
+    <div id="adult-ask" class="adult-ask" hidden>
+      <p>Per la modalità sbloccata serve il tuo consenso vocale, una volta sola. Poi resta attiva.</p>
+      <button type="button" id="adult-ask-go">Registra il consenso</button>
+      <button type="button" id="adult-ask-later">Più tardi</button>
+    </div>
+    <main>
+      <h1 id="large-title" class="large-title">Chat</h1>
+      <!-- elenco personaggi -->
+      <div id="tab-chat" class="tab">
+        <div id="key-warning" class="notice" hidden>🔑 Inserisci la tua chiave xAI in <b>Impostazioni</b> per usare chat e immagini su questo dispositivo.</div>
+        <ul id="char-list" class="list"></ul>
+        <div class="new-row"><button id="new-char" class="primary block">＋ Nuovo</button></div>
+        <div id="preset-row" class="preset-row" aria-label="Modelli pronti"></div>
+        <p id="admin-note-chars" class="admin-note" hidden>🔒 Questa parte è riservata a chi ha l’accesso. Nicola e Luisa gestiscono le stesse funzioni. Il consenso adulti e il PIN restano di ciascuno.</p>
+      </div>
+
+      <!-- conversazione -->
+      <div id="tab-conv" class="tab conv" hidden>
+        <div class="stage" id="stage">
+          <canvas id="avatar-canvas" width="300" height="300"></canvas>
+          <canvas id="vrm-view" hidden></canvas>
+          <video id="simli-video" playsinline webkit-playsinline autoplay muted hidden></video>
+          <p id="simli-status" class="simli-status" hidden></p>
+          <video id="stage-video" playsinline muted loop hidden></video>
+          <div id="call-ui" class="call-ui" hidden>
+            <div class="call-top">
+              <div class="call-head-actions">
+                <button type="button" id="call-min" class="call-x" aria-label="Riduci chiamata" title="Torna alla chat">✕</button>
+                <button type="button" id="call-hangup" class="call-hangup" aria-label="Riaggancia" title="Riaggancia">📞</button>
+              </div>
+              <span id="call-kind" class="call-kind">Videochiamata</span><b id="call-name"></b><span id="call-timer" class="call-timer">00:00</span><button type="button" id="call-badge" class="call-badge" hidden></button><span id="call-state" class="call-state">…</span>
+            </div>
+            <div id="call-portrait" class="call-portrait" hidden><canvas id="call-face" width="320" height="320"></canvas></div>
+            <video id="call-self" class="call-self" playsinline muted autoplay hidden></video>
+            <p id="call-caption" class="call-caption" hidden></p>
+            <form id="call-text" class="call-text" hidden><input id="call-input" placeholder="Scrivile…" autocomplete="off"><button class="primary" aria-label="Invia">➤</button></form>
+            <div class="call-bar">
+              <button type="button" id="call-speaker" class="call-btn" title="Altoparlante" aria-label="Altoparlante">🔊</button>
+              <button type="button" id="call-tovideo" class="call-btn green" title="Passa al video" aria-label="Passa al video">📹</button>
+              <button type="button" id="call-cc" class="call-btn small" title="Sottotitoli" aria-label="Sottotitoli">CC</button>
+              <button type="button" id="call-hot" class="call-btn hot" title="Gesti" aria-label="Gesti" hidden>🔥</button>
+              <button type="button" id="call-cam" class="call-btn" title="La tua fotocamera" aria-label="Fotocamera">📷</button>
+              <button type="button" id="call-mute" class="call-btn" title="Microfono" aria-label="Microfono">🎙️</button>
+              <button type="button" id="call-end" class="call-btn end" title="Chiudi la chiamata" aria-label="Chiudi la chiamata">📞</button>
+            </div>
+          </div>
+          <div class="stage-tools">
+            <button type="button" id="call-btn" class="call-start" title="Videochiamata" aria-label="Videochiamata">📹</button>
+            <button type="button" id="act-btn" title="Gesti" aria-label="Gesti">🎭</button>
+            <button type="button" id="hot-btn" class="hot-btn" title="Gesti" aria-label="Gesti" hidden>🔥</button>
+            <button type="button" id="scene-btn" title="Soggiorno" aria-label="Soggiorno">🏠</button>
+            <button type="button" id="av-expand" title="Ingrandisci avatar" aria-label="Ingrandisci avatar">⛶</button>
+            <button type="button" id="fs-btn" title="Schermo intero" aria-label="Schermo intero" hidden>⛶</button>
+          </div>
+          <div id="act-menu" class="scene-menu" hidden>
+            <div id="act-list" class="act-list"></div>
+            <label class="switch small"><input type="checkbox" id="act-auto" checked> Azioni spontanee quando è inattiva</label>
+            <button type="button" id="act-prepare" class="admin-ctl">✨ Prepara azioni…</button>
+            <p id="act-info"></p>
+          </div>
+          <form id="look-bar" class="look-bar" autocomplete="off">
+            <label class="sr" for="look-text">Aspetto</label>
+            <input id="look-text" maxlength="240" placeholder="Abbigliamento, genere, corpo" enterkeyhint="done">
+            <button type="submit" id="look-apply">Cambia</button>
+            <p id="look-msg" class="look-msg" role="status"></p>
+            <details id="look-history-wrap">
+              <summary>Storico aspetti</summary>
+              <ul id="look-history"></ul>
+            </details>
+          </form>
+          <div id="scene-menu" class="scene-menu" hidden>
+            <button type="button" id="scene-toggle">🏠 Mostrala nel soggiorno</button>
+            <button type="button" id="scene-gen" class="admin-ctl">✨ Crea il soggiorno con l'IA</button>
+            <button type="button" id="scene-gestures" class="admin-ctl" hidden>🎬 Prepara i gesti al tavolo</button>
+            <p id="scene-info"></p>
+          </div>
+        </div>
+        <div class="voicebar">
+          <button type="button" id="call-btn2" class="call-start-wide" title="Videochiamata a voce">📹 <span>Videochiamata</span></button>
+          <button type="button" id="mic-btn" title="Ascolto continuo">🎙️ <span>Voce: off</span></button>
+          <button type="button" id="tts-btn" title="Leggi le risposte ad alta voce">🔇 <span>Lettura: off</span></button>
+          <label class="switch small"><input type="checkbox" id="auto-send" checked> Invio automatico</label>
+          <button type="button" id="presence-btn" class="cam-only" hidden title="Presenza: lei nella stanza">📷 Presenza</button>
+          <button type="button" id="clear-chat" class="admin-ctl" title="Cancella conversazione">🗑️</button>
+        </div>
+        <p id="voice-status" class="muted small" hidden></p>
+        <div id="messages" class="messages"></div>
+        <p id="typing" class="typing-line muted small" hidden></p>
+        <form id="chat-form" class="composer">
+          <textarea id="chat-input" rows="1" placeholder="Scrivi a Nova…" required></textarea>
+          <button type="button" id="solo-rt" hidden title="Voce in tempo reale" aria-label="Voce in tempo reale" aria-pressed="false">⚡</button>
+          <button type="button" id="kb-hide" hidden title="Chiudi tastiera" aria-label="Chiudi tastiera">⌄</button>
+          <button type="button" id="chat-only" title="Solo messaggio: lo vede l'altra persona, l'IA non risponde" aria-label="Solo messaggio">💬</button>
+          <button class="primary" type="submit" aria-label="Invia (risponde il personaggio)">➤</button>
+        </form>
+      </div>
+
+      <!-- v8.4: chiamate recenti -->
+      <div id="tab-calls" class="tab" hidden>
+        <div class="seg" id="calls-seg"><button class="on" data-f="all">Tutte</button><button data-f="video">Video</button><button data-f="voice">Vocali</button></div>
+        <ul id="calls-list" class="ios-list calls-list"></ul>
+        <p class="muted small center-text">Tocca una riga per richiamare. Le chiamate restano solo nel tuo profilo.</p>
+      </div>
+
+      <!-- immagini -->
+      <div id="tab-images" class="tab" hidden>
+        <div class="seg" id="gal-seg"><button class="on" data-g="photos">Foto</button><button data-g="create">Crea con l'IA</button></div>
+        <div id="gal-photos">
+          <div class="gal-toolbar"><button type="button" id="gal-add" class="primary">＋ Aggiungi</button><span id="gal-count" class="muted small"></span></div>
+          <input type="file" id="gal-file" accept="image/*,video/*" multiple hidden>
+          <p class="gal-note muted small">📱 Su iPhone le app web vedono solo le foto e i video che scegli tu con «Aggiungi»: vengono copiati qui, in uno spazio privato del tuo profilo (gli originali restano nel rullino).</p>
+          <div id="gal-progress" class="gal-progress" hidden><span></span></div>
+          <h3 class="sec-h">Dal telefono</h3>
+          <div id="gal-phone" class="pgrid"></div>
+          <h3 class="sec-h">Nell'app</h3>
+          <div id="gal-app" class="pgrid"></div>
+          <details id="gal-trash-box" class="gal-trash" hidden><summary>🗑️ Eliminati di recente <span id="gal-trash-n" class="muted small"></span></summary>
+            <p class="muted small">Restano qui 30 giorni, poi vengono eliminati. Tocca per ripristinare.</p>
+            <div id="gal-trash" class="pgrid"></div></details>
+        </div>
+        <div id="gal-create" hidden>
+        <form id="img-form" class="card">
+          <label>Descrivi l'immagine
+            <textarea id="img-prompt" rows="3" required placeholder="Es. tramonto romantico su una terrazza a Positano, stile fotografico"></textarea>
+          </label>
+          <button class="primary block" type="submit">✨ Genera immagine</button>
+          <p id="img-status" class="muted"></p>
+        </form>
+        <details class="card" id="video-card"><summary>🎬 Video</summary>
+          <label>Descrivi il video <textarea id="vid-prompt" rows="2" placeholder="Es. Aurora che sorride e saluta su una terrazza al tramonto"></textarea></label>
+          <div class="grid2">
+            <label>Formato <select id="vid-aspect"><option value="9:16">Verticale 9:16</option><option value="1:1">Quadrato</option><option value="16:9">Orizzontale 16:9</option></select></label>
+            <label>Durata (s) <input type="number" id="vid-duration" min="1" max="15" value="6"></label>
+          </div>
+          <label class="switch"><input type="checkbox" id="vid-from-avatar"> Parti dall'avatar del personaggio attuale</label>
+          <button type="button" id="vid-go" class="primary block">🎬 Genera video</button>
+          <p id="vid-status" class="muted small"></p>
+          <div id="videos" class="videos"></div>
+        </details>
+
+        <details class="card"><summary>🔄 Scambio volto / reinquadratura</summary>
+          <p class="muted small">Solo volti di Nicola, Luisa o volti generati dall'IA. Mai terze persone reali.</p>
+          <label>Immagine di partenza <select id="fs-target"></select></label>
+          <input type="file" id="fs-target-file" accept="image/*" hidden>
+          <label>Volto da usare <select id="fs-face"></select></label>
+          <input type="file" id="fs-face-file" accept="image/*" hidden>
+          <div class="row cam-only" hidden><button type="button" id="fs-cam">📷 Scatta il volto con la fotocamera</button></div>
+          <label>Istruzioni (opzionale) <input id="fs-instr" placeholder="Es. inquadratura a mezzo busto, sfondo spiaggia"></label>
+          <label class="switch consent-check"><input type="checkbox" id="fs-consent"><span>Confermo che questa immagine ritrae me stesso/a o il mio partner con il suo consenso, oppure un volto inventato o generato dall'IA, e non una terza persona reale</span></label>
+          <button type="button" id="fs-go" class="primary block">🔄 Applica con l'IA</button>
+          <p id="fs-status" class="muted small"></p>
+        </details>
+
+        <details class="card"><summary>✂️ Ritaglia e inquadra (sul telefono, senza IA)</summary>
+          <input type="file" id="crop-file" accept="image/*">
+          <div class="row cam-only" hidden><button type="button" id="crop-cam">📷 Usa la fotocamera</button></div>
+          <canvas id="crop-canvas" width="600" height="600" hidden></canvas>
+          <div id="crop-tools" hidden>
+            <label>Zoom <input type="range" id="crop-zoom" min="100" max="400" value="100"></label>
+            <label>Formato <select id="crop-aspect"><option value="1">Quadrato</option><option value="0.8">Ritratto 4:5</option><option value="0.5625">Storia 9:16</option></select></label>
+            <p class="muted small">Trascina l'immagine per inquadrarla.</p>
+            <label class="switch consent-check"><input type="checkbox" id="crop-consent"><span>Confermo che questa immagine ritrae me stesso/a o il mio partner con il suo consenso, oppure un volto inventato o generato dall'IA, e non una terza persona reale</span></label>
+            <button type="button" id="crop-save" class="primary block">💾 Salva nella galleria</button>
+          </div>
+        </details>
+
+        <video id="cam-video" playsinline muted hidden></video>
+        <div id="gallery" class="gallery"></div>
+        </div>
+      </div>
+
+      <!-- diario: bacheca privata di coppia -->
+      <div id="tab-feed" class="tab" hidden>
+        <p class="muted small">Il vostro diario privato: lo vedete solo tu e il tuo partner. Pubblica da Immagini o dai personaggi (📔).</p>
+        <div id="feed" class="feed"></div>
+      </div>
+
+      <!-- account -->
+      <div id="tab-account" class="tab" hidden>
+        <div class="card">
+          <h3>Galleria totale</h3>
+          <p class="muted small">Tutte le foto e i video salvati sul server, dal primo giorno. Solo lettura: non si cancella nulla.</p>
+          <a id="open-archive" class="arch-link" href="#galleria">Apri la galleria totale</a>
+        </div>
+        <div class="card" id="solo-settings-card">
+          <h3>✨ Nova</h3>
+          <p class="muted small">Aspetto, richieste e scorciatoie. La personalità è fissa.</p>
+          <details id="avatar-fallback-panel">
+            <summary>Ripristino foto, se il 3D non carica</summary>
+            <label>Vista di riserva
+              <select id="avatar-view">
+                <option value="photo">Foto</option>
+                <option value="video">Video</option>
+                <option value="3d" selected>3D</option>
+              </select>
+            </label>
+            <p id="avatar-view-status" class="muted small">Il 3D è l’avatar unico. Qui si torna alla foto senza cancellare nulla.</p>
+          </details>
+          <button type="button" id="set-look-btn" class="primary block">✨ Modifica aspetto</button>
+          <label>Richieste <textarea id="set-requests" rows="3" maxlength="4000" placeholder="Es. chiamami amore, parla del vino…"></textarea></label>
+          <button type="button" id="set-requests-save" class="block">Salva richieste</button>
+          <button type="button" id="set-hot-btn" class="hot-btn block" hidden>Gesti</button>
+          <button type="button" id="mood-open" class="block">Umore di Nova</button>
+          <button type="button" id="support-note-settings" class="block">Appunto per assistenza</button>
+          <h3>PIN</h3>
+          <p class="muted small">Cambia solo il PIN di questo profilo. Quello dell’altra persona resta il suo.</p>
+          <input id="pin-now" type="password" inputmode="numeric" maxlength="4" placeholder="PIN attuale" autocomplete="off">
+          <input id="pin-new" type="password" inputmode="numeric" maxlength="4" placeholder="Nuovo PIN" autocomplete="off">
+          <button type="button" id="pin-change" class="block">Cambia PIN</button>
+          <p class="muted small">Galleria e Diario restano nelle sezioni qui sotto / da Home.</p>
+        </div>
+        <div class="card">
+          <h3>🔑 Chiave API xAI</h3>
+          <p class="muted small">Estensione del tuo account Grok. La chiave resta <b>solo su questo dispositivo</b>; il server la inoltra a xAI senza salvarla.</p>
+          <div class="row">
+            <input type="password" id="key-input" placeholder="xai-…" autocomplete="off" spellcheck="false">
+            <button id="key-toggle" type="button">👁️</button>
+          </div>
+          <div class="row">
+            <button id="key-save" class="primary">Salva</button>
+            <button id="key-clear">Rimuovi</button>
+          </div>
+          <p id="key-status" class="muted small"></p>
+          <h3>Chiave Simli</h3>
+          <p class="muted small">Per il volto in videochiamata. Resta sul server. Senza chiave resta la foto.</p>
+          <div class="row">
+            <input type="password" id="simli-key-input" placeholder="Chiave Simli" autocomplete="off" spellcheck="false">
+            <button id="simli-key-toggle" type="button" aria-label="Mostra chiave Simli">👁️</button>
+          </div>
+          <label>Volto, facoltativo <input id="simli-face-input" placeholder="id del volto" autocomplete="off" spellcheck="false"></label>
+          <button id="simli-key-save" class="primary block" type="button">Salva chiave Simli</button>
+          <p id="simli-key-status" class="muted small"></p>
+          <p class="muted small">Registro videochiamata</p>
+          <ol id="simli-log" class="simli-log"></ol>
+        </div>
+
+        <div class="card" id="voice-card">
+          <h3>🗣️ Voce dell'avatar</h3>
+          <p class="muted small">La <b>voce naturale</b> usa xAI con la tua chiave (costo minimo, legge frase per frase mentre lei scrive). Senza chiave o se non risponde, si usa in automatico la voce del telefono.</p>
+          <label>Motore
+            <select id="voice-engine">
+              <option value="xai">✨ Naturale (xAI)</option>
+              <option value="device">📱 Voce del telefono</option>
+            </select></label>
+          <label>Voce
+            <select id="voice-id"><option value="ara">Ara</option><option value="eve">Eve</option><option value="sal">Sal</option><option value="rex">Rex</option><option value="leo">Leo</option></select></label>
+          <label>Velocità <span id="voice-speed-val" class="muted small"></span>
+            <input type="range" id="voice-speed" min="0.8" max="1.3" step="0.05"></label>
+          <button id="voice-test" type="button" class="block">▶️ Prova la voce</button>
+          <p id="voice-info" class="muted small"></p>
+          <label>Chiamate e videochiamate
+            <select id="call-engine">
+              <option value="realtime">⚡ Conversazione in tempo reale (come Grok)</option>
+              <option value="classic">🎙️ Classica (microfono continuo + trascrizione xAI)</option>
+            </select></label>
+          <p id="call-engine-info" class="muted small">In tempo reale lei ti sente mentre parli, risponde appena finisci e si ferma se parli sopra di lei. Il telefono si collega direttamente a xAI con un token valido 5 minuti: la tua chiave resta sul telefono. Se il collegamento non riesce si passa da soli alla chiamata classica, e in alto nella chiamata vedi <b>⚡ Tempo reale</b> o <b>Classica</b> (toccalo per il motivo).</p>
+          <p id="latency-info" class="muted small"></p>
+          <button id="voice-diag" type="button" class="block">🩺 Diagnostica voce</button>
+          <div id="voice-diag-out" class="diag-out" hidden></div>
+        </div>
+
+        <div class="card">
+          <h3>🔒 Privacy dei contenuti generati</h3>
+          <p class="muted small">Di default tutto resta privato: le immagini e gli avatar generati restano solo in memoria per questa sessione finché non li salvi tu.</p>
+          <label class="switch"><input type="checkbox" id="set-autosave"> Salva automaticamente i contenuti generati</label>
+          <label class="switch"><input type="checkbox" id="set-export"> Consenti esportazione/condivisione</label>
+          <label class="switch"><input type="checkbox" id="set-adult"> Modalità adulti (18+)</label>
+          <p class="muted small" id="adult-info">Disattivata.</p>
+          <label class="switch" id="nobrakes-row" hidden><input type="checkbox" id="set-nobrakes"> Senza freni</label>
+          <p class="muted small" id="nobrakes-info" hidden>Con la modalità adulti attiva per entrambi: dialogo intimo al massimo esplicito, intenso e audace, che nasce dalla conversazione. Spento = comportamento adulti di sempre.</p>
+          <label>Parola chiave per attivarla a voce o per iscritto (facoltativa)
+            <input id="kw-input" type="password" autocomplete="off" placeholder="vuoto = funzione spenta"></label>
+          <button id="kw-save" class="block">Salva parola chiave</button>
+          <p class="muted small" id="kw-status">Salvata solo come impronta cifrata sul server; non viene mai inviata all'IA. Quando la dici o la scrivi in chat, l'avatar ti chiede conferma.</p>
+          <p class="muted small">Con l'esportazione attiva compaiono solo i pulsanti manuali "Scarica" e "Condividi" (menu di condivisione del telefono). Nessuna pubblicazione automatica, nessun collegamento a piattaforme esterne.</p>
+        </div>
+
+        <div class="card">
+          <h3>📷🎙️ Fotocamera e microfono</h3>
+          <p class="muted small">Spenti di default. Il permesso viene chiesto solo quando li usi. Tutto resta sul telefono, a meno che tu non invii un'immagine all'IA.</p>
+          <label class="switch"><input type="checkbox" id="set-mic"> Usa il microfono (comandi vocali in chat)</label>
+          <label class="switch"><input type="checkbox" id="set-cam"> Usa la fotocamera (scatti per ritaglio e scambio volto)</label>
+          <p class="muted small">Il consenso vocale di attivazione usa il microfono una sola volta, a parte.</p>
+        </div>
+
+        <div class="card">
+          <h3>🎬 Video</h3>
+          <label>Modello video (vuoto = predefinito del server) <input id="set-video-model" placeholder="grok-imagine-video-1.5-lite"></label>
+          <label>Durata predefinita (secondi) <input type="number" id="set-video-duration" min="1" max="15"></label>
+          <button id="set-video-save" class="block">Salva</button>
+          <p class="muted small" id="video-info"></p>
+        </div>
+
+        <div class="card">
+          <h3>🧍 Avatar</h3>
+          <label class="switch"><input type="checkbox" id="set-gestures"> Gesti animati (mezzo busto / figura intera)</label>
+          <label class="switch"><input type="checkbox" id="set-learn-gestures"> Reagisci ai gesti delle mie mani (fotocamera, in Presenza)</label>
+          <label class="switch"><input type="checkbox" id="set-mirror-moves"> Imita i miei movimenti (testa, braccia, ritmo)</label>
+          <p class="muted small" id="motion-style-info">L'avatar impara piano piano il tuo stile (energia, ampiezza dei movimenti della testa, ritmo dei gesti) e lo usa con ritardo e ampiezza ridotta, anche a fotocamera spenta. Resta solo su questo telefono.</p>
+          <button id="motion-style-reset" type="button">Dimentica il mio stile di movimento</button>
+          <p class="muted small" id="learn-gestures-info">Disattivato di default. Riconoscimento sul telefono (MediaPipe locale): nessun video viene caricato. Gesti: 👋 saluto, ✋ mano aperta, 👍 pollice, 👌 OK, ✌️ pace, 👉 indicare.</p>
+        </div>
+
+        <div class="card">
+          <h3>📜 Le mie regole</h3>
+          <p class="muted small">Regole o "gioco" applicati a tutte le tue conversazioni, insieme al personaggio e alla memoria. Le regole di sicurezza di base restano sempre attive.</p>
+          <textarea id="rules-input" rows="6" placeholder="Es. Chiamami sempre 'tesoro'. Ogni sera proponimi una sfida diversa…"></textarea>
+          <button id="rules-save" class="primary block">Salva regole</button>
+          <p id="rules-status" class="muted small"></p>
+        </div>
+
+        <div class="card">
+          <h3>🧠 Memoria</h3>
+          <p class="muted small">Memoria condivisa di coppia: la vedete e modificate entrambi, e la usa il personaggio con tutti e due.</p>
+          <label class="switch"><input type="checkbox" id="mem-auto"> Impara automaticamente dalle chat</label>
+          <ul id="mem-list" class="list mem"></ul>
+          <div class="row">
+            <input id="mem-new" placeholder="Aggiungi un ricordo…">
+            <button id="mem-add" class="primary">＋</button>
+          </div>
+          <button id="mem-clear" class="danger block">Cancella tutta la memoria</button>
+        </div>
+
+        <div class="card">
+          <h3>🔒 Le mie note personali</h3>
+          <p class="muted small">Facoltative e visibili solo a te. Non vanno all'IA, a meno che tu lo scelga qui sotto (e solo quando scrivi tu).</p>
+          <textarea id="notes-input" rows="4" placeholder="Appunti tuoi…"></textarea>
+          <label class="switch"><input type="checkbox" id="notes-ai"> Usale anche con l'IA quando scrivo io</label>
+          <button id="notes-save" class="primary block">Salva note</button>
+          <p id="notes-status" class="muted small"></p>
+        </div>
+
+        <div class="card">
+          <h3>🎙️ Storico account</h3>
+          <div id="consent-info" class="muted"></div>
+        </div>
+
+        <div class="card">
+          <h3>🛟 Recupero personaggi</h3>
+          <p class="muted small">L'app fa da sola copie di sicurezza (all'avvio, ogni ora se ci sono modifiche e prima di ogni eliminazione). Qui puoi rimettere nell'elenco i personaggi che non ci sono più, con la loro chat: quelli attuali non vengono toccati.</p>
+          <button id="recovery-scan" class="block">Cerca personaggi da recuperare</button>
+          <ul id="recovery-list" class="list"></ul>
+          <button id="recovery-go" class="primary block" hidden>Recupera i selezionati</button>
+          <p id="recovery-status" class="muted small"></p>
+          <h4>🗑️ Personaggi eliminati (ripristinabili per 7 giorni)</h4>
+          <button id="trash-load" type="button" class="block">Mostra i personaggi eliminati</button>
+          <ul id="trash-list" class="list"></ul>
+        </div>
+
+        <div class="card danger-zone">
+          <h3>🧨 Cancella tutto</h3>
+          <p class="muted small">Elimina in un colpo solo TUTTI i dati dell'app di entrambi i profili: chat, personaggi, aspetto, guardaroba e storico look, stato emotivo, memoria, regole, Diario (post, commenti, mi piace), immagini e video, audio del consenso. Svuota anche i dati salvati su questo telefono (chiave xAI inclusa) e ti disconnette. Non si può annullare.</p>
+          <label class="switch"><input type="checkbox" id="wipe-pins"> Cancella anche i PIN (al prossimo accesso andranno ricreati, con il codice di configurazione se impostato)</label>
+          <label class="switch"><input type="checkbox" id="wipe-backups"> Elimina anche le copie di sicurezza (altrimenti restano sul server e si possono recuperare)</label>
+          <button id="wipe-btn" class="danger block">Cancella tutto</button>
+        </div>
+
+        <button class="block" data-action="logout">Esci</button>
+        <p class="muted small center-text">Regole di base sempre attive: nessun contenuto con minori, senza consenso o illegale.</p>
+      </div>
+    </main>
+
+    <nav class="tabbar" id="legacy-tabbar">
+      <button data-tab="chat" class="active"><span>Chat</span></button>
+      <button data-tab="calls"><span>Chiamate</span></button>
+      <button data-tab="images"><span>Galleria</span></button>
+      <button data-tab="feed" hidden>📔<span>Diario</span></button>
+      <button data-tab="account"><span>Impostazioni</span></button>
+    </nav>
+    <nav class="solo-dock" id="solo-dock" hidden aria-label="Navigazione">
+      <button type="button" data-dock="home" id="dock-home" aria-label="Home"><span class="dock-ic">🏠</span><span>Home</span></button>
+      <button type="button" data-dock="mic" id="dock-mic" aria-label="Microfono"><span class="dock-ic">🎙️</span><span>Microfono</span></button>
+      <button type="button" data-dock="cam" id="dock-cam" aria-label="Camera"><span class="dock-ic">📷</span><span>Camera</span></button>
+      <button type="button" data-dock="settings" id="dock-settings" aria-label="Impostazioni"><span class="dock-ic">⚙️</span><span>Impostazioni</span></button>
+    </nav>
+    <button id="home-ind" class="home-ind" type="button" aria-label="Torna alla Home"><i></i></button>
+
+    <!-- v8.4: visore a tutto schermo della Galleria (scorri per cambiare foto) -->
+    <div id="viewer" class="viewer" hidden>
+      <div class="vw-top"><button type="button" id="vw-close" class="vw-btn">Chiudi</button><span id="vw-title" class="vw-title"></span><span id="vw-pos" class="vw-pos"></span></div>
+      <div id="vw-track" class="vw-track"></div>
+      <div class="vw-bar">
+        <button type="button" id="vw-share" class="vw-ic" aria-label="Condividi o salva"><svg viewBox="0 0 28 28"><path d="M14 3v15M9 8l5-5 5 5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 12H6.5A2.5 2.5 0 004 14.5v8A2.5 2.5 0 006.5 25h15a2.5 2.5 0 002.5-2.5v-8a2.5 2.5 0 00-2.5-2.5H20" fill="none" stroke="currentColor" stroke-width="2.2"/></svg></button>
+        <button type="button" id="vw-avatar" class="vw-txt">Usa come foto avatar</button>
+        <button type="button" id="vw-send" class="vw-txt">Invia in chat</button>
+        <button type="button" id="vw-del" class="vw-ic danger" aria-label="Elimina"><svg viewBox="0 0 28 28"><path d="M5 7h18M11 7V4.5h6V7M7.5 7l1.2 16a2 2 0 002 1.8h6.6a2 2 0 002-1.8L20.5 7" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      </div>
+    </div>
+    <!-- foglio azioni stile iOS -->
+    <div id="sheet" class="sheet" hidden><div class="sheet-box"><div id="sheet-body" class="sheet-body"></div><button type="button" id="sheet-cancel" class="sheet-cancel">Annulla</button></div></div>
+  </section>
+
+  <!-- editor personaggio -->
+  <dialog id="act-dialog">
+    <form method="dialog" id="act-form">
+      <h3>🎭 Prepara azioni</h3>
+      <p class="muted small" id="act-cost">Ogni azione è una breve clip generata dall'IA a partire dall'avatar attuale, con la tua chiave xAI (consuma crediti). Viene preparata una volta sola, solo quando premi «Prepara», ed è condivisa con l'altro profilo.</p>
+      <div id="act-choices"></div>
+      <div id="act-adult" hidden>
+        <h4>🔞 Azioni per adulti</h4>
+        <p class="muted small" id="act-adult-note"></p>
+        <div id="act-adult-choices"></div>
+      </div>
+      <progress id="act-progress" max="1" value="0" hidden></progress>
+      <ul id="act-log" class="act-log"></ul>
+      <div class="row">
+        <button type="button" id="act-go" class="primary">Prepara</button>
+        <button type="button" id="act-stop" hidden>Interrompi</button>
+        <button type="button" id="act-close">Chiudi</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="char-dialog">
+    <form id="char-form" method="dialog">
+      <h3 id="char-dialog-title">Personaggio</h3>
+      <details id="import-box" class="import-box" hidden><summary>📋 Importa personaggio da testo</summary>
+        <p class="muted small">Incolla una descrizione libera (anche esportata da ChatGPT): l'IA compila nome, carattere, aspetto, modo di parlare e ricordi di un <b>nuovo</b> personaggio. Controlli tutto e salvi tu; le regole per adulti dell'app restano quelle di sempre. Sempre adulti (25+), sempre inventati.</p>
+        <textarea id="import-text" rows="6" maxlength="12000" placeholder="Es. «Si chiama Giulia, ha 32 anni, fotografa a Napoli, ironica e curiosa…»"></textarea>
+        <button type="button" id="import-go" class="primary block">✨ Compila i campi con l'IA</button>
+        <div id="import-status" class="muted small"></div>
+      </details>
+      <div class="stage"><canvas id="editor-canvas" width="300" height="300"></canvas></div>
+      <p id="avatar-status" class="muted small center-text"></p>
+
+      <details open><summary>Base</summary>
+        <label>Nome <input name="name" required maxlength="60"></label>
+        <!-- v8.5.0: solo tre campi; regole, stile e indicazioni di comportamento sono integrati in automatico nel prompt -->
+        <label class="solo-hide">Personalità base <textarea name="personality" rows="4" placeholder="Chi è: età, lavoro, passioni, la sua vita…"></textarea></label>
+        <label class="solo-hide">Carattere <textarea name="style" rows="3" placeholder="Com'è e come parla: ironica, dolce, diretta, curiosa…"></textarea></label>
+        <label class="solo-hide">Ordini da seguire <textarea name="orders" rows="3" maxlength="4000" placeholder="Istruzioni fisse che segue sempre. Es. «Chiamami amore», «Parlami sempre del tuo lavoro», «Niente emoji»"></textarea></label>
+        <p class="muted small">Tutto il resto (regole, stile della conversazione, voce in chiamata, linguaggio del corpo) è già integrato in automatico.</p>
+        <button type="button" id="fill-base" class="link fill-base" hidden>✍️ Riempi con base (solo i campi vuoti)</button>
+        <label>Voce <select name="voice" id="char-voice"><option value="">Come nelle Impostazioni</option><option value="ara">Ara — calda</option><option value="eve">Eve — vivace</option><option value="sal">Sal — pacata</option></select></label>
+        <p id="preset-hint" class="notice small" hidden></p>
+      </details>
+
+      <details><summary>Avatar animato</summary>
+        <label class="admin-row">Distanza dalla camera <span id="frame-dist-val" class="muted small"></span>
+          <input type="range" id="frame-dist" min="0" max="1" step="0.05" value="0.75"></label>
+        <p class="muted small">Più a destra = meno taglio della foto: più corpo e più stanza, fino alla foto intera (si salva con «Salva»). Se la foto è un primo piano, «🔭 Allontana con l'IA» (sotto la foto) crea la stessa foto ripresa da più lontano, con più stanza; le nuove foto generate sono già più lontane.</p>
+        <label>Emoji <input name="avatarEmoji" maxlength="8" placeholder="🌙"></label>
+        <label>…oppure carica un ritratto <input type="file" id="avatar-file" accept="image/*"></label>
+        <label class="switch consent-check" id="avatar-consent-wrap" hidden>
+          <input type="checkbox" id="avatar-consent">
+          <span>Confermo che questa immagine ritrae me stesso/a o il mio partner con il suo consenso, oppure un volto inventato o generato dall'IA, e non una terza persona reale</span>
+        </label>
+        <p class="muted small">…oppure genera un volto inventato con l'IA dalle sezioni <b>Aspetto</b> e <b>Identità</b> (pulsante ✨ Rigenera).</p>
+        <div id="landmark-wrap" hidden>
+          <p id="face-status" class="muted small face-status">Occhi e bocca vengono trovati in automatico.</p>
+          <details id="lm-manual" class="lm-manual"><summary>Correggi a mano</summary>
+            <p class="muted small">Trascina i segni su <b>occhi</b> (👁) e <b>bocca</b> (👄) solo se il rilevamento automatico ha sbagliato.</p>
+            <div class="landmark-editor"><canvas id="landmark-canvas" width="320" height="320"></canvas></div>
+            <button type="button" id="lm-redetect" class="link">↻ Rileva di nuovo in automatico</button>
+          </details>
+          <button type="button" id="avatar-remove" class="link">Rimuovi immagine (torna all'emoji)</button>
+        </div>
+      </details>
+
+      <details><summary>Aspetto: corpo e colori</summary>
+        <p class="muted small">Corpo e inquadratura: si applicano con ✨ Rigenera. Colori: subito, dal vivo. Sempre adulti (25+), stile realistico.</p>
+        <div class="grid2">
+          <label>Genere <select data-ap="gender"></select></label>
+          <label>Età <span data-out="age"></span><input type="range" data-ap="age" min="25" max="80" step="1"></label>
+          <label>Corporatura <select data-ap="build"></select></label>
+          <label>Forme <select data-ap="shape"></select></label>
+          <label>Proporzioni <select data-ap="proportions"></select></label>
+          <label>Altezza <span data-out="height"></span><input type="range" data-ap="height" min="150" max="200" step="1"></label>
+          <label>Inquadratura <select data-ap="framing"></select></label>
+        </div>
+        <h4>Colori (istantanei)</h4>
+        <div class="grid2">
+          <label>Tonalità <input type="range" data-col="hue" min="-180" max="180"></label>
+          <label>Saturazione <input type="range" data-col="saturation" min="0" max="200"></label>
+          <label>Luminosità <input type="range" data-col="brightness" min="50" max="150"></label>
+          <label>Sfondo <input type="color" data-col="background"></label>
+          <label>Alone <input type="color" data-col="glow"></label>
+        </div>
+      </details>
+
+      <div id="frame-box" class="frame-box" hidden>
+        <p class="muted small" id="frame-info">La foto non è in formato 9:16: la cornice la riempie da sola (taglio leggero e bordi in tinta, niente sfocature).</p>
+        <div class="row"><button type="button" id="frame-fit" class="admin-ctl">🖼️ Adatta alla cornice</button><button type="button" id="frame-far" class="admin-ctl">🔭 Allontana con l'IA</button><button type="button" id="frame-undo" class="admin-ctl" hidden>↩︎ Foto originale</button></div>
+      </div>
+      <details><summary>Identità base</summary>
+        <p class="muted small">Descrizione fissa del volto, riusata in ogni rigenerazione perché resti riconoscibile.</p>
+        <textarea data-id="core" rows="3" placeholder="Es. viso ovale, occhi verdi a mandorla, lentiggini leggere, capelli castano ramati, piccolo neo sopra il labbro"></textarea>
+        <p class="muted small" id="identity-info"></p>
+        <label class="switch"><input type="checkbox" data-id="locked"> Identità bloccata (non modificabile per sbaglio)</label>
+        <label>Note extra per la prossima rigenerazione <input id="regen-extra" placeholder="Es. sorriso leggero, luce dorata"></label>
+        <button type="button" id="regen-btn" class="primary block">✨ Rigenera avatar</button>
+        <button type="button" id="post-avatar" class="block">📔 Pubblica il look attuale nel Diario</button>
+      </details>
+
+      <details><summary>💇 Parrucchiere</summary>
+        <p class="muted small">Proposte rapide:</p>
+        <div class="chips" id="hair-presets"></div>
+        <div class="grid2">
+          <label>Taglio <select data-look="cut"></select></label>
+          <label>Lunghezza <select data-look="length"></select></label>
+          <label>Colore <select data-look="hairColor"></select></label>
+          <label>Piega / acconciatura <select data-look="hairStyle"></select></label>
+        </div>
+        <button type="button" id="hair-apply" class="primary block">✂️ Applica nuova acconciatura</button>
+      </details>
+
+      <details><summary>Guardaroba</summary>
+        <div class="grid2">
+          <label>Trucco <select data-look="makeup"></select></label>
+        </div>
+        <p class="muted small">Outfit rapido (rigenera subito):</p>
+        <div class="chips" id="outfit-chips"></div>
+        <label>Dettagli look <input data-look="custom" placeholder="Es. orecchini d'oro, giacca di pelle"></label>
+        <div class="row"><button type="button" id="look-apply" class="primary">Applica look</button><button type="button" id="look-save">💾 Salva nel guardaroba</button></div>
+        <p class="muted small">Look salvati:</p>
+        <div class="chips" id="wardrobe-list"></div>
+      </details>
+
+      <details><summary>Cambi automatici</summary>
+        <label class="switch"><input type="checkbox" data-auto="enabled"> Piccoli cambi automatici (capelli, trucco, outfit)</label>
+        <label>Ogni quanti giorni <input type="number" data-auto="everyDays" min="1" max="30"></label>
+        <label class="switch"><input type="checkbox" data-auto="bodyDrift"> Consenti minime variazioni del corpo</label>
+        <div class="grid2">
+          <label>Corporatura minima <select data-auto="buildMin"></select></label>
+          <label>Corporatura massima <select data-auto="buildMax"></select></label>
+        </div>
+        <p class="muted small" id="auto-info"></p>
+      </details>
+
+      <details><summary>Personalità in evoluzione</summary>
+        <p class="muted small">Umore, relazione, tratti e rancori cambiano dopo le conversazioni. Può discutere, offendersi e tenere il broncio.</p>
+        <div id="state-info" class="state"></div>
+        <button type="button" id="state-reset" class="link">Azzera lo stato emotivo</button>
+        <button type="button" id="mem-base-btn" class="link">🧠 Rigenera memoria base</button>
+      </details>
+
+      <details><summary>🪪 Documenti per gioco</summary>
+        <p class="muted small">Documenti inventati e scherzosi con dati di fantasia, con filigrana "FAC-SIMILE – NON VALIDO". Non riproducono documenti reali.</p>
+        <div class="row"><button type="button" data-doc="id">Carta d'identità</button><button type="button" data-doc="health">Tessera sanitaria</button><button type="button" data-doc="wallet">Portafoglio</button></div>
+        <canvas id="doc-canvas" width="900" height="560" hidden></canvas>
+        <div class="row" id="doc-actions" hidden><button type="button" id="doc-download">⬇️ Scarica</button><button type="button" id="doc-share">📤 Condividi</button></div>
+      </details>
+
+      <details><summary>Storico look</summary>
+        <div id="look-history" class="history"></div>
+      </details>
+
+      <div class="row sticky-actions">
+        <button type="button" id="char-delete" class="danger">🗑️ Elimina personaggio</button>
+        <button type="button" id="char-cancel">Chiudi</button>
+        <button type="submit" class="primary">Salva</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Presenza: fotocamera dal vivo + avatar animato sovrapposto; scambio volto dal vivo (sul dispositivo) -->
+  <div id="presence" class="presence" hidden>
+    <video id="live-video" playsinline muted autoplay></video>
+    <canvas id="live-overlay"></canvas>
+    <canvas id="presence-avatar" width="400" height="400"></canvas>
+    <div class="presence-top">
+      <button type="button" id="live-close">✕</button>
+      <button type="button" id="live-flip">🔄 Fotocamera</button>
+      <button type="button" id="live-mode">🧍 Presenza</button>
+      <button type="button" id="live-shot">📸</button>
+      <button type="button" id="live-hands">✋ Gesti: off</button>
+      <button type="button" id="live-mirror">🪞 Imita i miei movimenti</button>
+    </div>
+    <p id="presence-status" class="presence-status" hidden></p>
+    <div class="presence-panel" id="faceswap-panel" hidden>
+      <label>Volto da applicare <select id="live-face"></select></label>
+      <input type="file" id="live-face-file" accept="image/*" hidden>
+      <label class="switch consent-check"><input type="checkbox" id="live-consent"><span>Confermo che questa immagine ritrae me stesso/a o il mio partner con il suo consenso, oppure un volto inventato o generato dall'IA, e non una terza persona reale</span></label>
+      <label>Opacità <input type="range" id="live-opacity" min="30" max="100" value="85"></label>
+      <p class="muted small" id="live-status">Tutto avviene sul telefono: nessun video viene inviato.</p>
+    </div>
+    <form id="presence-chat" class="composer presence-composer"><input id="presence-input" placeholder="Parlale…"><button class="primary">➤</button></form>
+  </div>
+
+  <section id="archive-page" class="archive-page" hidden>
+    <header class="archive-bar">
+      <button type="button" id="archive-back">‹ Home</button>
+      <h2>Galleria totale</h2>
+    </header>
+    <div id="archive-totals" class="archive-totals"></div>
+    <div id="archive-grid" class="archive-grid"></div>
+    <section id="archive-telegram" class="archive-tg"></section>
+  </section>
+  <dialog id="archive-view" class="archive-view">
+    <button type="button" id="archive-view-x" aria-label="Chiudi">✕</button>
+    <img id="archive-full" alt="" hidden>
+    <video id="archive-video" controls playsinline hidden></video>
+    <p id="archive-cap"></p>
+  </dialog>
+  <div id="toast" class="toast" hidden></div>
+  <button type="button" id="audio-unlock" class="audio-unlock" hidden>🔊 Tocca per attivare l'audio</button>
+</div>
+  <script src="/avatar.js"></script>
+  <script src="/js/core.js"></script>
+  <script src="/js/simli.js"></script>
+  <script src="/js/auth.js"></script>
+  <script src="/js/account.js"></script>
+  <script src="/js/chat.js"></script>
+  <script src="/js/voice.js"></script>
+  <script src="/js/editor.js"></script>
+  <script src="/js/docs.js"></script>
+  <script src="/js/media.js"></script>
+  <script src="/js/feed.js"></script>
+  <script src="/js/motion.js"></script>
+  <script src="/js/stage.js"></script>
+  <script src="/js/gestures.js"></script>
+  <script src="/js/actions.js"></script>
+  <script src="/js/realtime.js"></script>
+  <script src="/js/callmic.js"></script>
+  <script src="/js/diag.js"></script>
+  <script src="/js/call.js"></script>
+  <script src="/js/ios.js"></script>
+  <script src="/js/gallery.js"></script>
+  <script src="/js/presets.js"></script>
+  <script src="/js/solo.js"></script>
+  <script src="/js/mood.js"></script>
+  <script src="/js/support.js"></script>
+  <script src="/js/frame.js"></script>
+  <script src="/js/live.js" type="module"></script>
+  <script src="/js/close.js"></script>
+  <script src="/js/archive.js"></script>
+  <script src="/js/look-parse.js"></script>
+  <script src="/js/avatar3d.js"></script>
+  <script src="/js/avatar-look.js"></script>
+  <script src="/js/main.js"></script>
+</body>
+</html>
