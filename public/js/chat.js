@@ -314,5 +314,12 @@ $('#clear-chat').addEventListener('click', async () => {
   await App.api(`/api/chats/${App.current.id}`, { method: 'DELETE' }); $('#messages').innerHTML = ''; App.chat.ids = new Set(); App.chat.poll(true);
 });
 
-// Tocca l'avatar per passare da grande a piccolo (più spazio ai messaggi) e viceversa
-$('#avatar-canvas').addEventListener('click', () => { if (App.stageFs && App.stageFs.isFs()) return; $('#scene-menu').hidden = true; const c = $('#tab-conv'); c.classList.toggle('compact'); App.ls.set('avatarCompact', c.classList.contains('compact')); });
+// Fuori da solo: tocca l'avatar per passare da grande a piccolo. In solo lo fa solo.js (stage-mini).
+$('#avatar-canvas').addEventListener('click', () => {
+  if (document.body.classList.contains('solo-mode')) return;
+  if (App.stageFs && App.stageFs.isFs()) return;
+  $('#scene-menu').hidden = true;
+  const c = $('#tab-conv');
+  c.classList.toggle('compact');
+  App.ls.set('avatarCompact', c.classList.contains('compact'));
+});

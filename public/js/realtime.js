@@ -22,6 +22,8 @@
   const LOG = []; // ultimi eventi (per «Diagnostica voce»)
   const note = (t, d) => { LOG.push({ at: Math.round(performance.now()), t, d: d == null ? undefined : String(d).slice(0, 200) }); if (LOG.length > 60) LOG.shift(); };
   const errText = (ev) => { const e = (ev && ev.error) || ev || {}; return [e.message || e.code || 'errore', e.param && `(${e.param})`].filter(Boolean).join(' '); };
+  // xAI risponde così se response.cancel arriva senza una risposta aperta. Non è un guasto: non va in diagnostica né in console.
+  const benignCancel = (t) => /cancellation failed/i.test(t) && /no active response/i.test(t);
 
   function ctx() { if (!App.audio.ctx) App.audio.ctx = new AC(); if (App.audio.ctx.state !== 'running') App.audio.ctx.resume().catch(() => {}); return App.audio.ctx; }
 
@@ -194,6 +196,7 @@
       case 'conversation.item.input_audio_transcription.completed':
         s.waitUser = false; s.live = ''; save(s, 'user', ev.transcript); break;
       case 'response.created':
+        s.responseActive = true;
         s.resp = { id: ev.response && ev.response.id, text: '', firstAt: 0 }; s.phase = 'replying'; break;
       case 'response.output_audio.delta': case 'response.audio.delta':
         if (s.cancelled === (ev.response_id || 'x')) break;
@@ -204,17 +207,21 @@
       case 'response.output_audio_transcript.done': case 'response.audio_transcript.done':
         if (s.resp && ev.transcript) s.resp.text = ev.transcript; break;
       case 'response.done': {
+        s.responseActive = false;
         fadeOutEnd(s); const r = s.resp; s.resp = null; if (s.phase === 'replying') s.phase = 'idle';
         const st = ev.response && ev.response.status;
         if (r && isGreet(s, r.text)) break; // il saluto iniziale non va in chat
         if (r && r.text && !r.saved) { r.saved = true; save(s, 'assistant', r.text + (st === 'cancelled' || r.cut ? '…' : ''), st === 'cancelled' || r.cut ? { interrupted: true } : {}); }
         break;
       }
-      case 'error': // NON fatale: il servizio resta collegato e tiene la configurazione precedente
-        const et = errText(ev); note('error', et); if (!s.inExtra) { s.lastError = et; App.rt.lastError = et; } // l'opzione accessoria rifiutata non è un problema
+      case 'error': { // NON fatale: il servizio resta collegato e tiene la configurazione precedente
+        const et = errText(ev);
+        if (benignCancel(et)) break;
+        note('error', et); if (!s.inExtra) { s.lastError = et; App.rt.lastError = et; } // l'opzione accessoria rifiutata non è un problema
         console.warn('Tempo reale:', s.lastError);
         if (s.step) { const f = s.step; s.step = null; f(false); }
         break;
+      }
       default: break;
     }
   }
@@ -248,9 +255,15 @@
   // interruzione: la sua voce si ferma subito; la risposta in corso viene annullata (e salvata fin dove è arrivata)
   function bargeIn(s, manual) {
     const r = s.resp;
-    if (playing(s) || r) { App.rt.barges = (App.rt.barges || 0) + 1; App.rt.lastBargeAt = performance.now(); } // per diagnostica/test
+    const active = !!s.responseActive;
+    if (playing(s) || active) { App.rt.barges = (App.rt.barges || 0) + 1; App.rt.lastBargeAt = performance.now(); } // per diagnostica/test
     stopPlayback(s);
-    if (r) { r.cut = true; s.cancelled = r.id || 'x'; try { s.ws.send(JSON.stringify({ type: 'response.cancel' })); } catch {} if (r.text && !r.saved && !isGreet(s, r.text)) { r.saved = true; save(s, 'assistant', r.text + '…', { interrupted: true }); } s.resp = null; }
+    if (active) {
+      s.responseActive = false;
+      s.cancelled = (r && r.id) || 'x';
+      try { if (s.ws && s.ws.readyState === 1) s.ws.send(JSON.stringify({ type: 'response.cancel' })); } catch {}
+    }
+    if (r) { r.cut = true; if (r.text && !r.saved && !isGreet(s, r.text)) { r.saved = true; save(s, 'assistant', r.text + '…', { interrupted: true }); } s.resp = null; }
     if (manual) s.phase = 'idle';
   }
 

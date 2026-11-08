@@ -776,7 +776,7 @@ body.solo-mode.av-full-on #stage.av-full .stage-tools{visibility:visible}
 #av-expand{background:#ffffffcc!important;color:#1A1D21!important}
 body.av-full-on #av-expand{display:none!important}
 body.solo-mode #act-btn,body.solo-mode #scene-btn,body.solo-mode #call-btn{display:none!important}
-body.solo-mode #hot-btn{display:inline-flex!important}
+body.solo-mode #hot-btn{display:none!important}
 
 /* login Nova: wordmark, un campo, un pulsante */
 .login-screen{position:relative;min-height:100dvh;min-height:100vh;background:#000;color:#fff;align-items:center;justify-content:center;padding:64px 28px calc(72px + env(safe-area-inset-bottom))}
@@ -946,5 +946,42 @@ body.solo-mode.in-call.call-min:not(.simli-on) #stage{flex:0 0 42dvh!important;h
 #vrm-view[hidden]{display:none!important}
 body.vrm-on #avatar-canvas,body.vrm-on .av-backdrop{visibility:hidden}
 body.solo-mode #hot-btn,#hot-btn,#set-hot-btn,#call-hot{display:none!important}
-body.solo-mode #act-btn{display:inline-flex!important;align-items:center;justify-content:center}
+body.solo-mode #secondary-menu[open] #act-btn{display:inline-flex;align-items:center;justify-content:center}
+
+/* Chat in primo piano: avatar circa un terzo dell'iPhone, messaggi nel resto, scrittura fissa in basso. */
+body.solo-mode #stage{
+  flex:0 0 32dvh;
+  height:32dvh;
+  max-height:35dvh;
+  min-height:140px;
+}
+body.solo-mode #tab-conv.stage-mini #stage{
+  flex-basis:18dvh;
+  height:18dvh;
+  max-height:22dvh;
+  min-height:120px;
+}
+body.solo-mode #messages,
+body.solo-mode #tab-conv #messages{
+  flex:1 1 auto;
+  max-height:none;
+  min-height:0;
+  overflow-y:auto;
+}
+body.solo-mode #chat-form.composer{
+  position:sticky;
+  bottom:0;
+  z-index:6;
+  flex:0 0 auto;
+  background:#F7F8FA;
+}
+body.simli-on #vrm-view{visibility:hidden}
+.look-bar{position:absolute;left:8px;right:8px;bottom:6px;z-index:6;display:flex;flex-wrap:wrap;gap:6px;align-items:center;pointer-events:auto}
+.look-bar input{flex:1 1 120px;min-height:36px;margin:0;border-radius:12px;padding:6px 10px;background:#fff}
+.look-bar button{min-height:36px;border:0;border-radius:12px;background:#1E6FD9;color:#fff;font-weight:650;padding:6px 10px}
+.look-msg{flex:1 0 100%;margin:0;font-size:12px;color:#1A1D21;background:#ffffffd0;border-radius:8px;padding:0 6px}
+#look-history{list-style:none;margin:6px 0;padding:0;max-height:120px;overflow:auto}
+#look-history li{display:flex;justify-content:space-between;gap:8px;align-items:center;font-size:12px;margin:4px 0}
+#look-history button{background:#fff;color:#1E6FD9}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 

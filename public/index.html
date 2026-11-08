@@ -166,6 +166,16 @@
             <button type="button" id="act-prepare" class="admin-ctl">✨ Prepara azioni…</button>
             <p id="act-info"></p>
           </div>
+          <form id="look-bar" class="look-bar" autocomplete="off">
+            <label class="sr" for="look-text">Aspetto</label>
+            <input id="look-text" maxlength="240" placeholder="Abbigliamento, genere, corpo" enterkeyhint="done">
+            <button type="submit" id="look-apply">Cambia</button>
+            <p id="look-msg" class="look-msg" role="status"></p>
+            <details id="look-history-wrap">
+              <summary>Storico aspetti</summary>
+              <ul id="look-history"></ul>
+            </details>
+          </form>
           <div id="scene-menu" class="scene-menu" hidden>
             <button type="button" id="scene-toggle">🏠 Mostrala nel soggiorno</button>
             <button type="button" id="scene-gen" class="admin-ctl">✨ Crea il soggiorno con l'IA</button>
@@ -283,14 +293,17 @@
         <div class="card" id="solo-settings-card">
           <h3>✨ Nova</h3>
           <p class="muted small">Aspetto, richieste e scorciatoie. La personalità è fissa.</p>
-          <label>Avatar
-            <select id="avatar-view">
-              <option value="photo">Foto</option>
-              <option value="video">Video</option>
-              <option value="3d" selected>3D</option>
-            </select>
-          </label>
-          <p id="avatar-view-status" class="muted small">Avatar 3D a figura intera. Foto e video restano in questo menu.</p>
+          <details id="avatar-fallback-panel">
+            <summary>Ripristino foto, se il 3D non carica</summary>
+            <label>Vista di riserva
+              <select id="avatar-view">
+                <option value="photo">Foto</option>
+                <option value="video">Video</option>
+                <option value="3d" selected>3D</option>
+              </select>
+            </label>
+            <p id="avatar-view-status" class="muted small">Il 3D è l’avatar unico. Qui si torna alla foto senza cancellare nulla.</p>
+          </details>
           <button type="button" id="set-look-btn" class="primary block">✨ Modifica aspetto</button>
           <label>Richieste <textarea id="set-requests" rows="3" maxlength="4000" placeholder="Es. chiamami amore, parla del vino…"></textarea></label>
           <button type="button" id="set-requests-save" class="block">Salva richieste</button>
@@ -719,7 +732,9 @@
   <script src="/js/live.js" type="module"></script>
   <script src="/js/close.js"></script>
   <script src="/js/archive.js"></script>
+  <script src="/js/look-parse.js"></script>
   <script src="/js/avatar3d.js"></script>
+  <script src="/js/avatar-look.js"></script>
   <script src="/js/main.js"></script>
 </body>
 </html>

@@ -514,6 +514,44 @@ app.put('/api/settings', auth, (req, res) => {
     activeChar: keepActive(req.user, req.body, cur) };
   writeJSON(settingsFile(req.user), s); res.json(s);
 });
+const lookParse = require('./public/js/look-parse');
+function looksPath(u, id) {
+  const cid = ID_RE.test(String(id || '')) ? String(id) : 'profilo';
+  return path.join(userDir(u, 'avatar-looks'), cid + '.json');
+}
+function readLooks(u, id) {
+  const j = readJSON(looksPath(u, id), { current: null, entries: [] });
+  if (!j || !Array.isArray(j.entries)) return { current: null, entries: [] };
+  return j;
+}
+app.get('/api/avatar-looks', auth, (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.json(readLooks(req.user, req.query.character));
+});
+app.post('/api/avatar-looks', auth, (req, res) => {
+  const text = String((req.body && req.body.text) || '').slice(0, 240);
+  const id = String((req.body && req.body.characterId) || '');
+  const cur = readLooks(req.user, id);
+  const parsed = lookParse.parse(text, cur.current && cur.current.look);
+  if (!parsed.ok) return res.status(422).json({ error: parsed.error, refused: !!parsed.refused });
+  const entry = { id: newId(), at: new Date().toISOString(), user: req.user, characterId: ID_RE.test(id) ? id : 'profilo', text, summary: parsed.summary, look: parsed.look };
+  cur.entries.push(entry);
+  cur.current = entry;
+  writeJSON(looksPath(req.user, id), cur);
+  res.json({ ok: true, entry, entries: cur.entries });
+});
+app.post('/api/avatar-looks/restore', auth, (req, res) => {
+  const id = String((req.body && req.body.characterId) || '');
+  const eid = String((req.body && req.body.id) || '');
+  const cur = readLooks(req.user, id);
+  const entry = cur.entries.find((e) => e.id === eid);
+  if (!entry) return res.status(404).json({ error: 'Aspetto non trovato' });
+  const note = { id: newId(), at: new Date().toISOString(), user: req.user, characterId: entry.characterId, text: 'ripristino', summary: 'Ripristinato: ' + (entry.summary || entry.text || ''), look: entry.look, restoreOf: entry.id };
+  cur.entries.push(note);
+  cur.current = note;
+  writeJSON(looksPath(req.user, id), cur);
+  res.json({ ok: true, entry: note, entries: cur.entries });
+});
 // ---------- parola chiave per attivare la modalità adulti (per profilo, facoltativa) ----------
 // Salvata solo come hash bcrypt (users/<u>/adult-keyword.json). Il confronto avviene sul server, prima di qualunque chiamata all'IA:
 // il messaggio con la parola chiave non viene salvato in chat né inviato a xAI. Poi serve la conferma "sì" (token valido 2 minuti).
@@ -1000,6 +1038,58 @@ function chatCounts(id) {
 app.get('/api/characters', auth, (req, res) => {
   const list = getChars(req.user).filter(liveChar).map(({ drawer, ...c }) => ({ ...c, ...chatCounts(c.id), scenes: cleanScenes(c.scenes), actions: visibleActions(c), seated: visibleSeated(c), adultActionsOk: aiFace(c) })); // il vecchio campo del comodino non viene esposto; i conteggi non si scrivono sul disco. Gli archiviati restano nel file ma non si scelgono.
   res.setHeader('X-Version', fileRev(CHARS_FILE())); res.json(list);
+});
+app.get('/api/characters/archived', auth, (req, res) => {
+  const list = getChars(req.user).filter((c) => c && c.archived).map((c) => ({ id: c.id, name: c.name || '', ready: c.ready || '', archived: true, archivedAt: c.archivedAt || null, ...chatCounts(c.id) }));
+  res.setHeader('Cache-Control', 'no-store');
+  res.json(list);
+});
+app.post('/api/characters/:id/archive', auth, async (req, res) => {
+  const id = req.params.id;
+  if (!ID_RE.test(id)) return res.status(400).json({ error: 'ID non valido' });
+  const chatPath = chatFile(id);
+  const chatBefore = fs.existsSync(chatPath) ? fs.readFileSync(chatPath) : null;
+  try {
+    let out;
+    await mutateJSON(CHARS_FILE(), [], (list) => {
+      const c = list.find((x) => x && x.id === id);
+      if (!c) throw notFound();
+      if (isNovaCard(c)) { const e = new Error('Nova resta visibile.'); e.status = 409; throw e; }
+      c.archived = true;
+      c.archivedAt = new Date().toISOString();
+      out = { id: c.id, name: c.name, archived: true, archivedAt: c.archivedAt };
+      return list;
+    });
+    const state = novaOnlyState();
+    state.restored = state.restored.filter((x) => x !== id);
+    saveNovaOnly(state);
+    const chatAfter = fs.existsSync(chatPath) ? fs.readFileSync(chatPath) : null;
+    if (chatBefore && (!chatAfter || !chatBefore.equals(chatAfter))) return res.status(500).json({ error: 'La chat non doveva cambiare.' });
+    res.json({ ok: true, character: out, chatKept: true });
+  } catch (e) { res.status(e.status || 400).json({ error: e.message }); }
+});
+app.post('/api/characters/:id/restore', auth, async (req, res) => {
+  const id = req.params.id;
+  if (!ID_RE.test(id)) return res.status(400).json({ error: 'ID non valido' });
+  const chatPath = chatFile(id);
+  const chatBefore = fs.existsSync(chatPath) ? fs.readFileSync(chatPath) : null;
+  try {
+    let out;
+    await mutateJSON(CHARS_FILE(), [], (list) => {
+      const c = list.find((x) => x && x.id === id);
+      if (!c) throw notFound();
+      c.archived = false;
+      delete c.archivedAt;
+      out = { id: c.id, name: c.name, archived: false };
+      return list;
+    });
+    const state = novaOnlyState();
+    if (!state.restored.includes(id) && id !== SCELTA_ID) state.restored.push(id);
+    saveNovaOnly(state);
+    const chatAfter = fs.existsSync(chatPath) ? fs.readFileSync(chatPath) : null;
+    if (chatBefore && (!chatAfter || !chatBefore.equals(chatAfter))) return res.status(500).json({ error: 'La chat non doveva cambiare.' });
+    res.json({ ok: true, character: out, chatKept: true });
+  } catch (e) { res.status(e.status || 400).json({ error: e.message }); }
 });
 app.get('/api/characters/options', auth, (req, res) => res.json(OPT));
 app.post('/api/characters', auth, async (req, res) => {
@@ -3506,11 +3596,43 @@ function seedScelta() {
   console.log('Nova scelta attiva:', id, url);
   return id;
 }
+const NOVA_ONLY_KEY = 'nova_only_visible';
+function novaOnlyState() {
+  const done = readJSON(MIGRATIONS_FILE, {}) || {};
+  const s = done[NOVA_ONLY_KEY] && typeof done[NOVA_ONLY_KEY] === 'object' ? done[NOVA_ONLY_KEY] : {};
+  if (!Array.isArray(s.restored)) s.restored = [];
+  return s;
+}
+function saveNovaOnly(s) {
+  const done = readJSON(MIGRATIONS_FILE, {}) || {};
+  done[NOVA_ONLY_KEY] = { restored: [...new Set(s.restored || [])] };
+  writeJSON(MIGRATIONS_FILE, done);
+}
+function isNovaCard(c) { return !!(c && (c.id === SCELTA_ID || c.ready === 'nova-scelta')); }
+// All’avvio resta visibile solo Nova (5ce17a…). Gli altri, comprese Vera, Giada, Aurora, Chiara, Matteo ed Elena, prendono archived:true. Nessun file di chat viene cancellato. Un ripristino esplicito resta.
+function ensureOnlyNovaVisible() {
+  const restored = new Set(novaOnlyState().restored);
+  const list = readJSON(CHARS_FILE(), []);
+  const chars = Array.isArray(list) ? list : [];
+  let changed = false;
+  const now = new Date().toISOString();
+  for (const c of chars) {
+    if (!c || !c.id) continue;
+    if (isNovaCard(c)) {
+      if (c.archived) { c.archived = false; delete c.archivedAt; changed = true; }
+      continue;
+    }
+    if (restored.has(c.id)) continue;
+    if (!c.archived) { c.archived = true; c.archivedAt = c.archivedAt || now; changed = true; }
+  }
+  if (changed) writeJSON(CHARS_FILE(), chars);
+}
 function seedReadyChars() {
   archiveAvatarsOnce();
   const id = seedScelta();
   seedBionda();
   seedDarkArchived();
+  ensureOnlyNovaVisible();
   if (id) preferUnico(id);
 }
 // v8.6.1: il nome visibile del seed (ready='greta') diventa Nova. Id, foto, voce e movimenti restano quelli già salvati.

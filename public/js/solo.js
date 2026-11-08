@@ -39,6 +39,7 @@
     full: false,
     async boot() {
       document.body.classList.add('solo-mode');
+      this.bindOnce();
       const dock = $('#solo-dock'); if (dock) dock.hidden = false;
       const legacy = $('#legacy-tabbar'); if (legacy) legacy.hidden = true;
       const listTab = $('#tab-chat'); if (listTab) listTab.hidden = true;
@@ -65,7 +66,8 @@
       this.setDock('home');
       showStage(ch);
       const rt = $('#solo-rt'); if (rt) rt.hidden = false;
-      if (App.avatar3d && App.avatar3d.apply) App.avatar3d.apply();
+      if (App.looks && App.looks.boot) App.looks.boot();
+      else if (App.avatar3d && App.avatar3d.apply) App.avatar3d.apply();
     },
     async toggleRt() {
       const btn = $('#solo-rt');
@@ -129,13 +131,21 @@
       const stage = $('#stage');
       if (stage) stage.addEventListener('dblclick', (e) => { if (!e.target.closest('.stage-tools,#call-ui')) this.toggleFull(); });
       // tap empty stage area to expand (single tap on canvas)
-      const canvas = $('#avatar-canvas');
-      if (canvas) {
-        canvas.addEventListener('click', (e) => {
+      const stageEl = $('#stage');
+      if (stageEl && !stageEl._mini) {
+        stageEl._mini = true;
+        stageEl.addEventListener('click', (e) => {
           if (App.call && App.call.active) return;
-          // tap sull'avatar: ingrandisce (o riduce se già pieno)
-          this.toggleFull();
+          if (e.target.closest('button, a, input, textarea, form, .stage-tools, #call-ui')) return;
+          if (this.full) { this.toggleFull(false); return; }
+          const conv = $('#tab-conv'); if (!conv) return;
+          conv.classList.toggle('stage-mini');
+          if (App.ls && App.me) App.ls.set('stageMini', conv.classList.contains('stage-mini'));
+          requestAnimationFrame(() => fit());
         });
+      }
+      if (App.ls && App.ls.get('stageMini') === true) {
+        const conv = $('#tab-conv'); if (conv) conv.classList.add('stage-mini');
       }
       const rt = $('#solo-rt'); if (rt) rt.addEventListener('click', () => this.toggleRt());
       const photo = $('#wa-photo');

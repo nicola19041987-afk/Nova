@@ -370,6 +370,7 @@ test('labiale e movimento della sessione ⚡ seguono l’audio, senza coprire la
       chatBelow: stage.bottom <= msgs.top + 8,
       chatH: msgs.height,
       chatShare: msgs.height / window.innerHeight,
+      stageShare: stage.height / window.innerHeight,
     };
   });
   expect(snap.trusted).toBe(true);
@@ -382,7 +383,9 @@ test('labiale e movimento della sessione ⚡ seguono l’audio, senza coprire la
   expect(snap.maxStep).toBeLessThan(0.3);
   expect(snap.inCall).toBe(false);
   expect(snap.chatBelow).toBe(true);
-  expect(snap.chatShare).toBeLessThan(0.36);
+  expect(snap.stageShare).toBeGreaterThanOrEqual(0.28);
+  expect(snap.stageShare).toBeLessThanOrEqual(0.36);
+  expect(snap.chatShare).toBeGreaterThan(snap.stageShare);
 });
 
 test('il PCM della sessione ⚡ apre e chiude la bocca', async ({ page, browserName }) => {

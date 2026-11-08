@@ -49,11 +49,14 @@ test('il 3D è il default e una scelta esplicita resta', async ({ page, browserN
   const picked = await page.evaluate(async () => {
     App.ls.set('avatarViewPick', 'photo');
     await App.avatar3d.apply();
+    const kept = { mode: App.avatar3d.mode(), on: document.body.classList.contains('vrm-on'), selectHidden: document.getElementById('avatar-fallback-panel').open !== true };
+    await App.avatar3d.apply('photo');
     const photo = { mode: App.avatar3d.mode(), on: document.body.classList.contains('vrm-on') };
-    App.ls.set('avatarViewPick', 'video');
-    await App.avatar3d.apply();
-    return { photo, video: App.avatar3d.mode() };
+    await App.avatar3d.apply('3d');
+    return { kept, photo };
   });
+  expect(picked.kept.mode).toBe('3d');
+  expect(picked.kept.on).toBe(true);
+  expect(picked.kept.selectHidden).toBe(true);
   expect(picked.photo).toEqual({ mode: 'photo', on: false });
-  expect(picked.video).toBe('video');
 });

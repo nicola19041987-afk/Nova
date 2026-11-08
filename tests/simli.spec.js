@@ -169,7 +169,6 @@ test('la videochiamata usa Simli se il token c’è e torna alla foto se manca',
   await page.waitForFunction(() => document.body.classList.contains('solo-mode') && window.App && App.simli);
   const up = await page.evaluate(async () => {
     App.call.active = true; App.call.mode = 'video';
-    if (App.avatar3d) await App.avatar3d.apply('video');
     const started = await App.simli.start();
     const ws = window.__ws[0];
     const waiting = document.getElementById('simli-status').textContent;

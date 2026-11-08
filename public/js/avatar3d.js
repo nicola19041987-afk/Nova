@@ -79,6 +79,119 @@
       n.quaternion.copy(best);
     });
   }
+  let currentLook = null;
+  const texOriginal = new Map();
+  function activeLook() { return currentLook || (window.LookParse && LookParse.DEFAULT) || null; }
+  function clampByte(n) { return n < 0 ? 0 : n > 255 ? 255 : n | 0; }
+  function cloth(r, g, b, target) {
+    const k = ((r + g + b) / 3) / 170;
+    const s = 0.42 + k;
+    return [clampByte(target[0] * s), clampByte(target[1] * s), clampByte(target[2] * s)];
+  }
+  function skinTint(r, g, b) {
+    return [clampByte(r * 0.74 + 236 * 0.26), clampByte(g * 0.72 + 206 * 0.28), clampByte(b * 0.7 + 186 * 0.3)];
+  }
+  function hairTint(r, g, b, target) {
+    const luma = 0.299 * r + 0.587 * g + 0.114 * b;
+    const s = 0.62 + luma / 220;
+    return [clampByte(target[0] * s), clampByte(target[1] * s), clampByte(target[2] * s)];
+  }
+  function bodyKind(r, g, b) {
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+    if (mx < 22) return 'skip';
+    if (b > r + 6 && b + 4 >= g && r < 140 && mx < 130) return 'bottom';
+    if (r > 80 && g > 45 && b > 30 && r > g - 8 && g + 8 >= b && r > b + 12 && r < 250 && b < 210 && b <= r) return 'skin';
+    if (mx < 72 && mx - mn < 18 && b <= r + 4) return 'shoes';
+    if (mx - mn < 48 && mx > 90) return 'top';
+    return 'other';
+  }
+  function paintBuffer(src, kind, look) {
+    const out = new Uint8ClampedArray(src.data);
+    const w = src.width;
+    for (let i = 0, p = 0; i < out.length; i += 4, p++) {
+      const r = src.data[i], g = src.data[i + 1], b = src.data[i + 2], a = src.data[i + 3];
+      if (kind === 'opacity') {
+        if (a < 8) continue;
+        const h = hairTint(r, g, b, look.hair);
+        out[i] = h[0]; out[i + 1] = h[1]; out[i + 2] = h[2];
+        continue;
+      }
+      if (kind === 'head') {
+        const x = p % w, y = (p / w) | 0;
+        if (y > 530 && x < 190 && r > 48 && r < 150 && g < r && b < 90 && r + g + b < 380) {
+          const e = hairTint(r, g, b, look.eyes);
+          out[i] = e[0]; out[i + 1] = e[1]; out[i + 2] = e[2];
+          continue;
+        }
+        const mx = Math.max(r, g, b);
+        if (mx > 16 && !(r > 150 && g > 100 && b > 80) && r < 140 && r + 8 >= g && g + 12 >= b) {
+          const h = hairTint(r, g, b, look.hair);
+          out[i] = h[0]; out[i + 1] = h[1]; out[i + 2] = h[2];
+          continue;
+        }
+        if (r > 140 && g > 90 && b > 70) {
+          const s = skinTint(r, g, b);
+          out[i] = s[0]; out[i + 1] = s[1]; out[i + 2] = s[2];
+        }
+        continue;
+      }
+      const bk = bodyKind(r, g, b);
+      let c = null;
+      if (bk === 'top') c = cloth(r, g, b, look.top);
+      else if (bk === 'bottom') c = cloth(r, g, b, look.bottom);
+      else if (bk === 'shoes') c = cloth(r, g, b, look.shoes);
+      else if (bk === 'skin') c = skinTint(r, g, b);
+      if (c) { out[i] = c[0]; out[i + 1] = c[1]; out[i + 2] = c[2]; }
+    }
+    return new ImageData(out, src.width, src.height);
+  }
+  function sourcePixels(material, key) {
+    if (texOriginal.has(key)) return texOriginal.get(key);
+    const img = material.map && material.map.image;
+    if (!img || !img.width) return null;
+    const c = document.createElement('canvas');
+    c.width = img.width; c.height = img.height;
+    const ctx = c.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(img, 0, 0);
+    const data = ctx.getImageData(0, 0, c.width, c.height);
+    texOriginal.set(key, data);
+    return data;
+  }
+  function paintLook(look) {
+    if (!model || !look || !lib) return;
+    model.traverse((o) => {
+      const mats = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : [];
+      mats.forEach((m) => {
+        if (!m || !m.map) return;
+        const name = m.name || '';
+        const kind = /opacity/i.test(name) ? 'opacity' : /head/i.test(name) ? 'head' : /body/i.test(name) ? 'body' : '';
+        if (!kind) return;
+        const src = sourcePixels(m, kind);
+        if (!src) return;
+        const painted = paintBuffer(src, kind, look);
+        const canvas = document.createElement('canvas');
+        canvas.width = painted.width; canvas.height = painted.height;
+        canvas.getContext('2d').putImageData(painted, 0, 0);
+        const tex = new lib.THREE.CanvasTexture(canvas);
+        tex.colorSpace = lib.THREE.SRGBColorSpace;
+        tex.flipY = m.map.flipY;
+        tex.wrapS = m.map.wrapS; tex.wrapT = m.map.wrapT;
+        tex.needsUpdate = true;
+        const prev = m.userData.paintTex;
+        m.map = tex; m.userData.paintTex = tex; m.needsUpdate = true;
+        if (prev) prev.dispose();
+      });
+    });
+  }
+  function applyBody(look) {
+    if (!model || !look) return;
+    const base = model.userData.baseScale || model.scale.x || 1;
+    model.scale.setScalar(base * (look.height || 1));
+    const hips = bone('hips');
+    if (hips) hips.scale.set(look.hips || 1, 1, look.hips || 1);
+    const sh = look.shoulders || 1;
+    ['clavL', 'clavR'].forEach((n) => { const b = bone(n); if (b) b.scale.set(1, sh, 1); });
+  }
   function fitModel() {
     const THREE = lib.THREE;
     model.updateWorldMatrix(true, true);
@@ -89,6 +202,7 @@
     model.updateWorldMatrix(true, true);
     const box2 = new THREE.Box3().setFromObject(model);
     model.position.y -= box2.min.y;
+    model.userData.baseScale = model.scale.x;
   }
   function lips(level, shape, on) {
     mouth = Math.max(0, Math.min(1, level || 0));
@@ -271,8 +385,10 @@
       fitModel();
       remember();
       showCanvas(true); resize();
+      const look = activeLook();
+      if (look) { paintLook(look); applyBody(look); }
       last = 0; if (!raf) raf = requestAnimationFrame(frame);
-      status('Avatar 3D: Female Adult 02 (Microsoft Rocketbox, MIT).');
+      status('Avatar 3D Rocketbox, aspetto approssimato (non è una foto).');
       return true;
     })().catch((e) => { failed = (e && e.message) || '3D non caricato'; status(failed); showCanvas(false); readyP = null; throw e; });
     return readyP;
@@ -295,7 +411,9 @@
     if (App.gestures && App.gestures.hear && !App.gestures._vrm) {
       const hear = App.gestures.hear.bind(App.gestures);
       App.gestures.hear = function (text, opts) {
-        if (view === '3d') { const id = match3d(text); if (id) { playGesture(id); return 'play'; } }
+        if (view === '3d' && !document.body.classList.contains('simli-on') && !(App.avatarConv && App.avatarConv.speaking)) {
+          const id = match3d(text); if (id) { playGesture(id); return 'play'; }
+        }
         return hear(text, opts);
       };
       App.gestures._vrm = true;
@@ -309,15 +427,32 @@
     if (legacy === 'video' || legacy === '3d') return legacy;
     return '';
   }
+  async function applyLook(look) {
+    if (!look) return;
+    currentLook = look;
+    view = '3d';
+    const sel = select(); if (sel) sel.value = '3d';
+    hook();
+    try {
+      await load();
+      paintLook(look);
+      applyBody(look);
+      const note = look.gender === 'uomo' ? ' Uomo: stessi parametri sul corpo disponibile, senza un secondo modello.' : '';
+      status((look.summary || 'Aspetto aggiornato') + note);
+    } catch { /* la foto resta se il 3D non carica */ }
+  }
   async function apply(next) {
     const sel = select();
-    view = (next === 'photo' || next === 'video' || next === '3d') ? next : (explicitView() || '3d');
+    // Un solo avatar in primo piano. Foto o video solo se il pannello di ripristino lo chiede.
+    view = (next === 'photo' || next === 'video') ? next : '3d';
     if (sel && sel.value !== view) sel.value = view;
-    if (App.ls && App.me && (view === 'video' || view === '3d' || App.ls.get('avatarViewPick', ''))) App.ls.set('avatarView', view);
     hook();
-    if (view !== '3d') { showCanvas(false); if (view === 'photo') status('Foto. Il 3D resta nel menu Avatar.'); else status('Videochiamata: volto Simli se la chiave c’è, altrimenti la foto.'); return; }
+    if (view !== '3d') { showCanvas(false); status('Foto di riserva. Il 3D si riaccende da questo menu.'); return; }
     status('Carico il modello 3D…');
-    try { await load(); } catch { /* status già scritto */ }
+    try { await load(); if (activeLook()) { paintLook(activeLook()); applyBody(activeLook()); } } catch { /* status già scritto */ }
+  }
+  function sample() {
+    return { head: (posed.head || [0, 0, 0]).slice(), chest: (posed.chest || [0, 0, 0]).slice(), hips: (posed.hips || [0, 0, 0]).slice() };
   }
   function bind() {
     const sel = select(); if (!sel || sel._vrm) return; sel._vrm = true;
@@ -329,7 +464,8 @@
   bind();
   window.addEventListener('resize', resize);
   App.avatar3d = {
-    mode, apply, lips, play: playGesture, match: match3d,
+    mode, apply, applyLook, lips, play: playGesture, match: match3d, sample,
+    look: () => activeLook(),
     ready: () => !!model, failed: () => failed, current: () => clip && clip.id,
   };
 })();
