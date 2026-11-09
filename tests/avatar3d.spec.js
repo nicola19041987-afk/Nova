@@ -121,6 +121,52 @@ test('niente 3D, foto bionda, tap e campo sotto, voce eve', async ({ page, brows
   expect(open.below).toBe(true);
   expect(open.overlaps).toBe(false);
   await page.screenshot({ path: '/opt/cursor/artifacts/2d-473-look.png' });
+  const framed = await page.evaluate(async () => {
+    const paint = () => {
+      const c = document.createElement('canvas');
+      c.width = 360; c.height = 960;
+      const g = c.getContext('2d');
+      g.fillStyle = '#d7d2cc'; g.fillRect(0, 0, 360, 960);
+      g.fillStyle = '#e8c070'; g.fillRect(0, 0, 360, 90);
+      g.fillStyle = '#1d4e89'; g.fillRect(0, 860, 360, 100);
+      return c.toDataURL('image/png');
+    };
+    const url = paint();
+    const av = App.avatarConv;
+    av.breathOn = false;
+    av.setImage(url);
+    const deadline = performance.now() + 3000;
+    while (!(av.img && av.img._src === url && av.img.naturalWidth) && performance.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 30));
+    }
+    const sample = () => {
+      av.resize();
+      av._drawn = 0;
+      av.frame(performance.now());
+      const w = av.c.width, h = av.c.height;
+      const px = (x, y) => av.ctx.getImageData(Math.max(0, Math.min(w - 1, x | 0)), Math.max(0, Math.min(h - 1, y | 0)), 1, 1).data;
+      const top = px(w / 2, 6);
+      const bot = px(w / 2, h - 6);
+      return { w, h, top: [top[0], top[1], top[2]], bot: [bot[0], bot[1], bot[2]] };
+    };
+    document.getElementById('tab-conv').classList.remove('stage-mini');
+    if (App.solo) App.solo.toggleFull(false);
+    const stage = sample();
+    if (App.solo) App.solo.toggleFull(true);
+    av.resize();
+    const full = sample();
+    if (App.solo) App.solo.toggleFull(false);
+    return { stage, full, src: av.img && av.img._src === url };
+  });
+  expect(framed.src).toBe(true);
+  expect(framed.stage.top[0]).toBeGreaterThan(180);
+  expect(framed.stage.top[1]).toBeGreaterThan(140);
+  expect(framed.stage.bot[2]).toBeGreaterThan(framed.stage.bot[0]);
+  expect(framed.full.top[0]).toBeGreaterThan(180);
+  expect(framed.full.bot[2]).toBeGreaterThan(framed.full.bot[0]);
+  await page.screenshot({ path: '/opt/cursor/artifacts/frame-stage-473.png' });
+  await page.evaluate(() => { if (App.solo) App.solo.toggleFull(true); if (App.avatarConv) { App.avatarConv.resize(); App.avatarConv.frame(performance.now()); } });
+  await page.screenshot({ path: '/opt/cursor/artifacts/frame-full-473.png' });
   expect(testInfo.project.name).toBe('chromium');
 });
 

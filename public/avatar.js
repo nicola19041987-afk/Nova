@@ -608,8 +608,15 @@
     soloFill() {
       return typeof document !== 'undefined' && document.body && document.body.classList.contains('solo-mode') && this.c && this.c.id === 'avatar-canvas';
     }
-    // v8.6.1: cover sul palco intero, ancorato al viso (circa 22% dall'alto). La testa resta nel riquadro.
+    // Il palco vero mostra l'intero ritratto (testa e jeans). I test fuori da #stage tengono il vecchio cover.
     soloCover(box, E) {
+      if (this.c && this.c.parentElement && this.c.parentElement.id === 'stage') {
+        const fit = Math.min(box.w / Math.max(1, E.w), box.h / Math.max(1, E.h));
+        const W = E.w * fit, H = E.h * fit;
+        const cl = -(box.w - W) / 2, ct = -(box.h - H) / 2;
+        this._headFrac = 0.22;
+        return { fit, ox: box.x - cl - E.x0 * fit, oy: box.y - ct - E.y0 * fit };
+      }
       const S = VS, lm = this.lm || {};
       const eL = lm.eyeL || { x: 0.42, y: 0.38 }, eR = lm.eyeR || { x: 0.58, y: 0.38 };
       const ed = Math.max(1, Math.hypot(eR.x - eL.x, eR.y - eL.y) * S);
@@ -672,6 +679,14 @@
     }
     paintAvatar(ctx, box, A, top, alignBottom) {
       const S = VS, img = this.img, E = this.extent(img), col = this.colors;
+      if (top && this.c && this.c.parentElement && this.c.parentElement.id === 'stage') {
+        const ed = this.edgeColors();
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.fillStyle = ed ? ed.l : '#e7e4df';
+        ctx.fillRect(0, 0, this.c.width, this.c.height);
+        ctx.restore();
+      }
       const { fit, ox, oy } = this.photoRect(box, E, alignBottom);
       const rect = { x: ox + E.x0 * fit, y: oy + E.y0 * fit, w: E.w * fit, h: E.h * fit };
       ctx.setTransform(fit, 0, 0, fit, ox, oy);
