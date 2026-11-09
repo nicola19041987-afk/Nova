@@ -62,7 +62,7 @@ test('permesso microfono negato non invia un vocale', async ({ page, browserName
     phone: !!document.getElementById('wa-voice'),
     home: getComputedStyle(document.getElementById('wa-home')).display !== 'none',
     video: getComputedStyle(document.getElementById('wa-video')).display !== 'none',
-    face: (document.querySelector('#wa-photo img') || {}).src || '',
+    face: (document.querySelector('#wa-photo img') || {}).dataset.src || '',
   }));
   expect(g.cancel).toBe('cancel');
   expect(g.lock).toBe('lock');

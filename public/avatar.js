@@ -117,16 +117,22 @@
       return { frames: n, draw: st(P.draw), interval: st(P.gap) };
     }
     setImage(src) {
-      if (src && (src.startsWith('/api/') || src.startsWith('/ready/') || src.startsWith('data:'))) {
-        if (this.img && this.img._src === src) return;
+      if (!(src && (src.startsWith('/api/') || src.startsWith('/ready/') || src.startsWith('data:')))) { this.img = null; this.emoji = src || '🙂'; return; }
+      if (this.img && this.img._src === src) return;
+      const token = (this._imgToken = (this._imgToken || 0) + 1);
+      const apply = (url) => {
+        if (this._imgToken !== token) return;
         const im = new Image();
         im.onload = () => {
+          if (this._imgToken !== token) return;
           if (this.img && this.c.width > 1) { try { const c = document.createElement('canvas'); c.width = this.c.width; c.height = this.c.height; c.getContext('2d').drawImage(this.c, 0, 0); this._snap = { c, t: performance.now() }; } catch {} }
           this.img = im; this.img._src = src; this.sampleLids();
           if (window.App && App.fitFrame && this.c && this.c.parentElement && this.c.parentElement.id === 'stage') App.fitFrame();
         };
-        im.src = src;
-      } else { this.img = null; this.emoji = src || '🙂'; }
+        im.src = url;
+      };
+      if (src.startsWith('/api/') && window.App && App.loadPhoto) App.loadPhoto(src).then(apply).catch(() => { if (this._imgToken === token) { this.img = null; this.emoji = '🙂'; } });
+      else apply(src);
     }
     // ---- reazioni (gesti della mano riconosciuti dalla fotocamera) ----
     // kind: 'wave' (saluta), 'smile' (sorride), 'nod' (annuisce), 'tilt' (inclina la testa), 'shake'

@@ -114,7 +114,9 @@ App.chat = {
     const ch = App.current, st = $('#wa-status'); if (!st) return;
     const on = !!ch && !$('#tab-conv').hidden; document.body.classList.toggle('wa-conv', on);
     if (!on) return;
-    const ph = $('#wa-photo'); if (ph.dataset.for !== ch.id + (ch.avatar || '')) { ph.dataset.for = ch.id + (ch.avatar || ''); ph.innerHTML = App.avatarHtml(App.previews[ch.id] ? { ...ch, avatar: App.previews[ch.id].dataUrl } : ch, 'wa-av'); }
+    const ph = $('#wa-photo');
+    const face = App.faceSrc ? App.faceSrc(ch) : (ch.avatar || '');
+    if (ph.dataset.for !== ch.id + '|' + face) { ph.dataset.for = ch.id + '|' + face; if (App.paintAvatar) App.paintAvatar(ph, ch, 'wa-av'); }
     if (state !== undefined) this._hs = state;
     st.textContent = App.call && App.call.active ? (App.call.mode === 'voice' ? 'in chiamata' : 'in videochiamata') : this.busy || this._hs ? (this._hs || 'sta scrivendo…') : 'online';
     st.classList.toggle('typing', !!(this.busy || this._hs));

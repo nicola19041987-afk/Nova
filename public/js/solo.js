@@ -338,13 +338,8 @@
       const slot = $('#nh-avatar');
       if (slot) {
         slot.replaceChildren();
-        const src = (ch && App.faceSrc && App.faceSrc(ch)) || '';
-        if (src) {
-          const img = document.createElement('img');
-          img.alt = '';
-          img.src = src;
-          slot.appendChild(img);
-        } else slot.textContent = ((ch && ch.name) || 'N').slice(0, 1);
+        if (App.paintAvatar) App.paintAvatar(slot, ch || { name: 'Nova', ready: 'nova-scelta' }, 'nh-avatar-face');
+        else slot.textContent = ((ch && ch.name) || 'N').slice(0, 1);
       }
       const count = window.MotionLib && MotionLib.count;
       const g = $('#nh-gesti-count'); if (g) g.textContent = count ? String(count) : '';

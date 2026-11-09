@@ -113,13 +113,38 @@ App.fileToDataUrl = (file, max = 768) => new Promise((resolve, reject) => {
 });
 App.OWNER_FACE = '/api/avatars/8b4bf23923c5e90d.jpg';
 App.faceSrc = (ch) => {
+  const stored = ch && typeof ch.avatar === 'string' ? ch.avatar : '';
+  if (stored.startsWith('/api/avatars/')) return stored;
   if (ch && (ch.ready === 'nova-scelta' || ch.ready === 'nova-bionda' || ch.ready === 'greta' || /^nova$/i.test(String(ch.name || '').trim()))) return App.OWNER_FACE;
-  const a = (ch && ch.avatar) || '';
-  return a;
+  return stored;
+};
+App.loadPhoto = function (src) {
+  if (!src) return Promise.resolve('');
+  if (src.startsWith('data:') || src.startsWith('blob:')) return Promise.resolve(src);
+  if (!App._photo) App._photo = new Map();
+  const hit = App._photo.get(src);
+  if (hit) return hit;
+  const p = fetch(src, { credentials: 'same-origin' }).then(async (r) => {
+    if (!r.ok) throw new Error(String(r.status));
+    return URL.createObjectURL(await r.blob());
+  });
+  App._photo.set(src, p);
+  p.catch(() => { if (App._photo.get(src) === p) App._photo.delete(src); });
+  return p;
+};
+App.paintAvatar = function (el, ch, cls) {
+  if (!el) return;
+  const src = App.faceSrc(ch);
+  const image = src && (src.startsWith('/api/') || src.startsWith('data:') || src.startsWith('blob:') || src.startsWith('http'));
+  el.innerHTML = image ? `<div class="${cls || 'avatar'}"><img alt="" data-src="${esc(src)}"></div>` : `<div class="${cls || 'avatar'}">${esc(src || '🙂')}</div>`;
+  const img = el.querySelector('img');
+  if (!img) return;
+  App.loadPhoto(src).then((url) => { if (img.isConnected && img.dataset.src === src) img.src = url; }).catch(() => {});
 };
 App.avatarHtml = (ch, cls = 'avatar') => {
   const a = App.faceSrc(ch);
-  return `<div class="${cls}">${a && (String(a).startsWith('/api/') || String(a).startsWith('data:') || String(a).startsWith('blob:') || String(a).startsWith('http')) ? `<img src="${esc(a)}" alt="">` : esc(a || '🙂')}</div>`;
+  const image = a && (String(a).startsWith('/api/') || String(a).startsWith('data:') || String(a).startsWith('blob:') || String(a).startsWith('http'));
+  return `<div class="${cls}">${image ? `<img alt="" data-src="${esc(a)}" src="${esc(a)}">` : esc(a || '🙂')}</div>`;
 };
 App.charById = (id) => App.chars.find((c) => c.id === id);
 App.loadChars = async () => { App.chars = await App.api('/api/characters'); };
