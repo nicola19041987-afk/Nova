@@ -21,3 +21,15 @@ because the converter dropped the viseme names.
 
 three.js (MIT) is vendored under public/vendor/three and loaded from this origin.
 No CDN at runtime.
+
+Likeness check (not shipped). The reference portrait needs long honey-blonde wavy hair past the shoulders, green eyes, a black ribbed V-neck tank, and blue jeans. Recoloring the current mesh cannot do that: the hair cards stay short, and the clothes stay a sweater and a denim skirt.
+
+Microsoft Rocketbox adults Female_Adult_01 through Female_Adult_17 were reviewed from the MIT previews (copyright 2020 Microsoft, same LICENSE.md). None combine long wavy blonde hair with a sleeveless tank and jeans. The nearest are Female_Adult_08 (long straight brown hair, graphic t-shirt, jeans) and Female_Adult_01 (blonde ponytail, pink shirt, jeans). A recolor would leave straight hair and sleeves, so it would not read as the portrait.
+
+Not used, and not copied into this repo:
+- ToxSam 100Avatars (stated CC0) are stylized VRM characters, not this woman.
+- Reine (Melnus) is CC-BY now, previously CC-BY-NC-SA, and is an anime model.
+- Mixamo characters were not downloaded. Their terms do not grant a clean right to redistribute the raw model here.
+- No NC or unknown-license file was added.
+
+What would unblock a swap: one adult woman glTF or VRM, CC0 or MIT or CC-BY, with separate long wavy hair, a sleeveless top, and jeans, on a humanoid skeleton the current idle and wave can drive. Until that file exists, Prova stays Female Adult 02.
