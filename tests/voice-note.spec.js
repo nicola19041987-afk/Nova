@@ -109,7 +109,9 @@ test('permesso microfono negato non invia un vocale', async ({ page, browserName
   if (browserName !== 'webkit') await page.screenshot({ path: '/opt/cursor/artifacts/v2d-13-voice-390.png' });
   await page.locator('#wa-home').click();
   await expect(page.locator('#nh-list')).toBeVisible();
-  if (browserName !== 'webkit') await page.screenshot({ path: '/opt/cursor/artifacts/v2d-13-home-390.png' });
+  const profile = await page.evaluate(() => getComputedStyle(document.getElementById('nh-photo')).backgroundColor);
+  expect(profile).toBe('rgb(255, 255, 255)');
+  if (browserName !== 'webkit') await page.screenshot({ path: '/opt/cursor/artifacts/v2d-15-home-390.png' });
   await page.locator('#dock-chat').click();
   const voices = await page.locator('.has-voice').count();
   await page.locator('#vn-mic').dispatchEvent('pointerdown', { pointerId: 1, clientX: 300, clientY: 700, button: 0 });

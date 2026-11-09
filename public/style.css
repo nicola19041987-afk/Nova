@@ -771,7 +771,7 @@ body.solo-mode #back-btn .chat-back-label{font-size:16px;line-height:1}
 .nova-home{gap:0}
 .nh-page[hidden]{display:none!important}
 .nh-profile,.nh-group{background:#fff;border-radius:12px;margin:0 0 18px;overflow:hidden}
-.nh-profile{width:100%;display:flex;align-items:center;gap:14px;padding:14px 12px;border:0;text-align:left;color:#1A1D21}
+.nh-profile,.look-bar .nh-profile{width:100%;display:flex;align-items:center;gap:14px;padding:14px 12px;border:0!important;border-radius:12px!important;text-align:left;background:#fff!important;color:#1A1D21!important}
 .nh-avatar{width:64px;height:64px;border-radius:50%;overflow:hidden;background:#E4E7EB;flex:0 0 auto;display:flex;align-items:center;justify-content:center;font-size:28px}
 .nh-avatar img{width:100%;height:100%;object-fit:cover;object-position:50% 18%}
 .nh-id{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}
