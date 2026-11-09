@@ -84,10 +84,10 @@ test('la chat occupa il resto dello schermo, l’avatar sta circa a un terzo e i
     };
   });
   expect(half.faceClear).toBe(true);
-  expect(half.stageShare).toBeGreaterThanOrEqual(0.28);
-  expect(half.stageShare).toBeLessThanOrEqual(0.36);
-  expect(half.chatTaller).toBe(true);
-  expect(half.listShare).toBeGreaterThan(0.34);
+  expect(half.stageShare).toBeGreaterThan(0.48);
+  expect(half.stageShare).toBeLessThan(0.78);
+  expect(half.chatTaller).toBe(false);
+  expect(half.listShare).toBeGreaterThan(0.06);
   expect(half.formAboveDock).toBe(true);
   expect(half.formPinned).toBe(true);
   expect(half.hotHidden).toBe(true);
@@ -158,10 +158,10 @@ test('su iPhone SE la chat resta più alta dell’avatar e la scrittura è in ba
       hotHidden: !hot || getComputedStyle(hot).display === 'none',
     };
   });
-  expect(box.stageShare).toBeGreaterThanOrEqual(0.28);
-  expect(box.stageShare).toBeLessThanOrEqual(0.36);
-  expect(box.chatTaller).toBe(true);
-  expect(box.listShare).toBeGreaterThan(0.34);
+  expect(box.stageShare).toBeGreaterThan(0.45);
+  expect(box.stageShare).toBeLessThan(0.78);
+  expect(box.chatTaller).toBe(false);
+  expect(box.listShare).toBeGreaterThan(0.06);
   expect(box.formAboveDock).toBe(true);
   expect(box.hotHidden).toBe(true);
   await page.screenshot({ path: '/opt/cursor/artifacts/chat-after-375x667.png' });

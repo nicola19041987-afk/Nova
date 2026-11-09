@@ -122,6 +122,7 @@
         im.onload = () => {
           if (this.img && this.c.width > 1) { try { const c = document.createElement('canvas'); c.width = this.c.width; c.height = this.c.height; c.getContext('2d').drawImage(this.c, 0, 0); this._snap = { c, t: performance.now() }; } catch {} }
           this.img = im; this.img._src = src; this.sampleLids();
+          if (window.App && App.fitFrame && this.c && this.c.parentElement && this.c.parentElement.id === 'stage') App.fitFrame();
         };
         im.src = src;
       } else { this.img = null; this.emoji = src || '🙂'; }

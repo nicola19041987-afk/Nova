@@ -71,6 +71,7 @@ test('niente 3D, foto bionda, tap e campo sotto, voce eve', async ({ page, brows
       lookOverlaps: look.height > 1 && look.top < stage.bottom - 1 && look.bottom > stage.top + 1,
       canvasWide: canvas.width >= stage.width - 2,
       stageShare: stage.height / window.innerHeight,
+      aspect: stage.height / Math.max(1, stage.width),
       expand: es.display !== 'none' && es.visibility !== 'hidden' && expand.getBoundingClientRect().width > 2,
     };
   });
@@ -89,8 +90,26 @@ test('niente 3D, foto bionda, tap e campo sotto, voce eve', async ({ page, brows
   expect(state.lookHidden).toBe(true);
   expect(state.lookOverlaps).toBe(false);
   expect(state.canvasWide).toBe(true);
-  expect(state.stageShare).toBeGreaterThanOrEqual(0.28);
-  expect(state.stageShare).toBeLessThanOrEqual(0.36);
+  expect(state.stageShare).toBeGreaterThan(0.48);
+  expect(state.stageShare).toBeLessThan(0.78);
+  expect(state.aspect).toBeGreaterThan(1.2);
+  expect(state.aspect).toBeLessThan(1.45);
+  await page.screenshot({ path: '/opt/cursor/artifacts/frame-wide-473.png' });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.evaluate(() => App.fitFrame && App.fitFrame());
+  const narrow = await page.evaluate(() => {
+    const stage = document.getElementById('stage').getBoundingClientRect();
+    const form = document.getElementById('chat-form').getBoundingClientRect();
+    const dock = document.querySelector('.solo-dock').getBoundingClientRect();
+    return { aspect: stage.height / Math.max(1, stage.width), share: stage.height / innerHeight, formAbove: form.bottom <= dock.top + 2 };
+  });
+  expect(narrow.aspect).toBeGreaterThan(1.2);
+  expect(narrow.aspect).toBeLessThan(1.45);
+  expect(narrow.share).toBeGreaterThan(0.5);
+  expect(narrow.formAbove).toBe(true);
+  await page.screenshot({ path: '/opt/cursor/artifacts/frame-wide-390.png' });
+  await page.setViewportSize({ width: 473, height: 1024 });
+  await page.evaluate(() => App.fitFrame && App.fitFrame());
   expect(state.expand).toBe(true);
   await page.evaluate(() => {
     const b = document.createElement('div');

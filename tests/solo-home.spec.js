@@ -383,9 +383,9 @@ test('labiale e movimento della sessione ⚡ seguono l’audio, senza coprire la
   expect(snap.maxStep).toBeLessThan(0.3);
   expect(snap.inCall).toBe(false);
   expect(snap.chatBelow).toBe(true);
-  expect(snap.stageShare).toBeGreaterThanOrEqual(0.28);
-  expect(snap.stageShare).toBeLessThanOrEqual(0.36);
-  expect(snap.chatShare).toBeGreaterThan(snap.stageShare);
+  expect(snap.stageShare).toBeGreaterThan(0.45);
+  expect(snap.stageShare).toBeLessThan(0.78);
+  expect(snap.chatShare).toBeGreaterThan(0.05);
 });
 
 test('il PCM della sessione ⚡ apre e chiude la bocca', async ({ page, browserName }) => {

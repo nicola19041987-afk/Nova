@@ -177,7 +177,44 @@ App.boot();
 
 // v7.1: cornice dell'avatar FISSA e verticale (9:16, come lo schermo del telefono), la più grande possibile nello spazio del palco.
 // Nessuna trasformazione animata sul riquadro: solo dimensione e posizione calcolate a ogni ridimensionamento.
+App.sizePortraitStage = function () {
+  const st = document.getElementById('stage');
+  if (!st || !document.body.classList.contains('solo-mode')) return;
+  if (document.body.classList.contains('av-full-on') || st.classList.contains('av-full')) {
+    st.style.height = '';
+    st.style.maxHeight = '';
+    st.style.flex = '';
+    return;
+  }
+  const conv = document.getElementById('tab-conv');
+  const img = App.avatarConv && App.avatarConv.img;
+  const ar = img && img.naturalWidth ? img.naturalHeight / img.naturalWidth : 1.5;
+  const w = Math.max(1, (conv && conv.clientWidth) || st.clientWidth);
+  const vv = window.innerHeight || 800;
+  if (conv && conv.classList.contains('stage-mini')) {
+    const mh = Math.round(Math.min(vv * 0.22, w * ar));
+    st.style.flex = '0 0 auto';
+    st.style.height = mh + 'px';
+    st.style.maxHeight = mh + 'px';
+    return;
+  }
+  const form = document.getElementById('chat-form');
+  const look = document.getElementById('look-bar');
+  const formH = form ? form.offsetHeight : 48;
+  const lookH = look && !look.hidden ? look.offsetHeight : 0;
+  const shell = document.getElementById('app-shell');
+  const limit = Math.min(vv, (shell && shell.clientHeight) || vv);
+  const top = (document.querySelector('.topbar') && document.querySelector('.topbar').offsetHeight) || 0;
+  const avail = conv && conv.clientHeight > 80 ? conv.clientHeight : Math.max(200, limit - top);
+  const chatMin = 88;
+  const maxH = Math.max(200, avail - formH - lookH - chatMin);
+  const h = Math.round(Math.min(w * ar, maxH));
+  st.style.flex = '0 0 auto';
+  st.style.height = h + 'px';
+  st.style.maxHeight = h + 'px';
+};
 App.fitFrame = function () {
+  if (App.sizePortraitStage) App.sizePortraitStage();
   const st = document.getElementById('stage'), c = document.getElementById('avatar-canvas'); if (!st || !c) return;
   const cs = getComputedStyle(st);
   const W = st.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight), H = st.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);

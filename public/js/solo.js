@@ -157,6 +157,7 @@
           const conv = $('#tab-conv'); if (!conv) return;
           conv.classList.toggle('stage-mini');
           if (App.ls && App.me) App.ls.set('stageMini', conv.classList.contains('stage-mini'));
+          fit();
           requestAnimationFrame(() => fit());
         });
       }
@@ -236,6 +237,7 @@
       document.dispatchEvent(new CustomEvent('nova-layer'));
       const b = $('#av-expand'); if (b) { b.textContent = '⛶'; b.title = on ? 'Riduci' : 'Ingrandisci avatar'; b.setAttribute('aria-hidden', on ? 'true' : 'false'); }
       if (on && App.stageFs && !App.stageFs.isFs()) { /* css overlay, not browser FS */ }
+      if (App.fitFrame) requestAnimationFrame(() => App.fitFrame());
     },
     async saveRequests() {
       const v = ($('#set-requests') && $('#set-requests').value) || '';
