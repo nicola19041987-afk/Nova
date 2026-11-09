@@ -293,17 +293,17 @@
       const back = $('#back-btn');
       if (back) back.addEventListener('click', (e) => {
         if (!document.body.classList.contains('solo-mode')) return;
-        if (document.body.classList.contains('solo-chat') && !document.body.classList.contains('solo-home') && !document.body.classList.contains('solo-portrait')) return;
         e.preventDefault();
         e.stopImmediatePropagation();
         if (document.body.classList.contains('solo-portrait')) { this.closePortrait(); return; }
         if (document.body.dataset.tab === 'account') { this.showHome(); return; }
         if (document.body.classList.contains('solo-home') && this._nh && this._nh !== 'list') { this.showPage('list'); return; }
-        this.showChat();
+        if (document.body.classList.contains('solo-home')) { this.showChat(); return; }
+        this.showHome();
       }, true);
       const photo = $('#wa-photo');
       if (photo) {
-        const open = (e) => { e.preventDefault(); e.stopPropagation(); this.openPicker(); };
+        const open = (e) => { e.preventDefault(); e.stopPropagation(); this.openPortrait(); };
         photo.addEventListener('click', open);
         photo.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') open(e); });
       }
@@ -318,7 +318,10 @@
       const label = back.querySelector('.chat-back-label');
       if (mode === 'hide') { back.hidden = true; return; }
       back.hidden = false;
-      if (mode === 'list') {
+      if (mode === 'chat') {
+        back.setAttribute('aria-label', 'Impostazioni');
+        if (label) label.textContent = '';
+      } else if (mode === 'list') {
         back.setAttribute('aria-label', 'Torna alla chat');
         if (label) label.textContent = 'Chat';
       } else {
@@ -378,7 +381,7 @@
       const ch = soloChar();
       const title = $('#title'); if (title) title.textContent = (ch && ch.name) || 'Nova';
       const bar = $('#look-bar'); if (bar) bar.hidden = true;
-      this.paintBack('hide');
+      this.paintBack('chat');
       this.setDock('chat');
       requestAnimationFrame(fit);
     },

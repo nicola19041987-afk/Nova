@@ -15,7 +15,7 @@
     try {
       var q = new URLSearchParams(location.search);
       var TOKEN = q.get('refresh');
-      if (TOKEN !== '2d' && TOKEN !== '2d-face' && TOKEN !== '2d-see' && TOKEN !== '2d-6' && TOKEN !== '2d-7' && TOKEN !== '2d-8' && TOKEN !== '2d-9' && TOKEN !== '2d-10' && TOKEN !== '2d-11') return;
+      if (TOKEN !== '2d' && TOKEN !== '2d-face' && TOKEN !== '2d-see' && TOKEN !== '2d-6' && TOKEN !== '2d-7' && TOKEN !== '2d-8' && TOKEN !== '2d-9' && TOKEN !== '2d-10' && TOKEN !== '2d-11' && TOKEN !== '2d-12') return;
       var key = 'nova-refresh-' + TOKEN;
       q.delete('refresh');
       var rest = q.toString();
@@ -126,8 +126,9 @@
       <button type="button" id="support-note-btn" class="support-ic" title="Appunto per assistenza" aria-label="Appunto per assistenza">📝</button>
       <button type="button" id="app-refresh" title="Aggiorna" aria-label="Aggiorna">↻</button>
       <span id="who" class="muted small"></span>
-      <button type="button" id="wa-video" class="wa-ic" title="Videochiamata" aria-label="Videochiamata">📹</button>
-      <button type="button" id="wa-home" class="wa-ic" title="Home" aria-label="Home">🏠</button>
+      <button type="button" id="wa-video" class="wa-ic" title="Videochiamata" aria-label="Videochiamata"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><rect x="2.5" y="6" width="12" height="12" rx="2.2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M14.5 10.2L21 7.2v9.6l-6.5-3z" fill="currentColor"/></svg></button>
+      <button type="button" id="wa-voice" class="wa-ic" title="Chiamata vocale" aria-label="Chiamata vocale"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M7.2 3.6h2.6l1.3 3.4-1.8 1.1a11 11 0 005.6 5.6l1.1-1.8 3.4 1.3v2.6a1.6 1.6 0 01-1.6 1.6A15.2 15.2 0 015.6 5.2a1.6 1.6 0 011.6-1.6z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg></button>
+      <button type="button" id="wa-home" class="wa-ic" title="Home" aria-label="Home" hidden>🏠</button>
     </header>
 
     <div id="adult-ask" class="adult-ask" hidden>
@@ -274,7 +275,9 @@
         <div id="messages" class="messages"></div>
         <p id="typing" class="typing-line muted small" hidden></p>
         <form id="chat-form" class="composer">
-          <textarea id="chat-input" rows="1" placeholder="Scrivi a Nova…" required></textarea>
+          <button type="button" id="vn-plus" aria-label="Allega una foto">+</button>
+          <textarea id="chat-input" rows="1" placeholder="Messaggio" required></textarea>
+          <button type="button" id="vn-cam" aria-label="Fotocamera" aria-pressed="false"><span class="cam-off-line" aria-hidden="true"></span><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M4 8.5h3l1.2-2h7.6L17 8.5h3v10H4z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><circle cx="12" cy="13" r="2.6" fill="none" stroke="currentColor" stroke-width="1.7"/></svg></button>
           <div id="vn-hud" class="vn-hud" hidden>
             <button type="button" id="vn-cancel">Annulla</button>
             <span id="vn-time">0:00</span>

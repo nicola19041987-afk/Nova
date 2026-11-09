@@ -95,7 +95,7 @@ test('la chat occupa il resto dello schermo, l’avatar sta circa a un terzo e i
   expect(half.scrolls).toBe(true);
   if (testInfo.project.name === 'chromium') {
     await page.screenshot({ path: '/opt/cursor/artifacts/chat-after-390x844.png' });
-    await page.locator('#wa-home').click();
+    await page.locator('#back-btn').click();
     const home = await page.evaluate(() => ({
       home: document.body.classList.contains('solo-home'),
       list: getComputedStyle(document.getElementById('nh-list')).display !== 'none',

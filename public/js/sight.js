@@ -5,12 +5,14 @@
   const MAX_EDGE = 480;
   let want = false, owns = false, current = null, timer = null, latest = null, latestAt = 0, gen = 0, busy = false, lastTx = 0;
 
+  function paintCam(btn) {
+    if (!btn) return;
+    btn.classList.toggle('on', want);
+    btn.setAttribute('aria-pressed', want ? 'true' : 'false');
+  }
   function ui() {
-    const b = document.getElementById('dock-cam');
-    if (b) {
-      b.classList.toggle('on', want);
-      b.setAttribute('aria-pressed', want ? 'true' : 'false');
-    }
+    paintCam(document.getElementById('dock-cam'));
+    paintCam(document.getElementById('vn-cam'));
     const preview = document.getElementById('sight-preview');
     if (preview && !want) preview.hidden = true;
     const live = document.getElementById('sight-live');
@@ -18,6 +20,8 @@
     const status = document.getElementById('sight-status');
     if (status) status.hidden = true;
   }
+  const chatCam = document.getElementById('vn-cam');
+  if (chatCam) chatCam.addEventListener('click', (e) => { e.preventDefault(); if (!want && start) start(); });
   const previewEl = document.getElementById('sight-preview');
   if (previewEl) previewEl.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); if (want) stop(); });
   function release() {

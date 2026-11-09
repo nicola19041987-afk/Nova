@@ -93,7 +93,7 @@ test('dopo il PIN Luisa è in Home, senza consenso né coda Prepara, e vede solo
     prep: !!(document.getElementById('auto-prep') && !document.getElementById('auto-prep').hidden),
   }));
   expect(gate).toEqual({ locked: false, admin: true, edit: true, keyHidden: true, prep: false });
-  await page.locator('#wa-photo').click();
+  await page.evaluate(() => App.solo.openPicker());
   await expect(page.locator('#avatar-sheet-list')).toContainText('Nova');
   await expect(page.locator('#avatar-sheet-list')).not.toContainText('Mara');
   await expect(page.locator('#avatar-sheet-list')).not.toContainText('Fiore');

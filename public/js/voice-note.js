@@ -193,6 +193,17 @@
   const input = $('#chat-input');
   if (input) input.addEventListener('input', paintMic);
   paintMic();
+  const plus = $('#vn-plus');
+  if (plus) plus.addEventListener('click', () => {
+    const pick = document.createElement('input');
+    pick.type = 'file'; pick.accept = 'image/*';
+    pick.onchange = () => {
+      const file = pick.files && pick.files[0]; if (!file || !App.chat) return;
+      const url = URL.createObjectURL(file);
+      App.chat.send('', false, { url, kind: 'image', w: 0, h: 0, localOnly: true });
+    };
+    pick.click();
+  });
 
   App.voiceNote = { box, gesture, urls, paintMic };
 })();

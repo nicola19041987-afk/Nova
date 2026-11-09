@@ -50,6 +50,15 @@ App.chat = {
     if (m.id && this.ids.has(m.id)) return null;
     if (m.id) this.ids.add(m.id);
     const mine = m.role === 'user' && (!m.author || m.author === App.me.user);
+    const box = $('#messages');
+    if (box && !box.querySelector('.day-pill')) {
+      const pill = document.createElement('div');
+      pill.className = 'day-pill';
+      const when = m.at ? new Date(m.at) : new Date();
+      const now = new Date();
+      pill.textContent = when.toDateString() === now.toDateString() ? 'Oggi' : when.toLocaleDateString('it-IT', { day: 'numeric', month: 'long' });
+      box.appendChild(pill);
+    }
     const d = document.createElement('div');
     d.className = `msg ${m.role === 'user' ? (mine ? 'user' : 'user other') : 'assistant'}`;
     if (m.id) d.dataset.id = m.id;
@@ -74,13 +83,19 @@ App.chat = {
       if (m.content) d.append(body);
       d.append(meta);
     } else d.append(who, body, meta);
-    const remember = () => { const t = prompt('Cosa devo ricordare?', body.textContent.slice(0, 280)); if (t) App.account.remember(t); };
+    const copyText = () => {
+      const t = (body.textContent || '').trim();
+      if (!t) return;
+      const done = () => App.toast && App.toast('Copiato');
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(done).catch(done);
+      else done();
+    };
     let hold = 0;
-    d.addEventListener('pointerdown', (e) => { if (e.target.closest('button,a,video,input')) return; hold = setTimeout(remember, 480); });
+    d.addEventListener('pointerdown', (e) => { if (e.target.closest('button,a,video,input')) return; hold = setTimeout(copyText, 480); });
     d.addEventListener('pointerup', () => clearTimeout(hold));
     d.addEventListener('pointercancel', () => clearTimeout(hold));
     d.addEventListener('pointermove', () => clearTimeout(hold));
-    d.addEventListener('contextmenu', (e) => { e.preventDefault(); clearTimeout(hold); remember(); });
+    d.addEventListener('contextmenu', (e) => { e.preventDefault(); clearTimeout(hold); copyText(); });
     $('#messages').appendChild(d); return d;
   },
   // spunte: due spunte quando il server ha il messaggio, blu quando dopo c'è una risposta (del personaggio o dell'altra persona)
@@ -137,7 +152,7 @@ App.chat = {
   visible() { return !!App.current && !document.hidden && !$('#tab-conv').hidden; },
   // noAI = true: "solo messaggio" all'altra persona, l'IA non risponde (non serve la chiave).
   async send(text, noAI = false, photo = null, voice = null) {
-    text = (text || '').trim(); if (voice && !text) text = 'Nota vocale'; if ((!text && !photo && !voice) || !App.current || this.busy) return;
+    text = (text || '').trim(); if (voice && !text) text = 'Nota vocale'; if (photo && photo.localOnly && !text) text = 'Foto'; if ((!text && !photo && !voice) || !App.current || this.busy) return;
     if (text && App.gestures && App.gestures.hear) App.gestures.hear(text, { defer: !noAI });
     if (!photo && this.pendingAdult) return this.answerAdult(text); // risposta sì/no alla domanda di conferma (resta sul telefono)
     if (!photo && App.kwSet && text.length <= 80) { // parola chiave: confronto sul server (hash), mai in chat né all'IA
@@ -151,7 +166,7 @@ App.chat = {
       sight = App.sight.takeFrame();
     }
     const local = this.addMsg({ role: 'user', author: App.me.user, authorName: meName, content: text, noAI, at: new Date().toISOString(), ...(photo ? { photo: { localSrc: photo.url, localThumb: photo.thumb, kind: photo.kind, w: photo.w, h: photo.h } } : {}), ...(voice ? { voice } : {}) });
-    const ph = photo ? { photo: { gid: photo.id } } : {};
+    const ph = photo && photo.id ? { photo: { gid: photo.id } } : {};
     const voiceBody = voice ? { voice: { sec: voice.sec, wave: voice.wave } } : {};
     this.scroll();
     if (noAI) {
@@ -160,7 +175,7 @@ App.chat = {
       this.busy = false; this.poll(); return;
     }
     this.header();
-    const bubble = this.addMsg({ role: 'assistant', authorName: ch.name, content: '…' }); bubble.classList.add('typing'); this.scroll();
+    const bubble = this.addMsg({ role: 'assistant', authorName: ch.name, content: 'sta scrivendo…' }); bubble.classList.add('typing'); this.scroll();
     const body = bubble.querySelector('.body');
     let reply = '', streamTTS = false;
     const cue = App.chat.cues();

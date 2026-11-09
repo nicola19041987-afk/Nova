@@ -717,8 +717,9 @@ input,textarea,select{background:#fff;color:var(--text);border-color:var(--line)
 body.solo-mode #legacy-tabbar{display:none!important}
 body.solo-mode #solo-dock{display:flex!important}
 body.solo-mode #solo-bar{display:none!important}
-body.solo-mode #wa-voice{display:none!important}
-body.solo-mode #wa-video,body.solo-mode #wa-home{display:inline-flex!important;align-items:center;justify-content:center}
+body.solo-mode #wa-video,body.solo-mode #wa-voice{display:inline-flex!important;align-items:center;justify-content:center}
+body.solo-mode #wa-home,body.solo-mode #support-note-btn,body.solo-mode #app-refresh,body.solo-mode #who{display:none!important}
+body.solo-mode.solo-chat #solo-dock{display:none!important}
 #app-refresh{display:inline-flex!important;align-items:center;justify-content:center;width:36px;height:36px;border:0;border-radius:50%;background:#E8F1FC;color:#1E6FD9;font-size:18px;flex:0 0 auto}
 #support-form{position:relative;padding-top:8px}
 .support-thread{max-height:34vh;overflow:auto;display:flex;flex-direction:column;gap:8px;margin:8px 0}
@@ -841,9 +842,9 @@ body.solo-mode.av-full-on #stage.av-full .stage-tools{visibility:visible}
 #sight-preview{position:fixed;z-index:12;width:72px;height:96px;left:12px;right:auto;bottom:calc(140px + env(safe-area-inset-bottom));border-radius:12px;object-fit:cover;border:2px solid #fff;background:#111;cursor:pointer;pointer-events:auto}
 #sight-preview[hidden]{display:none!important}
 #sight-live,#sight-status{display:none!important}
-#dock-cam,#call-cam{position:relative}
+#dock-cam,#call-cam,#vn-cam{position:relative}
 .cam-off-line{position:absolute;left:18%;right:18%;top:5px;height:3px;border-radius:2px;background:#e23b3b;pointer-events:none}
-#dock-cam[aria-pressed="true"] .cam-off-line,#call-cam[aria-pressed="true"] .cam-off-line{display:none}
+#dock-cam[aria-pressed="true"] .cam-off-line,#call-cam[aria-pressed="true"] .cam-off-line,#vn-cam[aria-pressed="true"] .cam-off-line{display:none}
 .call-self{cursor:pointer}
 .solo-dock button:active{color:var(--accent2)}
 #solo-settings-card textarea{width:100%;min-height:72px;border-radius:10px;border:1px solid var(--line);padding:10px;font-size:16px;background:#fff}
@@ -1082,4 +1083,29 @@ body.solo-mode #avatar-canvas{pointer-events:auto;z-index:1}
 #look-history li{display:flex;justify-content:space-between;gap:8px;align-items:center;font-size:12px;margin:4px 0}
 #look-history button{background:#fff;color:#1E6FD9}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+
+/* Chat: fondo beige con un motivo nostro, bolle verdi a destra e bianche a sinistra. */
+body.solo-mode #tab-conv #messages{
+  background-color:#EFE6D8!important;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160' fill='none' stroke='%23d7cbbd' stroke-width='1.3' stroke-linecap='round'><circle cx='18' cy='20' r='5'/><path d='M62 14h12M68 8v12'/><path d='M120 36c7 0 11 7 7 12'/><rect x='28' y='78' width='9' height='9' rx='2'/><path d='M100 96l7 5-7 5'/><circle cx='142' cy='132' r='3.5'/></svg>")!important;
+  background-size:160px 160px!important;
+  padding:8px 10px 12px!important;
+  max-height:none!important;
+}
+body.solo-mode #tab-conv .day-pill{align-self:center;margin:6px auto 10px;padding:4px 12px;border-radius:8px;background:#fff;color:#54656f;font-size:12.5px;box-shadow:0 1px .5px #0002}
+body.solo-mode #tab-conv .msg{max-width:82%!important;padding:6px 8px 16px!important;border:0!important;box-shadow:0 1px .5px #00000014!important;overflow:visible}
+body.solo-mode #tab-conv .msg .who{display:none!important}
+body.solo-mode #tab-conv .msg.user:not(.other){background:#D9FDD3!important;color:#111b21!important;border-radius:8px 0 8px 8px!important;margin-left:auto!important}
+body.solo-mode #tab-conv .msg.user:not(.other)::after{content:'';position:absolute;right:-7px;top:0;border:7px solid transparent;border-top-color:#D9FDD3;border-left-color:#D9FDD3}
+body.solo-mode #tab-conv .msg.assistant,body.solo-mode #tab-conv .msg.user.other{background:#fff!important;color:#111b21!important;border-radius:0 8px 8px 8px!important;margin-right:auto!important;margin-left:0!important}
+body.solo-mode #tab-conv .msg.assistant::after,body.solo-mode #tab-conv .msg.user.other::after{content:'';position:absolute;left:-7px;top:0;border:7px solid transparent;border-top-color:#fff;border-right-color:#fff}
+body.solo-mode #tab-conv .msg .meta,body.solo-mode #tab-conv .msg .ticks{color:#667781!important;font-size:11px!important}
+body.solo-mode #tab-conv .msg .ticks.read,body.solo-mode #tab-conv .msg .ticks.saved{color:#53bdeb!important}
+body.solo-mode #tab-conv .msg.typing .body{font-style:italic;color:#667781}
+body.solo-mode #chat-form.composer{background:#F0F2F5!important;border-top:0;padding:6px 6px 8px!important;gap:4px!important;align-items:flex-end}
+body.solo-mode #chat-input{border:0!important;border-radius:22px!important;background:#fff!important;min-height:40px;padding:9px 12px!important}
+#vn-plus,#vn-cam{width:40px;height:40px;flex:0 0 40px;border:0;border-radius:50%;background:transparent!important;color:#54656f!important;font-size:28px;line-height:1;position:relative}
+#vn-cam .cam-off-line{top:6px}
+#vn-mic{background:#00a884!important;color:#fff!important}
+body.solo-mode #chat-form button.primary{background:#00a884!important;border-radius:50%}
 

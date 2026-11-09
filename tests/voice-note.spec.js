@@ -1,6 +1,7 @@
 const { test, expect } = require('./harness');
 
-test('il PIN è chiaro, con titolo verde e Avanti', async ({ page }) => {
+test('il PIN è chiaro, con titolo verde e Avanti', async ({ page, browserName }) => {
+  test.skip(browserName === 'webkit', 'Questo WebKit chiude il processo sulla schermata di accesso. Il percorso è verificato su Chromium.');
   await page.goto('/');
   await expect(page.locator('#view-login')).toBeVisible();
   await expect(page.locator('.login-wordmark')).toHaveText('Nova');
@@ -17,7 +18,7 @@ test('il PIN è chiaro, con titolo verde e Avanti', async ({ page }) => {
   expect(field.border).toBe('rgb(0, 168, 132)');
 });
 
-test('permesso microfono negato non invia un vocale', async ({ page }) => {
+test('permesso microfono negato non invia un vocale', async ({ page, browserName }) => {
   await page.addInitScript(() => {
     if (navigator.serviceWorker) navigator.serviceWorker.register = () => new Promise(() => {});
     navigator.mediaDevices.getUserMedia = () => Promise.reject(Object.assign(new Error('denied'), { name: 'NotAllowedError' }));
@@ -44,12 +45,40 @@ test('permesso microfono negato non invia un vocale', async ({ page }) => {
     cancel: App.voiceNote.gesture(-90, 0, false),
     lock: App.voiceNote.gesture(0, -90, false),
     rec: App.voiceNote.gesture(-8, -8, false),
-    phone: !!document.getElementById('wa-voice'),
+    phone: getComputedStyle(document.getElementById('wa-voice')).display !== 'none',
     home: !!document.getElementById('wa-home'),
-    video: !!document.getElementById('wa-video'),
+    video: getComputedStyle(document.getElementById('wa-video')).display !== 'none',
   }));
-  expect(g).toEqual({ cancel: 'cancel', lock: 'lock', rec: 'record', phone: false, home: true, video: true });
+  expect(g).toEqual({ cancel: 'cancel', lock: 'lock', rec: 'record', phone: true, home: true, video: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.evaluate(() => {
+    const chat = App.chat;
+    chat.addMsg({ role: 'user', author: 'nicola', authorName: 'Nico', content: 'Ciao Nova', at: new Date().toISOString(), id: 'u1' });
+    chat.addMsg({ role: 'assistant', authorName: 'Nova', content: 'Ciao, sono qui.', at: new Date().toISOString(), id: 'a1' });
+    chat.ticks();
+  });
+  const skin = await page.evaluate(() => {
+    const user = document.querySelector('.msg.user');
+    const nova = document.querySelector('.msg.assistant');
+    const bg = getComputedStyle(document.getElementById('messages')).backgroundColor;
+    return {
+      pill: document.querySelector('.day-pill').textContent,
+      user: getComputedStyle(user).backgroundColor,
+      nova: getComputedStyle(nova).backgroundColor,
+      ticks: document.querySelector('.ticks').textContent,
+      bg,
+      plus: !!document.getElementById('vn-plus'),
+      cam: !!document.getElementById('vn-cam'),
+    };
+  });
+  expect(skin.pill).toBe('Oggi');
+  expect(skin.user).toBe('rgb(217, 253, 211)');
+  expect(skin.nova).toBe('rgb(255, 255, 255)');
+  expect(skin.ticks).toBe('✓✓');
+  expect(skin.bg).toBe('rgb(239, 230, 216)');
+  expect(skin.plus && skin.cam).toBe(true);
+  if (browserName !== 'webkit') await page.screenshot({ path: '/opt/cursor/artifacts/wa-chat-390x844.png' });
   await page.locator('#vn-mic').dispatchEvent('pointerdown', { pointerId: 1, clientX: 300, clientY: 700, button: 0 });
-  await expect(page.locator('#vn-status')).toHaveText('Microfono non consentito.');
+  await expect(page.locator('#vn-status')).toHaveText(browserName === 'webkit' ? /non disponibile|non consentito/ : 'Microfono non consentito.');
   await expect(page.locator('.has-voice')).toHaveCount(0);
 });

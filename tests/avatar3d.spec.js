@@ -93,10 +93,10 @@ test('niente 3D, foto bionda, tap e campo sotto, voce eve', async ({ page, brows
     chat: document.body.classList.contains('solo-chat'),
     stage: getComputedStyle(document.getElementById('stage')).display,
     video: getComputedStyle(document.getElementById('wa-video')).display,
-    voice: !!document.getElementById('wa-voice'),
+    voice: getComputedStyle(document.getElementById('wa-voice')).display !== 'none',
     home: !!document.getElementById('wa-home'),
-  }))).toEqual({ chat: true, stage: 'none', video: 'flex', voice: false, home: true });
-  await page.locator('#wa-home').click();
+  }))).toEqual({ chat: true, stage: 'none', video: 'flex', voice: true, home: true });
+  await page.locator('#back-btn').click();
   await expect(page.locator('#nh-list')).toBeVisible();
   await page.locator('#nh-photo').click();
   const home = await page.evaluate(() => {
