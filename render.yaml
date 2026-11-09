@@ -1,0 +1,19 @@
+previews:
+  generation: off
+services:
+  - type: web
+    name: Nova
+    runtime: node
+    region: frankfurt
+    plan: 0.5c-512mb
+    repo: https://github.com/nicola19041987-afk/Nova
+    branch: main
+    rootDir: ""
+    buildCommand: npm install
+    startCommand: node server.js
+    autoDeployTrigger: commit
+    numInstances: 1
+    disk:
+      name: disk
+      mountPath: /opt/render/progect/src/data
+      sizeGB: 1
