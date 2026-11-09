@@ -94,6 +94,7 @@
   }
   function fromForm() {
     E.name = form.name.value.trim(); E.personality = form.personality.value; E.style = form.style.value; E.orders = form.orders.value; E.voice = form.voice.value;
+    if (App.ls && E.id) App.ls.set('charVoicePick:' + E.id, E.voice || '');
     if (E.avatarSource === 'emoji') E.avatar = form.avatarEmoji.value.trim() || '💫';
     $$('[data-ap]', form).forEach((el) => { E.appearance[el.dataset.ap] = el.type === 'range' ? Number(el.value) : el.value; });
     $$('[data-look]', form).forEach((el) => { E.look[el.dataset.look] = el.value; });

@@ -309,7 +309,7 @@
         const t = performance.now();
         // v8.5.0: token già pronto (preparato all'apertura della chat) -> la chiamata si collega subito
         const w = PRE && PRE.ch === s.ch.id && PRE.vid === s.voice && Date.now() - PRE.at < 200e3 ? PRE.modes[s.mode] : null; PRE = null;
-        s.cfg = (w && await w.p.catch(() => null)) || await App.api('/api/realtime/session', { method: 'POST', body: { characterId: s.ch.id, mode: s.mode, voice: s.voice }, ai: true });
+        s.cfg = (w && await w.p.catch(() => null)) || await App.api('/api/realtime/session', { method: 'POST', body: { characterId: s.ch.id, mode: s.mode, voice: s.voice, voiceExplicit: s.voiceExplicit === true }, ai: true });
         if (w) note('token pronto in anticipo');
         s.tokenMs = Math.round(performance.now() - t); note('token', s.tokenMs + ' ms');
         s.adult = s.cfg.adult; await connect(s); return;
@@ -322,7 +322,7 @@
     supported,
     // v8.5.0: all'apertura della chat prepara i token (vocale e video) e scalda la connessione: la chiamata parte subito
     prewarm(ch) {
-      if (!ch || !App.rt.enabled() || S) return; const voice = ch.voice || App.ls.get('ttsVoice', 'ara') || 'ara';
+      if (!ch || !App.rt.enabled() || S) return; const voice = App.xaiVoice ? App.xaiVoice(ch) : 'eve';
       if (PRE && PRE.ch === ch.id && Date.now() - PRE.at < 150e3) return;
       const mk = (mode) => { const p = App.api('/api/realtime/session', { method: 'POST', body: { characterId: ch.id, mode, voice }, ai: true }); p.catch(() => {}); return { p }; };
       PRE = { ch: ch.id, vid: voice, at: Date.now(), modes: { voice: mk('voice'), video: mk('video') } };
@@ -332,7 +332,7 @@
     // da chiamare DENTRO il tocco che avvia la chiamata (sblocco audio + microfono in parallelo alla connessione)
     async start(ch, mode, greet) {
       if (S) App.rt.stop();
-      const s = S = { ch, mode: mode === 'voice' ? 'voice' : 'video', voice: ch.voice || App.ls.get('ttsVoice', 'ara') || 'ara', early: [], sources: [], playT: 0, saveQ: Promise.resolve(), turns: 0, lat: [], volume: 1, muted: false, phase: 'connecting', closed: false };
+      const s = S = { ch, mode: mode === 'voice' ? 'voice' : 'video', voice: App.xaiVoice ? App.xaiVoice(ch) : 'eve', voiceExplicit: !!(App.xaiVoiceExplicit && App.xaiVoiceExplicit(ch)), early: [], sources: [], playT: 0, saveQ: Promise.resolve(), turns: 0, lat: [], volume: 1, muted: false, phase: 'connecting', closed: false };
       App.audio.callSession && App.audio.callSession(true); // iOS: registra+riproduce per tutta la chiamata (niente cambi di sessione)
       ctx(); LOG.length = 0; App.rt.lastError = '';
       const mic = startMic(s); mic.catch(() => {});

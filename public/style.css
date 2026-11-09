@@ -942,9 +942,8 @@ body.solo-mode.in-call:not(.simli-on) #call-ui{position:absolute!important;inset
 body.solo-mode.in-call .call-head-actions,body.solo-mode.in-call .call-top button{pointer-events:auto}
 body.solo-mode.in-call .call-top{padding:52px 96px 0;align-items:flex-start;text-align:left;color:#fff}
 body.solo-mode.in-call.call-min:not(.simli-on) #stage{flex:0 0 42dvh!important;height:42dvh!important;max-height:42dvh!important}
-#vrm-view{position:absolute;inset:0;width:100%;height:100%;z-index:3;background:#E8EBF0}
-#vrm-view[hidden]{display:none!important}
-body.vrm-on #avatar-canvas,body.vrm-on .av-backdrop{visibility:hidden}
+#vrm-view{display:none!important;pointer-events:none!important;visibility:hidden!important}
+body.vrm-on #avatar-canvas,body.vrm-on .av-backdrop{visibility:visible!important}
 body.solo-mode #hot-btn,#hot-btn,#set-hot-btn,#call-hot{display:none!important}
 body.solo-mode #secondary-menu[open] #act-btn{display:inline-flex;align-items:center;justify-content:center}
 
@@ -976,10 +975,19 @@ body.solo-mode #chat-form.composer{
   background:#F7F8FA;
 }
 body.simli-on #vrm-view{visibility:hidden}
-.look-bar{position:absolute;left:8px;right:8px;bottom:6px;z-index:6;display:flex;flex-wrap:wrap;gap:6px;align-items:center;pointer-events:auto}
+.look-bar{position:static;flex:0 0 auto;z-index:1;display:flex;flex-wrap:wrap;gap:4px;align-items:center;pointer-events:auto;margin:0;padding:2px 8px 0;background:#F7F8FA}
 .look-bar input{flex:1 1 120px;min-height:36px;margin:0;border-radius:12px;padding:6px 10px;background:#fff}
 .look-bar button{min-height:36px;border:0;border-radius:12px;background:#1E6FD9;color:#fff;font-weight:650;padding:6px 10px}
-.look-msg{flex:1 0 100%;margin:0;font-size:12px;color:#1A1D21;background:#ffffffd0;border-radius:8px;padding:0 6px}
+.look-msg{flex:1 0 100%;margin:0;font-size:12px;color:#1A1D21;background:transparent;border-radius:8px;padding:0 6px}
+.look-msg:empty{display:none}
+#look-history-wrap{flex:1 0 100%;font-size:13px}
+#look-history-wrap summary{min-height:32px}
+body.solo-mode #tab-conv .msg{margin-top:3px;padding:4px 8px 6px;font-size:14px;line-height:1.3}
+body.solo-mode #tab-conv #messages{padding:0 8px 4px}
+body.solo-mode #chat-form.composer{padding:2px 8px;gap:4px}
+body.solo-mode #stage.av-full{position:fixed!important;inset:0!important;width:100%!important;height:100dvh!important;max-height:none!important;background:#E8EBF0!important}
+body.solo-mode #stage{z-index:2}
+body.solo-mode #avatar-canvas{pointer-events:auto;z-index:1}
 #look-history{list-style:none;margin:6px 0;padding:0;max-height:120px;overflow:auto}
 #look-history li{display:flex;justify-content:space-between;gap:8px;align-items:center;font-size:12px;margin:4px 0}
 #look-history button{background:#fff;color:#1E6FD9}

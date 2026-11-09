@@ -1,11 +1,11 @@
 const { test, expect } = require('./harness');
 
+test.skip(({ browserName }) => browserName === 'webkit', 'Il socket finto è verificato su Chromium.');
 test.use({
   launchOptions: { args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'] },
 });
 
-test('response.cancel parte solo tra created e done, e quel errore non è un avviso', async ({ page }, testInfo) => {
-  test.skip(testInfo.project.name === 'webkit', 'Il socket finto è verificato su Chromium.');
+test('response.cancel parte solo tra created e done, e quel errore non è un avviso', async ({ page }) => {
   test.setTimeout(30000);
   const warns = [];
   page.on('console', (msg) => { if (msg.type() === 'warning') warns.push(msg.text()); });

@@ -116,7 +116,7 @@
       return { frames: n, draw: st(P.draw), interval: st(P.gap) };
     }
     setImage(src) {
-      if (src && (src.startsWith('/api/') || src.startsWith('data:'))) {
+      if (src && (src.startsWith('/api/') || src.startsWith('/ready/') || src.startsWith('data:'))) {
         if (this.img && this.img._src === src) return;
         const im = new Image();
         im.onload = () => {

@@ -72,13 +72,13 @@
     } catch (e) { rows.pop(); row('err', 'Microfono', e.name === 'NotAllowedError' ? 'permesso negato (Impostazioni del telefono → Safari/Chrome → Microfono)' : e.message); }
     if (clip && App.callMic) try { const t = performance.now(); const r = await App.api('/api/stt', { method: 'POST', body: App.callMic._wav(clip), headers: { 'Content-Type': 'audio/wav' }, ai: true }); row('ok', 'Trascrizione xAI', `${ms(t)} · "${(r.text || '').slice(0, 60) || '(silenzio)'}"`); } catch (e) { row('warn', 'Trascrizione xAI', why(e) + ' (la chiamata classica userà il riconoscimento del telefono)'); }
     // 5) voce (TTS): elenco voci, poi una frase con la voce scelta
-    const myVoice = App.ls.get('ttsVoice', 'ara');
+    const myVoice = App.xaiVoice ? App.xaiVoice(App.current) : 'eve';
     try { const v = await App.api('/api/tts/voices', { ai: true }); const ids = (v.voices || []).map((x) => x.id);
       if (v.error) row('warn', 'Elenco voci xAI', why({ message: v.error, call: v.call, upstream: v.status, detail: v.detail }) + ' · uso l\'elenco di riserva');
       else row(ids.includes(String(myVoice).toLowerCase()) ? 'ok' : 'warn', 'Elenco voci xAI', `${ids.length} voci · scelta: ${myVoice}${ids.includes(String(myVoice).toLowerCase()) ? '' : ' (non in elenco: verrà usata «eve»)'}`);
     } catch (e) { row('warn', 'Elenco voci xAI', why(e)); }
     try {
-      const t = performance.now(); const r = await App.api('/api/tts', { method: 'POST', body: { text: 'Prova.', voice: App.ls.get('ttsVoice', 'ara') }, ai: true, raw: true });
+      const t = performance.now(); const r = await App.api('/api/tts', { method: 'POST', body: { text: 'Prova.', voice: myVoice, voiceExplicit: !!(App.xaiVoiceExplicit && App.xaiVoiceExplicit(App.current)) }, ai: true, raw: true });
       if (!r.ok) { const j = await r.json().catch(() => ({})); const e = new Error(j.error || 'HTTP ' + r.status); e.status = r.status; e.call = j.call || 'tts'; e.upstream = j.status; e.detail = j.detail; throw e; }
       const first = ms(t); const fb = r.headers.get('X-TTS-Fallback'); const b = await r.blob(); row(fb ? 'warn' : 'ok', 'Voce xAI', `primo audio ${first} · ${Math.round(b.size / 1024)} kB${fb ? ' · prima richiesta rifiutata (HTTP ' + fb + '), riuscita con i campi base' : ''}`);
     } catch (e) { row('warn', 'Voce xAI', why(e)); }

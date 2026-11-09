@@ -1859,7 +1859,13 @@ function rtInstructions(user, ch, mode) {
 // v8.4.1: configurazione conforme allo schema ufficiale (docs.x.ai voice-realtime.ws.json): turn_detection accetta solo
 // type (+ idle_timeout_ms); la trascrizione solo language_hint/keyterms. Un campo non previsto fa rifiutare TUTTO l'aggiornamento
 // (istruzioni comprese) con un evento "error": in v8.4 il telefono lo trattava come guasto e passava alla chiamata classica.
-function rtVoice(v) { v = String(v || '').toLowerCase(); return XAI_VOICES.includes(v) ? v : (v === 'una' ? 'eve' : 'ara'); }
+function chooseXaiVoice(v, explicit) {
+  v = String(v || '').toLowerCase();
+  if (!v || v === 'una') return 'eve';
+  if (v === 'ara' && !explicit) return 'eve';
+  return XAI_VOICES.includes(v) ? v : 'eve';
+}
+function rtVoice(v) { return chooseXaiVoice(v, true); }
 function rtSession(user, ch, mode, voice) {
   return {
     instructions: rtInstructions(user, ch, mode),
@@ -1879,7 +1885,9 @@ app.post('/api/realtime/session', auth, requireActivated, requireKey, async (req
   const now = Date.now(), hits = (rtHits.get(req.user) || []).filter((t) => now - t < 3600e3);
   hits.push(now); rtHits.set(req.user, hits);
   const mode = req.body.mode === 'voice' ? 'voice' : 'video';
-  const v = String(req.body.voice || ch.voice || 'ara'); const voice = /^[a-z0-9_-]{1,64}$/i.test(v) ? v : 'ara';
+  const explicit = !!(req.body && req.body.voiceExplicit === true);
+  const sent = req.body && req.body.voice != null && String(req.body.voice) !== '';
+  const voice = chooseXaiVoice(sent ? req.body.voice : (ch.voice || ''), explicit && sent);
   try {
     const r = await fetch(`${AI_BASE_URL}/realtime/client_secrets`, { method: 'POST', headers: aiHeaders(req.aiKey), body: JSON.stringify({ expires_after: { seconds: 300 } }) });
     if (!r.ok) { const f = await aiFail(r); console.error('Errore AI tempo reale (client_secrets): HTTP', r.status, f.detail); return res.status(r.status === 401 ? 400 : 502).json({ error: f.msg, status: r.status, call: 'realtime/client_secrets', detail: f.detail }); }
@@ -2000,7 +2008,8 @@ const ttsHits = new Map(); // utente -> [timestamp] (limite morbido anti-raffica
 app.post('/api/tts', auth, requireActivated, requireKey, async (req, res) => {
   const text = String((req.body && req.body.text) || '').replace(/\s+/g, ' ').trim().slice(0, 1500);
   if (!text) return res.status(400).json({ error: 'Testo vuoto' });
-  const voice = /^[a-z0-9_-]{1,64}$/i.test(String(req.body.voice || '')) && String(req.body.voice).toLowerCase() !== 'una' ? String(req.body.voice).toLowerCase() : 'eve';
+  const explicit = !!(req.body && req.body.voiceExplicit === true);
+  const voice = chooseXaiVoice(req.body && req.body.voice, explicit);
   const speed = num(req.body.speed, 0.7, 1.5, 1);
   const now = Date.now(), hits = (ttsHits.get(req.user) || []).filter((t) => now - t < 60e3);
   hits.push(now); ttsHits.set(req.user, hits);
@@ -2797,6 +2806,24 @@ app.get('/api/calls', auth, (req, res) => {
 });
 
 app.get('/sw.js', (req, res, next) => { res.setHeader('Cache-Control', 'no-cache'); next(); });
+app.get('/ready/nova-bionda.jpg', (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache');
+  res.sendFile(path.join(__dirname, 'assets', 'ready', 'nova-bionda.jpg'));
+});
+app.get('/ready/nova-bionda-landmarks.json', (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache');
+  res.type('application/json');
+  res.sendFile(path.join(__dirname, 'assets', 'ready', 'nova-bionda-landmarks.json'));
+});
+if (E2E_HARNESS) {
+  app.get('/api/e2e/voice', (req, res) => {
+    res.json({ voice: chooseXaiVoice(req.query.v, req.query.explicit === '1') });
+  });
+}
+app.use((req, res, next) => {
+  if (req.query && Object.prototype.hasOwnProperty.call(req.query, 'refresh')) res.setHeader('Cache-Control', 'no-store');
+  next();
+});
 app.get('/manifest.json', (req, res, next) => { res.type('application/manifest+json'); next(); });
 // File statici. MediaPipe (/vendor/mediapipe) servito dall'app stessa, mai da CDN: .wasm con il MIME corretto
 // (necessario per WebAssembly.instantiateStreaming, Safari compreso) e cache lunga per i modelli pesanti.

@@ -138,7 +138,7 @@
   const NX = {
     el: null, q: [], playing: null, buf: '', streaming: false, sent: 0, gen: 0, fails: 0, cache: new Map(), devBuf: '', degraded: false, blessed: false,
     enabled() { return App.ls.get('voiceEngine', 'xai') === 'xai' && !!(App.hasAi && App.hasAi()) && this.fails < 3; },
-    voice() { const c = App.current; return (c && c.voice) || App.ls.get('ttsVoice', 'ara') || 'ara'; }, // v8.5.0: voce del personaggio anche nella lettura
+    voice() { return App.xaiVoice ? App.xaiVoice(App.current) : 'eve'; },
     speed() { const c = App.current; if (c && Number.isFinite(c.voiceSpeed) && c.voiceSpeed) return c.voiceSpeed; return Number(App.ls.get('ttsSpeed', 1)) || 1; }, // v8.5.0: velocità del personaggio
     audio() { if (!this.el) { const a = new Audio(); a.preload = 'auto'; a.setAttribute('playsinline', ''); this.el = a; } return this.el; },
     stop() {
@@ -170,7 +170,7 @@
     async fetch(t) {
       const key = this.voice() + '|' + this.speed() + '|' + t;
       if (this.cache.has(key)) { const c = this.cache.get(key); this.cache.delete(key); this.cache.set(key, c); return c; }
-      const r = await App.api('/api/tts', { method: 'POST', body: { text: t, voice: this.voice(), speed: this.speed() }, ai: true, raw: true });
+      const r = await App.api('/api/tts', { method: 'POST', body: { text: t, voice: this.voice(), speed: this.speed(), voiceExplicit: !!(App.xaiVoiceExplicit && App.xaiVoiceExplicit(App.current)) }, ai: true, raw: true });
       if (!r.ok) { const j = await r.json().catch(() => ({})); const e = new Error(j.error || (r.status === 422 ? 'Richiesta voce non accettata (422)' : 'Errore ' + r.status)); e.status = r.status; e.call = j.call; e.upstream = j.status; e.detail = j.detail; throw e; }
       const blob = await r.blob();
       if (!blob.size) throw new Error('Audio vuoto');
@@ -403,7 +403,7 @@
     const tabA = document.querySelector('[data-tab="account"]'); if (tabA) tabA.addEventListener('click', showLat);
     setTimeout(showLat, 0);
     eng.addEventListener('change', () => { App.ls.set('voiceEngine', eng.value); NX.fails = 0; show(); loadVoices(); });
-    vid.addEventListener('change', () => { App.ls.set('ttsVoice', vid.value); show(); });
+    vid.addEventListener('change', () => { App.ls.set('ttsVoiceExplicit', true); App.ls.set('ttsVoice', vid.value); if (App.current && App.current.id) App.ls.set('charVoicePick:' + App.current.id, vid.value); show(); });
     sp.addEventListener('input', () => { App.ls.set('ttsSpeed', Number(sp.value)); show(); });
     document.getElementById('voice-test').addEventListener('click', () => {
       App.audio.unlock(); NX.fails = 0; NX.stop(); if (SS) SS.cancel();

@@ -11,7 +11,49 @@
     }
     return list.find((c) => c.ready === 'nova-scelta') || list.find((c) => c.ready === 'nova-bionda') || list.find((c) => c.ready === 'nova-unico') || list.find((c) => c.ready === 'greta') || list.find((c) => /^nova$/i.test(String(c.name || '').trim())) || null;
   }
+  const BLONDE = '/ready/nova-bionda.jpg';
   function fit() { if (App.fitFrame) App.fitFrame(); }
+  function drop3d() {
+    document.body.classList.remove('vrm-on');
+    const c = document.getElementById('vrm-view');
+    if (c) c.hidden = true;
+    const sel = document.getElementById('avatar-view');
+    if (sel) {
+      [...sel.options].forEach((o) => { if (o.value === '3d' || o.value === 'video') o.remove(); });
+      sel.value = 'photo';
+    }
+    try {
+      if (App.me && App.ls) {
+        if (App.ls.get('avatarViewPick', '') === '3d') App.ls.set('avatarViewPick', 'photo');
+        if (App.ls.get('avatarView', '') === '3d') App.ls.set('avatarView', 'photo');
+      }
+    } catch { /* storage assente */ }
+  }
+  function applyBlonde(av) {
+    if (!av || !av.c || av.c.id !== 'avatar-canvas') return;
+    av.setImage(BLONDE);
+    if (window.__biondaLm) {
+      const lm = JSON.parse(JSON.stringify(window.__biondaLm));
+      lm.src = BLONDE;
+      lm.auto = true;
+      av.lm = lm;
+      av._trustKey = '';
+    }
+  }
+  function pinBlonde(av) {
+    if (!av || av._pinBlonde) return;
+    av._pinBlonde = true;
+    const orig = av.setCharacter.bind(av);
+    av.setCharacter = function (ch) {
+      orig(ch);
+      if (document.body.classList.contains('solo-mode')) applyBlonde(this);
+    };
+  }
+  fetch('/ready/nova-bionda-landmarks.json').then((r) => (r.ok ? r.json() : null)).then((lm) => {
+    if (!lm) return;
+    window.__biondaLm = lm;
+    if (document.body.classList.contains('solo-mode') && App.avatarConv) applyBlonde(App.avatarConv);
+  }).catch(() => {});
   function sheetOk(c) {
     return live(c);
   }
@@ -39,6 +81,9 @@
     full: false,
     async boot() {
       document.body.classList.add('solo-mode');
+      drop3d();
+      pinBlonde(App.avatarConv);
+      applyBlonde(App.avatarConv);
       this.bindOnce();
       const dock = $('#solo-dock'); if (dock) dock.hidden = false;
       const legacy = $('#legacy-tabbar'); if (legacy) legacy.hidden = true;
@@ -67,7 +112,7 @@
       showStage(ch);
       const rt = $('#solo-rt'); if (rt) rt.hidden = false;
       if (App.looks && App.looks.boot) App.looks.boot();
-      else if (App.avatar3d && App.avatar3d.apply) App.avatar3d.apply();
+      applyBlonde(App.avatarConv);
     },
     async toggleRt() {
       const btn = $('#solo-rt');

@@ -19,6 +19,36 @@ App.ls = {
   del(k) { localStorage.removeItem(`ap:${App.me.user}:${k}`); },
 };
 App.key = () => (App.me ? App.ls.get('key', '') : '');
+// Voce xAI effettiva. Ara salvata (profilo o personaggio) diventa Eve una volta; una scelta successiva resta.
+App.xaiVoice = function (ch) {
+  let explicit = false;
+  try {
+    if (App.me) {
+      if (App.ls.get('voiceEveSet') !== true) {
+        const cur = App.ls.get('ttsVoice', null);
+        if (cur == null || String(cur).toLowerCase() === 'ara') App.ls.set('ttsVoice', 'eve');
+        App.ls.set('voiceEveSet', true);
+      }
+      explicit = App.ls.get('ttsVoiceExplicit') === true;
+    }
+  } catch { /* profilo non ancora aperto */ }
+  let picked = null;
+  try { if (App.me && ch && ch.id) picked = App.ls.get('charVoicePick:' + ch.id, null); } catch { picked = null; }
+  if (picked) {
+    const p = String(picked).toLowerCase();
+    if (p && p !== 'ara') return p;
+    if (p === 'ara' && explicit) return 'ara';
+  }
+  const raw = ch && ch.voice ? String(ch.voice).toLowerCase() : '';
+  if (raw && raw !== 'ara') return raw;
+  let pref = 'eve';
+  try { if (App.me) pref = String(App.ls.get('ttsVoice', 'eve') || 'eve').toLowerCase(); } catch { pref = 'eve'; }
+  if (pref === 'ara' && explicit) return 'ara';
+  return (!pref || pref === 'ara') ? 'eve' : pref;
+};
+App.xaiVoiceExplicit = function (ch) {
+  return App.xaiVoice(ch) === 'ara';
+};
 App.hasAi = () => !!(App.key() || (App.me && App.me.serverKey));
 
 // fetch verso il nostro server. opts.ai = true aggiunge la chiave xAI del dispositivo (mai salvata dal server).
