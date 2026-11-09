@@ -43,10 +43,13 @@ test('il 3D non parte da solo e si carica solo se scelto', async ({ page }, test
   expect(before.view).toBe('photo');
   expect(before.pick).toBe('photo');
   expect(before.hidden).toBe(true);
+  expect(before.view).toBe('photo');
   expect(glb).toBe(0);
-  await page.locator('#dock-settings').click();
-  await page.locator('#avatar-fallback-panel summary').click();
-  await page.locator('#avatar-view').selectOption('3d');
+  const fs = require('fs');
+  fs.mkdirSync('/opt/cursor/artifacts', { recursive: true });
+  await page.screenshot({ path: '/opt/cursor/artifacts/prova-2d-390.png' });
+  expect(await page.evaluate(() => document.getElementById('prova-2d').getAttribute('aria-pressed'))).toBe('true');
+  await page.locator('#prova-3d').click();
   await page.waitForFunction(() => App.avatar3d && App.avatar3d.ready(), null, { timeout: 25000 });
   const on = await page.evaluate(() => ({
     script: !!document.querySelector('script[src*="avatar3d"]'),
@@ -60,19 +63,66 @@ test('il 3D non parte da solo e si carica solo se scelto', async ({ page }, test
   expect(on.status).toContain('Stand-in');
   expect(on.status).toContain('non è la foto');
   expect(on.photo).toBe(true);
-  await page.locator('#dock-home').click();
-  await page.waitForFunction(() => !document.getElementById('vrm-view').hidden && document.body.dataset.tab === 'conv');
-  await page.waitForTimeout(600);
-  const fs = require('fs');
-  fs.mkdirSync('/opt/cursor/artifacts', { recursive: true });
-  await page.screenshot({ path: '/opt/cursor/artifacts/toggle-3d-390.png' });
-  await page.evaluate(() => {
-    const sel = document.getElementById('avatar-view');
-    sel.value = 'photo';
-    sel.dispatchEvent(new Event('change', { bubbles: true }));
+  await page.waitForTimeout(500);
+  const span = await page.evaluate(() => {
+    const c = document.getElementById('vrm-view');
+    const tmp = document.createElement('canvas');
+    tmp.width = c.width; tmp.height = c.height;
+    const ctx = tmp.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(c, 0, 0);
+    const data = ctx.getImageData(0, 0, tmp.width, tmp.height).data;
+    let top = -1, bot = -1;
+    for (let y = 0; y < tmp.height; y += 2) {
+      for (let x = 0; x < tmp.width; x += 8) {
+        const i = (y * tmp.width + x) * 4;
+        const d = Math.abs(data[i] - 232) + Math.abs(data[i + 1] - 235) + Math.abs(data[i + 2] - 240);
+        if (d > 36) { if (top < 0) top = y; bot = y; break; }
+      }
+    }
+    return { top: top / tmp.height, bot: bot / tmp.height };
   });
-  await page.waitForFunction(() => document.getElementById('vrm-view').hidden);
-  expect(await page.evaluate(() => document.getElementById('avatar-view-status').textContent)).toContain('foto');
+  expect(span.top).toBeGreaterThan(0.01);
+  expect(span.top).toBeLessThan(0.25);
+  expect(span.bot).toBeGreaterThan(0.75);
+  await page.screenshot({ path: '/opt/cursor/artifacts/prova-3d-390.png' });
+  await page.locator('#prova-wave').click();
+  await page.waitForFunction(() => App.avatar3d.current && App.avatar3d.current() === 'saluto');
+  await page.locator('#prova-2d').click();
+  await page.waitForFunction(() => document.getElementById('vrm-view').hidden && !document.body.classList.contains('vrm-on'));
+  expect(await page.evaluate(() => App.ls.get('provaView', ''))).toBe('2d');
+  expect(await page.evaluate(() => getComputedStyle(document.getElementById('avatar-canvas')).visibility)).not.toBe('hidden');
+});
+
+test('una Prova già scelta si ricarica dopo la foto, una vecchia scelta 3D no', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name === 'webkit', 'WebKit è nel test dedicato');
+  await page.addInitScript(() => {
+    if (navigator.serviceWorker) navigator.serviceWorker.register = () => new Promise(() => {});
+    localStorage.setItem('ap:nicola:avatarViewPick', JSON.stringify('3d'));
+    localStorage.setItem('ap:nicola:provaView', JSON.stringify('3d'));
+  });
+  await page.route('**/api/**', async (route) => {
+    const p = new URL(route.request().url()).pathname;
+    const json = (o) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(o) });
+    if (p === '/api/me') return json({ user: 'nicola', name: 'Nico', admin: true, editor: true, activated: true, solo: true, soloKey: 'greta', adult: false, adultChat: false });
+    if (p === '/api/characters') return json([{ id: 'bbbbbbbbbbbbbbbb', name: 'Nova', ready: 'greta', avatar: '🍷', personality: 'x', style: '', orders: '', requests: '' }]);
+    if (p.startsWith('/api/chats/')) return json({ epoch: 'e1', last: 1, messages: [], typing: null });
+    if (p === '/api/settings') return json({ autoSave: false, allowExport: false });
+    if (p === '/api/adult-status') return json({ set: false, chat: false, users: [], missing: [] });
+    if (p === '/api/adult-keyword') return json({ set: false });
+    if (p === '/api/rules') return json({ text: '' });
+    if (p === '/api/memory') return json([]);
+    if (p === '/api/notes') return json({ text: '', toAI: false });
+    if (p === '/api/sync') return json({ chars: '1', memory: '1' });
+    if (p === '/api/e2e/reset-login-limit') return json({ ok: true });
+    return json({});
+  });
+  const html = await (await page.request.get('/')).text();
+  expect(html.includes('avatar3d.js')).toBe(false);
+  await page.goto('/');
+  await page.waitForFunction(() => document.body.classList.contains('solo-mode') && document.getElementById('avatar-canvas'));
+  await page.waitForFunction(() => App.avatar3d && App.avatar3d.ready(), null, { timeout: 25000 });
+  expect(await page.evaluate(() => App.ls.get('provaView', ''))).toBe('3d');
+  expect(await page.evaluate(() => document.getElementById('prova-3d').getAttribute('aria-pressed'))).toBe('true');
 });
 
 test('se il modello 3D manca si torna alla foto', async ({ page }, testInfo) => {

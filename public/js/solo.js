@@ -46,6 +46,19 @@
     }).catch((e) => { loadAvatar3d.p = null; throw e; });
     return loadAvatar3d.p;
   }
+  function setProva(on) {
+    try { if (App.me && App.ls) App.ls.set('provaView', on ? '3d' : '2d'); } catch { /* storage assente */ }
+  }
+  function paintProva(on) {
+    const a = document.getElementById('prova-2d');
+    const b = document.getElementById('prova-3d');
+    const w = document.getElementById('prova-wave');
+    if (a) a.setAttribute('aria-pressed', on ? 'false' : 'true');
+    if (b) b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    if (w) w.hidden = !on;
+    const sel = document.getElementById('avatar-view');
+    if (sel && sel.value !== (on ? '3d' : 'photo')) sel.value = on ? '3d' : 'photo';
+  }
   async function chooseView(next) {
     const sel = document.getElementById('avatar-view');
     const status = document.getElementById('avatar-view-status');
@@ -54,8 +67,9 @@
       document.body.classList.remove('vrm-on');
       const c = document.getElementById('vrm-view');
       if (c) c.hidden = true;
+      paintProva(false);
+      setProva(false);
       if (status) status.textContent = 'Nova usa la foto.';
-      try { if (App.me && App.ls) App.ls.set('avatarViewPick', 'photo'); } catch { /* storage assente */ }
       return;
     }
     if (status) status.textContent = 'Carico il 3D…';
@@ -63,16 +77,24 @@
       await loadAvatar3d();
       await App.avatar3d.apply('3d');
       if (App.avatar3d.failed && App.avatar3d.failed()) {
+        paintProva(false);
+        setProva(false);
         if (sel) sel.value = 'photo';
-        try { if (App.me && App.ls) App.ls.set('avatarViewPick', 'photo'); } catch { /* storage assente */ }
         return;
       }
-      try { if (App.me && App.ls) App.ls.set('avatarViewPick', '3d'); } catch { /* storage assente */ }
+      paintProva(true);
+      setProva(true);
     } catch (e) {
+      paintProva(false);
+      setProva(false);
       if (sel) sel.value = 'photo';
       if (status) status.textContent = (e && e.message) || '3D non disponibile. Resta la foto.';
-      try { if (App.me && App.ls) App.ls.set('avatarViewPick', 'photo'); } catch { /* storage assente */ }
     }
+  }
+  function restoreProva() {
+    let saved = '';
+    try { saved = App.me && App.ls ? App.ls.get('provaView', '') : ''; } catch { saved = ''; }
+    if (saved === '3d') chooseView('3d');
   }
   function sheetOk(c) {
     return live(c);
@@ -112,6 +134,7 @@
         const title = $('#title'); if (title) title.textContent = 'Nova';
         document.body.dataset.tab = 'conv';
         this.bindOnce();
+        restoreProva();
         return;
       }
       // Una sola apertura. Le ricariche dei personaggi non azzerano la chat e non tolgono Impostazioni.
@@ -130,6 +153,7 @@
       showStage(ch);
       const rt = $('#solo-rt'); if (rt) rt.hidden = false;
       if (App.looks && App.looks.boot) App.looks.boot();
+      restoreProva();
     },
     async toggleRt() {
       const btn = $('#solo-rt');
@@ -215,6 +239,12 @@
         viewSel._soloView = true;
         viewSel.addEventListener('change', () => { chooseView(viewSel.value); });
       }
+      const p2 = $('#prova-2d');
+      const p3 = $('#prova-3d');
+      const wave = $('#prova-wave');
+      if (p2) p2.addEventListener('click', (e) => { e.stopPropagation(); chooseView('photo'); });
+      if (p3) p3.addEventListener('click', (e) => { e.stopPropagation(); chooseView('3d'); });
+      if (wave) wave.addEventListener('click', (e) => { e.stopPropagation(); if (App.avatar3d && App.avatar3d.play) App.avatar3d.play('saluto'); });
       const exp = $('#av-expand');
       if (exp) exp.addEventListener('click', (e) => { e.stopPropagation(); this.toggleFull(); });
       const stage = $('#stage');
@@ -225,7 +255,7 @@
         stageEl._mini = true;
         stageEl.addEventListener('click', (e) => {
           if (App.call && App.call.active) return;
-          if (e.target.closest('button, a, input, textarea, form, .stage-tools, #call-ui')) return;
+          if (e.target.closest('button, a, input, textarea, form, .stage-tools, #call-ui, .prova-toggle, #prova-wave')) return;
           if (this.full) { this.toggleFull(false); return; }
           const conv = $('#tab-conv'); if (!conv) return;
           conv.classList.toggle('stage-mini');

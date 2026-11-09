@@ -15,7 +15,7 @@
     try {
       var q = new URLSearchParams(location.search);
       var TOKEN = q.get('refresh');
-      if (TOKEN !== '2d' && TOKEN !== '2d-face' && TOKEN !== '2d-see' && TOKEN !== '2d-6' && TOKEN !== '2d-7') return;
+      if (TOKEN !== '2d' && TOKEN !== '2d-face' && TOKEN !== '2d-see' && TOKEN !== '2d-6' && TOKEN !== '2d-7' && TOKEN !== '2d-8') return;
       var key = 'nova-refresh-' + TOKEN;
       q.delete('refresh');
       var rest = q.toString();
@@ -173,6 +173,11 @@
               <button type="button" id="call-end" class="call-btn end" title="Chiudi la chiamata" aria-label="Chiudi la chiamata">📞</button>
             </div>
           </div>
+          <div id="prova-toggle" class="prova-toggle" role="group" aria-label="Vista">
+            <button type="button" id="prova-2d" aria-pressed="true">2D</button>
+            <button type="button" id="prova-3d" aria-pressed="false" title="Prova 3D, non è la foto">Prova</button>
+          </div>
+          <button type="button" id="prova-wave" hidden>Saluto</button>
           <video id="sight-preview" class="sight-preview" playsinline webkit-playsinline muted autoplay hidden></video>
           <div id="sight-live" class="sight-live" hidden>
             <span class="sight-pill"><i></i>Ti vede</span>
@@ -326,7 +331,7 @@
             <label>Vista
               <select id="avatar-view">
                 <option value="photo" selected>Foto</option>
-                <option value="3d">3D (stand-in)</option>
+                <option value="3d">Prova</option>
               </select>
             </label>
             <p id="avatar-view-status" class="muted small">Nova usa la foto. Il 3D è un prototipo facoltativo: non è il volto della foto e non parte da solo.</p>
