@@ -9,15 +9,26 @@ test('il PIN è chiaro, con titolo verde e Avanti', async ({ page, browserName }
   expect(screen).toBe('rgb(255, 255, 255)');
   await page.locator('.login-profile').first().click();
   await expect(page.locator('#pin-submit')).toHaveText('Avanti');
+  const pinUi = await page.evaluate(() => {
+    const b = getComputedStyle(document.getElementById('pin-submit'));
+    const f = getComputedStyle(document.getElementById('pin-input'));
+    return { btn: b.backgroundColor, outline: f.outlineStyle, border: f.borderBottomColor };
+  });
+  expect(pinUi.btn).toBe('rgb(0, 168, 132)');
+  expect(pinUi.outline).toBe('none');
+  expect(pinUi.border).toBe('rgb(0, 128, 105)');
   await expect(page.locator('#login-title')).toContainText('PIN');
   await page.setViewportSize({ width: 390, height: 844 });
-  if (browserName !== 'webkit') await page.screenshot({ path: '/opt/cursor/artifacts/v2d-13-pin-390.png' });
+  await page.locator('#pin-input').blur();
+  if (browserName !== 'webkit') await page.screenshot({ path: '/opt/cursor/artifacts/v2d-14-pin-390.png' });
   const field = await page.evaluate(() => {
     const s = getComputedStyle(document.getElementById('pin-input'));
-    return { inputmode: document.getElementById('pin-input').getAttribute('inputmode'), border: s.borderBottomColor };
+    const toast = document.getElementById('toast');
+    return { inputmode: document.getElementById('pin-input').getAttribute('inputmode'), border: s.borderBottomColor, toast: !toast || toast.hidden };
   });
   expect(field.inputmode).toBe('numeric');
   expect(field.border).toBe('rgb(0, 168, 132)');
+  expect(field.toast).toBe(true);
 });
 
 test('permesso microfono negato non invia un vocale', async ({ page, browserName }) => {

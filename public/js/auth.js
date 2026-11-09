@@ -27,14 +27,12 @@ function pickProfile(id, hasPin, name) {
 }
 $('#profile-pick').addEventListener('click', (e) => {
   const b = e.target.closest('[data-profile]'); if (!b) return;
-  if (App.armMic) App.armMic(true);
   pickProfile(b.dataset.profile, b.dataset.has === 'true', b.dataset.name);
 });
 $('#pin-back').addEventListener('click', () => { localStorage.removeItem('ap:lastProfile'); App.showLogin(); });
 $('#pin-input').addEventListener('input', (e) => { e.target.value = e.target.value.replace(/\D/g, '').slice(0, 4); if (!pinSetup && e.target.value.length === 4) $('#pin-form').requestSubmit(); });
 $('#pin-form').addEventListener('submit', async (e) => {
   e.preventDefault(); $('#login-error').textContent = '';
-  if (App.armMic) App.armMic(true);
   const pin = $('#pin-input').value;
   if (!/^\d{4}$/.test(pin)) { $('#login-error').textContent = 'Il PIN deve avere 4 cifre'; return; }
   try {

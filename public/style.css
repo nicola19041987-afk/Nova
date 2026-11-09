@@ -864,6 +864,7 @@ body.solo-mode #hot-btn{display:none!important}
 .login-screen .profiles button small{font-weight:500;color:#667781}
 .login-screen #pin-form{width:100%;display:flex;flex-direction:column;align-items:center;gap:8px;margin-top:4px}
 .login-screen .pin-digits{width:9.2rem;margin:8px auto 4px;border:0;border-bottom:2px solid #00a884;border-radius:0;background:transparent;box-shadow:none;padding:8px 0 10px;text-align:center;font-size:34px;letter-spacing:.42em;color:#111b21;-webkit-text-security:disc}
+.login-screen .pin-digits:focus{outline:none;border-bottom-color:#008069}
 .login-screen #setup-code{width:100%;margin:8px 0;border:0;border-bottom:2px solid #00a884;border-radius:0;background:transparent;text-align:center;letter-spacing:normal;padding:12px 0}
 .login-pill{width:100%;max-width:320px;border:0!important;border-radius:28px!important;background:#00a884!important;color:#fff!important;font-weight:700;font-size:17px;min-height:50px;padding:14px 20px;margin-top:22px}
 .login-screen .link{background:none;border:0;color:#008069}
@@ -984,6 +985,7 @@ a.arch-link{display:block;text-align:center;text-decoration:none;padding:12px 14
 /* v8.6.11: stessi colori chiari, tocchi da 44 px, chiamata senza Simli sulla foto */
 button{color:var(--text)}
 button.primary,a.arch-link,.login-pill,.hot-btn,.call-hangup{color:#fff}
+#pin-submit.login-pill{background:#00a884!important;color:#fff!important}
 .sheet-body button,.sheet-cancel,button.link{color:var(--accent)}
 .call-btn{color:#fff}
 body:not(.wa-conv) .topbar h2,body.wa-conv .topbar h2{color:var(--text)!important}
