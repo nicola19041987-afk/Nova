@@ -426,6 +426,7 @@
       if (this.simUntil && now > this.simUntil) { this.simUntil = 0; this.speaking = false; }
       const ctx = this.ctx, S = VS; // spazio virtuale; la trasformazione porta tutto alle dimensioni reali del canvas
       const dt = Math.min(100, now - (this._last || now)); this._last = now;
+      this.stepLibrary(now);
       const kf = (a) => 1 - Math.pow(1 - a, dt / 16.67); // v8.4.1: smorzamenti indipendenti dal frame rate (uguali a 30, 60 o 120 Hz)
       { const tg = this.target(now); const raw = (tg - this.mouth) * kf(tg > this.mouth ? 0.36 : 0.2); const cap = 0.16; this.mouth += Math.max(-cap * 0.75, Math.min(cap, raw)); // apertura morbida, mai a scatti
         // v8.4.5: parla ma la bocca resta chiusa (audio non analizzabile, es. iOS): passa al labiale stimato dal testo
@@ -446,7 +447,7 @@
       const rAmp = (this.rhythm ? 0.034 + this.rhythm.strength * 0.022 : sens ? 0.05 : 0.042) * (this.rhythm ? 1 : styleAmp);
       const breath = this.wave(now, sens ? 5600 : 4300, 8900, 13700) * (sens ? 1.15 : 1);
       // v8.1: respiro accoppiato al parlato (inspira prima, espira piano mentre parla, riprende fiato tra le frasi)
-      if (this.speaking !== this._wasSpk) { this._wasSpk = this.speaking; if (this.speaking) this.breathM.speechStart(now); else this.breathM.speechEnd(now); }
+      if (this.speaking !== this._wasSpk) { this._wasSpk = this.speaking; if (this.speaking) { this.breathM.speechStart(now); this._preBreath = now; } else this.breathM.speechEnd(now); }
       const vol = this.breathM.vol(now);
       let sway = Math.sin(this._ph * Math.PI * 2) * rAmp * 0.35 + this.wave(now, 6100, 10400, 15800) * 0.02;
       let bob = this.rhythm ? Math.abs(Math.sin(this._ph * Math.PI * 2)) * this.rhythm.strength * S * 0.008 : 0;
@@ -477,7 +478,7 @@
       bob += M.pitch * S * 0.02 + breath * S * 0.004;
       const shiftX = M.yaw * S * 0.04 + this.wave(now, 7800, 12600, 18900) * S * 0.01 * idle; // girata + spostamento del peso
       // spalle: una sale mentre l'altra scende, lento e senza un periodo corto
-      const skew = Math.max(-SKEW_MAX, Math.min(SKEW_MAX, this.wave(now, 6900, 11200, 16400) * 0.012 * idle + (M.lift[1] - M.lift[0]) * 0.01 + M.tilt * 0.004));
+      const skew = Math.max(-SKEW_MAX, Math.min(SKEW_MAX, this.wave(now, 6900, 11200, 16400) * 0.02 * idle + (M.lift[1] - M.lift[0]) * 0.01 + M.tilt * 0.004 + ((this._lib && this._lib.shrug) || 0) * 0.012 * Math.sin(now / 700)));
       // reazione in corso
       let rx = 0, ry = 0, rRot = 0, smile = sens ? 0.25 : 0, wave = 0, A_nod = 0;
       const re = this.reaction;
@@ -507,7 +508,7 @@
           this.nextBlink = now + this.blinkDur + 70 + Math.random() * 90;
         } else {
           this.blinkDouble = 0;
-          this.nextBlink = now + 2000 + Math.random() * 4000;
+          this.nextBlink = now + 2400 + Math.random() * 1600;
         }
       }
       const bt = this.blinkDur > 0 ? (now - this.blinkStart) / this.blinkDur : 2;
@@ -522,7 +523,7 @@
       mc.lid = (mc.lid || 0) + (((this.speaking ? 0 : mc.lidT) || 0) - (mc.lid || 0)) * Math.min(1, dt / 700);
       blink = Math.max(blink, mc.lid);
       // sopracciglia: alzate rapide su enfasi/reazioni e piccole alzate spontanee
-      if ((now - this.emph < 120 || (re && now - re.start < 80)) && mc.browUntil < now) { mc.browT = 0.7 + Math.random() * 0.3; mc.browUntil = now + 380; }
+      if ((now - this.emph < 120 || (re && now - re.start < 80) || (this.speaking && this.mouth > 0.55 && this.nextBlink < 1e12)) && mc.browUntil < now) { mc.browT = 0.7 + Math.random() * 0.3; mc.browUntil = now + 380; }
       if (now > mc.nextBrow) { mc.browT = 0.35 + Math.random() * 0.35; mc.browUntil = now + 280 + Math.random() * 220; mc.nextBrow = now + 2000 + Math.random() * 2000; }
       if (now > mc.browUntil) mc.browT = 0;
       mc.brow += (mc.browT - mc.brow) * Math.min(1, dt / (mc.browT > mc.brow ? 70 : 220));
@@ -532,7 +533,7 @@
         const r = R ? 0.22 : this.speaking ? 0.2 : 0.34, ox = mc.gtx, oy = mc.gty;
         mc.gtx = (Math.random() * 2 - 1) * r - (R ? R.yaw * 0.15 : 0); mc.gty = (Math.random() * 2 - 1) * 0.4 * r;
         if (Math.random() < (this.speaking ? 0.7 : 0.5)) { mc.gtx *= 0.2; mc.gty *= 0.2; }
-        if (Math.hypot(mc.gtx - ox, mc.gty - oy) > 0.26 && Math.random() < 0.3 && now - this.blinkStart > 700) this.nextBlink = now + 30;
+        if (Math.hypot(mc.gtx - ox, mc.gty - oy) > 0.2 && now - this.blinkStart > 500) this.nextBlink = now + 40;
         mc.nextSacc = now + (this.speaking ? 1200 : 1600) + Math.random() * 2400;
       }
       mc.mx = this.wave(now, 4800, 7600, 11900) * 0.05;
@@ -608,6 +609,47 @@
     // e mai la testa; se la foto è troppo diversa dalla cornice restano bande riempite col colore dei bordi (mai sfocate).
     soloFill() {
       return typeof document !== 'undefined' && document.body && document.body.classList.contains('solo-mode') && this.c && this.c.id === 'avatar-canvas';
+    }
+    reducedMotion() {
+      const now = performance.now();
+      if (this._reduceAt && now - this._reduceAt < 1500) return !!this._reduce;
+      this._reduceAt = now;
+      try { this._reduce = !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches); }
+      catch { this._reduce = false; }
+      return !!this._reduce;
+    }
+    motionContext() {
+      if (this.replyMood && this.replyMoodUntil && performance.now() < this.replyMoodUntil) {
+        const m = this.replyMood;
+        if (m === 'triste' || m === 'offesa') return 'sad';
+        if (m === 'sorpresa') return 'surprise';
+        if (m === 'pensierosa' || m === 'seria') return 'think';
+        if (m === 'allegra' || m === 'tenera' || m === 'maliziosa') return 'happy';
+      }
+      if (this.speaking) return 'speak';
+      if (typeof document !== 'undefined' && document.body.classList.contains('solo-rt')) return 'listen';
+      return 'idle';
+    }
+    stepLibrary(now) {
+      const Lib = window.MotionLib;
+      if (!Lib || !this.soloFill() || this.reducedMotion() || this.nextBlink > 1e12) return;
+      const cur = this._lib;
+      if (cur && now < cur.until) return;
+      const recent = this._libRecent || [];
+      const next = Lib.pick(this.motionContext(), now, recent);
+      if (!next) return;
+      this._libRecent = recent.concat(next.id).slice(-16);
+      this._lib = Object.assign({ t0: now, until: now + next.ms }, next);
+      const mc = this.micro;
+      if (mc) {
+        mc.gtx = next.gazeX || 0;
+        mc.gty = next.gazeY || 0;
+        if (next.smile) { mc.smileT = next.smile; mc.smileUntil = now + next.ms; }
+        if (next.brow) { mc.browT = next.brow; mc.browUntil = now + Math.min(800, next.ms); }
+        if (next.blink === 'single' || next.blink === 'double' || next.blink === 'winkL' || next.blink === 'winkR') this.nextBlink = now + 30;
+      }
+      if (next.nod > 0.5) this.react('nod');
+      else if (next.shake > 0.5) this.react('shake');
     }
     // Il palco vero mostra l'intero ritratto (testa e jeans). I test fuori da #stage tengono il vecchio cover.
     soloCover(box, E) {
@@ -707,27 +749,43 @@
         // Respiro: compressione verticale minima ancorata in basso (≤ 0,25%), sempre dentro il riquadro.
         // v8.1: respiro realistico con deformazione morbida WebGL (spalle/petto/testa, sfondo fermo); se WebGL manca, il vecchio respiro.
         let src = img, headDy = 0; const trust = this.faceTrusted();
-        if (trust && !this._safe && this.breathOn !== false && img.naturalWidth) {
+        const still = this.soloFill();
+        const reduce = still && this.reducedMotion();
+        // Sul ritratto intero niente mesh WebGL: storce il viso e i bordi. La foto si muove tutta insieme.
+        if (!still && trust && !this._safe && this.breathOn !== false && img.naturalWidth) {
           if (!this.breather) this.breather = new Breather();
           if (this.breather.ok && this.breather.setup(img, this.lm)) { const amp = Math.min(1.25, this.breathAmp || 1.2); src = this.breather.render(A.vol, amp, A.nod || 0); headDy = this.breather.headDy(A.vol, amp, A.nod || 0); }
         }
         // v8.4.3: senza respiro WebGL (o con punti incerti) il respiro dell'immagine intera è VISIBILE (prima 0,25%: sembrava ferma),
         // più un leggero "sollevarsi" mentre parla; solo verticale, ancorato in basso: la cornice resta ferma, niente ondeggiamento laterale
         const pose = A.pose || {};
-        const breathY = 1 + 0.016 * (0.5 + 0.5 * (pose.breath || 0)); // 12–15 atti/min, petto +1–2%
+        const libBreath = still && !reduce && this._lib ? this._lib.breath : 1;
+        const pre = this._preBreath && now - this._preBreath < 900 ? 1.55 : 1;
+        const breathY = still
+          ? (reduce ? 1 : 1 + 0.028 * libBreath * pre * (0.5 + 0.5 * Math.max(-1, Math.min(1, pose.breath || 0))))
+          : 1 + 0.016 * (0.5 + 0.5 * (pose.breath || 0));
         const lean = pose.lean || 1;
+        const mouthPt = this.lm && this.lm.mouth;
+        const mx = (mouthPt && mouthPt.x != null ? mouthPt.x : 0.5) * S;
+        const my = (mouthPt && mouthPt.y != null ? mouthPt.y : 0.42) * S;
         ctx.save(); ctx.beginPath(); ctx.rect(E.x0 - E.w * 0.08, E.y0 - E.h * 0.08, E.w * 1.16, E.h * 1.2); ctx.clip();
         const cxb = E.x0 + E.w / 2, base = E.y0 + E.h;
-        ctx.translate(cxb, base);
-        ctx.rotate(pose.torso || 0);
-        ctx.scale(lean, breathY * lean);
-        ctx.translate(-cxb, -base);
-        const mouth = this.lm && this.lm.mouth;
-        const mx = (mouth && mouth.x != null ? mouth.x : 0.5) * S;
-        const my = (mouth && mouth.y != null ? mouth.y : 0.64) * S;
-        ctx.translate(mx, my);
-        ctx.translate(0, (pose.pitch || 0) * E.h);
-        ctx.translate(-mx, -my);
+        const pivotX = still ? mx : cxb;
+        const pivotY = still ? my : base;
+        const lib = still && !reduce ? this._lib : null;
+        const listen = this.motionContext && this.motionContext() === 'listen';
+        const baseSway = listen ? 0.008 : 0.035;
+        const nod = this.speaking ? Math.sin(now / 280) * Math.min(0.6, this.mouth || 0) * 0.04 : 0;
+        const sway = (!still || reduce) ? (still ? 0 : (pose.torso || 0)) : (Math.sin(now / 5200) * baseSway + Math.sin(now / 9100 + 1.1) * baseSway * 0.35 + nod + (lib ? lib.sway * Math.sin((now - (lib.t0 || now)) / Math.max(400, lib.swayMs) * Math.PI * 2) : 0));
+        ctx.translate(pivotX, pivotY);
+        ctx.rotate(sway);
+        ctx.scale(still ? 1 : lean, still ? breathY : breathY * lean);
+        ctx.translate(-pivotX, -pivotY);
+        if (!still) {
+          ctx.translate(mx, my);
+          ctx.translate(0, (pose.pitch || 0) * E.h);
+          ctx.translate(-mx, -my);
+        }
         ctx.drawImage(src, E.x0, E.y0, E.w, E.h);
         // Gesti (mezzo busto / figura intera): braccia che si muovono col ritmo e l'intensità del parlato.
         const tgt = (this.speaking ? 0.35 + this.mouth * 0.7 + (now - this.emph < 700 ? 0.6 : 0) : 0) + M.energy * 0.6 + wave * 0.8;
@@ -753,7 +811,7 @@
         // dimensionate per un primo piano, e su una figura intera la toppa delle sopracciglia diventava una striscia scura sulla fronte)
         // la testa è salita col respiro: le espressioni usano i punti spostati di quanto (nella foto deformata il viso è lì)
         const lmF = headDy ? shiftLm(this.lm, headDy / S) : this.lm;
-        if (trust && !this._safe) this.paintFace(ctx, src, lmF, A, faceScale(this.lm), this.lidColor); // v8.4.3: occhi/bocca solo con punti certi
+        if (trust && !this._safe && !reduce) this.paintFace(ctx, src, lmF, A, faceScale(this.lm), this.lidColor); // v8.4.3: occhi/bocca solo con punti certi
         ctx.restore();
       } else {
         ctx.font = `${S * 0.6}px system-ui, "Apple Color Emoji", "Segoe UI Emoji", sans-serif`;

@@ -15,7 +15,7 @@
     try {
       var q = new URLSearchParams(location.search);
       var TOKEN = q.get('refresh');
-      if (TOKEN !== '2d' && TOKEN !== '2d-face' && TOKEN !== '2d-see' && TOKEN !== '2d-6' && TOKEN !== '2d-7' && TOKEN !== '2d-8' && TOKEN !== '2d-9') return;
+      if (TOKEN !== '2d' && TOKEN !== '2d-face' && TOKEN !== '2d-see' && TOKEN !== '2d-6' && TOKEN !== '2d-7' && TOKEN !== '2d-8' && TOKEN !== '2d-9' && TOKEN !== '2d-10') return;
       var key = 'nova-refresh-' + TOKEN;
       q.delete('refresh');
       var rest = q.toString();
@@ -168,7 +168,7 @@
               <button type="button" id="call-tovideo" class="call-btn green" title="Passa al video" aria-label="Passa al video">📹</button>
               <button type="button" id="call-cc" class="call-btn small" title="Sottotitoli" aria-label="Sottotitoli">CC</button>
               <button type="button" id="call-hot" class="call-btn hot" title="Gesti" aria-label="Gesti" hidden>🔥</button>
-              <button type="button" id="call-cam" class="call-btn" title="La tua fotocamera" aria-label="Fotocamera">📷</button>
+              <button type="button" id="call-cam" class="call-btn" title="La tua fotocamera" aria-label="Fotocamera" aria-pressed="false">📷<span class="cam-off-line" aria-hidden="true"></span></button>
               <button type="button" id="call-mute" class="call-btn" title="Microfono" aria-label="Microfono">🎙️</button>
               <button type="button" id="call-end" class="call-btn end" title="Chiudi la chiamata" aria-label="Chiudi la chiamata">📞</button>
             </div>
@@ -179,10 +179,7 @@
           </div>
           <button type="button" id="prova-wave" hidden>Saluto</button>
           <video id="sight-preview" class="sight-preview" playsinline webkit-playsinline muted autoplay hidden></video>
-          <div id="sight-live" class="sight-live" hidden>
-            <span class="sight-pill"><i></i>Ti vede</span>
-            <button type="button" id="sight-show">Faglielo vedere</button>
-          </div>
+          <div id="sight-live" class="sight-live" hidden></div>
           <p id="sight-status" class="sight-status" hidden></p>
           <div class="stage-tools">
             <button type="button" id="call-btn" class="call-start" title="Videochiamata" aria-label="Videochiamata">📹</button>
@@ -207,13 +204,24 @@
           </div>
         </div>
         <form id="look-bar" class="look-bar" autocomplete="off" hidden>
-          <label class="sr" for="look-text">Aspetto</label>
-          <input id="look-text" maxlength="240" placeholder="Abbigliamento, genere, corpo" enterkeyhint="done">
-          <button type="submit" id="look-apply">Cambia</button>
+          <label for="nova-carattere">Carattere</label>
+          <textarea id="nova-carattere" maxlength="4000" rows="3" placeholder="Come è Nova con te: tono, modo di parlare"></textarea>
+          <label for="look-text">Vestiti e fisico</label>
+          <textarea id="look-text" maxlength="2000" rows="3" placeholder="Abbigliamento e corporatura, per il personaggio e per il 3D"></textarea>
+          <p class="muted small">La foto 2D non cambia da questo testo. Resta per il carattere e per il 3D futuro. Niente nudo o lingerie.</p>
+          <label for="nova-richieste">Richieste libere</label>
+          <textarea id="nova-richieste" maxlength="4000" rows="3" placeholder="Preferenze che Nova segue, senza scavalcare le regole"></textarea>
+          <button type="submit" id="look-apply">Salva</button>
           <p id="look-msg" class="look-msg" role="status"></p>
+          <p id="motion-lib-menu" class="muted small"></p>
           <details id="look-history-wrap">
-            <summary>Storico aspetti</summary>
+            <summary>Storico</summary>
+            <p class="muted small">Carattere</p>
+            <ul id="char-history"></ul>
+            <p class="muted small">Vestiti e fisico</p>
             <ul id="look-history"></ul>
+            <p class="muted small">Richieste libere</p>
+            <ul id="req-history"></ul>
           </details>
         </form>
         <div class="voicebar">
@@ -325,7 +333,8 @@
         </div>
         <div class="card" id="solo-settings-card">
           <h3>✨ Nova</h3>
-          <p class="muted small">Aspetto, richieste e scorciatoie. La personalità è fissa.</p>
+          <p class="muted small" id="motion-lib-count">Movimenti della foto</p>
+          <p class="muted small">Carattere, vestiti e richieste sono di questo profilo. La foto 2D non cambia da sola.</p>
           <details id="avatar-fallback-panel">
             <summary>Vista</summary>
             <label>Vista
@@ -510,7 +519,7 @@
     <nav class="solo-dock" id="solo-dock" hidden aria-label="Navigazione">
       <button type="button" data-dock="home" id="dock-home" aria-label="Home"><span class="dock-ic">🏠</span><span>Home</span></button>
       <button type="button" data-dock="mic" id="dock-mic" aria-label="Microfono"><span class="dock-ic">🎙️</span><span>Microfono</span></button>
-      <button type="button" data-dock="cam" id="dock-cam" aria-label="Camera" aria-pressed="false"><span class="dock-ic">📷</span><span>Camera</span></button>
+      <button type="button" data-dock="cam" id="dock-cam" aria-label="Camera" aria-pressed="false"><span class="cam-off-line" aria-hidden="true"></span><span class="dock-ic">📷</span><span>Camera</span></button>
       <button type="button" data-dock="settings" id="dock-settings" aria-label="Impostazioni"><span class="dock-ic">⚙️</span><span>Impostazioni</span></button>
     </nav>
     <button id="home-ind" class="home-ind" type="button" aria-label="Torna alla Home"><i></i></button>
@@ -735,6 +744,7 @@
   <div id="toast" class="toast" hidden></div>
   <button type="button" id="audio-unlock" class="audio-unlock" hidden>🔊 Tocca per attivare l'audio</button>
 </div>
+  <script src="/js/motion-lib.js"></script>
   <script src="/avatar.js"></script>
   <script src="/js/core.js"></script>
   <script src="/js/simli.js"></script>

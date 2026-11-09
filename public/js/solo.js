@@ -92,9 +92,11 @@
     }
   }
   function restoreProva() {
-    let saved = '';
-    try { saved = App.me && App.ls ? App.ls.get('provaView', '') : ''; } catch { saved = ''; }
-    if (saved === '3d') chooseView('3d');
+    // Il 3D in prova non è il volto della foto: si torna alla foto una volta e il pulsante resta nascosto.
+    try {
+      if (App.me && App.ls && App.ls.get('provaView', '') === '3d') App.ls.set('provaView', '2d');
+    } catch { /* storage assente */ }
+    paintProva(false);
   }
   function sheetOk(c) {
     return live(c);
@@ -274,7 +276,7 @@
         photo.addEventListener('click', open);
         photo.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') open(e); });
       }
-      const look = $('#set-look-btn'); if (look) look.onclick = () => this.openLook();
+      const look = $('#set-look-btn'); if (look) look.onclick = () => { this.onDock('home'); const f = $('#look-bar'); if (f) f.hidden = false; };
       const save = $('#set-requests-save'); if (save) save.onclick = () => this.saveRequests();
       const hot = $('#set-hot-btn'); if (hot) hot.onclick = () => { const h = $('#hot-btn'); if (h) h.click(); else if (App.actions && App.actions.openHot) App.actions.openHot(); };
       window.addEventListener('resize', () => { if (document.body.classList.contains('solo-mode')) fit(); });
@@ -317,12 +319,7 @@
       if (name === 'cam') {
         const ch = soloChar(); if (!ch) return;
         if (App.current?.id !== ch.id && App.chat) App.chat.open(ch.id);
-        if (App.sight && App.sight.toggle) {
-          const was = App.sight.active && App.sight.active();
-          App.sight.toggle();
-          if (was) App.toast('Camera spenta. Nova non riceve più fotogrammi.', 2500);
-        }
-        else App.toast('Visione da fotocamera non disponibile');
+        if (App.sight && App.sight.active && !App.sight.active() && App.sight.start) App.sight.start();
         return;
       }
       if (name === 'settings') {

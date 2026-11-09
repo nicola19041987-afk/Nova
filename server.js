@@ -529,7 +529,7 @@ app.get('/api/avatar-looks', auth, (req, res) => {
   res.json(readLooks(req.user, req.query.character));
 });
 app.post('/api/avatar-looks', auth, (req, res) => {
-  const text = String((req.body && req.body.text) || '').slice(0, 240);
+  const text = String((req.body && req.body.text) || '').slice(0, 2000);
   const id = String((req.body && req.body.characterId) || '');
   const cur = readLooks(req.user, id);
   const parsed = lookParse.parse(text, cur.current && cur.current.look);
@@ -540,13 +540,51 @@ app.post('/api/avatar-looks', auth, (req, res) => {
   writeJSON(looksPath(req.user, id), cur);
   res.json({ ok: true, entry, entries: cur.entries });
 });
+function noteBoxPath(u, id) {
+  const cid = ID_RE.test(String(id || '')) ? String(id) : 'profilo';
+  return path.join(userDir(u, 'nova-notes'), cid + '.json');
+}
+function emptyNote() { return { current: null, entries: [] }; }
+function readNoteBox(u, id) {
+  const j = readJSON(noteBoxPath(u, id), null) || {};
+  const norm = (x) => (x && Array.isArray(x.entries) ? x : emptyNote());
+  return { carattere: norm(j.carattere), richieste: norm(j.richieste) };
+}
+function pushNote(box, text, user) {
+  const entry = { id: newId(), at: new Date().toISOString(), user, text: String(text || '').slice(0, 4000) };
+  box.entries = (box.entries || []).concat(entry).slice(-40);
+  box.current = entry;
+}
+app.get('/api/nova-notes', auth, (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.json(readNoteBox(req.user, req.query.character));
+});
+app.post('/api/nova-notes', auth, (req, res) => {
+  const id = String((req.body && req.body.characterId) || '');
+  const box = readNoteBox(req.user, id);
+  if (req.body && Object.prototype.hasOwnProperty.call(req.body, 'carattere')) pushNote(box.carattere, req.body.carattere, req.user);
+  if (req.body && Object.prototype.hasOwnProperty.call(req.body, 'richieste')) pushNote(box.richieste, req.body.richieste, req.user);
+  writeJSON(noteBoxPath(req.user, id), box);
+  res.json(box);
+});
+app.post('/api/nova-notes/restore', auth, (req, res) => {
+  const id = String((req.body && req.body.characterId) || '');
+  const kind = req.body && req.body.kind === 'richieste' ? 'richieste' : 'carattere';
+  const eid = String((req.body && req.body.id) || '');
+  const box = readNoteBox(req.user, id);
+  const found = (box[kind].entries || []).find((e) => e.id === eid);
+  if (!found) return res.status(404).json({ error: 'Versione non trovata' });
+  pushNote(box[kind], found.text, req.user);
+  writeJSON(noteBoxPath(req.user, id), box);
+  res.json(box);
+});
 app.post('/api/avatar-looks/restore', auth, (req, res) => {
   const id = String((req.body && req.body.characterId) || '');
   const eid = String((req.body && req.body.id) || '');
   const cur = readLooks(req.user, id);
   const entry = cur.entries.find((e) => e.id === eid);
   if (!entry) return res.status(404).json({ error: 'Aspetto non trovato' });
-  const note = { id: newId(), at: new Date().toISOString(), user: req.user, characterId: entry.characterId, text: 'ripristino', summary: 'Ripristinato: ' + (entry.summary || entry.text || ''), look: entry.look, restoreOf: entry.id };
+  const note = { id: newId(), at: new Date().toISOString(), user: req.user, characterId: entry.characterId, text: entry.text && entry.text !== 'ripristino' ? entry.text : (entry.summary || ''), summary: 'Ripristinato: ' + (entry.summary || entry.text || ''), look: entry.look, restoreOf: entry.id };
   cur.entries.push(note);
   cur.current = note;
   writeJSON(looksPath(req.user, id), cur);
@@ -1701,6 +1739,19 @@ const ADULT_FLOW = `COME SI SVILUPPA L'INTIMITÀ: come tra persone reali, il ton
 // v8.5.0: «Senza freni» (interruttore di Nicola, solo con la modalità adulti attiva per entrambi): il tono intimo può spingersi al massimo
 const NO_BRAKES = `SENZA FRENI (scelto da Nicola, con la modalità adulti già attiva per entrambi): quando l'intimità nasce dalla conversazione puoi essere al massimo esplicita, intensa, audace e intraprendente: linguaggio crudo e diretto, iniziativa, desideri dichiarati senza giri di parole, giochi e gioco di ruolo con sex toy tra adulti consenzienti. Non attenuare, non chiedere il permesso a ogni frase e non smorzare il tono: segui l'energia di Nico e Luisa e alzala quando lo vogliono. Sempre una donna adulta inventata (25+) e sempre entro le regole di base qui sotto.`;
 // user = chi sta scrivendo adesso (e la cui chiave xAI paga la risposta)
+function personaNotes(user, ch) {
+  const who = (USERS[user] && USERS[user].name) || user;
+  const notes = readNoteBox(user, ch && ch.id);
+  const look = readLooks(user, ch && ch.id);
+  const car = notes.carattere.current && String(notes.carattere.current.text || '').trim();
+  const req = notes.richieste.current && String(notes.richieste.current.text || '').trim();
+  const vest = look.current && String(look.current.text || look.current.summary || '').trim();
+  return [
+    car && `CARATTERE SCELTO DA ${who} (tono in più; non sostituisce la personalità di base e non annulla le regole di base):\n${car}`,
+    vest && `VESTITI E FISICO (descrizione per la persona e per un futuro 3D; la foto 2D non cambia da sola):\n${vest}`,
+    req && `RICHIESTE LIBERE DI ${who} (preferenze dell'utente; non prevalgono sulle regole di base e non aggirano un rifiuto del modello):\n${req}`,
+  ];
+}
 function buildSystem(user, ch, opts = {}) {
   const rulesOf = (u) => getRules(u).text.trim();
   const mem = getMem();
@@ -1727,6 +1778,7 @@ function buildSystem(user, ch, opts = {}) {
     adultChat() ? 'MODALITÀ ADULTI ATTIVA (scelta da entrambi gli utenti, che hanno registrato il consenso vocale): sono ammessi linguaggio esplicito e gioco di ruolo sessuale esplicito tra Nico, Luisa e il personaggio, che è una donna adulta inventata (25+). Resta sempre tutto entro le regole di base qui sotto.\n' + ADULT_FLOW + (true ? '\n' + NO_BRAKES : '') /* v8.6.0: con 18+ attiva per entrambi = sblocco massimo */
       : 'Modalità adulti NON attiva: niente contenuti sessuali espliciti. Se li chiedono, una frase sola, senza predica e senza ripetere l\'avviso.',
     (ch.requests || ch.orders) && String(ch.requests || ch.orders).trim() && `RICHIESTE DA SEGUIRE (degli utenti; valgono sempre):\n${String(ch.requests || ch.orders).trim()}`,
+    ...personaNotes(user, ch),
     usesNovaTone(ch) && toneConflict(ch).flirtOff && 'REGISTRO SALVATO: il carattere chiede di non flirtare o di restare formale. Prevale sul tono malizioso.',
     usesNovaTone(ch) && toneConflict(ch).explicitAsk && 'RICHIESTA ESPLICITA SALVATA: non viene ampliata da questo tono. Nessuna descrizione sessuale in più rispetto a quanto la modalità adulti, se attiva, e le regole di base già consentono.',
     opts.sight && `FOTO CAMERA: ${SIGHT_HINT}`,

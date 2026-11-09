@@ -46,7 +46,7 @@
     $('#call-tovideo').hidden = mode !== 'voice'; $('#call-speaker').hidden = mode !== 'voice';
     $('#call-cam').hidden = mode === 'voice'; $('#call-cc').hidden = mode === 'voice'; $('#call-hot').hidden = mode === 'voice';
     if (mode === 'voice') { stopCam(); $('#call-caption').hidden = true; }
-    else if (on && !cam) startCam(); // v8.4.4: passando a video (o iniziando in video) chiede la fotocamera, dentro il tocco
+    paintCam();
     App.call.mode = mode; if (mode === 'video') everVideo = true;
     if (on && rt) App.rt.setMode(mode);
     cancelAnimationFrame(raf); if (mode === 'voice') raf = requestAnimationFrame(portrait);
@@ -179,21 +179,28 @@
     if (n === 'NotReadableError' || n === 'AbortError') return '📷 La fotocamera è usata da un\'altra app: chiudila e tocca 📷.';
     return '📷 Fotocamera non disponibile (' + (e && e.message || n || 'errore') + ').';
   }
+  function paintCam() {
+    const b = $('#call-cam'); if (!b) return;
+    const onCam = !!cam;
+    b.classList.toggle('on', onCam);
+    b.setAttribute('aria-pressed', onCam ? 'true' : 'false');
+  }
   async function startCam() {
     if (cam || !on || mode !== 'video') return;
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { App.toast(camHelp({ name: 'NotFoundError' }), 6000); return; }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
     camAsked = true;
     try {
       const st = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 480 }, height: { ideal: 640 } }, audio: false });
       if (!on || mode !== 'video') { st.getVideoTracks().forEach((t) => t.stop()); return; }
-      cam = st; App.ls.set('camOn', true);
+      cam = st;
       const v = $('#call-self'); v.muted = true; v.defaultMuted = true; v.playsInline = true; v.setAttribute('playsinline', ''); v.setAttribute('muted', ''); v.autoplay = true;
-      v.srcObject = cam; v.hidden = false; v.play().catch(() => {}); $('#call-cam').classList.add('on');
-      if (!App.audio.micLive()) App.audio.mic().catch(() => {}); // se il sistema avesse chiuso il microfono, si riapre (chi ascolta si ricollega)
-    } catch (e) { cam = null; console.warn('Fotocamera:', e && e.name, e && e.message); App.toast(camHelp(e), 9000); }
+      v.srcObject = cam; v.hidden = false; v.play().catch(() => {});
+      paintCam();
+      if (!App.audio.micLive()) App.audio.mic().catch(() => {});
+    } catch (e) { cam = null; paintCam(); }
   }
-  function toggleCam() { if (cam) return stopCam(); return startCam(); }
-  function stopCam() { if (cam) cam.getVideoTracks().forEach((t) => t.stop()); cam = null; /* solo video: il microfono non si tocca */ const v = $('#call-self'); v.srcObject = null; v.hidden = true; $('#call-cam').classList.remove('on'); }
+  function toggleCam() { if (cam) return; return startCam(); }
+  function stopCam() { if (cam) cam.getVideoTracks().forEach((t) => t.stop()); cam = null; const v = $('#call-self'); if (v) { v.srcObject = null; v.hidden = true; } paintCam(); }
   App.call = {
     active: false, mode: null, start, end, setMode,
     get realtime() { return rt; },
@@ -220,6 +227,8 @@
   $('#call-mute').addEventListener('click', (e) => { e.stopPropagation(); muted = !muted; if (rt) App.rt.setMuted(muted); else if (micMode === 'vad') App.callMic.setMuted(muted); state(); }); // v8.4.4: muto via software (il microfono resta aperto)
   const eb = $('#call-badge'); if (eb) eb.addEventListener('click', (e) => { e.stopPropagation(); App.toast(eb.title || eb.textContent, 5000); });
   $('#call-cam').addEventListener('click', (e) => { e.stopPropagation(); toggleCam(); });
+  const selfView = $('#call-self');
+  if (selfView) selfView.addEventListener('click', (e) => { e.stopPropagation(); if (cam) stopCam(); });
   $('#call-cc').addEventListener('click', (e) => { e.stopPropagation(); const v = !App.ls.get('callCaptions', true); App.ls.set('callCaptions', v); $('#call-cc').classList.toggle('on', v); if (!v) $('#call-caption').hidden = true; });
   $('#call-cc').classList.toggle('on', App.ls.get('callCaptions', true));
   // tocco sul viso: la interrompi (come in una vera chiamata) e torna ad ascoltarti

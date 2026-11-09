@@ -48,52 +48,18 @@ test('il 3D non parte da solo e si carica solo se scelto', async ({ page }, test
   const fs = require('fs');
   fs.mkdirSync('/opt/cursor/artifacts', { recursive: true });
   await page.screenshot({ path: '/opt/cursor/artifacts/prova-2d-390.png' });
-  expect(await page.evaluate(() => document.getElementById('prova-2d').getAttribute('aria-pressed'))).toBe('true');
-  await page.locator('#prova-3d').click();
-  await page.waitForFunction(() => App.avatar3d && App.avatar3d.ready(), null, { timeout: 25000 });
-  const on = await page.evaluate(() => ({
-    script: !!document.querySelector('script[src*="avatar3d"]'),
-    hidden: document.getElementById('vrm-view').hidden,
-    status: document.getElementById('avatar-view-status').textContent,
-    photo: !!document.getElementById('avatar-canvas'),
+  const pill = await page.evaluate(() => ({
+    toggle: getComputedStyle(document.getElementById('prova-toggle')).display,
+    wave: getComputedStyle(document.getElementById('prova-wave')).display,
+    photo: getComputedStyle(document.getElementById('avatar-canvas')).visibility,
   }));
-  expect(glb).toBeGreaterThan(0);
-  expect(on.script).toBe(true);
-  expect(on.hidden).toBe(false);
-  expect(on.status).toContain('Stand-in');
-  expect(on.status.toLowerCase()).toContain('non è la foto');
-  expect(on.photo).toBe(true);
-  await page.waitForTimeout(500);
-  const span = await page.evaluate(() => {
-    const c = document.getElementById('vrm-view');
-    const tmp = document.createElement('canvas');
-    tmp.width = c.width; tmp.height = c.height;
-    const ctx = tmp.getContext('2d', { willReadFrequently: true });
-    ctx.drawImage(c, 0, 0);
-    const data = ctx.getImageData(0, 0, tmp.width, tmp.height).data;
-    let top = -1, bot = -1;
-    for (let y = 0; y < tmp.height; y += 2) {
-      for (let x = 0; x < tmp.width; x += 8) {
-        const i = (y * tmp.width + x) * 4;
-        const d = Math.abs(data[i] - 232) + Math.abs(data[i + 1] - 235) + Math.abs(data[i + 2] - 240);
-        if (d > 36) { if (top < 0) top = y; bot = y; break; }
-      }
-    }
-    return { top: top / tmp.height, bot: bot / tmp.height };
-  });
-  expect(span.top).toBeGreaterThan(0.01);
-  expect(span.top).toBeLessThan(0.25);
-  expect(span.bot).toBeGreaterThan(0.75);
-  await page.screenshot({ path: '/opt/cursor/artifacts/prova-3d-390.png' });
-  await page.locator('#prova-wave').click();
-  await page.waitForFunction(() => App.avatar3d.current && App.avatar3d.current() === 'saluto');
-  await page.locator('#prova-2d').click();
-  await page.waitForFunction(() => document.getElementById('vrm-view').hidden && !document.body.classList.contains('vrm-on'));
-  expect(await page.evaluate(() => App.ls.get('provaView', ''))).toBe('2d');
-  expect(await page.evaluate(() => getComputedStyle(document.getElementById('avatar-canvas')).visibility)).not.toBe('hidden');
+  expect(pill.toggle).toBe('none');
+  expect(pill.wave).toBe('none');
+  expect(pill.photo).not.toBe('hidden');
+  expect(glb).toBe(0);
 });
 
-test('una Prova già scelta si ricarica dopo la foto, una vecchia scelta 3D no', async ({ page }, testInfo) => {
+test('una Prova già scelta torna alla foto e non ricarica il 3D', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name === 'webkit', 'WebKit è nel test dedicato');
   await page.addInitScript(() => {
     if (navigator.serviceWorker) navigator.serviceWorker.register = () => new Promise(() => {});
@@ -120,9 +86,11 @@ test('una Prova già scelta si ricarica dopo la foto, una vecchia scelta 3D no',
   expect(html.includes('avatar3d.js')).toBe(false);
   await page.goto('/');
   await page.waitForFunction(() => document.body.classList.contains('solo-mode') && document.getElementById('avatar-canvas'));
-  await page.waitForFunction(() => App.avatar3d && App.avatar3d.ready(), null, { timeout: 25000 });
-  expect(await page.evaluate(() => App.ls.get('provaView', ''))).toBe('3d');
-  expect(await page.evaluate(() => document.getElementById('prova-3d').getAttribute('aria-pressed'))).toBe('true');
+  await page.waitForTimeout(400);
+  expect(await page.evaluate(() => !!document.querySelector('script[src*="avatar3d"]'))).toBe(false);
+  expect(await page.evaluate(() => App.ls.get('provaView', ''))).toBe('2d');
+  expect(await page.evaluate(() => document.getElementById('vrm-view').hidden)).toBe(true);
+  expect(await page.evaluate(() => getComputedStyle(document.getElementById('prova-toggle')).display)).toBe('none');
 });
 
 test('se il modello 3D manca si torna alla foto', async ({ page }, testInfo) => {

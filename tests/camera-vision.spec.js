@@ -139,18 +139,32 @@ test('il tasto Camera invia un fotogramma e lo stop ferma la ripresa', async ({ 
   expect(before.gum).toBe(0);
   expect(before.live).toBe(0);
 
+  const lineOff = await page.evaluate(() => {
+    const line = document.querySelector('#dock-cam .cam-off-line');
+    const s = getComputedStyle(line);
+    return { h: line.getBoundingClientRect().height, color: s.backgroundColor, shown: s.display !== 'none' };
+  });
+  expect(lineOff.shown).toBe(true);
+  expect(lineOff.h).toBeGreaterThan(0);
+  expect(lineOff.h).toBeLessThan(8);
+  expect(lineOff.color).toBe('rgb(226, 59, 59)');
   await page.locator('#dock-cam').click();
   await page.waitForFunction(() => App.sight.active() && document.getElementById('sight-preview').videoWidth > 0);
   const on = await page.evaluate(() => ({
     pressed: document.getElementById('dock-cam').getAttribute('aria-pressed'),
-    text: document.getElementById('sight-status').innerText,
+    statusHidden: document.getElementById('sight-status').hidden,
+    liveHidden: document.getElementById('sight-live').hidden,
+    toastHidden: document.getElementById('toast').hidden,
+    line: getComputedStyle(document.querySelector('#dock-cam .cam-off-line')).display,
     preview: !document.getElementById('sight-preview').hidden,
     live: App.sight.tracksLive(),
     audio: window.__gumAudio,
   }));
   expect(on.pressed).toBe('true');
-  expect(on.text).toContain('8 secondi');
-  expect(on.text.toLowerCase()).toContain('non è un video continuo');
+  expect(on.statusHidden).toBe(true);
+  expect(on.liveHidden).toBe(true);
+  expect(on.toastHidden).toBe(true);
+  expect(on.line).toBe('none');
   expect(on.preview).toBe(true);
   expect(on.live).toBe(1);
   expect(on.audio).toBe(false);
@@ -166,31 +180,8 @@ test('il tasto Camera invia un fotogramma e lo stop ferma la ripresa', async ({ 
   expect(lay.wide).toBe(true);
   expect(lay.formAbove).toBe(true);
   await page.screenshot({ path: '/opt/cursor/artifacts/sight-on-390.png' });
-  await page.waitForFunction(() => document.getElementById('sight-status').hidden, null, { timeout: 7000 });
   await page.evaluate(() => App.sight.sample());
-  const quietBanner = await page.evaluate(() => ({
-    status: document.getElementById('sight-status').hidden,
-    live: !document.getElementById('sight-live').hidden,
-    label: document.querySelector('.sight-pill').textContent,
-    show: document.getElementById('sight-show').textContent,
-    seen: sessionStorage.getItem('nova-sight-explain'),
-    coversFace: (() => {
-      const stage = document.getElementById('stage').getBoundingClientRect();
-      const faceBottom = stage.top + stage.height * 0.45;
-      const status = document.getElementById('sight-status').getBoundingClientRect();
-      const live = document.getElementById('sight-live').getBoundingClientRect();
-      const overlaps = (r) => r.height > 1 && r.top < faceBottom && r.bottom > stage.top + 8;
-      return overlaps(status) || overlaps(live);
-    })(),
-  }));
-  expect(quietBanner.status).toBe(true);
-  expect(quietBanner.live).toBe(true);
-  expect(quietBanner.label).toContain('Ti vede');
-  expect(quietBanner.show).toContain('Faglielo vedere');
-  expect(quietBanner.seen).toBe('1');
-  expect(quietBanner.coversFace).toBe(false);
-  await page.waitForFunction(() => document.getElementById('toast').hidden, null, { timeout: 8000 });
-  await page.screenshot({ path: '/opt/cursor/artifacts/sight-banner-gone-390.png' });
+  expect(await page.evaluate(() => document.getElementById('toast').hidden)).toBe(true);
 
   await page.locator('#chat-input').fill('Guarda il riquadro');
   await page.locator('#chat-form').locator('button[type="submit"]').click();
@@ -205,7 +196,7 @@ test('il tasto Camera invia un fotogramma e lo stop ferma la ripresa', async ({ 
   await page.setViewportSize({ width: 473, height: 1024 });
   await page.screenshot({ path: '/opt/cursor/artifacts/sight-on-473.png' });
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.locator('#dock-cam').click();
+  await page.locator('#sight-preview').click();
   await page.waitForFunction(() => !App.sight.active());
   const off = await page.evaluate(() => ({
     pressed: document.getElementById('dock-cam').getAttribute('aria-pressed'),
@@ -231,24 +222,24 @@ test('il tasto Camera invia un fotogramma e lo stop ferma la ripresa', async ({ 
   await page.screenshot({ path: '/opt/cursor/artifacts/sight-off-390.png' });
 });
 
-test('il banner si chiude al tocco e non torna nella stessa sessione', async ({ page }, testInfo) => {
+test('l’anteprima spegne la camera e la riga rossa torna', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name === 'webkit', 'il flusso camera usa captureStream di Chromium');
   await mockApp(page);
   await page.goto('/');
   await page.waitForFunction(() => document.body.classList.contains('solo-mode'));
+  expect(await page.evaluate(() => getComputedStyle(document.querySelector('#dock-cam .cam-off-line')).display)).not.toBe('none');
   await page.locator('#dock-cam').click();
-  await page.waitForFunction(() => !document.getElementById('sight-status').hidden);
-  await page.locator('#sight-status').click();
-  await expect.poll(() => page.evaluate(() => document.getElementById('sight-status').hidden)).toBe(true);
-  expect(await page.evaluate(() => sessionStorage.getItem('nova-sight-explain'))).toBe('1');
-  expect(await page.evaluate(() => document.getElementById('sight-live').hidden)).toBe(false);
-  await page.locator('#dock-cam').click();
+  await page.waitForFunction(() => App.sight.active() && !document.getElementById('sight-preview').hidden);
+  expect(await page.evaluate(() => getComputedStyle(document.querySelector('#dock-cam .cam-off-line')).display)).toBe('none');
+  expect(await page.evaluate(() => document.getElementById('toast').hidden)).toBe(true);
+  await page.locator('#sight-preview').click();
   await page.waitForFunction(() => !App.sight.active());
+  expect(await page.evaluate(() => document.getElementById('sight-preview').hidden)).toBe(true);
+  expect(await page.evaluate(() => getComputedStyle(document.querySelector('#dock-cam .cam-off-line')).display)).not.toBe('none');
   await page.locator('#dock-cam').click();
   await page.waitForFunction(() => App.sight.active());
-  await page.waitForTimeout(300);
   expect(await page.evaluate(() => document.getElementById('sight-status').hidden)).toBe(true);
-  expect(await page.evaluate(() => document.getElementById('sight-live').hidden)).toBe(false);
+  expect(await page.evaluate(() => document.getElementById('sight-live').hidden)).toBe(true);
 });
 
 test('permesso negato e nessuna fotocamera restano spenti', async ({ page }, testInfo) => {
@@ -278,13 +269,16 @@ test('permesso negato e nessuna fotocamera restano spenti', async ({ page }, tes
     navigator.mediaDevices.getUserMedia = () => Promise.reject(Object.assign(new Error('denied'), { name: 'NotAllowedError' }));
   });
   await page.locator('#dock-cam').click();
-  await expect(page.locator('#toast')).toContainText('non consentita');
+  await page.waitForTimeout(200);
+  expect(await page.evaluate(() => document.getElementById('toast').hidden)).toBe(true);
   expect(await page.evaluate(() => App.sight.active())).toBe(false);
+  expect(await page.evaluate(() => getComputedStyle(document.querySelector('#dock-cam .cam-off-line')).display)).not.toBe('none');
   await page.evaluate(() => {
     navigator.mediaDevices.getUserMedia = () => Promise.reject(Object.assign(new Error('none'), { name: 'NotFoundError' }));
   });
   await page.locator('#dock-cam').click();
-  await expect(page.locator('#toast')).toContainText('Nessuna fotocamera');
+  await page.waitForTimeout(200);
+  expect(await page.evaluate(() => document.getElementById('toast').hidden)).toBe(true);
   expect(await page.evaluate(() => App.sight.active())).toBe(false);
 });
 

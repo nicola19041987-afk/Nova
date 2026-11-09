@@ -3,58 +3,23 @@
 (function () {
   const CADENCE_MS = 8000;
   const MAX_EDGE = 480;
-  const EXPLAIN_KEY = 'nova-sight-explain';
-  const EXPLAIN_MS = 4000;
-  let want = false, owns = false, current = null, timer = null, latest = null, latestAt = 0, gen = 0, busy = false, lastTx = 0, explainTimer = null;
+  let want = false, owns = false, current = null, timer = null, latest = null, latestAt = 0, gen = 0, busy = false, lastTx = 0;
 
-  function camError(e) {
-    const n = (e && e.name) || '';
-    if (!window.isSecureContext) return 'Fotocamera non disponibile: serve una connessione sicura (https).';
-    if (n === 'NotAllowedError' || n === 'SecurityError') return 'Fotocamera non consentita. Consenti l\'accesso nelle impostazioni del sito e tocca di nuovo Camera.';
-    if (n === 'NotFoundError' || n === 'OverconstrainedError') return 'Nessuna fotocamera trovata su questo dispositivo.';
-    if (n === 'NotReadableError' || n === 'AbortError') return 'Fotocamera occupata da un\'altra app. Chiudila e tocca di nuovo Camera.';
-    return 'Fotocamera non disponibile' + (e && e.message ? ': ' + e.message : '.');
+  function ui() {
+    const b = document.getElementById('dock-cam');
+    if (b) {
+      b.classList.toggle('on', want);
+      b.setAttribute('aria-pressed', want ? 'true' : 'false');
+    }
+    const preview = document.getElementById('sight-preview');
+    if (preview && !want) preview.hidden = true;
+    const live = document.getElementById('sight-live');
+    if (live) live.hidden = true;
+    const status = document.getElementById('sight-status');
+    if (status) status.hidden = true;
   }
-  function explainSeen() {
-  try { return sessionStorage.getItem(EXPLAIN_KEY) === '1'; } catch (e) { return false; }
-}
-function markExplain() {
-  try { sessionStorage.setItem(EXPLAIN_KEY, '1'); } catch (e) {}
-}
-function concealExplain() {
-  if (explainTimer) { clearTimeout(explainTimer); explainTimer = null; }
-  const el = document.getElementById('sight-status');
-  if (el) el.hidden = true;
-}
-function hideExplain() {
-  concealExplain();
-  markExplain();
-}
-function showExplainOnce() {
-  if (!want || explainSeen()) return;
-  const el = document.getElementById('sight-status');
-  if (!el || !el.hidden) return;
-  el.textContent = 'Nova ti vede a fotogrammi, circa ogni 8 secondi. Non è un video continuo e non registra.';
-  el.hidden = false;
-  explainTimer = setTimeout(hideExplain, EXPLAIN_MS);
-}
-function ui() {
-  const b = document.getElementById('dock-cam');
-  if (b) {
-    b.classList.toggle('on', want);
-    b.setAttribute('aria-pressed', want ? 'true' : 'false');
-    b.setAttribute('aria-label', want ? 'Camera accesa: Nova riceve fotogrammi' : 'Camera');
-  }
-  const preview = document.getElementById('sight-preview');
-  const live = document.getElementById('sight-live');
-  if (preview && !want) preview.hidden = true;
-  if (live) live.hidden = !want;
-  if (!want) concealExplain();
-}
-const explainEl = document.getElementById('sight-status');
-if (explainEl) explainEl.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); hideExplain(); });
-const showBtn = document.getElementById('sight-show');
-if (showBtn) showBtn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); showNow(); });
+  const previewEl = document.getElementById('sight-preview');
+  if (previewEl) previewEl.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); if (want) stop(); });
   function release() {
     if (current && owns) current.getVideoTracks().forEach((t) => { try { t.stop(); } catch {} });
     current = null; owns = false;
@@ -120,16 +85,14 @@ if (showBtn) showBtn.addEventListener('click', (e) => { e.preventDefault(); e.st
   }
   async function start() {
     if (want) return;
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { App.toast(camError({ name: 'NotFoundError' }), 7000); return; }
-    want = true; ui(); showExplainOnce();
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
+    want = true; ui();
     try {
       await openStream();
       if (!want) { release(); ui(); return; }
       arm();
-      App.toast('Camera accesa. Nova riceve un fotogramma circa ogni 8 secondi, non un video. Tieni premuto Camera per la videochiamata.', 5500);
     } catch (e) {
       want = false; release(); if (timer) { clearInterval(timer); timer = null; } ui();
-      App.toast(camError(e), 8000);
     }
   }
   function stop() {
@@ -143,7 +106,7 @@ if (showBtn) showBtn.addEventListener('click', (e) => { e.preventDefault(); e.st
     const now = Date.now();
     if (!opts.force && (busy || now - lastTx < CADENCE_MS)) return '';
     const frame = grab();
-    if (!frame) { App.toast('Fotogramma non disponibile.'); return ''; }
+    if (!frame) return '';
     const id = App.current && App.current.id;
     if (!id) return '';
     const mine = ++gen;
@@ -152,10 +115,9 @@ if (showBtn) showBtn.addEventListener('click', (e) => { e.preventDefault(); e.st
       const r = await App.api(`/api/chats/${id}/sight`, { method: 'POST', body: { image: frame }, ai: true });
       if (mine !== gen || !want) return '';
       const note = String((r && r.note) || '').trim();
-      if (!note) { App.toast('Il servizio non ha descritto il fotogramma.'); return ''; }
+      if (!note) return '';
       return 'Fotogramma della fotocamera (un istante, non un video). Il modello che ha visto l\'immagine riferisce: ' + note;
     } catch (e) {
-      if (mine === gen && want) App.toast((e && e.message) || 'Nova non ha ricevuto il fotogramma');
       return '';
     } finally { if (mine === gen) busy = false; }
   }
@@ -173,7 +135,7 @@ if (showBtn) showBtn.addEventListener('click', (e) => { e.preventDefault(); e.st
   }
   function showNow() {
     if (!want) return;
-    if (!grab()) { App.toast('Nessun fotogramma: controlla la camera.'); return; }
+    if (!grab()) return;
     if (App.rt && App.rt.active && App.rt.sendText && App.rt.sendText('Guarda questo.')) return;
     if (App.chat && App.chat.send) App.chat.send('Guarda questo.');
   }
@@ -184,7 +146,7 @@ if (showBtn) showBtn.addEventListener('click', (e) => { e.preventDefault(); e.st
       release();
       return;
     }
-    openStream().then(() => { if (want) arm(); }).catch((e) => { stop(); App.toast(camError(e), 8000); });
+    openStream().then(() => { if (want) arm(); }).catch(() => { stop(); });
   });
   window.addEventListener('pagehide', () => { if (want) stop(); });
 

@@ -146,7 +146,6 @@ App.chat = {
     let sight = null;
     if (!noAI && !photo && App.sight && App.sight.active && App.sight.active()) {
       sight = App.sight.takeFrame();
-      if (!sight) App.toast('Messaggio senza fotogramma: la camera non ha ancora un\'immagine.');
     }
     const local = this.addMsg({ role: 'user', author: App.me.user, authorName: meName, content: text, noAI, at: new Date().toISOString(), ...(photo ? { photo: { localSrc: photo.url, localThumb: photo.thumb, kind: photo.kind, w: photo.w, h: photo.h } } : {}) });
     const ph = photo ? { photo: { gid: photo.id } } : {};
@@ -205,7 +204,7 @@ App.chat = {
     const c = { done: false, any: false, g: null, m: null,
       check(t, final) {
         if (!this.g) { const g = /\[gesto:\s*([a-zà-ù]+)\s*\]/i.exec(t); if (g) { this.g = g[1].toLowerCase(); this.any = true; if (G[this.g]) App.avatarConv.react(G[this.g], this.g === 'ride' ? '😄' : null); if (App.actions && App.actions.cue) { const C = { ride: ['ride', 0.6], sorride: ['sorriso', 0.35], annuisce: ['annuisce', 0.35], inclina: ['inclina', 0.4] }[this.g]; /* v8.5.0: anche sorriso, cenno, testa inclinata */ if (C) App.actions.cue(C[0], C[1]); } } }
-        if (!this.m) { const m = /\[umore:\s*([a-zà-ù]+)\s*\]/i.exec(t); if (m) { this.m = m[1].toLowerCase(); this.any = true; if (!this.g && M[this.m]) App.avatarConv.react(M[this.m]); if (this.m === 'triste' && App.avatarConv.breathM) App.avatarConv.breathM.sigh(performance.now()); if ((this.m === 'tenera' || this.m === 'maliziosa') && App.actions && App.actions.cue) App.actions.cue('capelli', 0.3); } }
+        if (!this.m) { const m = /\[umore:\s*([a-zà-ù]+)\s*\]/i.exec(t); if (m) { this.m = m[1].toLowerCase(); this.any = true; if (App.avatarConv) { App.avatarConv.replyMood = this.m; App.avatarConv.replyMoodUntil = performance.now() + 20000; } if (!this.g && M[this.m]) App.avatarConv.react(M[this.m]); if (this.m === 'triste' && App.avatarConv.breathM) App.avatarConv.breathM.sigh(performance.now()); if ((this.m === 'tenera' || this.m === 'maliziosa') && App.actions && App.actions.cue) App.actions.cue('capelli', 0.3); } }
         if ((this.g && this.m) || final || t.length > 160) this.done = true;
       } };
     return c;

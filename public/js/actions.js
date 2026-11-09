@@ -185,6 +185,7 @@
       if (App.me && App.settings && App.settings.adultMode && !info.adult && App.adultStatus && !App.adultStatus.chat) $('#act-info').textContent += ' · 🔞 ' + App.adultText(App.adultStatus, false);
       if (autoQ.length + autoBusy.size) $('#act-info').textContent += ' · ' + this.queueText(); // v8.5.0
       if (lastWhy) $('#act-info').textContent += ` · ⚠️ ultimo errore: ${lastWhy}`; // v8.4.7
+      if (window.MotionLib) $('#act-info').textContent += ' · ' + MotionLib.count + ' movimenti della foto';
       $('#act-btn').classList.toggle('on', !!n);
       $('#act-auto').checked = App.ls.get('actAuto', true) !== false;
     },
