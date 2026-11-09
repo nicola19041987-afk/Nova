@@ -1696,9 +1696,45 @@ function buildSystem(user, ch, opts = {}) {
     adultChat() ? 'MODALITÀ ADULTI ATTIVA (scelta da entrambi gli utenti, che hanno registrato il consenso vocale): sono ammessi linguaggio esplicito e gioco di ruolo sessuale esplicito tra Nico, Luisa e il personaggio, che è una donna adulta inventata (25+). Resta sempre tutto entro le regole di base qui sotto.\n' + ADULT_FLOW + (true ? '\n' + NO_BRAKES : '') /* v8.6.0: con 18+ attiva per entrambi = sblocco massimo */
       : 'Modalità adulti NON attiva: niente contenuti sessuali espliciti; se richiesti, ricorda con gentilezza che va attivata in Account da entrambi.',
     (ch.requests || ch.orders) && String(ch.requests || ch.orders).trim() && `RICHIESTE DA SEGUIRE (degli utenti; valgono sempre):\n${String(ch.requests || ch.orders).trim()}`,
+    opts.sight && `FOTO CAMERA: ${SIGHT_HINT}`,
     BASE_RULE, // sempre ultima, non sovrascrivibile
   ].filter(Boolean).join('\n\n');
 }
+
+// Fotogramma esplicito della fotocamera (non un video). Resta solo nella richiesta al modello: non si scrive su disco.
+const SIGHT_CADENCE_MS = 8000;
+const SIGHT_HINT = 'Fotogramma singolo dalla fotocamera di chi scrive, non un video e non una visione continua. Descrivi solo ciò che vedi davvero in questa immagine. Se è scura, mossa o illeggibile, dillo. Non inventare persone, oggetti o azioni che non ci sono. Non dire che la stai vedendo in diretta o in continuo.';
+let lastVision = null;
+function parseSight(raw) {
+  if (raw == null || raw === false || raw === '') return null;
+  const s = String(raw).replace(/\s+/g, '');
+  const m = /^data:image\/(jpeg|jpg|png);base64,([A-Za-z0-9+/=]+)$/.exec(s);
+  if (!m) { const e = new Error('Fotogramma non valido: serve un JPEG o un PNG.'); e.status = 400; throw e; }
+  if (m[2].length < 64 || m[2].length > 700000) { const e = new Error('Fotogramma troppo grande o vuoto.'); e.status = 400; throw e; }
+  return `data:image/${m[1] === 'png' ? 'png' : 'jpeg'};base64,${m[2]}`;
+}
+function sightParts(text, frame) {
+  return [
+    { type: 'text', text: `${text}\n\n[${SIGHT_HINT}]` },
+    { type: 'image_url', image_url: { url: frame, detail: 'low' } },
+  ];
+}
+function rememberVision(kind, model, messages, frame) {
+  if (!E2E_HARNESS || !frame) return;
+  const last = [...messages].reverse().find((m) => m.role === 'user');
+  const parts = last && Array.isArray(last.content) ? last.content : [];
+  const img = parts.find((p) => p && p.type === 'image_url');
+  const url = img && img.image_url && img.image_url.url;
+  const sys = messages.find((m) => m.role === 'system');
+  lastVision = {
+    kind, model, at: Date.now(), continuous: false, cadenceMs: SIGHT_CADENCE_MS,
+    hasImage: url === frame, detail: img && img.image_url ? img.image_url.detail : null,
+    parts: parts.map((p) => p.type),
+    hint: !!(sys && String(sys.content).includes('non un video')) || parts.some((p) => p.type === 'text' && String(p.text).includes('non un video')),
+    sha256: crypto.createHash('sha256').update(frame).digest('hex'), endpoint: '/v1/chat/completions',
+  };
+}
+function e2eVision(req) { return E2E_HARNESS && req.get('X-E2E-Vision') === '1'; }
 
 // POST /api/chats/:id  { message, noAI? }
 // - noAI: true -> "solo messaggio" per l'altra persona: salvato e visibile a entrambi, l'IA non risponde (non serve la chiave).
@@ -1718,12 +1754,17 @@ app.post('/api/chats/:id', auth, requireActivated, (req, res, next) => (req.body
     if (!ID_RE.test(gid) || !(photo = galToChat(req.user, gid))) return res.status(404).json({ error: 'Foto non trovata nella Galleria' });
   }
   if (!text && !photo) return res.status(400).json({ error: 'Messaggio vuoto' });
+  let frame = null;
+  if (req.body.noAI !== true && req.body.sight) {
+    try { frame = parseSight(req.body.sight); }
+    catch (e) { return res.status(e.status || 400).json({ error: e.message }); }
+  }
 
   // parola chiave della modalità adulti: confrontata qui sul server (hash), MAI salvata in chat né inviata a xAI
   const kw = text && !photo ? await keywordMatch(req.user, text) : null;
   if (kw) return res.json({ keyword: true, token: kw, question: 'Vuoi attivare la modalità adulti? Rispondi sì o no', activated: isActivated(req.user) });
   if (!ch.memorySeededAt) seedBaseMemory(ch).catch(() => {}); // v8.5.0: in background, mai prima della risposta
-  const mine = await appendMsg(id, { role: 'user', author: req.user, content: text, extra: { ...(req.body.noAI === true ? { noAI: true } : {}), ...(photo ? { photo } : {}) } });
+  const mine = await appendMsg(id, { role: 'user', author: req.user, content: text, extra: { ...(req.body.noAI === true ? { noAI: true } : {}), ...(photo ? { photo } : {}), ...(frame ? { sightSeen: true } : {}) } });
   if (req.body.noAI === true) return res.json({ message: pubMsg(mine, ch) });
   if (typing.has(id) && Date.now() - typing.get(id).at < 120e3) {
     // l'IA sta già rispondendo all'altra persona: il messaggio resta in chat e verrà letto nella prossima risposta
@@ -1734,8 +1775,12 @@ app.post('/api/chats/:id', auth, requireActivated, (req, res, next) => (req.body
   // con il riassunto: solo i messaggi non ancora riassunti (minimo gli ultimi 12), massimo 40
   const vis = chatNow.messages.filter(visibleMsg), fresh = vis.filter((m) => m.n > upto);
   const history = (fresh.length >= 12 ? fresh : vis.slice(-12)).slice(-40);
-  const messages = [{ role: 'system', content: buildSystem(req.user, ch, { chat: true, call: req.body.call === true, callMode: req.body.callMode === 'voice' ? 'voice' : 'video' }) },
+  const messages = [{ role: 'system', content: buildSystem(req.user, ch, { chat: true, sight: !!frame, call: req.body.call === true, callMode: req.body.callMode === 'voice' ? 'voice' : 'video' }) },
     ...history.map((m) => (m.role === 'user' ? { role: 'user', content: `${authorLabel(m)}: ${m.content}${m.photo ? `${m.content ? ' ' : ''}[ti ha mandato ${m.photo.kind === 'video' ? 'un video' : 'una foto'} dalla sua galleria: non puoi vederne il contenuto; reagisci con naturalezza e, se ti va, chiedi cosa c'è]` : ''}` } : { role: 'assistant', content: m.content }))];
+  if (frame && messages.length) {
+    const last = messages[messages.length - 1];
+    if (last && last.role === 'user' && typeof last.content === 'string') last.content = sightParts(last.content, frame);
+  }
   const replyId = newId();
   res.setHeader('X-Msg-Id', mine.id); res.setHeader('X-Msg-N', String(mine.n)); res.setHeader('X-Reply-Id', replyId);
 
@@ -1746,6 +1791,15 @@ app.post('/api/chats/:id', auth, requireActivated, (req, res, next) => (req.body
   const guard = new NameGuard(req.user, !nameUses(id, req.user).allow); // v8.1: niente nome ripetuto
   const isCall = req.body.call === true;
   const callBody = { model: isCall && callModelOk ? CALL_MODEL : chatModelOk ? CHAT_MODEL : CHAT_FALLBACK, messages, stream: true }; // v8.5.0: nessun tetto artificiale alla lunghezza
+  rememberVision('chat', callBody.model, messages, frame);
+  if (frame && e2eVision(req)) {
+    const reply = 'Vedo un riquadro grigio.';
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.write(reply);
+    await appendMsg(id, { id: replyId, role: 'assistant', author: ch.id, content: reply, extra: { replyTo: req.user } });
+    typing.delete(id);
+    return res.end();
+  }
   try {
     let r = await fetch(`${AI_BASE_URL}/chat/completions`, {
       method: 'POST', headers: aiHeaders(req.aiKey), signal: ctrl.signal,
@@ -1790,6 +1844,39 @@ app.post('/api/chats/:id', auth, requireActivated, (req, res, next) => (req.body
   }
   typing.delete(id);
   res.end();
+});
+
+// Un fotogramma, senza salvarlo, per la voce in tempo reale (quel servizio accetta solo audio).
+app.post('/api/chats/:id/sight', auth, requireActivated, requireKey, async (req, res) => {
+  const id = req.params.id;
+  if (!ID_RE.test(id)) return res.status(400).json({ error: 'ID non valido' });
+  const ch = getChars(req.user).find((c) => c.id === id);
+  if (!ch) return res.status(404).json({ error: 'Personaggio non trovato' });
+  let frame;
+  try { frame = parseSight(req.body && req.body.image); }
+  catch (e) { return res.status(e.status || 400).json({ error: e.message }); }
+  if (!frame) return res.status(400).json({ error: 'Nessun fotogramma' });
+  const messages = [
+    { role: 'system', content: `${BASE_RULE}\n\n${SIGHT_HINT}\nRispondi con una sola frase in italiano, solo su ciò che si vede.` },
+    { role: 'user', content: sightParts('Che cosa si vede in questo fotogramma?', frame) },
+  ];
+  const model = chatModelOk ? CHAT_MODEL : CHAT_FALLBACK;
+  rememberVision('sight', model, messages, frame);
+  res.setHeader('Cache-Control', 'no-store');
+  if (e2eVision(req)) return res.json({ note: 'Vedo un riquadro grigio.', cadenceMs: SIGHT_CADENCE_MS, continuous: false });
+  try {
+    const r = await fetch(`${AI_BASE_URL}/chat/completions`, {
+      method: 'POST', headers: aiHeaders(req.aiKey),
+      body: JSON.stringify({ model, temperature: 0.2, messages }),
+    });
+    if (!r.ok) return res.status(502).json({ error: aiErrorMsg(r.status, await r.json().catch(() => ({}))) });
+    const note = String((await r.json()).choices?.[0]?.message?.content || '').replace(/\s+/g, ' ').trim().slice(0, 400);
+    if (!note) return res.status(502).json({ error: 'Il servizio non ha descritto il fotogramma' });
+    res.json({ note, cadenceMs: SIGHT_CADENCE_MS, continuous: false });
+  } catch (e) {
+    console.error('Errore visione:', e.message);
+    res.status(502).json({ error: 'Servizio AI non raggiungibile' });
+  }
 });
 
 // ---------- v8: riassunto progressivo della chat ----------
@@ -2818,6 +2905,10 @@ app.get('/ready/nova-bionda-landmarks.json', (req, res) => {
 if (E2E_HARNESS) {
   app.get('/api/e2e/voice', (req, res) => {
     res.json({ voice: chooseXaiVoice(req.query.v, req.query.explicit === '1') });
+  });
+  app.get('/api/e2e/last-vision', (req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.json(lastVision || { hasImage: false });
   });
 }
 app.use((req, res, next) => {

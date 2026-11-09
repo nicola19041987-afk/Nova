@@ -15,7 +15,7 @@
     try {
       var q = new URLSearchParams(location.search);
       var TOKEN = q.get('refresh');
-      if (TOKEN !== '2d' && TOKEN !== '2d-face') return;
+      if (TOKEN !== '2d' && TOKEN !== '2d-face' && TOKEN !== '2d-see') return;
       var key = 'nova-refresh-' + TOKEN;
       q.delete('refresh');
       var rest = q.toString();
@@ -173,6 +173,8 @@
               <button type="button" id="call-end" class="call-btn end" title="Chiudi la chiamata" aria-label="Chiudi la chiamata">📞</button>
             </div>
           </div>
+          <video id="sight-preview" class="sight-preview" playsinline webkit-playsinline muted autoplay hidden></video>
+          <p id="sight-status" class="sight-status" hidden></p>
           <div class="stage-tools">
             <button type="button" id="call-btn" class="call-start" title="Videochiamata" aria-label="Videochiamata">📹</button>
             <button type="button" id="act-btn" title="Gesti" aria-label="Gesti">🎭</button>
@@ -498,7 +500,7 @@
     <nav class="solo-dock" id="solo-dock" hidden aria-label="Navigazione">
       <button type="button" data-dock="home" id="dock-home" aria-label="Home"><span class="dock-ic">🏠</span><span>Home</span></button>
       <button type="button" data-dock="mic" id="dock-mic" aria-label="Microfono"><span class="dock-ic">🎙️</span><span>Microfono</span></button>
-      <button type="button" data-dock="cam" id="dock-cam" aria-label="Camera"><span class="dock-ic">📷</span><span>Camera</span></button>
+      <button type="button" data-dock="cam" id="dock-cam" aria-label="Camera" aria-pressed="false"><span class="dock-ic">📷</span><span>Camera</span></button>
       <button type="button" data-dock="settings" id="dock-settings" aria-label="Impostazioni"><span class="dock-ic">⚙️</span><span>Impostazioni</span></button>
     </nav>
     <button id="home-ind" class="home-ind" type="button" aria-label="Torna alla Home"><i></i></button>
@@ -745,6 +747,7 @@
   <script src="/js/ios.js"></script>
   <script src="/js/gallery.js"></script>
   <script src="/js/presets.js"></script>
+  <script src="/js/sight.js"></script>
   <script src="/js/solo.js"></script>
   <script src="/js/mood.js"></script>
   <script src="/js/support.js"></script>

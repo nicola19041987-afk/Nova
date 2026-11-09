@@ -143,6 +143,11 @@ App.chat = {
     if (!noAI && !App.hasAi()) return App.toast('🔑 Inserisci la chiave xAI in Impostazioni (oppure usa 💬 per scrivere solo all\'altra persona)');
     this.busy = true; const ch = App.current;
     const meName = App.me.name;
+    let sight = null;
+    if (!noAI && !photo && App.sight && App.sight.active && App.sight.active()) {
+      sight = App.sight.takeFrame();
+      if (!sight) App.toast('Messaggio senza fotogramma: la camera non ha ancora un\'immagine.');
+    }
     const local = this.addMsg({ role: 'user', author: App.me.user, authorName: meName, content: text, noAI, at: new Date().toISOString(), ...(photo ? { photo: { localSrc: photo.url, localThumb: photo.thumb, kind: photo.kind, w: photo.w, h: photo.h } } : {}) });
     const ph = photo ? { photo: { gid: photo.id } } : {};
     this.scroll();
@@ -157,7 +162,7 @@ App.chat = {
     let reply = '', streamTTS = false;
     const cue = App.chat.cues();
     try {
-      const r = await App.api(`/api/chats/${ch.id}`, { method: 'POST', body: { message: text, ...ph, ...(App.call && App.call.active ? { call: true, callMode: App.call.mode || 'video' } : {}) }, ai: true, raw: true });
+      const r = await App.api(`/api/chats/${ch.id}`, { method: 'POST', body: { message: text, ...ph, ...(sight ? { sight } : {}), ...(App.call && App.call.active ? { call: true, callMode: App.call.mode || 'video' } : {}) }, ai: true, raw: true });
       if (!r.ok) {
         const j = await r.json().catch(() => ({}));
         if (j.message) this.claim(local, j.message.id); // il tuo messaggio è comunque salvato nella chat condivisa

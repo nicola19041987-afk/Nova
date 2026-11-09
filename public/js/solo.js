@@ -142,6 +142,28 @@
         const b = e.target.closest('[data-dock]'); if (!b) return;
         this.onDock(b.dataset.dock);
       });
+      const cam = $('#dock-cam');
+      if (cam) {
+        let timer = null, held = false;
+        const clearHold = () => { if (timer) { clearTimeout(timer); timer = null; } };
+        cam.addEventListener('pointerdown', (e) => {
+          if (e.button != null && e.button !== 0) return;
+          held = false; clearHold();
+          timer = setTimeout(() => {
+            timer = null; held = true;
+            if (App.sight && App.sight.active && App.sight.active()) App.sight.stop();
+            const ch = soloChar();
+            if (ch && App.current?.id !== ch.id && App.chat) App.chat.open(ch.id);
+            try { App.call.start('video'); } catch (err) { App.toast((err && err.message) || 'Videochiamata non avviata'); }
+          }, 650);
+        });
+        cam.addEventListener('pointerup', clearHold);
+        cam.addEventListener('pointercancel', clearHold);
+        cam.addEventListener('click', (e) => {
+          if (!held) return;
+          held = false; e.preventDefault(); e.stopPropagation();
+        }, true);
+      }
       const exp = $('#av-expand');
       if (exp) exp.addEventListener('click', (e) => { e.stopPropagation(); this.toggleFull(); });
       const stage = $('#stage');
@@ -213,12 +235,13 @@
       }
       if (name === 'cam') {
         const ch = soloChar(); if (!ch) return;
-        if (App.current?.id !== ch.id) App.chat.open(ch.id);
-        if (this.full || (App.call && App.call.active)) {
-          try { App.call.start('video'); } catch (e) { App.toast(e.message || 'Camera non avviata'); }
-        } else {
-          this.toggleFull(true); // modalità avatar a tutto schermo; secondo tap Camera → videochiamata
+        if (App.current?.id !== ch.id && App.chat) App.chat.open(ch.id);
+        if (App.sight && App.sight.toggle) {
+          const was = App.sight.active && App.sight.active();
+          App.sight.toggle();
+          if (was) App.toast('Camera spenta. Nova non riceve più fotogrammi.', 2500);
         }
+        else App.toast('Visione da fotocamera non disponibile');
         return;
       }
       if (name === 'settings') {

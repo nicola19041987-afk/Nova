@@ -190,6 +190,7 @@
         s.userSpeaking = false; s.waitUser = true; s.phase = 'replying'; // ottimista: "sta parlando…" appena hai finito
         s.eosAt = s.lastVoiceAt && performance.now() - s.lastVoiceAt < 3000 ? s.lastVoiceAt : performance.now() - 500;
         [App.avatarConv, App.avatarPresence].forEach((a) => a && a.breathM && a.breathM.preInhale(performance.now()));
+        if (App.sight && App.sight.onUtterance) App.sight.onUtterance();
         break;
       case 'conversation.item.input_audio_transcription.updated':
         s.live = ev.transcript || ''; if (App.call && App.call.onInterim) App.call.onInterim(s.live); break;
@@ -359,8 +360,16 @@
     sendText(t) { // messaggio scritto durante la chiamata (tastiera): lei risponde a voce
       const s = S; t = String(t || '').trim(); if (!s || !t || !s.ws || s.ws.readyState !== 1) return false;
       bargeIn(s, false); s.eosAt = performance.now(); s.phase = 'replying'; save(s, 'user', t);
-      s.ws.send(JSON.stringify({ type: 'conversation.item.create', item: { type: 'message', role: 'user', content: [{ type: 'input_text', text: t }] } }));
-      s.ws.send(JSON.stringify({ type: 'response.create' })); return true;
+      const deliver = (extra) => {
+        if (!S || S !== s || !s.ws || s.ws.readyState !== 1) return;
+        const text = extra ? `${t}\n\n${extra}` : t;
+        s.ws.send(JSON.stringify({ type: 'conversation.item.create', item: { type: 'message', role: 'user', content: [{ type: 'input_text', text }] } }));
+        s.ws.send(JSON.stringify({ type: 'response.create' }));
+      };
+      if (App.sight && App.sight.active && App.sight.active() && App.sight.noteForVoice) {
+        App.sight.noteForVoice({ force: true }).then((note) => deliver(note || '')).catch(() => deliver(''));
+      } else deliver('');
+      return true;
     },
     setMuted(v) { if (!S) return; S.muted = !!v; if (v && S.ws && S.ws.readyState === 1) S.ws.send(JSON.stringify({ type: 'input_audio_buffer.clear' })); },
     setVolume(v) { if (!S) return; S.volume = v; if (S.out) { const g = S.out.g.gain, t = ctx().currentTime; g.cancelScheduledValues(t); g.setTargetAtTime(v, t, 0.02); } },
