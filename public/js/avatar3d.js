@@ -1,4 +1,4 @@
-/* Avatar 3D realistico (GLB locale, three.js). Il 3D è il default. */
+/* 3D facoltativo (GLB locale, three.js). La foto resta il default: questo file si carica solo se l'utente sceglie 3D. */
 (function () {
   const MODEL = '/models/nova.glb';
   const FULL = { alzati: 1, siedi: 1, gira: 1, cammina: 1, stira: 1 };
@@ -31,7 +31,7 @@
     rightUpperLeg: 'Bip01_R_Thigh', rightLowerLeg: 'Bip01_R_Calf',
     blinkL: 'Bip01_LEyeBlinkTop', blinkR: 'Bip01_REyeBlinkTop',
   };
-  let view = '3d', lib = null, model = null, renderer, scene, camera, raf = 0, last = 0, acc = 0;
+  let view = 'photo', lib = null, model = null, renderer, scene, camera, raf = 0, last = 0, acc = 0;
   let readyP = null, failed = '', base = 'stand', clip = null, mouth = 0, wide = 0.5, speaking = false;
   let restoreFull = false, blinkAt = -10, nextBlink = 1.6;
   const rest = new Map();
@@ -54,29 +54,41 @@
     n.quaternion.copy(q0).multiply(new lib.THREE.Quaternion().setFromEuler(new lib.THREE.Euler(x || 0, y || 0, z || 0)));
   }
   function resetBones() { rest.forEach((q, name) => { const n = bone(name); if (n) n.quaternion.copy(q); }); }
+  function childNamed(n, re) {
+    let child = null;
+    n.traverse((c) => { if (!child && c !== n && re.test(c.name || '')) child = c; });
+    return child;
+  }
+  function aimChild(n, child, target) {
+    const THREE = lib.THREE;
+    if (!n || !child) return;
+    n.updateWorldMatrix(true, true);
+    const a = new THREE.Vector3(), b = new THREE.Vector3();
+    n.getWorldPosition(a); child.getWorldPosition(b);
+    const current = b.sub(a);
+    if (current.lengthSq() < 1e-8) return;
+    current.normalize();
+    const delta = new THREE.Quaternion().setFromUnitVectors(current, target.clone().normalize());
+    const parentQ = new THREE.Quaternion();
+    if (n.parent) n.parent.getWorldQuaternion(parentQ);
+    const worldQ = new THREE.Quaternion();
+    n.getWorldQuaternion(worldQ);
+    n.quaternion.copy(parentQ.invert().multiply(delta.multiply(worldQ)));
+    n.updateWorldMatrix(true, true);
+  }
   function dropArms() {
     const THREE = lib.THREE;
     ['leftUpperArm', 'rightUpperArm'].forEach((name) => {
       const n = bone(name); if (!n) return;
-      let child = null;
-      n.traverse((c) => { if (!child && c !== n && /Forearm/.test(c.name || '')) child = c; });
-      if (!child) return;
-      const start = n.quaternion.clone();
-      let best = start.clone(), bestY = Infinity;
-      const axis = new THREE.Vector3();
-      ['x', 'y', 'z'].forEach((ax) => {
-        for (let deg = -180; deg <= 180; deg += 10) {
-          n.quaternion.copy(start);
-          axis.set(ax === 'x' ? 1 : 0, ax === 'y' ? 1 : 0, ax === 'z' ? 1 : 0);
-          n.rotateOnAxis(axis, deg * Math.PI / 180);
-          n.updateWorldMatrix(true, true);
-          const hand = new THREE.Vector3(), shoulder = new THREE.Vector3();
-          child.getWorldPosition(hand); n.getWorldPosition(shoulder);
-          const down = hand.y - shoulder.y;
-          if (down < bestY) { bestY = down; best = n.quaternion.clone(); }
-        }
-      });
-      n.quaternion.copy(best);
+      const fore = childNamed(n, /Forearm/);
+      if (!fore) return;
+      n.updateWorldMatrix(true, true);
+      const shoulder = new THREE.Vector3(), elbow = new THREE.Vector3();
+      n.getWorldPosition(shoulder); fore.getWorldPosition(elbow);
+      const side = Math.sign(elbow.x - shoulder.x) || (name.startsWith('left') ? -1 : 1);
+      aimChild(n, fore, new THREE.Vector3(side * 0.22, -1, 0.12));
+      const hand = childNamed(fore, /Hand/);
+      if (hand) aimChild(fore, hand, new THREE.Vector3(side * 0.08, -1, 0.18));
     });
   }
   let currentLook = null;
@@ -311,9 +323,18 @@
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
     renderer.setSize(w, h, false);
     camera.aspect = w / h; camera.updateProjectionMatrix();
-    const full = document.body.classList.contains('av-full-on');
-    camera.position.set(0, full ? 0.86 : 1.42, full ? 3.6 : 1.35);
-    camera.lookAt(0, full ? 0.84 : 1.38, 0);
+    if (!model) return;
+    model.updateWorldMatrix(true, true);
+    const THREE = lib.THREE;
+    const box = new THREE.Box3().setFromObject(model);
+    const size = box.getSize(new THREE.Vector3());
+    const center = box.getCenter(new THREE.Vector3());
+    const fov = camera.fov * Math.PI / 180;
+    const fitH = (size.y / 2) / Math.tan(fov / 2);
+    const fitW = (size.x / 2) / (Math.tan(fov / 2) * Math.max(0.2, camera.aspect));
+    const dist = Math.max(fitH, fitW) * 1.22;
+    camera.position.set(center.x, center.y, box.max.z + dist);
+    camera.lookAt(center);
   }
   function frame(now) {
     raf = requestAnimationFrame(frame);
@@ -363,6 +384,7 @@
     const c = canvas(); if (!c) return;
     c.hidden = !on;
     document.body.classList.toggle('vrm-on', !!on);
+    if (!on && raf) { cancelAnimationFrame(raf); raf = 0; }
   }
   async function load() {
     if (model) { showCanvas(true); resize(); return true; }
@@ -370,7 +392,7 @@
     readyP = (async () => {
       const st = stage(), c = canvas(); if (!st || !c) throw new Error('Palco assente');
       const { THREE, GLTFLoader } = await ensureLibs();
-      renderer = new THREE.WebGLRenderer({ canvas: c, antialias: false, alpha: false, powerPreference: 'high-performance' });
+      renderer = new THREE.WebGLRenderer({ canvas: c, antialias: false, alpha: false, powerPreference: 'high-performance', preserveDrawingBuffer: true });
       renderer.setClearColor(0xe8ebf0, 1);
       renderer.outputColorSpace = THREE.SRGBColorSpace;
       scene = new THREE.Scene();
@@ -388,9 +410,9 @@
       const look = activeLook();
       if (look) { paintLook(look); applyBody(look); }
       last = 0; if (!raf) raf = requestAnimationFrame(frame);
-      status('Avatar 3D Rocketbox, aspetto approssimato (non è una foto).');
+      status('Stand-in Rocketbox Female Adult 02: non è la foto. Maglione e gonna, capelli corti.');
       return true;
-    })().catch((e) => { failed = (e && e.message) || '3D non caricato'; status(failed); showCanvas(false); readyP = null; throw e; });
+    })().catch((e) => { failed = 'Modello 3D non caricato' + (e && e.message ? ': ' + e.message : ''); status(failed); showCanvas(false); readyP = null; throw e; });
     return readyP;
   }
   function paintMenu() {

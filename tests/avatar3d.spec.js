@@ -80,7 +80,7 @@ test('niente 3D, foto bionda, tap e campo sotto, voce eve', async ({ page, brows
   expect(state.vrmHidden).toBe(true);
   expect(state.script).toBe(false);
   expect(state.view).toBe('photo');
-  expect(state.has3d).toBe(false);
+  expect(state.has3d).toBe(true);
   expect(state.pick).toBe('photo');
   expect(state.src).toContain('/api/avatars/8b4bf23923c5e90d.jpg');
   expect(state.bundled).toBe(false);

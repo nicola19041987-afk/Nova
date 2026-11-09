@@ -15,7 +15,7 @@
     try {
       var q = new URLSearchParams(location.search);
       var TOKEN = q.get('refresh');
-      if (TOKEN !== '2d' && TOKEN !== '2d-face' && TOKEN !== '2d-see' && TOKEN !== '2d-6') return;
+      if (TOKEN !== '2d' && TOKEN !== '2d-face' && TOKEN !== '2d-see' && TOKEN !== '2d-6' && TOKEN !== '2d-7') return;
       var key = 'nova-refresh-' + TOKEN;
       q.delete('refresh');
       var rest = q.toString();
@@ -322,13 +322,14 @@
           <h3>✨ Nova</h3>
           <p class="muted small">Aspetto, richieste e scorciatoie. La personalità è fissa.</p>
           <details id="avatar-fallback-panel">
-            <summary>Vista foto</summary>
+            <summary>Vista</summary>
             <label>Vista
               <select id="avatar-view">
                 <option value="photo" selected>Foto</option>
+                <option value="3d">3D (stand-in)</option>
               </select>
             </label>
-            <p id="avatar-view-status" class="muted small">Nova usa la foto. Non c’è un modello 3D da attivare.</p>
+            <p id="avatar-view-status" class="muted small">Nova usa la foto. Il 3D è un prototipo facoltativo: non è il volto della foto e non parte da solo.</p>
           </details>
           <button type="button" id="set-look-btn" class="primary block">✨ Modifica aspetto</button>
           <label>Richieste <textarea id="set-requests" rows="3" maxlength="4000" placeholder="Es. chiamami amore, parla del vino…"></textarea></label>

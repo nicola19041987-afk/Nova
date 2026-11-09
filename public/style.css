@@ -952,7 +952,8 @@ body.solo-mode.in-call .call-head-actions,body.solo-mode.in-call .call-top butto
 body.solo-mode.in-call .call-top{padding:52px 96px 0;align-items:flex-start;text-align:left;color:#fff}
 body.solo-mode.in-call.call-min:not(.simli-on) #stage{flex:0 0 42dvh!important;height:42dvh!important;max-height:42dvh!important}
 #vrm-view{display:none!important;pointer-events:none!important;visibility:hidden!important}
-body.vrm-on #avatar-canvas,body.vrm-on .av-backdrop{visibility:visible!important}
+body.vrm-on #vrm-view{display:block!important;visibility:visible!important;position:absolute;inset:0;width:100%;height:100%;z-index:4;background:#e8ebf0}
+body.vrm-on #avatar-canvas,body.vrm-on .av-backdrop{visibility:hidden!important}
 body.solo-mode #hot-btn,#hot-btn,#set-hot-btn,#call-hot{display:none!important}
 body.solo-mode #secondary-menu[open] #act-btn{display:inline-flex;align-items:center;justify-content:center}
 

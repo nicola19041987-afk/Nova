@@ -18,7 +18,13 @@
     if (c) c.hidden = true;
     const sel = document.getElementById('avatar-view');
     if (sel) {
-      [...sel.options].forEach((o) => { if (o.value === '3d' || o.value === 'video') o.remove(); });
+      [...sel.options].forEach((o) => { if (o.value === 'video') o.remove(); });
+      if (![...sel.options].some((o) => o.value === '3d')) {
+        const opt = document.createElement('option');
+        opt.value = '3d';
+        opt.textContent = '3D (stand-in)';
+        sel.appendChild(opt);
+      }
       sel.value = 'photo';
     }
     try {
@@ -27,6 +33,46 @@
         if (App.ls.get('avatarView', '') === '3d') App.ls.set('avatarView', 'photo');
       }
     } catch { /* storage assente */ }
+  }
+  function loadAvatar3d() {
+    if (window.App && App.avatar3d) return Promise.resolve();
+    if (loadAvatar3d.p) return loadAvatar3d.p;
+    loadAvatar3d.p = new Promise((res, rej) => {
+      const s = document.createElement('script');
+      s.src = '/js/avatar3d.js';
+      s.onload = () => (App.avatar3d ? res() : rej(new Error('3D non pronto')));
+      s.onerror = () => rej(new Error('Script 3D non caricato'));
+      document.body.appendChild(s);
+    }).catch((e) => { loadAvatar3d.p = null; throw e; });
+    return loadAvatar3d.p;
+  }
+  async function chooseView(next) {
+    const sel = document.getElementById('avatar-view');
+    const status = document.getElementById('avatar-view-status');
+    if (next !== '3d') {
+      if (App.avatar3d && App.avatar3d.apply) await App.avatar3d.apply('photo');
+      document.body.classList.remove('vrm-on');
+      const c = document.getElementById('vrm-view');
+      if (c) c.hidden = true;
+      if (status) status.textContent = 'Nova usa la foto.';
+      try { if (App.me && App.ls) App.ls.set('avatarViewPick', 'photo'); } catch { /* storage assente */ }
+      return;
+    }
+    if (status) status.textContent = 'Carico il 3D…';
+    try {
+      await loadAvatar3d();
+      await App.avatar3d.apply('3d');
+      if (App.avatar3d.failed && App.avatar3d.failed()) {
+        if (sel) sel.value = 'photo';
+        try { if (App.me && App.ls) App.ls.set('avatarViewPick', 'photo'); } catch { /* storage assente */ }
+        return;
+      }
+      try { if (App.me && App.ls) App.ls.set('avatarViewPick', '3d'); } catch { /* storage assente */ }
+    } catch (e) {
+      if (sel) sel.value = 'photo';
+      if (status) status.textContent = (e && e.message) || '3D non disponibile. Resta la foto.';
+      try { if (App.me && App.ls) App.ls.set('avatarViewPick', 'photo'); } catch { /* storage assente */ }
+    }
   }
   function sheetOk(c) {
     return live(c);
@@ -163,6 +209,11 @@
           if (!held) return;
           held = false; e.preventDefault(); e.stopPropagation();
         }, true);
+      }
+      const viewSel = $('#avatar-view');
+      if (viewSel && !viewSel._soloView) {
+        viewSel._soloView = true;
+        viewSel.addEventListener('change', () => { chooseView(viewSel.value); });
       }
       const exp = $('#av-expand');
       if (exp) exp.addEventListener('click', (e) => { e.stopPropagation(); this.toggleFull(); });
