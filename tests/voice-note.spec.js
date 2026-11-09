@@ -10,6 +10,8 @@ test('il PIN è chiaro, con titolo verde e Avanti', async ({ page, browserName }
   await page.locator('.login-profile').first().click();
   await expect(page.locator('#pin-submit')).toHaveText('Avanti');
   await expect(page.locator('#login-title')).toContainText('PIN');
+  await page.setViewportSize({ width: 390, height: 844 });
+  if (browserName !== 'webkit') await page.screenshot({ path: '/opt/cursor/artifacts/v2d-13-pin-390.png' });
   const field = await page.evaluate(() => {
     const s = getComputedStyle(document.getElementById('pin-input'));
     return { inputmode: document.getElementById('pin-input').getAttribute('inputmode'), border: s.borderBottomColor };
@@ -28,6 +30,7 @@ test('permesso microfono negato non invia un vocale', async ({ page, browserName
     const json = (o) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(o) });
     if (path === '/api/me') return json({ user: 'nicola', name: 'Nico', admin: true, editor: true, activated: true, consent: { activatedAt: '2026-01-01T00:00:00.000Z', phrase: 'ok' }, adult: false, adultChat: false, solo: true, soloKey: 'greta' });
     if (path === '/api/characters') return json([{ id: 'bbbbbbbbbbbbbbbb', name: 'Nova', ready: 'greta', avatar: '🍷', personality: 'x', style: '', requests: '' }]);
+    if (path === '/api/avatars/8b4bf23923c5e90d.jpg') return route.fulfill({ status: 200, contentType: 'image/jpeg', path: require('path').join(__dirname, '..', 'assets', 'ready', 'nova-bionda.jpg') });
     if (path.startsWith('/api/chats/')) return json({ epoch: 'e1', last: 1, messages: [], typing: null });
     if (path === '/api/settings') return json({ autoSave: false, allowExport: false });
     if (path === '/api/adult-status') return json({ set: false, chat: false, users: [], missing: [] });
@@ -45,11 +48,18 @@ test('permesso microfono negato non invia un vocale', async ({ page, browserName
     cancel: App.voiceNote.gesture(-90, 0, false),
     lock: App.voiceNote.gesture(0, -90, false),
     rec: App.voiceNote.gesture(-8, -8, false),
-    phone: getComputedStyle(document.getElementById('wa-voice')).display !== 'none',
-    home: !!document.getElementById('wa-home'),
+    phone: !!document.getElementById('wa-voice'),
+    home: getComputedStyle(document.getElementById('wa-home')).display !== 'none',
     video: getComputedStyle(document.getElementById('wa-video')).display !== 'none',
+    face: (document.querySelector('#wa-photo img') || {}).src || '',
   }));
-  expect(g).toEqual({ cancel: 'cancel', lock: 'lock', rec: 'record', phone: true, home: true, video: true });
+  expect(g.cancel).toBe('cancel');
+  expect(g.lock).toBe('lock');
+  expect(g.rec).toBe('record');
+  expect(g.phone).toBe(false);
+  expect(g.home).toBe(true);
+  expect(g.video).toBe(true);
+  expect(g.face).toContain('8b4bf23923c5e90d');
   await page.setViewportSize({ width: 390, height: 844 });
   await page.evaluate(() => {
     const chat = App.chat;
@@ -77,8 +87,21 @@ test('permesso microfono negato non invia un vocale', async ({ page, browserName
   expect(skin.ticks).toBe('✓✓');
   expect(skin.bg).toBe('rgb(239, 230, 216)');
   expect(skin.plus && skin.cam).toBe(true);
-  if (browserName !== 'webkit') await page.screenshot({ path: '/opt/cursor/artifacts/wa-chat-390x844.png' });
+  await page.waitForFunction(() => {
+    const img = document.querySelector('#wa-photo img');
+    return img && img.complete && img.naturalWidth > 0;
+  });
+  if (browserName !== 'webkit') await page.screenshot({ path: '/opt/cursor/artifacts/v2d-13-chat-390.png' });
+  await page.evaluate(() => {
+    App.chat.addMsg({ role: 'user', author: 'nicola', authorName: 'Nico', content: 'Nota vocale', at: new Date().toISOString(), id: 'v1', voice: { sec: 4, wave: [0.2, 0.5, 0.9, 0.4, 0.7, 0.3, 0.8, 0.6, 0.4, 0.7] } });
+  });
+  if (browserName !== 'webkit') await page.screenshot({ path: '/opt/cursor/artifacts/v2d-13-voice-390.png' });
+  await page.locator('#wa-home').click();
+  await expect(page.locator('#nh-list')).toBeVisible();
+  if (browserName !== 'webkit') await page.screenshot({ path: '/opt/cursor/artifacts/v2d-13-home-390.png' });
+  await page.locator('#dock-chat').click();
+  const voices = await page.locator('.has-voice').count();
   await page.locator('#vn-mic').dispatchEvent('pointerdown', { pointerId: 1, clientX: 300, clientY: 700, button: 0 });
   await expect(page.locator('#vn-status')).toHaveText(browserName === 'webkit' ? /non disponibile|non consentito/ : 'Microfono non consentito.');
-  await expect(page.locator('.has-voice')).toHaveCount(0);
+  await expect(page.locator('.has-voice')).toHaveCount(voices);
 });

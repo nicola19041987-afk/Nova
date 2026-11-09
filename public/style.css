@@ -717,8 +717,8 @@ input,textarea,select{background:#fff;color:var(--text);border-color:var(--line)
 body.solo-mode #legacy-tabbar{display:none!important}
 body.solo-mode #solo-dock{display:flex!important}
 body.solo-mode #solo-bar{display:none!important}
-body.solo-mode #wa-video,body.solo-mode #wa-voice{display:inline-flex!important;align-items:center;justify-content:center}
-body.solo-mode #wa-home,body.solo-mode #support-note-btn,body.solo-mode #app-refresh,body.solo-mode #who{display:none!important}
+body.solo-mode #wa-video,body.solo-mode #wa-home{display:inline-flex!important;align-items:center;justify-content:center}
+body.solo-mode #wa-voice,body.solo-mode #support-note-btn,body.solo-mode #app-refresh,body.solo-mode #who{display:none!important}
 body.solo-mode.solo-chat #solo-dock{display:none!important}
 #app-refresh{display:inline-flex!important;align-items:center;justify-content:center;width:36px;height:36px;border:0;border-radius:50%;background:#E8F1FC;color:#1E6FD9;font-size:18px;flex:0 0 auto}
 #support-form{position:relative;padding-top:8px}
@@ -752,7 +752,7 @@ body.solo-mode #stage{
   background:#E8EBF0;border-bottom:0;
   position:relative;overflow:hidden;
 }
-body.solo-mode.solo-chat #stage{display:none!important}
+body.solo-mode.solo-chat:not(.in-call) #stage{display:none!important}
 body.solo-mode.solo-chat #messages{flex:1 1 auto;max-height:none}
 body.solo-mode.solo-home:not(.in-call):not(.solo-portrait) #stage{display:none!important}
 body.solo-mode.solo-home #messages,body.solo-mode.solo-home #chat-form,body.solo-mode.solo-home #typing{display:none!important}
@@ -1103,7 +1103,18 @@ body.solo-mode #tab-conv .msg .meta,body.solo-mode #tab-conv .msg .ticks{color:#
 body.solo-mode #tab-conv .msg .ticks.read,body.solo-mode #tab-conv .msg .ticks.saved{color:#53bdeb!important}
 body.solo-mode #tab-conv .msg.typing .body{font-style:italic;color:#667781}
 body.solo-mode #chat-form.composer{background:#F0F2F5!important;border-top:0;padding:6px 6px 8px!important;gap:4px!important;align-items:flex-end}
-body.solo-mode #chat-input{border:0!important;border-radius:22px!important;background:#fff!important;min-height:40px;padding:9px 12px!important}
+body.solo-mode #chat-form.composer{flex-wrap:nowrap!important;align-items:flex-end!important}
+body.solo-mode #chat-input{width:auto!important;flex:1 1 auto!important;min-width:0;border:0!important;border-radius:22px!important;background:#fff!important;min-height:40px!important;height:40px;max-height:88px;margin:0!important;padding:9px 12px!important;line-height:22px}
+body.solo-mode #wa-video,body.solo-mode #wa-home{position:relative;z-index:3;touch-action:manipulation}
+body.solo-mode #wa-video svg,body.solo-mode #wa-home svg{pointer-events:none}
+body.solo-mode.in-call #stage{display:flex!important;position:fixed!important;inset:0!important;z-index:60;width:100vw!important;height:100dvh!important;min-height:100dvh!important;max-height:none!important;background:#0b141a!important}
+body.solo-mode.in-call .topbar,body.solo-mode.in-call #chat-form,body.solo-mode.in-call #messages,body.solo-mode.in-call #vn-hud,body.solo-mode.in-call #vn-status{display:none!important}
+body.solo-mode.in-call #simli-video{z-index:2}
+body.solo-mode.in-call #call-ui{position:absolute!important;inset:0!important;height:100%!important;z-index:5;background:linear-gradient(to bottom,rgba(0,0,0,.25),transparent 28%,transparent 62%,rgba(0,0,0,.45));pointer-events:none}
+body.solo-mode.in-call .call-top,body.solo-mode.in-call .call-bar,body.solo-mode.in-call .call-self,body.solo-mode.in-call #call-text,body.solo-mode.in-call #call-caption{pointer-events:auto}
+body.solo-mode.in-call #call-speaker,body.solo-mode.in-call #call-tovideo,body.solo-mode.in-call #call-cc,body.solo-mode.in-call #call-hot,body.solo-mode.in-call #call-hangup{display:none!important}
+body.solo-mode.in-call .call-bar{position:absolute;left:0;right:0;bottom:calc(12px + env(safe-area-inset-bottom));justify-content:center}
+body.solo-mode.in-call .call-self{touch-action:none}
 #vn-plus,#vn-cam{width:40px;height:40px;flex:0 0 40px;border:0;border-radius:50%;background:transparent!important;color:#54656f!important;font-size:28px;line-height:1;position:relative}
 #vn-cam .cam-off-line{top:6px}
 #vn-mic{background:#00a884!important;color:#fff!important}

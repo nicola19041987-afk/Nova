@@ -338,7 +338,7 @@
       const slot = $('#nh-avatar');
       if (slot) {
         slot.replaceChildren();
-        const src = ch && typeof ch.avatar === 'string' && (ch.avatar.startsWith('/') || ch.avatar.startsWith('data:')) ? ch.avatar : '';
+        const src = (ch && App.faceSrc && App.faceSrc(ch)) || '';
         if (src) {
           const img = document.createElement('img');
           img.alt = '';

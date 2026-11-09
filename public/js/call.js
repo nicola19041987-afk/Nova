@@ -87,15 +87,14 @@
     if (on) return setMode(m || mode);
     if (!App.hasAi()) return App.toast('🔑 Per la videochiamata serve la chiave xAI (Impostazioni)');
     const useRt = App.rt && App.rt.enabled();
-    if ((SR || useRt || (App.callMic && App.callMic.supported())) && !App.ls.get('micOn', false)) {
-      if (!confirm('La videochiamata usa il microfono per ascoltarti (il riconoscimento resta sul telefono / nel browser). Attivarlo?')) return;
-      App.ls.set('micOn', true); const cb = $('#set-mic'); if (cb) cb.checked = true; App.applyDevicePrefs && App.applyDevicePrefs();
-    }
+    App.ls.set('micOn', true);
     on = true; t0 = Date.now(); muted = false; everVideo = false; rt = false; camAsked = false;
     App.call.active = true; if (App.voice.isListening && App.voice.isListening()) App.voice.stop(); // v8.4.4: niente riconoscimento vocale del telefono in chiamata (suoni di attacco/stacco)
     App.audio.callSession(true); // v8.4.1: una sola sessione audio (registra + riproduce) per tutta la chiamata
     App.audio.unlock(); // dentro il tocco: sblocca l'AudioContext condiviso (in chiamata nessun <audio>/sintesi di "riscaldamento")
     App.audio.mic().catch(() => {}); // v8.4.4: il microfono si apre UNA volta, subito, dentro il tocco
+    const simliVideo = $('#simli-video');
+    if (simliVideo && (m || mode) !== 'voice') { simliVideo.muted = true; simliVideo.playsInline = true; simliVideo.setAttribute('playsinline', ''); simliVideo.play().catch(() => {}); }
     App.stageFs.exit(); stage.classList.add('fs', 'call'); document.body.classList.add('avatar-fs-on', 'in-call');
     ui.hidden = false; $('#call-name').textContent = ch.name; $('#call-caption').hidden = true;
     setMode(m || 'video'); speaker = true; $('#call-speaker').classList.add('on'); $('#call-speaker').textContent = '🔊'; if (App.tts) App.tts.volume = 1;
@@ -168,7 +167,7 @@
   }
   // v8.4.4: fotocamera nella videochiamata (anche Safari/iPhone): chiesta passando a video (getUserMedia SOLO video: il microfono
   // della chiamata resta quello, mai fermato), anteprima piccola in alto (playsinline + muted + autoplay). Se negata: istruzioni chiare.
-  let camAsked = false;
+  let camAsked = false, facing = 'user';
   function camHelp(e) {
     const n = (e && e.name) || '';
     if (!window.isSecureContext) return '📷 La fotocamera richiede una connessione sicura (https).';
@@ -190,17 +189,31 @@
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
     camAsked = true;
     try {
-      const st = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 480 }, height: { ideal: 640 } }, audio: false });
+      const st = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facing, width: { ideal: 480 }, height: { ideal: 640 } }, audio: false });
       if (!on || mode !== 'video') { st.getVideoTracks().forEach((t) => t.stop()); return; }
       cam = st;
       const v = $('#call-self'); v.muted = true; v.defaultMuted = true; v.playsInline = true; v.setAttribute('playsinline', ''); v.setAttribute('muted', ''); v.autoplay = true;
       v.srcObject = cam; v.hidden = false; v.play().catch(() => {});
       paintCam();
+      if (App.sight && App.sight.watch) App.sight.watch(cam);
       if (!App.audio.micLive()) App.audio.mic().catch(() => {});
     } catch (e) { cam = null; paintCam(); }
   }
   function toggleCam() { if (cam) return; return startCam(); }
-  function stopCam() { if (cam) cam.getVideoTracks().forEach((t) => t.stop()); cam = null; const v = $('#call-self'); if (v) { v.srcObject = null; v.hidden = true; } paintCam(); }
+  function stopCam() {
+    if (App.sight && App.sight.active && App.sight.active() && App.sight.stop) App.sight.stop();
+    if (cam) cam.getVideoTracks().forEach((t) => t.stop());
+    cam = null;
+    const v = $('#call-self'); if (v) { v.srcObject = null; v.hidden = true; }
+    paintCam();
+  }
+  async function flipCam() {
+    if (!on || mode !== 'video') return;
+    facing = facing === 'user' ? 'environment' : 'user';
+    if (!cam) return startCam();
+    stopCam();
+    await startCam();
+  }
   App.call = {
     active: false, mode: null, start, end, setMode,
     get realtime() { return rt; },
@@ -217,7 +230,20 @@
   };
   $('#call-btn').addEventListener('click', (e) => { e.stopPropagation(); start('video'); });
   $('#call-btn2').addEventListener('click', (e) => { e.stopPropagation(); start('video'); });
-  $('#wa-video').addEventListener('click', (e) => { e.stopPropagation(); start('video'); });
+  const videoBtn = $('#wa-video');
+  if (videoBtn) {
+    let videoTap = 0;
+    const openVideo = (e) => {
+      if (e.cancelable) e.preventDefault();
+      e.stopPropagation();
+      const now = Date.now();
+      if (now - videoTap < 600) return;
+      videoTap = now;
+      start('video');
+    };
+    videoBtn.addEventListener('pointerup', openVideo);
+    videoBtn.addEventListener('click', openVideo);
+  }
   const voiceBtn = $('#wa-voice');
   if (voiceBtn) voiceBtn.addEventListener('click', (e) => { e.stopPropagation(); start('voice'); });
   $('#call-tovideo').addEventListener('click', (e) => { e.stopPropagation(); setMode('video'); });
@@ -228,8 +254,32 @@
   $('#call-mute').addEventListener('click', (e) => { e.stopPropagation(); muted = !muted; if (rt) App.rt.setMuted(muted); else if (micMode === 'vad') App.callMic.setMuted(muted); state(); }); // v8.4.4: muto via software (il microfono resta aperto)
   const eb = $('#call-badge'); if (eb) eb.addEventListener('click', (e) => { e.stopPropagation(); App.toast(eb.title || eb.textContent, 5000); });
   $('#call-cam').addEventListener('click', (e) => { e.stopPropagation(); toggleCam(); });
+  const flipBtn = $('#call-flip');
+  if (flipBtn) flipBtn.addEventListener('click', (e) => { e.stopPropagation(); flipCam(); });
   const selfView = $('#call-self');
-  if (selfView) selfView.addEventListener('click', (e) => { e.stopPropagation(); if (cam) stopCam(); });
+  if (selfView) {
+    let drag = null;
+    selfView.addEventListener('pointerdown', (e) => {
+      if (!cam) return;
+      const r = selfView.getBoundingClientRect();
+      drag = { id: e.pointerId, x: e.clientX, y: e.clientY, l: r.left, t: r.top, moved: false };
+      try { selfView.setPointerCapture(e.pointerId); } catch {}
+    });
+    selfView.addEventListener('pointermove', (e) => {
+      if (!drag || e.pointerId !== drag.id) return;
+      const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+      if (Math.hypot(dx, dy) < 8) return;
+      drag.moved = true;
+      selfView.style.left = Math.max(8, drag.l + dx) + 'px';
+      selfView.style.top = Math.max(8, drag.t + dy) + 'px';
+      selfView.style.right = 'auto';
+    });
+    selfView.addEventListener('pointerup', (e) => {
+      if (!drag || e.pointerId !== drag.id) return;
+      const moved = drag.moved; drag = null;
+      if (!moved && cam) stopCam();
+    });
+  }
   $('#call-cc').addEventListener('click', (e) => { e.stopPropagation(); const v = !App.ls.get('callCaptions', true); App.ls.set('callCaptions', v); $('#call-cc').classList.toggle('on', v); if (!v) $('#call-caption').hidden = true; });
   $('#call-cc').classList.toggle('on', App.ls.get('callCaptions', true));
   // tocco sul viso: la interrompi (come in una vera chiamata) e torna ad ascoltarti

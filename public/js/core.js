@@ -111,9 +111,16 @@ App.fileToDataUrl = (file, max = 768) => new Promise((resolve, reject) => {
   };
   img.onerror = reject; img.src = url;
 });
+App.faceSrc = (ch) => {
+  const preview = ch && App.previews[ch.id] && App.previews[ch.id].dataUrl;
+  const a = preview || (ch && ch.avatar) || '';
+  if (a && (String(a).startsWith('/api/') || String(a).startsWith('data:') || String(a).startsWith('blob:') || String(a).startsWith('http'))) return a;
+  if (ch && (ch.ready === 'nova-scelta' || ch.ready === 'nova-bionda' || ch.ready === 'greta' || /^nova$/i.test(String(ch.name || '')))) return '/api/avatars/8b4bf23923c5e90d.jpg';
+  return a;
+};
 App.avatarHtml = (ch, cls = 'avatar') => {
-  const a = (App.previews[ch.id] && App.previews[ch.id].dataUrl) || ch.avatar;
-  return `<div class="${cls}">${a && (a.startsWith('/api/') || a.startsWith('data:')) ? `<img src="${esc(a)}" alt="">` : esc(a || '🙂')}</div>`;
+  const a = App.faceSrc(ch);
+  return `<div class="${cls}">${a && (String(a).startsWith('/api/') || String(a).startsWith('data:') || String(a).startsWith('blob:') || String(a).startsWith('http')) ? `<img src="${esc(a)}" alt="">` : esc(a || '🙂')}</div>`;
 };
 App.charById = (id) => App.chars.find((c) => c.id === id);
 App.loadChars = async () => { App.chars = await App.api('/api/characters'); };

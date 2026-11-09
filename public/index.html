@@ -15,7 +15,7 @@
     try {
       var q = new URLSearchParams(location.search);
       var TOKEN = q.get('refresh');
-      if (TOKEN !== '2d' && TOKEN !== '2d-face' && TOKEN !== '2d-see' && TOKEN !== '2d-6' && TOKEN !== '2d-7' && TOKEN !== '2d-8' && TOKEN !== '2d-9' && TOKEN !== '2d-10' && TOKEN !== '2d-11' && TOKEN !== '2d-12') return;
+      if (TOKEN !== '2d' && TOKEN !== '2d-face' && TOKEN !== '2d-see' && TOKEN !== '2d-6' && TOKEN !== '2d-7' && TOKEN !== '2d-8' && TOKEN !== '2d-9' && TOKEN !== '2d-10' && TOKEN !== '2d-11' && TOKEN !== '2d-12' && TOKEN !== '2d-13') return;
       var key = 'nova-refresh-' + TOKEN;
       q.delete('refresh');
       var rest = q.toString();
@@ -127,8 +127,7 @@
       <button type="button" id="app-refresh" title="Aggiorna" aria-label="Aggiorna">↻</button>
       <span id="who" class="muted small"></span>
       <button type="button" id="wa-video" class="wa-ic" title="Videochiamata" aria-label="Videochiamata"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><rect x="2.5" y="6" width="12" height="12" rx="2.2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M14.5 10.2L21 7.2v9.6l-6.5-3z" fill="currentColor"/></svg></button>
-      <button type="button" id="wa-voice" class="wa-ic" title="Chiamata vocale" aria-label="Chiamata vocale"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M7.2 3.6h2.6l1.3 3.4-1.8 1.1a11 11 0 005.6 5.6l1.1-1.8 3.4 1.3v2.6a1.6 1.6 0 01-1.6 1.6A15.2 15.2 0 015.6 5.2a1.6 1.6 0 011.6-1.6z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg></button>
-      <button type="button" id="wa-home" class="wa-ic" title="Home" aria-label="Home" hidden>🏠</button>
+      <button type="button" id="wa-home" class="wa-ic" title="Home" aria-label="Home"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M4 11.2L12 4l8 7.2V20a1 1 0 01-1 1h-5.2v-6.2H10.2V21H5a1 1 0 01-1-1z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg></button>
     </header>
 
     <div id="adult-ask" class="adult-ask" hidden>
@@ -173,6 +172,7 @@
               <button type="button" id="call-cc" class="call-btn small" title="Sottotitoli" aria-label="Sottotitoli">CC</button>
               <button type="button" id="call-hot" class="call-btn hot" title="Gesti" aria-label="Gesti" hidden>🔥</button>
               <button type="button" id="call-cam" class="call-btn" title="La tua fotocamera" aria-label="Fotocamera" aria-pressed="false">📷<span class="cam-off-line" aria-hidden="true"></span></button>
+              <button type="button" id="call-flip" class="call-btn" title="Cambia fotocamera" aria-label="Cambia fotocamera">⟳</button>
               <button type="button" id="call-mute" class="call-btn" title="Microfono" aria-label="Microfono">🎙️</button>
               <button type="button" id="call-end" class="call-btn end" title="Chiudi la chiamata" aria-label="Chiudi la chiamata">📞</button>
             </div>

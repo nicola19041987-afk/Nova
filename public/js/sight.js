@@ -2,6 +2,7 @@
    Spenta all'avvio. Nessun fotogramma salvato, niente ripresa in background dopo lo stop. */
 (function () {
   const CADENCE_MS = 8000;
+  function cadence() { return (App.call && App.call.active) ? 3000 : CADENCE_MS; }
   const MAX_EDGE = 480;
   let want = false, owns = false, current = null, timer = null, latest = null, latestAt = 0, gen = 0, busy = false, lastTx = 0;
 
@@ -47,8 +48,13 @@
       tick();
     });
   }
+  function videoEl() {
+    const call = document.getElementById('call-self');
+    if (call && !call.hidden && call.srcObject && call.videoWidth) return call;
+    return document.getElementById('sight-preview');
+  }
   function grab() {
-    const v = document.getElementById('sight-preview');
+    const v = videoEl();
     if (!v || !v.srcObject || !v.videoWidth || !v.videoHeight) return latest && Date.now() - latestAt < 20000 ? latest : null;
     const scale = Math.min(1, MAX_EDGE / Math.max(v.videoWidth, v.videoHeight));
     const w = Math.max(32, Math.round(v.videoWidth * scale));
@@ -70,7 +76,7 @@
   }
   function arm() {
     if (timer) clearInterval(timer);
-    timer = setInterval(sample, CADENCE_MS);
+    timer = setInterval(sample, cadence());
   }
   async function openStream() {
     const borrowed = borrowCall();
@@ -99,6 +105,14 @@
       want = false; release(); if (timer) { clearInterval(timer); timer = null; } ui();
     }
   }
+  function watch(stream) {
+    if (!stream) return;
+    want = true; owns = false; current = stream; ui();
+    const v = document.getElementById('sight-preview');
+    if (v && v.srcObject !== stream) { v.srcObject = stream; v.muted = true; v.hidden = true; }
+    if (timer) clearInterval(timer);
+    timer = setInterval(() => { sample(); noteForVoice().catch(() => {}); }, cadence());
+  }
   function stop() {
     want = false; gen += 1; busy = false; latest = null; latestAt = 0;
     if (timer) { clearInterval(timer); timer = null; }
@@ -108,7 +122,7 @@
     opts = opts || {};
     if (!want) return '';
     const now = Date.now();
-    if (!opts.force && (busy || now - lastTx < CADENCE_MS)) return '';
+    if (!opts.force && (busy || now - lastTx < cadence())) return '';
     const frame = grab();
     if (!frame) return '';
     const id = App.current && App.current.id;
@@ -147,9 +161,10 @@
     if (!want) return;
     if (document.hidden) {
       if (timer) { clearInterval(timer); timer = null; }
-      release();
+      if (owns) release();
       return;
     }
+    if (!owns && current) { arm(); return; }
     openStream().then(() => { if (want) arm(); }).catch(() => { stop(); });
   });
   window.addEventListener('pagehide', () => { if (want) stop(); });
@@ -158,7 +173,7 @@
     CADENCE_MS,
     active: () => want,
     toggle() { if (want) stop(); else start(); },
-    start, stop, sample,
+    start, stop, watch, sample,
     takeFrame() { return want ? grab() : null; },
     onUtterance, noteForVoice,
     tracksLive() {

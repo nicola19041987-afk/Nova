@@ -38,6 +38,11 @@ App.askConsentOnce = function () {
 };
 App.startLiveDefaults = function () {
   if (navigator.webdriver) return;
+  // In chat il microfono non ascolta da solo: è solo il tasto da tenere premuto per la nota vocale.
+  if (document.body.classList.contains('solo-mode')) {
+    if (App.voice && App.voice.isListening && App.voice.isListening() && App.voice.stop) App.voice.stop();
+    return;
+  }
   if (App.ls.get('micOn') !== false && App.voice && App.voice.start && !(App.voice.isListening && App.voice.isListening())) App.voice.start();
   if (App.ls.get('soloRtOff') === true || App.ls.get('callEngine', 'realtime') === 'classic') return;
   if (App.solo && App.solo.toggleRt && !document.body.classList.contains('solo-rt')) App.solo.toggleRt();
