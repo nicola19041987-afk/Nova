@@ -52,7 +52,7 @@
     cancelAnimationFrame(raf); if (mode === 'voice') raf = requestAnimationFrame(portrait);
     requestAnimationFrame(() => App.fitFrame && App.fitFrame());
     if (on) { state(); App.chat.header && App.chat.header(); }
-    if (App.simli) { if (on && mode === 'video') App.simli.start(); else App.simli.stop(); }
+    if (App.simli) App.simli.stop();
   }
   // Ritratto rotondo: copiato a ogni fotogramma dal canvas dell'avatar (respiro, labiale, sguardo continuano);
   // l'alone pulsa con la voce. Il canvas grande resta dietro, sfocato, a tutto schermo.
@@ -93,9 +93,9 @@
     App.audio.callSession(true); // v8.4.1: una sola sessione audio (registra + riproduce) per tutta la chiamata
     App.audio.unlock(); // dentro il tocco: sblocca l'AudioContext condiviso (in chiamata nessun <audio>/sintesi di "riscaldamento")
     App.audio.mic().catch(() => {}); // v8.4.4: il microfono si apre UNA volta, subito, dentro il tocco
-    const simliVideo = $('#simli-video');
-    if (simliVideo && (m || mode) !== 'voice') { simliVideo.muted = true; simliVideo.playsInline = true; simliVideo.setAttribute('playsinline', ''); simliVideo.play().catch(() => {}); }
+    if (App.avatarConv) App.avatarConv.setCharacter(ch);
     App.stageFs.exit(); stage.classList.add('fs', 'call'); document.body.classList.add('avatar-fs-on', 'in-call');
+    document.body.classList.remove('simli-on');
     ui.hidden = false; $('#call-name').textContent = ch.name; $('#call-caption').hidden = true;
     setMode(m || 'video'); speaker = true; $('#call-speaker').classList.add('on'); $('#call-speaker').textContent = '🔊'; if (App.tts) App.tts.volume = 1;
     $('#act-menu').hidden = true; $('#scene-menu').hidden = true;

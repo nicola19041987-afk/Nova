@@ -45,10 +45,10 @@
     if (kind === 'wait') { el.hidden = false; el.classList.remove('err'); el.textContent = line; }
     else if (kind === 'err') { el.hidden = false; el.classList.add('err'); el.textContent = line; }
   }
-  function show(on) {
-    document.body.classList.toggle('simli-on', !!on);
+  function show() {
+    document.body.classList.remove('simli-on');
     const v = document.getElementById('simli-video');
-    if (v) v.hidden = !on;
+    if (v) { v.hidden = true; try { v.pause(); } catch { /* già fermo */ } v.srcObject = null; }
   }
   function sendBytes(bytes) {
     const ws = session && session.ws;
@@ -81,13 +81,7 @@
     video.setAttribute('muted', ''); video.setAttribute('autoplay', '');
     try { const p = video.play(); if (p && p.catch) p.catch(() => {}); } catch { /* fuori dal gesto */ }
   }
-  function reveal(s) {
-    const video = document.getElementById('simli-video');
-    if (!s || s.closed || session !== s || !wanted() || !video || !video.srcObject) return;
-    s.shown = true;
-    show(true);
-    note('', 'clear');
-  }
+  function reveal() { show(); }
   function watch(video, s) {
     if (s.watched) return;
     s.watched = true;
@@ -138,49 +132,8 @@
     note(text, 'log');
   }
   async function start() {
-    if (!wanted()) return false;
-    if (session && !session.closed) return true;
-    if (starting) return starting;
-    const video = document.getElementById('simli-video');
-    if (video) prime(video);
-    note('Connessione video…', 'wait');
-    const run = (async () => {
-      let data;
-      try { data = await App.api('/api/simli/session', { method: 'POST', body: {} }); }
-      catch (e) { fail((e && e.message) || 'Video non disponibile'); return false; }
-      if (!wanted() || !data || !data.session_token) { fail(data && data.error ? data.error : 'Video non disponibile'); return false; }
-      if (!video || !window.RTCPeerConnection || !window.WebSocket) { fail('Questo browser non mostra il video'); return false; }
-      const pc = new RTCPeerConnection({ iceServers: data.iceServers || [{ urls: ['stun:stun.l.google.com:19302'] }] });
-      try { pc.addTransceiver('audio', { direction: 'recvonly' }); pc.addTransceiver('video', { direction: 'recvonly' }); } catch { /* offerta senza transceiver */ }
-      pc.addEventListener('track', (evt) => {
-        if (!evt.track || evt.track.kind !== 'video' || !evt.streams || !evt.streams[0] || session !== s) return;
-        video.srcObject = evt.streams[0];
-        prime(video);
-        watch(video, s);
-      });
-      const url = new URL('wss://api.simli.ai/compose/webrtc/p2p');
-      url.searchParams.set('session_token', data.session_token);
-      url.searchParams.set('enableSFU', 'true');
-      const ws = new WebSocket(url);
-      const s = { ws, pc, closed: false, ready: false, shown: false, watched: false, reason: '' };
-      session = s;
-      watch(video, s);
-      ws.addEventListener('message', (ev) => { onMessage(s, pc, ev.data); });
-      ws.addEventListener('close', () => { if (session === s && !s.shown) fail(s.reason || 'Video interrotto'); else if (session === s) close(); });
-      pc.addEventListener('connectionstatechange', () => { if (pc.connectionState === 'failed' && session === s) fail('Connessione video persa'); });
-      await new Promise((res, rej) => {
-        ws.addEventListener('open', res, { once: true });
-        ws.addEventListener('error', () => rej(new Error('Collegamento video non riuscito')), { once: true });
-      });
-      if (s.closed || !wanted()) { close(); return false; }
-      await pc.setLocalDescription(await pc.createOffer());
-      await iceGathered(pc);
-      if (s.closed || ws.readyState !== 1) return false;
-      ws.send(JSON.stringify({ type: pc.localDescription.type, sdp: pc.localDescription.sdp }));
-      return true;
-    })();
-    starting = run;
-    try { return await run; } catch (e) { fail((e && e.message) || 'Video non disponibile'); return false; } finally { if (starting === run) starting = null; }
+    close();
+    return false;
   }
 
   document.addEventListener('visibilitychange', () => {

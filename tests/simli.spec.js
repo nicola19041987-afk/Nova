@@ -117,7 +117,7 @@ test('la chiave Simli si salva, lo stato non la mostra, e la sessione la usa se 
   }
 });
 
-test('la videochiamata usa Simli se il token c’è e torna alla foto se manca', async ({ page }) => {
+test('la videochiamata non mostra il volto Simli e lascia la foto', async ({ page }) => {
   await page.addInitScript(() => {
     if (navigator.serviceWorker) navigator.serviceWorker.register = () => new Promise(() => {});
     window.__ws = [];
@@ -170,50 +170,22 @@ test('la videochiamata usa Simli se il token c’è e torna alla foto se manca',
   const up = await page.evaluate(async () => {
     App.call.active = true; App.call.mode = 'video';
     const started = await App.simli.start();
-    const ws = window.__ws[0];
-    const waiting = document.getElementById('simli-status').textContent;
-    ws._msg({ data: JSON.stringify({ destination: 'edge', session_id: 'abc' }) });
-    ws._msg({ data: JSON.stringify({ video_metadata: { width: 768, height: 768, fps: 25 } }) });
-    ws._msg({ data: 'SILENT' });
-    const alive = App.simli.active();
-    ws._msg({ data: 'START' });
-    const buf = new ArrayBuffer(240 * 2);
-    App.simli.feedPcm24(buf);
     const video = document.getElementById('simli-video');
-    const before = document.body.classList.contains('simli-on');
-    video.srcObject = new MediaStream();
-    video.dispatchEvent(new Event('playing'));
-    let lines = '';
-    for (const sheet of document.styleSheets) {
-      let rules; try { rules = sheet.cssRules; } catch { continue; }
-      for (const r of rules) if (r.selectorText && r.selectorText.includes('#chat-input') && r.style && r.style.maxHeight) lines = r.style.maxHeight;
-    }
-    const on = document.body.classList.contains('simli-on') && video && !video.hidden;
-    const logged = App.simli.log().map((x) => x.line).join(' ');
-    window.dispatchEvent(new Event('pagehide'));
-    return { started, waiting, alive, before, on, url: ws.url, texts: ws.texts.slice(), bytes: ws.binary.slice(), closed: !App.simli.active(), lines, key: JSON.stringify(ws.texts).includes('SIMLI'), logged };
+    const canvas = document.getElementById('avatar-canvas');
+    return {
+      started,
+      sockets: window.__ws.length,
+      on: document.body.classList.contains('simli-on'),
+      hidden: !video || video.hidden,
+      display: video ? getComputedStyle(video).display : 'none',
+      canvas: canvas && getComputedStyle(canvas).visibility !== 'hidden',
+    };
   });
-  expect(up.started).toBe(true);
-  expect(up.waiting).toBe('Connessione video…');
-  expect(up.alive).toBe(true);
-  expect(up.before).toBe(false);
-  expect(up.on).toBe(true);
-  expect(up.logged).not.toContain('tok-test');
-  expect(up.url).toContain('wss://api.simli.ai/compose/webrtc/p2p');
-  expect(up.url).toContain('session_token=tok-test');
-  expect(up.texts[0]).toContain('"type":"offer"');
-  expect(up.bytes.reduce((a, b) => a + b, 0)).toBe(320);
-  expect(up.closed).toBe(true);
-  expect(up.lines).toContain('2');
-  expect(up.key).toBe(false);
-
-  simliDown = true;
-  const down = await page.evaluate(async () => {
-    App.call.active = true; App.call.mode = 'video';
-    const started = await App.simli.start();
-    return { started, on: document.body.classList.contains('simli-on'), canvas: !!document.getElementById('avatar-canvas') };
-  });
-  expect(down.started).toBe(false);
-  expect(down.on).toBe(false);
-  expect(down.canvas).toBe(true);
+  expect(up.started).toBe(false);
+  expect(up.sockets).toBe(0);
+  expect(up.on).toBe(false);
+  expect(up.hidden).toBe(true);
+  expect(up.display).toBe('none');
+  expect(up.canvas).toBe(true);
+  expect(simliDown).toBe(false);
 });
