@@ -111,13 +111,7 @@ App.fileToDataUrl = (file, max = 768) => new Promise((resolve, reject) => {
   };
   img.onerror = reject; img.src = url;
 });
-App.OWNER_FACE = '/api/avatars/8b4bf23923c5e90d.jpg';
-App.faceSrc = (ch) => {
-  const stored = ch && typeof ch.avatar === 'string' ? ch.avatar : '';
-  if (stored.startsWith('/api/avatars/')) return stored;
-  if (ch && (ch.ready === 'nova-scelta' || ch.ready === 'nova-bionda' || ch.ready === 'greta' || /^nova$/i.test(String(ch.name || '').trim()))) return App.OWNER_FACE;
-  return stored;
-};
+App.faceSrc = (ch) => (ch && typeof ch.avatar === 'string' ? ch.avatar : '');
 App.loadPhoto = function (src) {
   if (!src) return Promise.resolve('');
   if (src.startsWith('data:') || src.startsWith('blob:')) return Promise.resolve(src);

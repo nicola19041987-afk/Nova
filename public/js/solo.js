@@ -200,7 +200,12 @@
       App.current = fresh;
       const title = $('#title');
       if (title && document.body.dataset.tab === 'conv' && !document.body.classList.contains('in-call')) title.textContent = fresh.name;
-      if (fresh.avatar !== prevAvatar && App.avatarConv && !(App.previews && App.previews[fresh.id])) App.avatarConv.setCharacter(fresh);
+      if (fresh.avatar !== prevAvatar) {
+        if (App.avatarConv && !(App.previews && App.previews[fresh.id])) App.avatarConv.setCharacter(fresh);
+        if (App.chat && App.chat.header) App.chat.header();
+        const slot = $('#nh-avatar');
+        if (slot && App.paintAvatar) App.paintAvatar(slot, fresh, 'nh-avatar-face');
+      }
       showStage(fresh);
     },
     syncSettings(ch) {

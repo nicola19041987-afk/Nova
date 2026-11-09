@@ -3780,23 +3780,6 @@ function seedBionda() {
   });
   writeJSON(CHARS_FILE(), chars);
 }
-const OWNER_FACE_FILE = '8b4bf23923c5e90d.jpg';
-const OWNER_FACE_HASH = 'a9fb3dcf94f93e488fcc9eeb3d35bce45426d263e0b263ede714a3487e049252';
-function shaFile(p) { return crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex'); }
-function ownerFaceUrl() {
-  const p = path.join(avatarDir(), OWNER_FACE_FILE);
-  try { if (fs.existsSync(p) && shaFile(p) === OWNER_FACE_HASH) return `/api/avatars/${OWNER_FACE_FILE}`; } catch {}
-  return '';
-}
-function landmarksFromBackup(id, url) {
-  for (const name of listBackups().slice().reverse()) {
-    const list = readJSON(path.join(BACKUP_DIR, name, 'shared', 'characters.json'), []);
-    const c = (Array.isArray(list) ? list : []).find((x) => x && x.id === id && x.avatar === url);
-    const lm = c && c.landmarks;
-    if (lm && lm.eyeL && lm.mouth && lm.src === url) return lm;
-  }
-  return null;
-}
 function seedScelta() {
   const src = path.join(__dirname, 'assets', 'ready', 'nova-scelta.jpg');
   if (!fs.existsSync(src)) { console.error('Foto scelta mancante in assets/ready/nova-scelta.jpg'); return ''; }
@@ -3810,7 +3793,6 @@ function seedScelta() {
     const abs = path.join(dir, name);
     try {
       if (!fs.statSync(abs).isFile()) continue;
-      if (name === OWNER_FACE_FILE) continue;
       if (crypto.createHash('sha256').update(fs.readFileSync(abs)).digest('hex') === hash) { url = `/api/avatars/${name}`; break; }
     } catch {}
   }
@@ -3819,7 +3801,6 @@ function seedScelta() {
     url = SCELTA_URL;
   }
   const lm = lmRaw ? cleanLm({ ...lmRaw, auto: true, src: url }, url) : null;
-  const ownerUrl = ownerFaceUrl();
   const list = readJSON(CHARS_FILE(), []);
   const chars = Array.isArray(list) ? list.slice() : [];
   const i = chars.findIndex((c) => c && (c.ready === 'nova-scelta' || c.id === SCELTA_ID));
@@ -3831,14 +3812,7 @@ function seedScelta() {
     if (!String(cur.name || '').trim()) cur.name = 'Nova';
     const file = (AV_RE.exec(String(cur.avatar || '')) || [])[1];
     const onDisk = file && fs.existsSync(path.join(dir, file));
-    let curHash = '';
-    try { if (onDisk) curHash = shaFile(path.join(dir, file)); } catch { curHash = ''; }
-    if (ownerUrl && cur.avatar !== ownerUrl && (!onDisk || curHash === hash)) {
-      const back = landmarksFromBackup(cur.id, ownerUrl);
-      cur.avatar = ownerUrl;
-      cur.landmarks = back || null;
-      console.log('Nova: volto ripristinato sul file già presente', ownerUrl, back ? 'con i punti del backup' : 'senza riusare i punti di un’altra foto');
-    } else if (!onDisk) {
+    if (!onDisk) {
       cur.avatar = url;
       if (lm) cur.landmarks = lm;
     }
