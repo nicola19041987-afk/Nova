@@ -12,10 +12,10 @@
   <title>Nova</title>
   <script>
   (function () {
-    var TOKEN = '2d';
     try {
       var q = new URLSearchParams(location.search);
-      if (q.get('refresh') !== TOKEN) return;
+      var TOKEN = q.get('refresh');
+      if (TOKEN !== '2d' && TOKEN !== '2d-face') return;
       var key = 'nova-refresh-' + TOKEN;
       q.delete('refresh');
       var rest = q.toString();
