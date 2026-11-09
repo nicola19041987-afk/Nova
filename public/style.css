@@ -772,9 +772,13 @@ body.solo-mode.av-full-on #stage.av-full .stage-tools{visibility:visible}
 .solo-dock button.active,.solo-dock button.on{color:var(--accent)}
 #sight-preview{position:absolute;z-index:6;width:72px;height:96px;right:8px;bottom:8px;border-radius:12px;object-fit:cover;border:2px solid #1E6FD9;background:#111;pointer-events:none}
 #sight-preview[hidden]{display:none!important}
-#sight-status{position:absolute;z-index:8;left:8px;right:108px;top:calc(env(safe-area-inset-top) + 8px);margin:0;padding:6px 8px;border-radius:10px;background:rgba(214,230,251,.96);color:#1A1D21;font-size:12px;line-height:1.35}
+#sight-live{position:absolute;z-index:7;right:86px;bottom:12px;display:flex;flex-direction:column;align-items:flex-end;gap:6px;max-width:46%}
+#sight-live[hidden]{display:none!important}
+.sight-pill{display:inline-flex;align-items:center;gap:6px;padding:3px 8px;border-radius:999px;background:rgba(26,29,33,.78);color:#fff;font-size:11px;line-height:1.2}
+.sight-pill i{width:8px;height:8px;border-radius:50%;background:#3dd68c;box-shadow:0 0 0 2px rgba(61,214,140,.35)}
+#sight-show{background:#1E6FD9;color:#fff;border:0;border-radius:8px;padding:4px 8px;font-size:12px;line-height:1.2}
+#sight-status{position:absolute;z-index:8;left:8px;right:88px;bottom:112px;top:auto;margin:0;padding:6px 8px;border-radius:10px;background:rgba(214,230,251,.96);color:#1A1D21;font-size:12px;line-height:1.35}
 #sight-status[hidden]{display:none!important}
-#sight-status button{display:block;margin:4px 0 0;background:#1E6FD9;color:#fff;border:0;border-radius:8px;padding:4px 8px;font-size:12px}
 .solo-dock button:active{color:var(--accent2)}
 #solo-settings-card textarea{width:100%;min-height:72px;border-radius:10px;border:1px solid var(--line);padding:10px;font-size:16px;background:#fff}
 #solo-settings-card .hot-btn{margin-top:8px}

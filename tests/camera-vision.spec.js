@@ -166,6 +166,31 @@ test('il tasto Camera invia un fotogramma e lo stop ferma la ripresa', async ({ 
   expect(lay.wide).toBe(true);
   expect(lay.formAbove).toBe(true);
   await page.screenshot({ path: '/opt/cursor/artifacts/sight-on-390.png' });
+  await page.waitForFunction(() => document.getElementById('sight-status').hidden, null, { timeout: 7000 });
+  await page.evaluate(() => App.sight.sample());
+  const quietBanner = await page.evaluate(() => ({
+    status: document.getElementById('sight-status').hidden,
+    live: !document.getElementById('sight-live').hidden,
+    label: document.querySelector('.sight-pill').textContent,
+    show: document.getElementById('sight-show').textContent,
+    seen: sessionStorage.getItem('nova-sight-explain'),
+    coversFace: (() => {
+      const stage = document.getElementById('stage').getBoundingClientRect();
+      const faceBottom = stage.top + stage.height * 0.45;
+      const status = document.getElementById('sight-status').getBoundingClientRect();
+      const live = document.getElementById('sight-live').getBoundingClientRect();
+      const overlaps = (r) => r.height > 1 && r.top < faceBottom && r.bottom > stage.top + 8;
+      return overlaps(status) || overlaps(live);
+    })(),
+  }));
+  expect(quietBanner.status).toBe(true);
+  expect(quietBanner.live).toBe(true);
+  expect(quietBanner.label).toContain('Ti vede');
+  expect(quietBanner.show).toContain('Faglielo vedere');
+  expect(quietBanner.seen).toBe('1');
+  expect(quietBanner.coversFace).toBe(false);
+  await page.waitForFunction(() => document.getElementById('toast').hidden, null, { timeout: 8000 });
+  await page.screenshot({ path: '/opt/cursor/artifacts/sight-banner-gone-390.png' });
 
   await page.locator('#chat-input').fill('Guarda il riquadro');
   await page.locator('#chat-form').locator('button[type="submit"]').click();
@@ -185,12 +210,14 @@ test('il tasto Camera invia un fotogramma e lo stop ferma la ripresa', async ({ 
   const off = await page.evaluate(() => ({
     pressed: document.getElementById('dock-cam').getAttribute('aria-pressed'),
     hidden: document.getElementById('sight-status').hidden,
+    liveHidden: document.getElementById('sight-live').hidden,
     ready: window.__fakeCam.getVideoTracks()[0].readyState,
     live: App.sight.tracksLive(),
     frame: App.sight.takeFrame(),
   }));
   expect(off.pressed).toBe('false');
   expect(off.hidden).toBe(true);
+  expect(off.liveHidden).toBe(true);
   expect(off.ready).toBe('ended');
   expect(off.live).toBe(0);
   expect(off.frame).toBe(null);
@@ -202,6 +229,26 @@ test('il tasto Camera invia un fotogramma e lo stop ferma la ripresa', async ({ 
   expect(second.message).toBe('senza camera');
   expect(second.sight).toBeFalsy();
   await page.screenshot({ path: '/opt/cursor/artifacts/sight-off-390.png' });
+});
+
+test('il banner si chiude al tocco e non torna nella stessa sessione', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name === 'webkit', 'il flusso camera usa captureStream di Chromium');
+  await mockApp(page);
+  await page.goto('/');
+  await page.waitForFunction(() => document.body.classList.contains('solo-mode'));
+  await page.locator('#dock-cam').click();
+  await page.waitForFunction(() => !document.getElementById('sight-status').hidden);
+  await page.locator('#sight-status').click();
+  await expect.poll(() => page.evaluate(() => document.getElementById('sight-status').hidden)).toBe(true);
+  expect(await page.evaluate(() => sessionStorage.getItem('nova-sight-explain'))).toBe('1');
+  expect(await page.evaluate(() => document.getElementById('sight-live').hidden)).toBe(false);
+  await page.locator('#dock-cam').click();
+  await page.waitForFunction(() => !App.sight.active());
+  await page.locator('#dock-cam').click();
+  await page.waitForFunction(() => App.sight.active());
+  await page.waitForTimeout(300);
+  expect(await page.evaluate(() => document.getElementById('sight-status').hidden)).toBe(true);
+  expect(await page.evaluate(() => document.getElementById('sight-live').hidden)).toBe(false);
 });
 
 test('permesso negato e nessuna fotocamera restano spenti', async ({ page }, testInfo) => {

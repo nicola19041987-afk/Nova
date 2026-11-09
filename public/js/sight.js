@@ -3,7 +3,9 @@
 (function () {
   const CADENCE_MS = 8000;
   const MAX_EDGE = 480;
-  let want = false, owns = false, current = null, timer = null, latest = null, latestAt = 0, gen = 0, busy = false, lastTx = 0;
+  const EXPLAIN_KEY = 'nova-sight-explain';
+  const EXPLAIN_MS = 4000;
+  let want = false, owns = false, current = null, timer = null, latest = null, latestAt = 0, gen = 0, busy = false, lastTx = 0, explainTimer = null;
 
   function camError(e) {
     const n = (e && e.name) || '';
@@ -13,27 +15,46 @@
     if (n === 'NotReadableError' || n === 'AbortError') return 'Fotocamera occupata da un\'altra app. Chiudila e tocca di nuovo Camera.';
     return 'Fotocamera non disponibile' + (e && e.message ? ': ' + e.message : '.');
   }
-  function ui() {
-    const b = document.getElementById('dock-cam');
-    if (b) {
-      b.classList.toggle('on', want);
-      b.setAttribute('aria-pressed', want ? 'true' : 'false');
-      b.setAttribute('aria-label', want ? 'Camera accesa: Nova riceve fotogrammi' : 'Camera');
-    }
-    const el = document.getElementById('sight-status');
-    const preview = document.getElementById('sight-preview');
-    if (preview && !want) preview.hidden = true;
-    if (!el) return;
-    el.hidden = !want;
-    if (!want) { el.textContent = ''; return; }
-    el.textContent = '';
-    const span = document.createElement('span');
-    span.textContent = 'Nova ti vede a fotogrammi, circa ogni 8 secondi. Non è un video continuo e non registra.';
-    const btn = document.createElement('button');
-    btn.type = 'button'; btn.id = 'sight-show'; btn.textContent = 'Faglielo vedere';
-    btn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); showNow(); });
-    el.append(span, btn);
+  function explainSeen() {
+  try { return sessionStorage.getItem(EXPLAIN_KEY) === '1'; } catch (e) { return false; }
+}
+function markExplain() {
+  try { sessionStorage.setItem(EXPLAIN_KEY, '1'); } catch (e) {}
+}
+function concealExplain() {
+  if (explainTimer) { clearTimeout(explainTimer); explainTimer = null; }
+  const el = document.getElementById('sight-status');
+  if (el) el.hidden = true;
+}
+function hideExplain() {
+  concealExplain();
+  markExplain();
+}
+function showExplainOnce() {
+  if (!want || explainSeen()) return;
+  const el = document.getElementById('sight-status');
+  if (!el || !el.hidden) return;
+  el.textContent = 'Nova ti vede a fotogrammi, circa ogni 8 secondi. Non è un video continuo e non registra.';
+  el.hidden = false;
+  explainTimer = setTimeout(hideExplain, EXPLAIN_MS);
+}
+function ui() {
+  const b = document.getElementById('dock-cam');
+  if (b) {
+    b.classList.toggle('on', want);
+    b.setAttribute('aria-pressed', want ? 'true' : 'false');
+    b.setAttribute('aria-label', want ? 'Camera accesa: Nova riceve fotogrammi' : 'Camera');
   }
+  const preview = document.getElementById('sight-preview');
+  const live = document.getElementById('sight-live');
+  if (preview && !want) preview.hidden = true;
+  if (live) live.hidden = !want;
+  if (!want) concealExplain();
+}
+const explainEl = document.getElementById('sight-status');
+if (explainEl) explainEl.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); hideExplain(); });
+const showBtn = document.getElementById('sight-show');
+if (showBtn) showBtn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); showNow(); });
   function release() {
     if (current && owns) current.getVideoTracks().forEach((t) => { try { t.stop(); } catch {} });
     current = null; owns = false;
@@ -100,7 +121,7 @@
   async function start() {
     if (want) return;
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { App.toast(camError({ name: 'NotFoundError' }), 7000); return; }
-    want = true; ui();
+    want = true; ui(); showExplainOnce();
     try {
       await openStream();
       if (!want) { release(); ui(); return; }
