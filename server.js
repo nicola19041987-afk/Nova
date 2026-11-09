@@ -1838,7 +1838,13 @@ app.post('/api/chats/:id', auth, requireActivated, (req, res, next) => (req.body
     const gid = String(req.body.photo.gid || '');
     if (!ID_RE.test(gid) || !(photo = galToChat(req.user, gid))) return res.status(404).json({ error: 'Foto non trovata nella Galleria' });
   }
-  if (!text && !photo) return res.status(400).json({ error: 'Messaggio vuoto' });
+  let voice = null;
+  if (req.body.voice && typeof req.body.voice === 'object') {
+    const sec = Math.round(Math.max(0, Math.min(180, Number(req.body.voice.sec) || 0)) * 10) / 10;
+    const wave = Array.isArray(req.body.voice.wave) ? req.body.voice.wave.slice(0, 32).map((n) => Math.max(0, Math.min(1, Number(n) || 0))) : [];
+    if (sec >= 0.3) voice = { sec, wave };
+  }
+  if (!text && !photo && !voice) return res.status(400).json({ error: 'Messaggio vuoto' });
   let frame = null;
   if (req.body.noAI !== true && req.body.sight) {
     try { frame = parseSight(req.body.sight); }
@@ -1849,7 +1855,7 @@ app.post('/api/chats/:id', auth, requireActivated, (req, res, next) => (req.body
   const kw = text && !photo ? await keywordMatch(req.user, text) : null;
   if (kw) return res.json({ keyword: true, token: kw, question: 'Vuoi attivare la modalità adulti? Rispondi sì o no', activated: isActivated(req.user) });
   if (!ch.memorySeededAt) seedBaseMemory(ch).catch(() => {}); // v8.5.0: in background, mai prima della risposta
-  const mine = await appendMsg(id, { role: 'user', author: req.user, content: text, extra: { ...(req.body.noAI === true ? { noAI: true } : {}), ...(photo ? { photo } : {}), ...(frame ? { sightSeen: true } : {}) } });
+  const mine = await appendMsg(id, { role: 'user', author: req.user, content: text || 'Nota vocale', extra: { ...(req.body.noAI === true ? { noAI: true } : {}), ...(photo ? { photo } : {}), ...(frame ? { sightSeen: true } : {}), ...(voice ? { voice } : {}) } });
   if (req.body.noAI === true) return res.json({ message: pubMsg(mine, ch) });
   if (typing.has(id) && Date.now() - typing.get(id).at < 120e3) {
     // l'IA sta già rispondendo all'altra persona: il messaggio resta in chat e verrà letto nella prossima risposta
@@ -1861,7 +1867,7 @@ app.post('/api/chats/:id', auth, requireActivated, (req, res, next) => (req.body
   const vis = chatNow.messages.filter(visibleMsg), fresh = vis.filter((m) => m.n > upto);
   const history = (fresh.length >= 12 ? fresh : vis.slice(-12)).slice(-40);
   const messages = [{ role: 'system', content: buildSystem(req.user, ch, { chat: true, sight: !!frame, call: req.body.call === true, callMode: req.body.callMode === 'voice' ? 'voice' : 'video' }) },
-    ...history.map((m) => (m.role === 'user' ? { role: 'user', content: `${authorLabel(m)}: ${m.content}${m.photo ? `${m.content ? ' ' : ''}[ti ha mandato ${m.photo.kind === 'video' ? 'un video' : 'una foto'} dalla sua galleria: non puoi vederne il contenuto; reagisci con naturalezza e, se ti va, chiedi cosa c'è]` : ''}` } : { role: 'assistant', content: m.content }))];
+    ...history.map((m) => (m.role === 'user' ? { role: 'user', content: `${authorLabel(m)}: ${m.voice ? '[nota vocale] ' : ''}${m.content}${m.photo ? `${m.content ? ' ' : ''}[ti ha mandato ${m.photo.kind === 'video' ? 'un video' : 'una foto'} dalla sua galleria: non puoi vederne il contenuto; reagisci con naturalezza e, se ti va, chiedi cosa c'è]` : ''}` } : { role: 'assistant', content: m.content }))];
   if (frame && messages.length) {
     const last = messages[messages.length - 1];
     if (last && last.role === 'user' && typeof last.content === 'string') last.content = sightParts(last.content, frame);
@@ -1923,7 +1929,7 @@ app.post('/api/chats/:id', auth, requireActivated, (req, res, next) => (req.body
   // la risposta viene aggiunta in coda alla versione aggiornata della chat (eventuali messaggi arrivati nel frattempo restano)
   if (reply) {
     const t = takeActionTag(reply, ch); // [azione:xxx] -> tolto dal testo, salvato come campo del messaggio (lo vedono entrambi)
-    await appendMsg(id, { id: replyId, role: 'assistant', author: ch.id, content: t.text || reply, extra: { replyTo: req.user, ...(t.action ? { action: t.action } : {}), ...(t.gesture ? { gesture: t.gesture } : {}), ...(t.mood ? { mood: t.mood } : {}), ...(req.body.call === true ? { call: true, ...(req.body.callMode === 'voice' ? { callMode: 'voice' } : {}) } : {}) } });
+    await appendMsg(id, { id: replyId, role: 'assistant', author: ch.id, content: t.text || reply, extra: { replyTo: req.user, ...(t.action ? { action: t.action } : {}), ...(t.gesture ? { gesture: t.gesture } : {}), ...(t.mood ? { mood: t.mood } : {}), ...(req.body.call === true ? { call: true, ...(req.body.callMode === 'voice' ? { callMode: 'voice' } : {}) } : {}), ...(voice ? { voiceReply: { sec: Math.min(30, Math.max(1, Math.round(String(t.text || reply).length / 14))) } } : {}) } });
     if (t.mood === 'offesa') await setMood(id, 1); // v8.1: si attenua da sola a ogni scambio
     try { if (isNovaChar(ch)) recordNovaMood(t.text || reply, t.mood); } catch (e) { console.error('Umore Nova:', e.message); }
   }

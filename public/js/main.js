@@ -72,6 +72,9 @@ App.boot = async function () {
   else if (document.body.dataset.tab !== 'account') document.body.dataset.tab = 'conv';
   if (App.roles) App.roles.apply(); if (App.home) App.home.boot();
   try { if (App.archive && App.archive.wanted()) await App.archive.open(); } catch (e) { console.warn(e); }
+  // Dopo il PIN (e a ogni avvio) la prima schermata è la chat, non i comandi.
+  if (document.body.classList.contains('solo-mode') && !document.body.classList.contains('archive-on') && App.solo && App.solo.showChat) App.solo.showChat();
+  App._fromPin = false;
 };
 // Modalità adulti (per utente): solo effetti locali sull'avatar (espressioni/movimenti più sensuali, canvas).
 App.applyAdult = function () {
@@ -112,12 +115,15 @@ App.openTab = function (t) {
   document.title = 'Nova';
   const solo = document.body.classList.contains('solo-mode');
   if (solo && t === 'chat') {
-    const ch = App.solo && App.solo.char && App.solo.char();
-    if (ch && (!App.current || App.current.id !== ch.id)) App.chat.open(ch.id);
-    $('#tab-conv').hidden = false; $('#back-btn').hidden = true;
-    $('#title').textContent = (App.current && App.current.name) || 'Nova';
-    document.body.dataset.tab = 'conv'; $('#large-title').hidden = true;
-    if (App.solo && App.solo.setDock) App.solo.setDock('home');
+    if (App.solo && App.solo.showChat) App.solo.showChat();
+    else {
+      const ch = App.solo && App.solo.char && App.solo.char();
+      if (ch && (!App.current || App.current.id !== ch.id)) App.chat.open(ch.id);
+      $('#tab-conv').hidden = false; $('#back-btn').hidden = true;
+      $('#title').textContent = (App.current && App.current.name) || 'Nova';
+      document.body.dataset.tab = 'conv';
+    }
+    $('#large-title').hidden = true;
     if (App.chat && App.chat.header) App.chat.header();
     requestAnimationFrame(() => App.fitFrame && App.fitFrame());
     window.scrollTo(0, 0); return;
@@ -131,7 +137,12 @@ App.openTab = function (t) {
   if (t === 'feed') App.feed.load().catch(() => {});
   if (t === 'calls' && App.calls) App.calls.load();
   if (t === 'images' && App.gallery) App.gallery.load();
-  if (solo && t === 'account' && App.solo && App.solo.setDock) App.solo.setDock('settings');
+  if (solo && t === 'account' && App.solo && App.solo.setDock) {
+    document.body.classList.remove('solo-chat');
+    App.solo.setDock('settings');
+    const back = $('#back-btn');
+    if (back) { back.hidden = false; back.setAttribute('aria-label', 'Torna alla chat'); }
+  }
   window.scrollTo(0, 0);
 };
 

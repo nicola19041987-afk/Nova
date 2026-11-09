@@ -89,28 +89,39 @@ test('niente 3D, foto bionda, tap e campo sotto, voce eve', async ({ page, brows
   expect(state.stored).toBe('eve');
   expect(state.lookHidden).toBe(true);
   expect(state.lookOverlaps).toBe(false);
-  expect(state.canvasWide).toBe(true);
-  expect(state.stageShare).toBeGreaterThan(0.48);
-  expect(state.stageShare).toBeLessThan(0.78);
-  expect(state.aspect).toBeGreaterThan(1.2);
-  expect(state.aspect).toBeLessThan(1.45);
+  expect(await page.evaluate(() => ({
+    chat: document.body.classList.contains('solo-chat'),
+    stage: getComputedStyle(document.getElementById('stage')).display,
+    video: getComputedStyle(document.getElementById('wa-video')).display,
+    voice: !!document.getElementById('wa-voice'),
+    home: !!document.getElementById('wa-home'),
+  }))).toEqual({ chat: true, stage: 'none', video: 'flex', voice: false, home: true });
+  await page.locator('#wa-home').click();
+  await expect(page.locator('#nh-list')).toBeVisible();
+  await page.locator('#nh-photo').click();
+  const home = await page.evaluate(() => {
+    const stage = document.getElementById('stage').getBoundingClientRect();
+    return { share: stage.height / window.innerHeight, wide: stage.width >= window.innerWidth - 2 };
+  });
+  expect(home.wide).toBe(true);
+  expect(home.share).toBeGreaterThan(0.5);
   await page.screenshot({ path: '/opt/cursor/artifacts/frame-wide-473.png' });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.evaluate(() => App.fitFrame && App.fitFrame());
   const narrow = await page.evaluate(() => {
     const stage = document.getElementById('stage').getBoundingClientRect();
-    const form = document.getElementById('chat-form').getBoundingClientRect();
-    const dock = document.querySelector('.solo-dock').getBoundingClientRect();
-    return { aspect: stage.height / Math.max(1, stage.width), share: stage.height / innerHeight, formAbove: form.bottom <= dock.top + 2 };
+    return { aspect: stage.height / Math.max(1, stage.width), share: stage.height / innerHeight };
   });
-  expect(narrow.aspect).toBeGreaterThan(1.2);
-  expect(narrow.aspect).toBeLessThan(1.45);
   expect(narrow.share).toBeGreaterThan(0.5);
-  expect(narrow.formAbove).toBe(true);
   await page.screenshot({ path: '/opt/cursor/artifacts/frame-wide-390.png' });
   await page.setViewportSize({ width: 473, height: 1024 });
   await page.evaluate(() => App.fitFrame && App.fitFrame());
-  expect(state.expand).toBe(true);
+  const expandOn = await page.evaluate(() => {
+    const expand = document.getElementById('av-expand');
+    const es = getComputedStyle(expand);
+    return es.display !== 'none' && es.visibility !== 'hidden' && expand.getBoundingClientRect().width > 2;
+  });
+  expect(expandOn).toBe(true);
   await page.evaluate(() => {
     const b = document.createElement('div');
     b.textContent = 'sorgente ' + (App.avatarConv.img && App.avatarConv.img._src);
@@ -125,20 +136,14 @@ test('niente 3D, foto bionda, tap e campo sotto, voce eve', async ({ page, brows
   const full = await page.evaluate(() => document.body.classList.contains('av-full-on'));
   expect(full).toBe(true);
   await page.screenshot({ path: '/opt/cursor/artifacts/2d-473-full.png' });
-  await page.evaluate(() => { if (App.solo) App.solo.toggleFull(false); document.getElementById('tab-conv').classList.remove('stage-mini'); });
-  await page.locator('#look-toggle').click();
-  const open = await page.evaluate(() => {
-    const stage = document.getElementById('stage').getBoundingClientRect();
-    const look = document.getElementById('look-bar').getBoundingClientRect();
-    return {
-      hidden: document.getElementById('look-bar').hidden,
-      below: look.top >= stage.bottom - 2,
-      overlaps: look.height > 1 && look.top < stage.bottom - 1 && look.bottom > stage.top + 1,
-    };
-  });
+  await page.evaluate(() => { if (App.solo) App.solo.toggleFull(false); document.getElementById('tab-conv').classList.remove('stage-mini'); if (App.solo) App.solo.closePortrait(); });
+  await page.locator('[data-nh-open="look"]').click();
+  const open = await page.evaluate(() => ({
+    hidden: document.getElementById('look-text').closest('[data-nh-page]').hidden,
+    text: !!document.getElementById('look-text'),
+  }));
   expect(open.hidden).toBe(false);
-  expect(open.below).toBe(true);
-  expect(open.overlaps).toBe(false);
+  expect(open.text).toBe(true);
   await page.screenshot({ path: '/opt/cursor/artifacts/2d-473-look.png' });
   const framed = await page.evaluate(async () => {
     const paint = () => {

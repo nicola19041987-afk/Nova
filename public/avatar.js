@@ -414,8 +414,8 @@
       return P;
     }
     frame(now) {
-      // non visibile: risparmia batteria (getClientRects funziona anche dentro contenitori position:fixed su iOS)
-      if (!this.c.isConnected || this.c.getClientRects().length === 0) return;
+      if (!this.c.isConnected) return;
+      const visible = this.c.getClientRects().length > 0;
       this._lerpLm(now);
       if (++this._frame % 30 === 0) this.resize();
       // v8.4.1: ritmo costante ~60 fotogrammi al secondo anche a riposo (prima 30: il movimento sembrava "a scatti");
@@ -548,6 +548,7 @@
       const squint = realSmile; // solo sorrisi veri (reazioni/sensuale) socchiudono gli occhi, non quelli accennati
       if (squint > 0.3) blink = Math.max(blink, squint * 0.25); // occhi che "sorridono"
 
+      if (!visible) return;
       // ---- disegno: contenimento (contain) nel riquadro, mai ritagliato; scena cinematografica facoltativa ----
       const pose = this.livePose(now, dt);
       const A = { nod: this._nod, now, S, rot: Math.max(-ROT_MAX, Math.min(ROT_MAX, sway + talkNod + rRot)), shiftX: Math.max(-SHIFT_MAX, Math.min(SHIFT_MAX, shiftX + rx)), bob: Math.max(-SHIFT_MAX, Math.min(SHIFT_MAX, bob + ry)), skew, breath, vol, smile, blink, wave, mc, M, spring, pose };

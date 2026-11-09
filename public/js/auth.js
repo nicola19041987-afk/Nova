@@ -4,6 +4,8 @@
 let pinProfile = null, pinSetup = false, needsSetupCode = false;
 App.showLogin = async function () {
   App.showView('login'); $('#login-error').textContent = ''; $('#pin-form').hidden = true;
+  const title = $('#login-title'); if (title) title.textContent = 'Nova';
+  const lead = $('#login-lead'); if (lead) lead.hidden = false;
   try {
     const { profiles, setupCode } = await App.api('/api/profiles'); needsSetupCode = setupCode;
     $('#profile-pick').hidden = false;
@@ -15,10 +17,12 @@ App.showLogin = async function () {
 function pickProfile(id, hasPin, name) {
   pinProfile = id; pinSetup = !hasPin;
   $('#profile-pick').hidden = true; $('#pin-form').hidden = false;
-  $('#pin-title').textContent = pinSetup ? `Ciao ${name}! Scegli il tuo PIN a 4 cifre (si imposta una sola volta).` : `Ciao ${name}, inserisci il PIN`;
+  const title = $('#login-title'); if (title) title.textContent = pinSetup ? 'Scegli il PIN' : 'Inserisci il PIN';
+  const lead = $('#login-lead'); if (lead) lead.hidden = true;
+  $('#pin-title').textContent = pinSetup ? `Ciao ${name}. Si imposta una sola volta.` : `Ciao ${name}.`;
   $('#pin-confirm').hidden = !pinSetup; $('#pin-confirm').required = pinSetup;
   $('#setup-code').hidden = !(pinSetup && needsSetupCode);
-  $('#pin-submit').textContent = 'Continua';
+  $('#pin-submit').textContent = 'Avanti';
   $('#pin-input').value = ''; $('#pin-confirm').value = ''; $('#pin-input').focus();
 }
 $('#profile-pick').addEventListener('click', (e) => {

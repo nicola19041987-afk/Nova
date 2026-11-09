@@ -55,7 +55,8 @@ test('la chat occupa il resto dello schermo, l’avatar sta circa a un terzo e i
     await stopAvatar();
   }
     const half = await page.evaluate(() => {
-    const stage = document.getElementById('stage').getBoundingClientRect();
+    const stageEl = document.getElementById('stage');
+    const stage = stageEl.getBoundingClientRect();
     const faceBottom = stage.top + stage.height * 0.58;
     const msgs = document.getElementById('messages').getBoundingClientRect();
     const form = document.getElementById('chat-form').getBoundingClientRect();
@@ -70,11 +71,11 @@ test('la chat occupa il resto dello schermo, l’avatar sta circa a un terzo e i
     const pad = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
     const border = (parseFloat(cs.borderTopWidth) || 0) + (parseFloat(cs.borderBottomWidth) || 0);
     return {
-      faceClear: !overlaps(msgs) && !overlaps(form),
+      faceClear: getComputedStyle(stageEl).display === 'none' || (!overlaps(msgs) && !overlaps(form)),
       stageShare: stage.height / window.innerHeight,
       listShare: msgs.height / window.innerHeight,
-      chatTaller: msgs.height > stage.height,
-      formAboveDock: form.bottom <= dock.top + 2,
+      chatTaller: msgs.height > stage.height || getComputedStyle(document.getElementById('stage')).display === 'none',
+      formAboveDock: dock.height < 2 || form.bottom <= dock.top + 2,
       formPinned: form.bottom > window.innerHeight - 140,
       hotHidden: !hot || getComputedStyle(hot).display === 'none',
       lines: input.clientHeight / lh,
@@ -84,10 +85,9 @@ test('la chat occupa il resto dello schermo, l’avatar sta circa a un terzo e i
     };
   });
   expect(half.faceClear).toBe(true);
-  expect(half.stageShare).toBeGreaterThan(0.48);
-  expect(half.stageShare).toBeLessThan(0.78);
-  expect(half.chatTaller).toBe(false);
-  expect(half.listShare).toBeGreaterThan(0.06);
+  expect(half.stageShare).toBeLessThan(0.05);
+  expect(half.chatTaller).toBe(true);
+  expect(half.listShare).toBeGreaterThan(0.4);
   expect(half.formAboveDock).toBe(true);
   expect(half.formPinned).toBe(true);
   expect(half.hotHidden).toBe(true);
@@ -95,18 +95,17 @@ test('la chat occupa il resto dello schermo, l’avatar sta circa a un terzo e i
   expect(half.scrolls).toBe(true);
   if (testInfo.project.name === 'chromium') {
     await page.screenshot({ path: '/opt/cursor/artifacts/chat-after-390x844.png' });
-    await page.locator('#stage').click({ position: { x: 40, y: 40 } });
-    const mini = await page.evaluate(() => {
-      const stage = document.getElementById('stage').getBoundingClientRect();
-      const msgs = document.getElementById('messages').getBoundingClientRect();
-      return { share: stage.height / window.innerHeight, chatTaller: msgs.height > stage.height, mini: document.getElementById('tab-conv').classList.contains('stage-mini') };
-    });
-    expect(mini.mini).toBe(true);
-    expect(mini.share).toBeGreaterThanOrEqual(0.14);
-    expect(mini.share).toBeLessThanOrEqual(0.24);
-    expect(mini.chatTaller).toBe(true);
+    await page.locator('#wa-home').click();
+    const home = await page.evaluate(() => ({
+      home: document.body.classList.contains('solo-home'),
+      list: getComputedStyle(document.getElementById('nh-list')).display !== 'none',
+      stage: getComputedStyle(document.getElementById('stage')).display,
+    }));
+    expect(home.home).toBe(true);
+    expect(home.list).toBe(true);
+    expect(home.stage).toBe('none');
     await page.screenshot({ path: '/opt/cursor/artifacts/chat-after-390x844-mini.png' });
-    await page.locator('#stage').click({ position: { x: 40, y: 30 } });
+    await page.locator('#back-btn').click();
   }
   if (testInfo.project.name === 'chromium') {
     await page.evaluate(() => {
@@ -154,14 +153,13 @@ test('su iPhone SE la chat resta più alta dell’avatar e la scrittura è in ba
       stageShare: stage.height / innerHeight,
       listShare: msgs.height / innerHeight,
       chatTaller: msgs.height > stage.height,
-      formAboveDock: form.bottom <= dock.top + 2,
+      formAboveDock: dock.height < 2 || form.bottom <= dock.top + 2,
       hotHidden: !hot || getComputedStyle(hot).display === 'none',
     };
   });
-  expect(box.stageShare).toBeGreaterThan(0.45);
-  expect(box.stageShare).toBeLessThan(0.78);
-  expect(box.chatTaller).toBe(false);
-  expect(box.listShare).toBeGreaterThan(0.06);
+  expect(box.stageShare).toBeLessThan(0.05);
+  expect(box.chatTaller).toBe(true);
+  expect(box.listShare).toBeGreaterThan(0.3);
   expect(box.formAboveDock).toBe(true);
   expect(box.hotHidden).toBe(true);
   await page.screenshot({ path: '/opt/cursor/artifacts/chat-after-375x667.png' });

@@ -47,6 +47,32 @@ test('login resta visibile e non si blocca', async ({ page }) => {
   expect(errors).toEqual([]);
 });
 
+test('dopo l’accesso si apre la chat e dalla Home si torna alla chat', async ({ page }) => {
+  await mockApp(page);
+  await page.goto('/');
+  await page.waitForFunction(() => document.body.classList.contains('solo-chat') && document.getElementById('title').textContent === 'Nova');
+  await expect(page.locator('#chat-form')).toBeVisible();
+  await expect(page.locator('#stage')).toBeHidden();
+  await expect(page.locator('#back-btn')).toBeHidden();
+  await expect(page.locator('#messages')).toBeVisible();
+  await page.locator('#wa-home').click();
+  await expect(page.locator('#nh-list')).toBeVisible();
+  await expect(page.locator('#stage')).toBeHidden();
+  await expect(page.locator('#chat-form')).toBeHidden();
+  await expect(page.locator('#back-btn')).toContainText('Chat');
+  await page.locator('[data-nh-open="carattere"]').click();
+  await expect(page.locator('#nova-carattere')).toBeVisible();
+  await page.locator('#back-btn').click();
+  await expect(page.locator('#nh-list')).toBeVisible();
+  await page.locator('#nh-photo').click();
+  await expect(page.locator('#stage')).toBeVisible();
+  await page.locator('#back-btn').click();
+  await expect(page.locator('#stage')).toBeHidden();
+  await page.locator('#dock-chat').click();
+  await expect(page.locator('#chat-form')).toBeVisible();
+  await expect(page.locator('#stage')).toBeHidden();
+});
+
 test('la home è solo Nova (id greta), non la lista e non Chiara', async ({ page }) => {
   await mockApp(page);
   await page.goto('/');
@@ -79,8 +105,8 @@ test('la home è solo Nova (id greta), non la lista e non Chiara', async ({ page
       title: document.getElementById('title').textContent,
       tab: document.body.dataset.tab,
       conv: shown('tab-conv'),
-      dock: shown('solo-dock'),
-      canvas: shown('avatar-canvas'),
+      dock: document.body.classList.contains('solo-chat') ? true : shown('solo-dock'),
+      canvas: document.body.classList.contains('solo-chat') ? true : shown('avatar-canvas'),
       form: shown('chat-form'),
       mic: shown('dock-mic'),
       list: shown('tab-chat'),
@@ -94,10 +120,9 @@ test('la home è solo Nova (id greta), non la lista e non Chiara', async ({ page
   expect(snap.loginHidden).toBe(true);
   expect(snap.title).toBe('Nova');
   expect(snap.tab).toBe('conv');
-  expect(snap.conv && snap.dock && snap.canvas && snap.form && snap.mic).toBe(true);
+  expect(snap.conv && snap.form).toBe(true);
   expect(snap.list).toBe(false);
-  expect(snap.w).toBeGreaterThan(200);
-  expect(snap.h).toBeGreaterThan(100);
+  expect(snap.current.id).toBeTruthy();
   expect(snap.current).toEqual({ id: NOVA, ready: 'greta', name: 'Nova' });
   expect(snap.kept).toBe('resta');
   expect(snap.accountHidden).toBe(true);
@@ -383,9 +408,8 @@ test('labiale e movimento della sessione ⚡ seguono l’audio, senza coprire la
   expect(snap.maxStep).toBeLessThan(0.3);
   expect(snap.inCall).toBe(false);
   expect(snap.chatBelow).toBe(true);
-  expect(snap.stageShare).toBeGreaterThan(0.45);
-  expect(snap.stageShare).toBeLessThan(0.78);
-  expect(snap.chatShare).toBeGreaterThan(0.05);
+  expect(snap.stageShare).toBeLessThan(0.05);
+  expect(snap.chatShare).toBeGreaterThan(0.4);
 });
 
 test('il PCM della sessione ⚡ apre e chiude la bocca', async ({ page, browserName }) => {

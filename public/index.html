@@ -15,7 +15,7 @@
     try {
       var q = new URLSearchParams(location.search);
       var TOKEN = q.get('refresh');
-      if (TOKEN !== '2d' && TOKEN !== '2d-face' && TOKEN !== '2d-see' && TOKEN !== '2d-6' && TOKEN !== '2d-7' && TOKEN !== '2d-8' && TOKEN !== '2d-9' && TOKEN !== '2d-10') return;
+      if (TOKEN !== '2d' && TOKEN !== '2d-face' && TOKEN !== '2d-see' && TOKEN !== '2d-6' && TOKEN !== '2d-7' && TOKEN !== '2d-8' && TOKEN !== '2d-9' && TOKEN !== '2d-10' && TOKEN !== '2d-11') return;
       var key = 'nova-refresh-' + TOKEN;
       q.delete('refresh');
       var rest = q.toString();
@@ -57,19 +57,19 @@
   <!-- LOGIN -->
   <section id="view-login" class="view login-screen" hidden>
     <div class="login-wrap">
-      <h1 class="login-wordmark">Nova</h1>
+      <h1 class="login-wordmark" id="login-title">Nova</h1>
+      <p id="login-lead" class="login-lead">Scegli il profilo</p>
       <div id="profile-pick" class="profiles"></div>
       <form id="pin-form" hidden autocomplete="off">
         <p id="pin-title" class="login-hint"></p>
-        <input id="pin-input" type="password" inputmode="numeric" pattern="\d{4}" maxlength="4" placeholder="••••" autocomplete="one-time-code" required>
-        <input id="pin-confirm" type="password" inputmode="numeric" pattern="\d{4}" maxlength="4" placeholder="Ripeti PIN" hidden>
-        <input id="setup-code" type="password" placeholder="Codice di configurazione" hidden>
-        <button class="primary login-pill" type="submit" id="pin-submit">Continua</button>
+        <input id="pin-input" class="pin-digits" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" enterkeyhint="done" autocapitalize="off" autocorrect="off" spellcheck="false" required>
+        <input id="pin-confirm" class="pin-digits" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="Ripeti" hidden autocomplete="off">
+        <input id="setup-code" type="password" placeholder="Codice di configurazione" hidden autocomplete="off">
+        <button class="primary login-pill" type="submit" id="pin-submit">Avanti</button>
         <button type="button" class="link" id="pin-back">Cambia profilo</button>
       </form>
       <p class="error" id="login-error"></p>
     </div>
-    <p class="login-foot">Solo per Nico e Luisa</p>
   </section>
 
   <!-- ATTIVAZIONE: consenso vocale (una sola volta) -->
@@ -115,16 +115,19 @@
       </div>
     </section>
 
+    <video id="sight-preview" class="sight-preview" playsinline webkit-playsinline muted autoplay hidden></video>
+    <div id="sight-live" class="sight-live" hidden></div>
+    <p id="sight-status" class="sight-status" hidden></p>
     <header class="topbar">
       <button id="home-link" class="home-link" type="button" aria-label="Torna alla Home"><svg viewBox="0 0 12 20"><path d="M10 2L2 10l8 8" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Home</span></button>
-      <button id="back-btn" class="icon" hidden aria-label="Indietro">‹</button>
+      <button id="back-btn" class="icon chat-back" hidden aria-label="Torna alla chat"><span class="chat-back-arrow" aria-hidden="true">‹</span><span class="chat-back-label">Chat</span></button>
       <div id="wa-photo" class="wa-photo" role="button" tabindex="0" aria-label="Scegli avatar"></div>
       <div class="wa-title"><h2 id="title">Nova</h2><span id="wa-status" class="wa-status">online</span></div>
       <button type="button" id="support-note-btn" class="support-ic" title="Appunto per assistenza" aria-label="Appunto per assistenza">📝</button>
       <button type="button" id="app-refresh" title="Aggiorna" aria-label="Aggiorna">↻</button>
       <span id="who" class="muted small"></span>
-      <button type="button" id="wa-voice" class="wa-ic" title="Chiamata vocale" aria-label="Chiamata vocale">📞</button>
       <button type="button" id="wa-video" class="wa-ic" title="Videochiamata" aria-label="Videochiamata">📹</button>
+      <button type="button" id="wa-home" class="wa-ic" title="Home" aria-label="Home">🏠</button>
     </header>
 
     <div id="adult-ask" class="adult-ask" hidden>
@@ -178,9 +181,6 @@
             <button type="button" id="prova-3d" aria-pressed="false" title="Prova 3D, non è la foto">Prova</button>
           </div>
           <button type="button" id="prova-wave" hidden>Saluto</button>
-          <video id="sight-preview" class="sight-preview" playsinline webkit-playsinline muted autoplay hidden></video>
-          <div id="sight-live" class="sight-live" hidden></div>
-          <p id="sight-status" class="sight-status" hidden></p>
           <div class="stage-tools">
             <button type="button" id="call-btn" class="call-start" title="Videochiamata" aria-label="Videochiamata">📹</button>
             <button type="button" id="act-btn" title="Gesti" aria-label="Gesti">🎭</button>
@@ -203,26 +203,64 @@
             <p id="scene-info"></p>
           </div>
         </div>
-        <form id="look-bar" class="look-bar" autocomplete="off" hidden>
-          <label for="nova-carattere">Carattere</label>
-          <textarea id="nova-carattere" maxlength="4000" rows="3" placeholder="Come è Nova con te: tono, modo di parlare"></textarea>
-          <label for="look-text">Vestiti e fisico</label>
-          <textarea id="look-text" maxlength="2000" rows="3" placeholder="Abbigliamento e corporatura, per il personaggio e per il 3D"></textarea>
-          <p class="muted small">La foto 2D non cambia da questo testo. Resta per il carattere e per il 3D futuro. Niente nudo o lingerie.</p>
-          <label for="nova-richieste">Richieste libere</label>
-          <textarea id="nova-richieste" maxlength="4000" rows="3" placeholder="Preferenze che Nova segue, senza scavalcare le regole"></textarea>
-          <button type="submit" id="look-apply">Salva</button>
-          <p id="look-msg" class="look-msg" role="status"></p>
-          <p id="motion-lib-menu" class="muted small"></p>
-          <details id="look-history-wrap">
-            <summary>Storico</summary>
-            <p class="muted small">Carattere</p>
+        <form id="look-bar" class="look-bar nova-home" autocomplete="off" hidden>
+          <div class="nh-page" id="nh-list" data-nh-page="list">
+            <button type="button" class="nh-profile" id="nh-photo" aria-label="Apri la foto di Nova">
+              <span class="nh-avatar" id="nh-avatar"></span>
+              <span class="nh-id"><b id="nh-name">Nova</b><small id="nh-status">online</small></span>
+              <span class="nh-chev" aria-hidden="true">›</span>
+            </button>
+            <div class="nh-group">
+              <button type="button" data-nh-open="carattere"><i class="nh-ic" style="background:#1E6FD9">✎</i><span>Carattere</span><em>›</em></button>
+              <button type="button" data-nh-open="look"><i class="nh-ic" style="background:#7A5AF8">👕</i><span>Vestiti e fisico</span><em>›</em></button>
+              <button type="button" data-nh-open="richieste"><i class="nh-ic" style="background:#F79009">✎</i><span>Richieste libere</span><em>›</em></button>
+              <button type="button" data-nh-open="gesti"><i class="nh-ic" style="background:#12B76A">✦</i><span>Gesti</span><small id="nh-gesti-count"></small><em>›</em></button>
+            </div>
+            <div class="nh-group">
+              <button type="button" data-nh-open="video"><i class="nh-ic" style="background:#12B76A">📹</i><span>Videochiamata</span><em>›</em></button>
+              <button type="button" data-nh-open="cam"><i class="nh-ic" style="background:#F04438">📷</i><span>Fotocamera</span><em>›</em></button>
+              <button type="button" data-nh-open="voce"><i class="nh-ic" style="background:#2E90FA">🎙️</i><span>Voce</span><em>›</em></button>
+            </div>
+            <div class="nh-group">
+              <button type="button" data-dock="settings" id="dock-settings"><i class="nh-ic" style="background:#667085">⚙</i><span>Impostazioni</span><em>›</em></button>
+            </div>
+          </div>
+          <div class="nh-page" data-nh-page="carattere" hidden>
+            <label for="nova-carattere">Carattere</label>
+            <textarea id="nova-carattere" maxlength="4000" rows="6" placeholder="Come è Nova con te: tono, modo di parlare"></textarea>
+            <p class="muted small">Vale per te e per questo personaggio. Non annulla le regole di base.</p>
             <ul id="char-history"></ul>
-            <p class="muted small">Vestiti e fisico</p>
+            <button type="submit" class="nh-save">Salva</button>
+          </div>
+          <div class="nh-page" data-nh-page="look" hidden>
+            <label for="look-text">Vestiti e fisico</label>
+            <textarea id="look-text" maxlength="2000" rows="6" placeholder="Abbigliamento e corporatura, per il personaggio e per il 3D"></textarea>
+            <p class="muted small">La foto 2D non cambia da questo testo. Resta per il carattere e per il 3D futuro. Niente nudo o lingerie.</p>
             <ul id="look-history"></ul>
-            <p class="muted small">Richieste libere</p>
+            <button type="submit" id="look-apply" class="nh-save">Salva</button>
+          </div>
+          <div class="nh-page" data-nh-page="richieste" hidden>
+            <label for="nova-richieste">Richieste libere</label>
+            <textarea id="nova-richieste" maxlength="4000" rows="6" placeholder="Preferenze che Nova segue, senza scavalcare le regole"></textarea>
             <ul id="req-history"></ul>
-          </details>
+            <button type="submit" class="nh-save">Salva</button>
+          </div>
+          <div class="nh-page" data-nh-page="gesti" hidden>
+            <p id="motion-lib-menu" class="nh-count"></p>
+            <p class="muted small">Si scelgono da soli, in base a quello che state facendo, senza ripetere subito lo stesso movimento.</p>
+          </div>
+          <div class="nh-page" data-nh-page="video" hidden>
+            <p class="muted small">La videochiamata parte con Nova. La tua fotocamera resta spenta finché non la accendi.</p>
+            <button type="button" id="nh-video-go" class="nh-save">Avvia videochiamata</button>
+          </div>
+          <div class="nh-page" data-nh-page="cam" hidden>
+            <button type="button" id="dock-cam" data-dock="cam" aria-label="Camera" aria-pressed="false"><span class="cam-off-line" aria-hidden="true"></span><span>Fotocamera</span></button>
+          </div>
+          <div class="nh-page" data-nh-page="voce" hidden>
+            <button type="button" id="nh-voice" class="nh-save">Voce in tempo reale</button>
+            <button type="button" id="dock-mic" data-dock="mic" aria-label="Microfono">Detta nel messaggio</button>
+          </div>
+          <p id="look-msg" class="look-msg" role="status"></p>
         </form>
         <div class="voicebar">
           <button type="button" id="call-btn2" class="call-start-wide" title="Videochiamata a voce">📹 <span>Videochiamata</span></button>
@@ -237,9 +275,16 @@
         <p id="typing" class="typing-line muted small" hidden></p>
         <form id="chat-form" class="composer">
           <textarea id="chat-input" rows="1" placeholder="Scrivi a Nova…" required></textarea>
+          <div id="vn-hud" class="vn-hud" hidden>
+            <button type="button" id="vn-cancel">Annulla</button>
+            <span id="vn-time">0:00</span>
+            <span id="vn-hint">← annulla · ↑ blocca</span>
+          </div>
+          <p id="vn-status" class="vn-status" hidden></p>
           <button type="button" id="solo-rt" hidden title="Voce in tempo reale" aria-label="Voce in tempo reale" aria-pressed="false">⚡</button>
           <button type="button" id="kb-hide" hidden title="Chiudi tastiera" aria-label="Chiudi tastiera">⌄</button>
           <button type="button" id="chat-only" title="Solo messaggio: lo vede l'altra persona, l'IA non risponde" aria-label="Solo messaggio">💬</button>
+          <button type="button" id="vn-mic" aria-label="Tieni premuto per un messaggio vocale">🎙️</button>
           <button class="primary" type="submit" aria-label="Invia (risponde il personaggio)">➤</button>
         </form>
       </div>
@@ -517,10 +562,9 @@
       <button data-tab="account"><span>Impostazioni</span></button>
     </nav>
     <nav class="solo-dock" id="solo-dock" hidden aria-label="Navigazione">
+      <button type="button" data-dock="chat" id="dock-chat" aria-label="Chat"><span class="dock-ic">💬</span><span>Chat</span></button>
+      <button type="button" data-dock="video" id="dock-video" aria-label="Video"><span class="dock-ic">📹</span><span>Video</span></button>
       <button type="button" data-dock="home" id="dock-home" aria-label="Home"><span class="dock-ic">🏠</span><span>Home</span></button>
-      <button type="button" data-dock="mic" id="dock-mic" aria-label="Microfono"><span class="dock-ic">🎙️</span><span>Microfono</span></button>
-      <button type="button" data-dock="cam" id="dock-cam" aria-label="Camera" aria-pressed="false"><span class="cam-off-line" aria-hidden="true"></span><span class="dock-ic">📷</span><span>Camera</span></button>
-      <button type="button" data-dock="settings" id="dock-settings" aria-label="Impostazioni"><span class="dock-ic">⚙️</span><span>Impostazioni</span></button>
     </nav>
     <button id="home-ind" class="home-ind" type="button" aria-label="Torna alla Home"><i></i></button>
 
@@ -751,6 +795,7 @@
   <script src="/js/auth.js"></script>
   <script src="/js/account.js"></script>
   <script src="/js/chat.js"></script>
+  <script src="/js/voice-note.js"></script>
   <script src="/js/voice.js"></script>
   <script src="/js/editor.js"></script>
   <script src="/js/docs.js"></script>

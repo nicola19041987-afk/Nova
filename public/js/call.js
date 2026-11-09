@@ -218,7 +218,8 @@
   $('#call-btn').addEventListener('click', (e) => { e.stopPropagation(); start('video'); });
   $('#call-btn2').addEventListener('click', (e) => { e.stopPropagation(); start('video'); });
   $('#wa-video').addEventListener('click', (e) => { e.stopPropagation(); start('video'); });
-  $('#wa-voice').addEventListener('click', (e) => { e.stopPropagation(); start('voice'); });
+  const voiceBtn = $('#wa-voice');
+  if (voiceBtn) voiceBtn.addEventListener('click', (e) => { e.stopPropagation(); start('voice'); });
   $('#call-tovideo').addEventListener('click', (e) => { e.stopPropagation(); setMode('video'); });
   $('#call-speaker').addEventListener('click', (e) => { e.stopPropagation(); setSpeaker(!speaker); });
   $('#call-end').addEventListener('click', (e) => { e.stopPropagation(); end(); });

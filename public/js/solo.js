@@ -125,6 +125,7 @@
     full: false,
     async boot() {
       document.body.classList.add('solo-mode');
+      if (!document.body.classList.contains('solo-home')) document.body.classList.add('solo-chat');
       drop3d();
       this.bindOnce();
       const dock = $('#solo-dock'); if (dock) dock.hidden = false;
@@ -136,6 +137,7 @@
         const title = $('#title'); if (title) title.textContent = 'Nova';
         document.body.dataset.tab = 'conv';
         this.bindOnce();
+        this.showChat();
         restoreProva();
         return;
       }
@@ -151,7 +153,7 @@
       if (App.isAdmin && App.isAdmin() && App.key() && !(App.me && App.me.serverKey)) {
         App.api('/api/solo/prep', { method: 'POST', ai: true, body: { store: true } }).catch(() => {});
       }
-      this.setDock('home');
+      this.showChat();
       showStage(ch);
       const rt = $('#solo-rt'); if (rt) rt.hidden = false;
       if (App.looks && App.looks.boot) App.looks.boot();
@@ -270,6 +272,35 @@
         const conv = $('#tab-conv'); if (conv) conv.classList.add('stage-mini');
       }
       const rt = $('#solo-rt'); if (rt) rt.addEventListener('click', () => this.toggleRt());
+      const home = $('#wa-home'); if (home) home.addEventListener('click', (e) => { e.stopPropagation(); this.showHome(); });
+      const bar = $('#look-bar');
+      if (bar) bar.addEventListener('click', (e) => {
+        if (e.target.closest('#nh-photo')) { e.preventDefault(); this.openPortrait(); return; }
+        const page = e.target.closest('[data-nh-open]');
+        if (page) { e.preventDefault(); this.showPage(page.dataset.nhOpen); return; }
+        const dock = e.target.closest('[data-dock]');
+        if (dock) { e.preventDefault(); this.onDock(dock.dataset.dock); }
+      });
+      const videoGo = $('#nh-video-go');
+      if (videoGo) videoGo.addEventListener('click', (e) => {
+        e.preventDefault();
+        const ch = soloChar();
+        if (ch && App.current?.id !== ch.id && App.chat) App.chat.open(ch.id);
+        try { App.call.start('video'); } catch (err) { App.toast((err && err.message) || 'Videochiamata non avviata'); }
+      });
+      const voice = $('#nh-voice');
+      if (voice) voice.addEventListener('click', (e) => { e.preventDefault(); this.toggleRt(); });
+      const back = $('#back-btn');
+      if (back) back.addEventListener('click', (e) => {
+        if (!document.body.classList.contains('solo-mode')) return;
+        if (document.body.classList.contains('solo-chat') && !document.body.classList.contains('solo-home') && !document.body.classList.contains('solo-portrait')) return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        if (document.body.classList.contains('solo-portrait')) { this.closePortrait(); return; }
+        if (document.body.dataset.tab === 'account') { this.showHome(); return; }
+        if (document.body.classList.contains('solo-home') && this._nh && this._nh !== 'list') { this.showPage('list'); return; }
+        this.showChat();
+      }, true);
       const photo = $('#wa-photo');
       if (photo) {
         const open = (e) => { e.preventDefault(); e.stopPropagation(); this.openPicker(); };
@@ -282,22 +313,104 @@
       window.addEventListener('resize', () => { if (document.body.classList.contains('solo-mode')) fit(); });
       document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && this.full) this.toggleFull(false); });
     },
+    paintBack(mode) {
+      const back = $('#back-btn'); if (!back) return;
+      const label = back.querySelector('.chat-back-label');
+      if (mode === 'hide') { back.hidden = true; return; }
+      back.hidden = false;
+      if (mode === 'list') {
+        back.setAttribute('aria-label', 'Torna alla chat');
+        if (label) label.textContent = 'Chat';
+      } else {
+        back.setAttribute('aria-label', 'Indietro');
+        if (label) label.textContent = '';
+      }
+    },
+    paintHome() {
+      const ch = soloChar();
+      const name = $('#nh-name'); if (name) name.textContent = (ch && ch.name) || 'Nova';
+      const st = $('#nh-status');
+      const ws = $('#wa-status');
+      if (st) st.textContent = (ws && ws.textContent) || 'online';
+      const slot = $('#nh-avatar');
+      if (slot) {
+        slot.replaceChildren();
+        const src = ch && typeof ch.avatar === 'string' && (ch.avatar.startsWith('/') || ch.avatar.startsWith('data:')) ? ch.avatar : '';
+        if (src) {
+          const img = document.createElement('img');
+          img.alt = '';
+          img.src = src;
+          slot.appendChild(img);
+        } else slot.textContent = ((ch && ch.name) || 'N').slice(0, 1);
+      }
+      const count = window.MotionLib && MotionLib.count;
+      const g = $('#nh-gesti-count'); if (g) g.textContent = count ? String(count) : '';
+      this.showPage('list');
+    },
+    showPage(name) {
+      const page = name || 'list';
+      this._nh = page;
+      document.querySelectorAll('#look-bar [data-nh-page]').forEach((el) => { el.hidden = el.dataset.nhPage !== page; });
+      const titles = { carattere: 'Carattere', look: 'Vestiti e fisico', richieste: 'Richieste libere', gesti: 'Gesti', video: 'Videochiamata', cam: 'Fotocamera', voce: 'Voce' };
+      const title = $('#title');
+      const ch = soloChar();
+      if (title && document.body.classList.contains('solo-home') && !document.body.classList.contains('in-call')) title.textContent = titles[page] || (ch && ch.name) || 'Nova';
+      if (!document.body.classList.contains('solo-portrait')) this.paintBack(page === 'list' ? 'list' : 'page');
+    },
+    openPortrait() {
+      document.body.classList.add('solo-portrait');
+      this.paintBack('page');
+      requestAnimationFrame(fit);
+    },
+    closePortrait() {
+      document.body.classList.remove('solo-portrait');
+      if (this.full) this.toggleFull(false);
+      this.showPage(this._nh || 'list');
+      requestAnimationFrame(fit);
+    },
+    showChat() {
+      document.body.classList.add('solo-chat');
+      document.body.classList.remove('solo-home', 'solo-portrait');
+      if (this.full) this.toggleFull(false);
+      const conv = $('#tab-conv'); if (conv) conv.hidden = false;
+      ['tab-account', 'tab-chat', 'tab-calls', 'tab-images', 'tab-feed'].forEach((id) => { const el = document.getElementById(id); if (el) el.hidden = true; });
+      document.body.dataset.tab = 'conv';
+      const ch = soloChar();
+      const title = $('#title'); if (title) title.textContent = (ch && ch.name) || 'Nova';
+      const bar = $('#look-bar'); if (bar) bar.hidden = true;
+      this.paintBack('hide');
+      this.setDock('chat');
+      requestAnimationFrame(fit);
+    },
+    showHome() {
+      document.body.classList.add('solo-home');
+      document.body.classList.remove('solo-chat', 'solo-portrait');
+      if (this.full) this.toggleFull(false);
+      const conv = $('#tab-conv'); if (conv) conv.hidden = false;
+      const acc = $('#tab-account'); if (acc) acc.hidden = true;
+      const list = $('#tab-chat'); if (list) list.hidden = true;
+      const calls = $('#tab-calls'); if (calls) calls.hidden = true;
+      const images = $('#tab-images'); if (images) images.hidden = true;
+      document.body.dataset.tab = 'conv';
+      const bar = $('#look-bar'); if (bar) bar.hidden = false;
+      this.paintHome();
+      this.setDock('home');
+      requestAnimationFrame(fit);
+    },
     setDock(name) {
-      document.querySelectorAll('#solo-dock [data-dock]').forEach((b) => b.classList.toggle('active', b.dataset.dock === name));
+      document.querySelectorAll('[data-dock]').forEach((b) => b.classList.toggle('active', b.dataset.dock === name));
     },
     onDock(name) {
       this.setDock(name);
+      if (name === 'chat') { this.showChat(); return; }
+      if (name === 'video') {
+        if (!document.body.classList.contains('solo-home')) this.showHome();
+        this.showPage('video');
+        this.setDock('video');
+        return;
+      }
       if (name === 'home') {
-        if (this.full) this.toggleFull(false);
-        // Il thread è già aperto: openTab mostra la conversazione senza richiamare chat.open, che svuoterebbe #messages.
-        App.openTab('chat');
-        const conv = $('#tab-conv'); if (conv) conv.hidden = false;
-        const acc = $('#tab-account'); if (acc) acc.hidden = true;
-        const list = $('#tab-chat'); if (list) list.hidden = true;
-        const calls = $('#tab-calls'); if (calls) calls.hidden = true;
-        const images = $('#tab-images'); if (images) images.hidden = true;
-        document.body.dataset.tab = 'conv';
-        requestAnimationFrame(fit);
+        this.showHome();
         return;
       }
       if (name === 'mic') {
@@ -324,10 +437,12 @@
       }
       if (name === 'settings') {
         if (this.full) this.toggleFull(false);
+        document.body.classList.remove('solo-chat');
         this.syncSettings(soloChar());
         App.openTab('account');
         $('#tab-conv').hidden = true;
         document.body.dataset.tab = 'account';
+        this.paintBack('page');
       }
     },
     toggleFull(force) {

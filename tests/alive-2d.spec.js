@@ -45,6 +45,8 @@ test('la foto 2D respira e il 3D non parte', async ({ page }, testInfo) => {
   await mockPhoto(page);
   await page.goto('/');
   await page.waitForFunction(() => document.body.classList.contains('solo-mode') && App.avatarConv && App.avatarConv.img && App.avatarConv.img.naturalWidth > 0);
+  await page.locator('#wa-home').click();
+  await page.locator('#nh-photo').click();
   await page.waitForTimeout(400);
   expect(await page.evaluate(() => App.ls.get('provaView', ''))).toBe('2d');
   expect(await page.evaluate(() => getComputedStyle(document.getElementById('prova-toggle')).display)).toBe('none');

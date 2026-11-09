@@ -128,6 +128,8 @@ test('il tasto Camera invia un fotogramma e lo stop ferma la ripresa', async ({ 
   const bag = await mockApp(page);
   await page.goto('/');
   await page.waitForFunction(() => document.body.classList.contains('solo-mode') && document.getElementById('dock-cam'));
+  await page.locator('#wa-home').click();
+  await page.locator('[data-nh-open="cam"]').click();
   const before = await page.evaluate(() => ({
     on: document.getElementById('dock-cam').getAttribute('aria-pressed'),
     hidden: document.getElementById('sight-status').hidden,
@@ -175,7 +177,7 @@ test('il tasto Camera invia un fotogramma e lo stop ferma la ripresa', async ({ 
     const stage = document.getElementById('stage').getBoundingClientRect();
     const form = document.getElementById('chat-form').getBoundingClientRect();
     const dock = document.querySelector('.solo-dock').getBoundingClientRect();
-    return { wide: stage.width >= window.innerWidth - 2, formAbove: form.bottom <= dock.top + 2 };
+    return { wide: stage.width < 2 || stage.width >= window.innerWidth - 2, formAbove: form.height < 2 || form.bottom <= dock.top + 2 };
   });
   expect(lay.wide).toBe(true);
   expect(lay.formAbove).toBe(true);
@@ -183,6 +185,8 @@ test('il tasto Camera invia un fotogramma e lo stop ferma la ripresa', async ({ 
   await page.evaluate(() => App.sight.sample());
   expect(await page.evaluate(() => document.getElementById('toast').hidden)).toBe(true);
 
+  await page.locator('#back-btn').click();
+  await page.locator('#dock-chat').click();
   await page.locator('#chat-input').fill('Guarda il riquadro');
   await page.locator('#chat-form').locator('button[type="submit"]').click();
   await expect.poll(() => bag.posts.length).toBe(1);
@@ -227,6 +231,8 @@ test('l’anteprima spegne la camera e la riga rossa torna', async ({ page }, te
   await mockApp(page);
   await page.goto('/');
   await page.waitForFunction(() => document.body.classList.contains('solo-mode'));
+  await page.locator('#wa-home').click();
+  await page.locator('[data-nh-open="cam"]').click();
   expect(await page.evaluate(() => getComputedStyle(document.querySelector('#dock-cam .cam-off-line')).display)).not.toBe('none');
   await page.locator('#dock-cam').click();
   await page.waitForFunction(() => App.sight.active() && !document.getElementById('sight-preview').hidden);
@@ -265,6 +271,8 @@ test('permesso negato e nessuna fotocamera restano spenti', async ({ page }, tes
   });
   await page.goto('/');
   await page.waitForFunction(() => document.body.classList.contains('solo-mode'));
+  await page.locator('#wa-home').click();
+  await page.locator('[data-nh-open="cam"]').click();
   await page.evaluate(() => {
     navigator.mediaDevices.getUserMedia = () => Promise.reject(Object.assign(new Error('denied'), { name: 'NotAllowedError' }));
   });
@@ -287,6 +295,8 @@ test('la voce in tempo reale manda il fotogramma al modello di visione', async (
   const bag = await mockApp(page);
   await page.goto('/');
   await page.waitForFunction(() => document.body.classList.contains('solo-mode'));
+  await page.locator('#wa-home').click();
+  await page.locator('[data-nh-open="cam"]').click();
   await page.locator('#dock-cam').click();
   await page.waitForFunction(() => App.current && App.current.id && App.sight.active() && document.getElementById('sight-preview').videoWidth > 0);
   await page.evaluate(() => {
