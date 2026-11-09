@@ -111,11 +111,10 @@ App.fileToDataUrl = (file, max = 768) => new Promise((resolve, reject) => {
   };
   img.onerror = reject; img.src = url;
 });
+App.OWNER_FACE = '/api/avatars/8b4bf23923c5e90d.jpg';
 App.faceSrc = (ch) => {
-  const preview = ch && App.previews[ch.id] && App.previews[ch.id].dataUrl;
-  const a = preview || (ch && ch.avatar) || '';
-  if (a && (String(a).startsWith('/api/') || String(a).startsWith('data:') || String(a).startsWith('blob:') || String(a).startsWith('http'))) return a;
-  if (ch && (ch.ready === 'nova-scelta' || ch.ready === 'nova-bionda' || ch.ready === 'greta' || /^nova$/i.test(String(ch.name || '')))) return '/api/avatars/8b4bf23923c5e90d.jpg';
+  if (ch && (ch.ready === 'nova-scelta' || ch.ready === 'nova-bionda' || ch.ready === 'greta' || /^nova$/i.test(String(ch.name || '').trim()))) return App.OWNER_FACE;
+  const a = (ch && ch.avatar) || '';
   return a;
 };
 App.avatarHtml = (ch, cls = 'avatar') => {

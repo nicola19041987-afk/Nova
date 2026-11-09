@@ -15,4 +15,11 @@ test('la libreria ha almeno 509 movimenti con nomi unici', () => {
   expect(b.id).not.toBe(a.id);
   expect(lib.pick('speak', 50, []).groups).toContain('speak');
   expect(lib.pick('sad', 50, []).groups).toContain('sad');
+  const think = lib.get('sguardo-alto-media-naturale-media');
+  expect(think.gazeX).toBeGreaterThan(0.3);
+  expect(think.gazeY).toBeLessThan(0);
+  const listen = lib.get('ascolto-media-naturale-media');
+  const nod = lib.get('cenno-si-media-naturale-media');
+  expect(Math.abs(listen.sway)).toBeLessThan(Math.abs(nod.sway) + 0.02);
+  expect(listen.sway).toBeLessThan(0.005);
 });

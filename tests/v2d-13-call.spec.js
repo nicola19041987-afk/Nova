@@ -61,6 +61,8 @@ test('il video in testata apre la chiamata a schermo intero', async ({ page, bro
       self: !!document.getElementById('call-self'),
       phone: !!document.getElementById('wa-voice'),
       house: getComputedStyle(document.getElementById('wa-home')).display !== 'none',
+      face: (App.avatarConv.img && App.avatarConv.img._src) || '',
+      wide: document.getElementById('avatar-canvas').getBoundingClientRect().width >= window.innerWidth - 2,
     };
   });
   expect(call.stage).not.toBe('none');
@@ -71,5 +73,7 @@ test('il video in testata apre la chiamata a schermo intero', async ({ page, bro
   expect(call.mute && call.end && call.flip && call.self).toBe(true);
   expect(call.phone).toBe(false);
   expect(call.house).toBe(true);
-  await page.screenshot({ path: '/opt/cursor/artifacts/v2d-13-call-390.png' });
+  expect(call.face).toContain('8b4bf23923c5e90d');
+  expect(call.wide).toBe(true);
+  await page.screenshot({ path: '/opt/cursor/artifacts/v2d-16-call-390.png' });
 });

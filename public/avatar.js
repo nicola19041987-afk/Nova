@@ -103,9 +103,10 @@
       if (ch.appearance && ch.appearance.colors) this.setColors(ch.appearance.colors);
       this.framing = (ch.appearance && ch.appearance.framing) || 'ritratto';
       this.setDistance(ch.frameDist == null ? 0.75 : ch.frameDist, true);
+      const src = (window.App && App.faceSrc) ? App.faceSrc(ch) : ch.avatar;
       const ff = ch.frameFill;
-      if (ff && ff.url && !ff.off && ff.src === ch.avatar && ff.landmarks && ff.landmarks.eyeL) { this.lm = JSON.parse(JSON.stringify(ff.landmarks)); this.setImage(ff.url); }
-      else this.setImage(ch.avatar);
+      if (ff && ff.url && !ff.off && ff.src === src && ff.landmarks && ff.landmarks.eyeL) { this.lm = JSON.parse(JSON.stringify(ff.landmarks)); this.setImage(ff.url); }
+      else this.setImage(src);
       if (window.App && App.frame && this.c && this.c.id === 'avatar-canvas') App.frame.check(ch);
     }
     // v8.4.1: distanza dalla camera (0 = vicina come in v8.4, 1 = lontana: testa ~18% dell'altezza); passaggio morbido
@@ -655,9 +656,12 @@
     // Il palco vero mostra l'intero ritratto (testa e jeans). I test fuori da #stage tengono il vecchio cover.
     soloCover(box, E) {
       if (this.c && this.c.parentElement && this.c.parentElement.id === 'stage') {
-        const fit = Math.min(box.w / Math.max(1, E.w), box.h / Math.max(1, E.h));
+        // Riempie lo schermo in larghezza e in altezza, partendo dalla testa: si vedono testa e jeans.
+        const fit = Math.max(box.w / Math.max(1, E.w), box.h / Math.max(1, E.h));
         const W = E.w * fit, H = E.h * fit;
-        const cl = -(box.w - W) / 2, ct = -(box.h - H) / 2;
+        const cl = Math.max(0, (W - box.w) / 2);
+        const ovh = Math.max(0, H - box.h);
+        const ct = Math.min(ovh, H * 0.02);
         this._headFrac = 0.22;
         return { fit, ox: box.x - cl - E.x0 * fit, oy: box.y - ct - E.y0 * fit };
       }
@@ -761,7 +765,7 @@
         // più un leggero "sollevarsi" mentre parla; solo verticale, ancorato in basso: la cornice resta ferma, niente ondeggiamento laterale
         const pose = A.pose || {};
         const libBreath = still && !reduce && this._lib ? this._lib.breath : 1;
-        const pre = this._preBreath && now - this._preBreath < 900 ? 1.55 : 1;
+        const pre = this._preBreath && now - this._preBreath < 1100 ? 1.7 : 1;
         const breathY = still
           ? (reduce ? 1 : 1 + 0.028 * libBreath * pre * (0.5 + 0.5 * Math.max(-1, Math.min(1, pose.breath || 0))))
           : 1 + 0.016 * (0.5 + 0.5 * (pose.breath || 0));
@@ -775,8 +779,8 @@
         const pivotY = still ? my : base;
         const lib = still && !reduce ? this._lib : null;
         const listen = this.motionContext && this.motionContext() === 'listen';
-        const baseSway = listen ? 0.008 : 0.035;
-        const nod = this.speaking ? Math.sin(now / 280) * Math.min(0.6, this.mouth || 0) * 0.04 : 0;
+        const baseSway = listen ? 0.006 : 0.035;
+        const nod = this.speaking ? Math.sin(now / 260) * Math.min(0.65, this.mouth || 0) * 0.05 : 0;
         const sway = (!still || reduce) ? (still ? 0 : (pose.torso || 0)) : (Math.sin(now / 5200) * baseSway + Math.sin(now / 9100 + 1.1) * baseSway * 0.35 + nod + (lib ? lib.sway * Math.sin((now - (lib.t0 || now)) / Math.max(400, lib.swayMs) * Math.PI * 2) : 0));
         ctx.translate(pivotX, pivotY);
         ctx.rotate(sway);

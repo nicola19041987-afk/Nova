@@ -1,5 +1,8 @@
 /* Libreria di movimenti della foto 2D. Combinazioni di gesti non allusivi.
-   Nessun contenuto sessuale. La foto si muove tutta insieme: niente warp del viso. */
+   Nessun contenuto sessuale. La foto si muove tutta insieme: niente warp del viso.
+   Il video di riferimento chiede cenni sul parlato, sguardo in alto a destra quando pensa,
+   ascolto più fermo e un respiro più fondo prima di una frase. L'inclinazione resta piccola
+   perché la foto intera non può ruotare di decine di gradi senza rovesciare il ritratto. */
 (function (root) {
   const BASES = [
     { id: 'respiro-quieto', name: 'Respiro quieto', groups: ['idle', 'listen'], sway: 0.004, gazeX: 0, gazeY: 0, smile: 0, brow: 0, blink: '', nod: 0, shake: 0, shrug: 0, breath: 0.8, ms: 4200 },
@@ -9,7 +12,7 @@
     { id: 'cenno-no', name: 'Cenno di no', groups: ['speak'], sway: 0.01, gazeX: 0, gazeY: 0, smile: 0, brow: 0, blink: '', nod: 0, shake: 1, shrug: 0, breath: 1, ms: 1500 },
     { id: 'sguardo-sinistra', name: 'Sguardo a sinistra', groups: ['idle'], sway: 0.006, gazeX: -0.55, gazeY: 0, smile: 0, brow: 0, blink: '', nod: 0, shake: 0, shrug: 0, breath: 1, ms: 2400 },
     { id: 'sguardo-destra', name: 'Sguardo a destra', groups: ['idle'], sway: -0.006, gazeX: 0.55, gazeY: 0, smile: 0, brow: 0, blink: '', nod: 0, shake: 0, shrug: 0, breath: 1, ms: 2400 },
-    { id: 'sguardo-alto', name: 'Sguardo in alto a destra', groups: ['think'], sway: 0.02, gazeX: 0.55, gazeY: -0.5, smile: 0, brow: 0.25, blink: 'single', nod: 0, shake: 0, shrug: 0, breath: 0.9, ms: 2600 },
+    { id: 'sguardo-alto', name: 'Sguardo in alto a destra', groups: ['think'], sway: 0.016, gazeX: 0.62, gazeY: -0.55, smile: 0, brow: 0.35, blink: 'single', nod: 0, shake: 0, shrug: 0.1, breath: 0.9, ms: 2600 },
     { id: 'sguardo-basso', name: 'Sguardo in basso', groups: ['sad'], sway: 0.003, gazeX: 0, gazeY: 0.4, smile: 0, brow: 0, blink: '', nod: 0, shake: 0, shrug: 0.2, breath: 0.75, ms: 2600 },
     { id: 'sguardo-camera', name: 'Sguardo in camera', groups: ['speak', 'listen'], sway: 0.003, gazeX: 0, gazeY: 0, smile: 0.05, brow: 0, blink: '', nod: 0, shake: 0, shrug: 0, breath: 1, ms: 2200 },
     { id: 'ammiccamento', name: 'Ammiccamento', groups: ['idle', 'listen'], sway: 0.002, gazeX: 0, gazeY: 0, smile: 0, brow: 0, blink: 'single', nod: 0, shake: 0, shrug: 0, breath: 1, ms: 1800 },
@@ -19,12 +22,12 @@
     { id: 'sorriso', name: 'Sorriso', groups: ['speak', 'happy', 'greet'], sway: 0.004, gazeX: 0, gazeY: 0, smile: 0.45, brow: 0.05, blink: '', nod: 0, shake: 0, shrug: 0, breath: 1, ms: 2200 },
     { id: 'sopracciglia', name: 'Sopracciglia alte', groups: ['surprise', 'speak'], sway: 0.003, gazeX: 0, gazeY: -0.1, smile: 0, brow: 0.7, blink: '', nod: 0, shake: 0, shrug: 0, breath: 1.05, ms: 1600 },
     { id: 'respiro-lento', name: 'Respiro lento', groups: ['sad', 'listen'], sway: 0.003, gazeX: 0, gazeY: 0.1, smile: 0, brow: 0, blink: '', nod: 0, shake: 0, shrug: 0, breath: 0.65, ms: 5200 },
-    { id: 'respiro-profondo', name: 'Respiro profondo', groups: ['idle'], sway: 0.003, gazeX: 0, gazeY: 0, smile: 0, brow: 0, blink: '', nod: 0, shake: 0, shrug: 0.15, breath: 1.35, ms: 3600 },
-    { id: 'spalle', name: 'Alzata di spalle', groups: ['think'], sway: 0.004, gazeX: 0.05, gazeY: 0.05, smile: 0, brow: 0.1, blink: '', nod: 0, shake: 0, shrug: 0.8, breath: 1, ms: 1800 },
+    { id: 'respiro-profondo', name: 'Respiro profondo', groups: ['idle', 'speak'], sway: 0.003, gazeX: 0, gazeY: 0, smile: 0, brow: 0.05, blink: '', nod: 0, shake: 0, shrug: 0.2, breath: 1.5, ms: 3600 },
+    { id: 'spalle', name: 'Alzata di spalle', groups: ['think', 'speak'], sway: 0.008, gazeX: 0.08, gazeY: 0.02, smile: 0, brow: 0.15, blink: '', nod: 0, shake: 0, shrug: 1, breath: 1, ms: 1800 },
     { id: 'risata', name: 'Risata breve', groups: ['laugh', 'happy'], sway: 0.008, gazeX: 0, gazeY: 0, smile: 0.6, brow: 0.2, blink: 'single', nod: 0, shake: 0, shrug: 0.3, breath: 1.4, ms: 1800 },
-    { id: 'pensierosa', name: 'Pensierosa', groups: ['think', 'listen'], sway: 0.007, gazeX: -0.2, gazeY: -0.25, smile: 0, brow: 0.15, blink: '', nod: 0, shake: 0, shrug: 0, breath: 0.85, ms: 3000 },
+    { id: 'pensierosa', name: 'Pensierosa', groups: ['think'], sway: 0.01, gazeX: 0.45, gazeY: -0.5, smile: 0, brow: 0.22, blink: 'single', nod: 0, shake: 0, shrug: 0.15, breath: 0.85, ms: 3000 },
     { id: 'sorpresa', name: 'Sorpresa', groups: ['surprise'], sway: 0.004, gazeX: 0, gazeY: -0.15, smile: 0.1, brow: 0.85, blink: 'single', nod: 0, shake: 0, shrug: 0, breath: 1.2, ms: 1400 },
-    { id: 'ascolto', name: 'In ascolto', groups: ['listen'], sway: 0.0015, gazeX: 0, gazeY: 0, smile: 0.04, brow: 0, blink: '', nod: 0.15, shake: 0, shrug: 0, breath: 0.7, ms: 3200 },
+    { id: 'ascolto', name: 'In ascolto', groups: ['listen'], sway: 0.001, gazeX: 0, gazeY: 0, smile: 0.03, brow: 0, blink: '', nod: 0.05, shake: 0, shrug: 0, breath: 0.65, ms: 3400 },
     { id: 'saluto', name: 'Saluto con il capo', groups: ['greet', 'speak'], sway: 0.005, gazeX: 0, gazeY: 0, smile: 0.35, brow: 0.1, blink: '', nod: 1, shake: 0, shrug: 0, breath: 1.05, ms: 1800 },
   ];
   const INT = [['lieve', 0.45], ['media', 0.75], ['marcata', 1]];
