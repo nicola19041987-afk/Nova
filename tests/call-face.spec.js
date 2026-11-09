@@ -65,6 +65,10 @@ test('in videochiamata resta la foto del personaggio, non un altro volto', async
       cam: document.getElementById('call-cam').getAttribute('aria-pressed') === 'false',
       drawn,
       mouth: App.avatarConv.mouth > 0,
+      tall: canvas.getBoundingClientRect().height >= window.innerHeight - 2,
+      stageH: document.getElementById('stage').getBoundingClientRect().height >= window.innerHeight - 2,
+      name: document.getElementById('call-name').getBoundingClientRect().toJSON(),
+      bar: getComputedStyle(document.querySelector('.call-bar')).backgroundColor,
       face,
     };
   }, FACE);
@@ -79,5 +83,10 @@ test('in videochiamata resta la foto del personaggio, non un altro volto', async
   expect(call.mute && call.end && call.flip && call.self && call.cam).toBe(true);
   expect(call.drawn).toBe(true);
   expect(call.mouth).toBe(true);
-  await page.screenshot({ path: '/opt/cursor/artifacts/v2d-19-call-390.png' });
+  expect(call.tall).toBe(true);
+  expect(call.stageH).toBe(true);
+  expect(call.name.left).toBeLessThan(48);
+  expect(call.name.top).toBeLessThan(80);
+  expect(call.bar === 'rgba(0, 0, 0, 0)' || call.bar === 'transparent').toBe(true);
+  await page.screenshot({ path: '/opt/cursor/artifacts/v2d-20-call-390.png' });
 });

@@ -1120,4 +1120,59 @@ body.solo-mode.in-call .call-self{touch-action:none}
 #vn-cam .cam-off-line{top:6px}
 #vn-mic{background:#00a884!important;color:#fff!important}
 body.solo-mode #chat-form button.primary{background:#00a884!important;border-radius:50%}
+/* Videochiamata: foto a tutto schermo, scritte in alto a sinistra, tasti trasparenti. */
+body.solo-mode.in-call:not(.call-min) #stage.call:not(.voice){
+  position:fixed!important;inset:0!important;z-index:60;
+  width:100vw!important;height:100dvh!important;min-height:100dvh!important;max-height:none!important;
+  aspect-ratio:auto!important;flex:none!important;margin:0!important;padding:0!important;
+  background:#000!important;
+}
+body.solo-mode.in-call:not(.call-min) #stage.call:not(.voice) #avatar-canvas,
+body.solo-mode.in-call:not(.call-min) #stage.call:not(.voice) .av-backdrop{
+  position:absolute!important;inset:0!important;left:0!important;top:0!important;
+  width:100%!important;height:100%!important;max-width:none!important;max-height:none!important;
+  margin:0!important;display:block!important;visibility:visible!important;
+}
+body.solo-mode.in-call:not(.call-min) #stage.call:not(.voice) #call-ui{
+  background:none!important;padding:0!important;
+}
+body.solo-mode.in-call:not(.call-min) #stage.call:not(.voice) .call-top{
+  position:absolute!important;
+  left:max(12px, env(safe-area-inset-left));
+  top:calc(env(safe-area-inset-top) + 10px);
+  right:auto;width:auto;max-width:42vw;
+  padding:0!important;margin:0!important;
+  align-items:flex-start!important;text-align:left;gap:1px;z-index:6;
+}
+body.solo-mode.in-call:not(.call-min) #stage.call:not(.voice) .call-kind{
+  font-size:11px;line-height:1.15;opacity:.92;
+}
+body.solo-mode.in-call:not(.call-min) #stage.call:not(.voice) .call-top b{
+  font-size:16px!important;line-height:1.15;font-weight:650;
+}
+body.solo-mode.in-call:not(.call-min) #stage.call:not(.voice) .call-timer{
+  font-size:12px;line-height:1.15;opacity:.92;
+}
+body.solo-mode.in-call:not(.call-min) #stage.call:not(.voice) .call-badge,
+body.solo-mode.in-call:not(.call-min) #stage.call:not(.voice) .call-state{
+  font-size:11px!important;line-height:1.2;margin:3px 0 0!important;padding:2px 7px!important;
+}
+body.solo-mode.in-call:not(.call-min) #stage.call:not(.voice) .call-head-actions{
+  position:fixed!important;
+  top:calc(env(safe-area-inset-top) + 8px);
+  right:calc(env(safe-area-inset-right) + 10px);
+}
+body.solo-mode.in-call:not(.call-min) #stage.call:not(.voice) .call-bar{
+  background:transparent!important;box-shadow:none!important;border-radius:0!important;
+  backdrop-filter:none;-webkit-backdrop-filter:none;
+  padding:0 18px!important;gap:22px;
+  bottom:calc(18px + env(safe-area-inset-bottom))!important;
+}
+body.solo-mode.in-call:not(.call-min) #stage.call:not(.voice) .call-btn{
+  background:rgba(255,255,255,.28)!important;
+  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+}
+body.solo-mode.in-call:not(.call-min) #stage.call:not(.voice) .call-btn.end{
+  background:#e0303f!important;
+}
 
