@@ -61,7 +61,7 @@ test('il 3D non parte da solo e si carica solo se scelto', async ({ page }, test
   expect(on.script).toBe(true);
   expect(on.hidden).toBe(false);
   expect(on.status).toContain('Stand-in');
-  expect(on.status).toContain('non è la foto');
+  expect(on.status.toLowerCase()).toContain('non è la foto');
   expect(on.photo).toBe(true);
   await page.waitForTimeout(500);
   const span = await page.evaluate(() => {

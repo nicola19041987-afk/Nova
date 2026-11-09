@@ -1,10 +1,11 @@
-Female Adult 02 — Microsoft Rocketbox Avatar Library
+Female Adult 01 — Microsoft Rocketbox Avatar Library
 
 Source: https://github.com/microsoft/Microsoft-Rocketbox
-File: Assets/Avatars/Adults/Female_Adult_02/Export/Female_Adult_02.fbx
-Preview: Assets/Avatars/Adults/Female_Adult_02/Female_Adult_02.png
-Textures: f002_body_color.tga, f002_head_color.tga, f002_opacity_color.tga
-(resized to 768 px and packed into public/models/nova.glb)
+File: Assets/Avatars/Adults/Female_Adult_01/Export/Female_Adult_01.fbx
+Preview: Assets/Avatars/Adults/Female_Adult_01/Female_Adult_01.png
+Textures: f001_body_color.tga, f001_head_color.tga, f001_opacity_color.tga
+Resized to 1024 px, packed into public/models/nova.glb.
+The pink shirt was repainted black, the hair shifted to honey blonde, and the iris to green. The jeans are the original denim. The hair mesh is a ponytail, not loose waves, and the face is not the reference photo.
 
 License: MIT
 Copyright (c) 2020 Microsoft
@@ -14,7 +15,7 @@ Permission is granted to use, copy, modify, and distribute this model,
 including in a private app, provided the copyright notice and permission
 notice are included. This file is that notice.
 
-The character is an adult woman in casual clothes (sweater, denim skirt, shoes).
+The character is an adult woman in a shirt and jeans. The shirt is repainted black.
 The original export is a T-pose. The app rotates the upper arms down for the rest pose.
 Lip sync uses the jaw bone (Bip01 MJaw). The facial blendshape export was not used,
 because the converter dropped the viseme names.

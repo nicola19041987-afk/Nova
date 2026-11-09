@@ -15,7 +15,7 @@
     try {
       var q = new URLSearchParams(location.search);
       var TOKEN = q.get('refresh');
-      if (TOKEN !== '2d' && TOKEN !== '2d-face' && TOKEN !== '2d-see' && TOKEN !== '2d-6' && TOKEN !== '2d-7' && TOKEN !== '2d-8') return;
+      if (TOKEN !== '2d' && TOKEN !== '2d-face' && TOKEN !== '2d-see' && TOKEN !== '2d-6' && TOKEN !== '2d-7' && TOKEN !== '2d-8' && TOKEN !== '2d-9') return;
       var key = 'nova-refresh-' + TOKEN;
       q.delete('refresh');
       var rest = q.toString();

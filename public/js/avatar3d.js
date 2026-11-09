@@ -407,10 +407,9 @@
       fitModel();
       remember();
       showCanvas(true); resize();
-      const look = activeLook();
-      if (look) { paintLook(look); applyBody(look); }
+      if (currentLook) { paintLook(currentLook); applyBody(currentLook); }
       last = 0; if (!raf) raf = requestAnimationFrame(frame);
-      status('Stand-in Rocketbox Female Adult 02: non è la foto. Maglione e gonna, capelli corti.');
+      status('Stand-in Rocketbox Female Adult 01: capelli biondi, maglia nera, jeans. Non è la foto.');
       return true;
     })().catch((e) => { failed = 'Modello 3D non caricato' + (e && e.message ? ': ' + e.message : ''); status(failed); showCanvas(false); readyP = null; throw e; });
     return readyP;
@@ -471,7 +470,7 @@
     hook();
     if (view !== '3d') { showCanvas(false); status('Foto di riserva. Il 3D si riaccende da questo menu.'); return; }
     status('Carico il modello 3D…');
-    try { await load(); if (activeLook()) { paintLook(activeLook()); applyBody(activeLook()); } } catch { /* status già scritto */ }
+    try { await load(); if (currentLook) { paintLook(currentLook); applyBody(currentLook); } } catch { /* status già scritto */ }
   }
   function sample() {
     return { head: (posed.head || [0, 0, 0]).slice(), chest: (posed.chest || [0, 0, 0]).slice(), hips: (posed.hips || [0, 0, 0]).slice() };
