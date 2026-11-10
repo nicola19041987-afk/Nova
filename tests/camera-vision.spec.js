@@ -317,6 +317,9 @@ test('la voce in tempo reale manda il fotogramma al modello di visione', async (
   expect(pack.sent[0].type).toBe('conversation.item.create');
   expect(pack.sent[0].item.content[0].text).toContain('riquadro grigio');
   expect(pack.sent[0].item.content[0].text).toContain('non un video');
+  await page.evaluate(() => App.sight.noteForVoice());
+  await page.evaluate(() => App.sight.onUtterance());
+  await expect.poll(() => bag.sightPosts.length).toBeGreaterThanOrEqual(2);
   const beforeStop = bag.sightPosts.length;
   await page.evaluate(() => App.sight.stop());
   await page.evaluate(() => App.sight.onUtterance());

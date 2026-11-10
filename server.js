@@ -23,6 +23,8 @@ const REALTIME_URL = (process.env.REALTIME_URL || 'wss://api.x.ai/v1/realtime').
 const REALTIME_MODEL = process.env.REALTIME_MODEL || 'grok-voice-latest';
 // v8.4.1: in chiamata (percorso classico) un modello SENZA ragionamento: la prima parola arriva molto prima. Se non esiste, si usa CHAT_MODEL.
 const CALL_MODEL = process.env.CALL_MODEL || 'grok-4.20-0309-non-reasoning';
+// La voce in tempo reale non vede le immagini: il fotogramma passa da un modello di visione (chat), poi il testo entra nella chiamata.
+const VISION_MODEL = process.env.VISION_MODEL || 'grok-4.7';
 let callModelOk = true, chatModelOk = true;
 // voci integrate documentate da xAI (GET /v1/tts/voices); una voce sconosciuta farebbe rifiutare la configurazione della sessione
 const XAI_VOICES = ['ara', 'eve', 'leo', 'rex', 'sal', 'carina', 'zagan', 'helix', 'orion', 'luna', 'iris', 'altair', 'zenith', 'perseus', 'helios', 'lux', 'kepler', 'rigel', 'cosmo', 'celeste', 'ursa', 'sirius', 'lumen', 'castor', 'naksh', 'atlas'];
@@ -1849,6 +1851,50 @@ function rememberVision(kind, model, messages, frame) {
   };
 }
 function e2eVision(req) { return E2E_HARNESS && req.get('X-E2E-Vision') === '1'; }
+function visionText(j) {
+  if (!j || typeof j !== 'object') return '';
+  if (typeof j.output_text === 'string' && j.output_text.trim()) return j.output_text;
+  const bits = [];
+  for (const item of j.output || []) {
+    if (typeof item === 'string') bits.push(item);
+    for (const c of (item && item.content) || []) if (c && c.text) bits.push(c.text);
+  }
+  return bits.join(' ');
+}
+async function describeSight(key, frame) {
+  const messages = [
+    { role: 'system', content: `${BASE_RULE}\n\n${SIGHT_HINT}\nRispondi con una sola frase in italiano, solo su ciò che si vede.` },
+    { role: 'user', content: sightParts('Che cosa si vede in questo fotogramma?', frame) },
+  ];
+  rememberVision('sight', VISION_MODEL, messages, frame);
+  const r = await fetch(`${AI_BASE_URL}/chat/completions`, {
+    method: 'POST', headers: aiHeaders(key),
+    body: JSON.stringify({ model: VISION_MODEL, temperature: 0.2, messages }),
+  });
+  if (r.ok) {
+    const note = String((await r.json()).choices?.[0]?.message?.content || '').replace(/\s+/g, ' ').trim().slice(0, 400);
+    if (note) return note;
+  } else console.error('Errore visione chat: HTTP', r.status);
+  const r2 = await fetch(`${AI_BASE_URL}/responses`, {
+    method: 'POST', headers: aiHeaders(key),
+    body: JSON.stringify({
+      model: VISION_MODEL,
+      input: [{ role: 'user', content: [
+        { type: 'input_image', image_url: frame, detail: 'low' },
+        { type: 'input_text', text: `Che cosa si vede in questo fotogramma? Una sola frase in italiano. ${SIGHT_HINT}` },
+      ] }],
+    }),
+  });
+  if (!r2.ok) {
+    console.error('Errore visione responses: HTTP', r2.status);
+    const err = new Error(aiErrorMsg(r2.status, await r2.json().catch(() => ({}))));
+    err.status = 502;
+    throw err;
+  }
+  const note = visionText(await r2.json()).replace(/\s+/g, ' ').trim().slice(0, 400);
+  if (!note) { const err = new Error('Il servizio non ha descritto il fotogramma'); err.status = 502; throw err; }
+  return note;
+}
 
 // POST /api/chats/:id  { message, noAI? }
 // - noAI: true -> "solo messaggio" per l'altra persona: salvato e visibile a entrambi, l'IA non risponde (non serve la chiave).
@@ -1910,7 +1956,7 @@ app.post('/api/chats/:id', auth, requireActivated, (req, res, next) => (req.body
   let reply = '';
   const guard = new NameGuard(req.user, !nameUses(id, req.user).allow); // v8.1: niente nome ripetuto
   const isCall = req.body.call === true;
-  const callBody = { model: isCall && callModelOk ? CALL_MODEL : chatModelOk ? CHAT_MODEL : CHAT_FALLBACK, messages, stream: true }; // v8.5.0: nessun tetto artificiale alla lunghezza
+  const callBody = { model: frame ? VISION_MODEL : (isCall && callModelOk ? CALL_MODEL : chatModelOk ? CHAT_MODEL : CHAT_FALLBACK), messages, stream: true }; // con un fotogramma serve il modello di visione
   rememberVision('chat', callBody.model, messages, frame);
   if (frame && e2eVision(req)) {
     const reply = 'Vedo un riquadro grigio.';
@@ -1976,26 +2022,21 @@ app.post('/api/chats/:id/sight', auth, requireActivated, requireKey, async (req,
   try { frame = parseSight(req.body && req.body.image); }
   catch (e) { return res.status(e.status || 400).json({ error: e.message }); }
   if (!frame) return res.status(400).json({ error: 'Nessun fotogramma' });
-  const messages = [
-    { role: 'system', content: `${BASE_RULE}\n\n${SIGHT_HINT}\nRispondi con una sola frase in italiano, solo su ciò che si vede.` },
-    { role: 'user', content: sightParts('Che cosa si vede in questo fotogramma?', frame) },
-  ];
-  const model = chatModelOk ? CHAT_MODEL : CHAT_FALLBACK;
-  rememberVision('sight', model, messages, frame);
   res.setHeader('Cache-Control', 'no-store');
-  if (e2eVision(req)) return res.json({ note: 'Vedo un riquadro grigio.', cadenceMs: SIGHT_CADENCE_MS, continuous: false });
+  if (e2eVision(req)) {
+    const messages = [
+      { role: 'system', content: `${BASE_RULE}\n\n${SIGHT_HINT}\nRispondi con una sola frase in italiano, solo su ciò che si vede.` },
+      { role: 'user', content: sightParts('Che cosa si vede in questo fotogramma?', frame) },
+    ];
+    rememberVision('sight', VISION_MODEL, messages, frame);
+    return res.json({ note: 'Vedo un riquadro grigio.', cadenceMs: SIGHT_CADENCE_MS, continuous: false });
+  }
   try {
-    const r = await fetch(`${AI_BASE_URL}/chat/completions`, {
-      method: 'POST', headers: aiHeaders(req.aiKey),
-      body: JSON.stringify({ model, temperature: 0.2, messages }),
-    });
-    if (!r.ok) return res.status(502).json({ error: aiErrorMsg(r.status, await r.json().catch(() => ({}))) });
-    const note = String((await r.json()).choices?.[0]?.message?.content || '').replace(/\s+/g, ' ').trim().slice(0, 400);
-    if (!note) return res.status(502).json({ error: 'Il servizio non ha descritto il fotogramma' });
+    const note = await describeSight(req.aiKey, frame);
     res.json({ note, cadenceMs: SIGHT_CADENCE_MS, continuous: false });
   } catch (e) {
     console.error('Errore visione:', e.message);
-    res.status(502).json({ error: 'Servizio AI non raggiungibile' });
+    res.status(e.status || 502).json({ error: e.message || 'Servizio AI non raggiungibile' });
   }
 });
 

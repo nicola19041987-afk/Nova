@@ -111,7 +111,7 @@
     const v = document.getElementById('sight-preview');
     if (v && v.srcObject !== stream) { v.srcObject = stream; v.muted = true; v.hidden = true; }
     if (timer) clearInterval(timer);
-    timer = setInterval(() => { sample(); noteForVoice().catch(() => {}); }, cadence());
+    timer = setInterval(sample, cadence());
   }
   function stop() {
     want = false; gen += 1; busy = false; latest = null; latestAt = 0;
@@ -123,7 +123,12 @@
     if (!want) return '';
     const now = Date.now();
     if (!opts.force && (busy || now - lastTx < cadence())) return '';
-    const frame = grab();
+    let frame = grab();
+    const t0 = Date.now();
+    while (opts.force && !frame && want && Date.now() - t0 < 1200) {
+      await new Promise((r) => setTimeout(r, 80));
+      frame = grab();
+    }
     if (!frame) return '';
     const id = App.current && App.current.id;
     if (!id) return '';
@@ -140,16 +145,17 @@
     } finally { if (mine === gen) busy = false; }
   }
   async function onUtterance() {
-    const note = await noteForVoice();
+    const note = await noteForVoice({ force: true });
     if (!note || !want) return;
     const s = App.rt && App.rt._s && App.rt._s();
     if (!s || s.closed || !s.ws || s.ws.readyState !== 1) return;
     s.ws.send(JSON.stringify({ type: 'conversation.item.create', item: { type: 'message', role: 'user', content: [{ type: 'input_text', text: note }] } }));
     if (s.userSpeaking) return;
-    if (s.responseActive && !(s.resp && s.resp.text)) {
+    if (s.responseActive) {
       try { s.ws.send(JSON.stringify({ type: 'response.cancel' })); } catch {}
-      s.ws.send(JSON.stringify({ type: 'response.create' }));
+      s.responseActive = false;
     }
+    s.ws.send(JSON.stringify({ type: 'response.create' }));
   }
   function showNow() {
     if (!want) return;
