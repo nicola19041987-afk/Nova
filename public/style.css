@@ -855,15 +855,20 @@ body.solo-mode #hot-btn{display:none!important}
 
 /* login Nova: wordmark, un campo, un pulsante */
 .login-screen{position:relative;min-height:100dvh;min-height:100vh;background:#fff;color:#111b21;align-items:flex-start;justify-content:flex-start;padding:calc(env(safe-area-inset-top) + 36px) 28px calc(28px + env(safe-area-inset-bottom))}
-.login-wrap{width:min(420px,100%);margin:10vh auto 0;display:flex;flex-direction:column;align-items:center;text-align:center}
+.login-wrap{width:min(420px,100%);margin:6vh auto 0;display:flex;flex-direction:column;align-items:center;text-align:center;flex:1}
 .login-wordmark{margin:0 0 8px;font-size:26px;font-weight:650;letter-spacing:0;line-height:1.2;color:#008069}
 .login-lead,.login-hint{margin:0 0 22px;color:#667781;font-size:15px}
 .login-screen .profiles{flex-direction:column;width:100%;gap:0;margin:8px 0 0;background:#fff;border-radius:12px;overflow:hidden}
 .login-screen .profiles button{width:100%;border-radius:0;background:#fff;border:0;border-bottom:1px solid #e9edef;color:#111b21;padding:16px 8px;font-size:17px;font-weight:600}
 .login-screen .profiles button small{font-weight:500;color:#667781}
-.login-screen #pin-form{width:100%;display:flex;flex-direction:column;align-items:center;gap:8px;margin-top:4px}
-.login-screen .pin-digits{width:9.2rem;margin:8px auto 4px;border:0;border-bottom:2px solid #00a884;border-radius:0;background:transparent;box-shadow:none;padding:8px 0 10px;text-align:center;font-size:34px;letter-spacing:.42em;color:#111b21;-webkit-text-security:disc}
-.login-screen .pin-digits:focus{outline:none;border-bottom-color:#008069}
+.login-screen #pin-form{width:100%;display:flex;flex-direction:column;align-items:center;gap:8px;margin-top:4px;flex:1}
+.login-screen .pin-digits{width:9.2rem;margin:8px auto 4px;border:0;border-bottom:2px solid #00a884;border-radius:0;background:transparent;box-shadow:none;padding:8px 0 10px;text-align:center;font-size:34px;letter-spacing:.42em;color:#111b21;-webkit-text-security:disc;outline:none;caret-color:transparent}
+.login-screen .pin-digits.on{border-bottom-color:#008069}
+.pin-pad{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;width:min(320px,100%);margin-top:auto;padding-top:12px}
+.pin-pad button{height:54px;border:0;border-radius:14px;background:#F0F2F5;color:#111b21;font-size:24px;font-weight:650;-webkit-tap-highlight-color:transparent}
+.pin-pad button:active{background:#E4E6EA}
+.pin-pad [data-key="del"]{font-size:22px}
+.pin-pad-gap{display:block}
 .login-screen #setup-code{width:100%;margin:8px 0;border:0;border-bottom:2px solid #00a884;border-radius:0;background:transparent;text-align:center;letter-spacing:normal;padding:12px 0}
 .login-pill{width:100%;max-width:320px;border:0!important;border-radius:28px!important;background:#00a884!important;color:#fff!important;font-weight:700;font-size:17px;min-height:50px;padding:14px 20px;margin-top:22px}
 .login-screen .link{background:none;border:0;color:#008069}
@@ -949,6 +954,7 @@ body.av-full-on .stage-tools,body.avatar-fs-on .stage-tools{right:calc(env(safe-
 
 /* v8.6.6: sempre il layout del telefono. Su schermi larghi la colonna è centrata, senza cornice. */
 html,body{background:#000}
+html:has(#view-login:not([hidden])),body:has(#view-login:not([hidden])){background:#fff}
 #app-shell{
   width:100%;max-width:430px;margin:0 auto;position:relative;
   min-height:var(--app-h,100dvh);height:var(--app-h,100dvh);max-height:var(--app-h,100dvh);

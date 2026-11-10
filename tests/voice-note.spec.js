@@ -26,8 +26,8 @@ test('il PIN è chiaro, con titolo verde e Avanti', async ({ page, browserName }
     const toast = document.getElementById('toast');
     return { inputmode: document.getElementById('pin-input').getAttribute('inputmode'), border: s.borderBottomColor, toast: !toast || toast.hidden };
   });
-  expect(field.inputmode).toBe('numeric');
-  expect(field.border).toBe('rgb(0, 168, 132)');
+  expect(field.inputmode).toBe('none');
+  expect(field.border).toBe('rgb(0, 128, 105)');
   expect(field.toast).toBe(true);
 });
 

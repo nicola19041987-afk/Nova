@@ -15,7 +15,7 @@
     try {
       var q = new URLSearchParams(location.search);
       var TOKEN = q.get('refresh');
-      if (TOKEN !== '2d' && TOKEN !== '2d-face' && TOKEN !== '2d-see' && TOKEN !== '2d-6' && TOKEN !== '2d-7' && TOKEN !== '2d-8' && TOKEN !== '2d-9' && TOKEN !== '2d-10' && TOKEN !== '2d-11' && TOKEN !== '2d-12' && TOKEN !== '2d-13' && TOKEN !== '2d-14' && TOKEN !== '2d-15' && TOKEN !== '2d-16' && TOKEN !== '2d-17' && TOKEN !== '2d-18' && TOKEN !== '2d-19' && TOKEN !== '2d-20' && TOKEN !== '2d-21') return;
+      if (TOKEN !== '2d' && TOKEN !== '2d-face' && TOKEN !== '2d-see' && TOKEN !== '2d-6' && TOKEN !== '2d-7' && TOKEN !== '2d-8' && TOKEN !== '2d-9' && TOKEN !== '2d-10' && TOKEN !== '2d-11' && TOKEN !== '2d-12' && TOKEN !== '2d-13' && TOKEN !== '2d-14' && TOKEN !== '2d-15' && TOKEN !== '2d-16' && TOKEN !== '2d-17' && TOKEN !== '2d-18' && TOKEN !== '2d-19' && TOKEN !== '2d-20' && TOKEN !== '2d-21' && TOKEN !== '2d-22') return;
       var key = 'nova-refresh-' + TOKEN;
       q.delete('refresh');
       var rest = q.toString();
@@ -62,11 +62,25 @@
       <div id="profile-pick" class="profiles"></div>
       <form id="pin-form" hidden autocomplete="off">
         <p id="pin-title" class="login-hint"></p>
-        <input id="pin-input" class="pin-digits" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" enterkeyhint="done" autocapitalize="off" autocorrect="off" spellcheck="false" required>
-        <input id="pin-confirm" class="pin-digits" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="Ripeti" hidden autocomplete="off">
+        <input id="pin-input" class="pin-digits" type="password" inputmode="none" maxlength="4" autocomplete="off" readonly required>
+        <input id="pin-confirm" class="pin-digits" type="password" inputmode="none" maxlength="4" placeholder="Ripeti" hidden autocomplete="off" readonly>
         <input id="setup-code" type="password" placeholder="Codice di configurazione" hidden autocomplete="off">
         <button class="primary login-pill" type="submit" id="pin-submit">Avanti</button>
         <button type="button" class="link" id="pin-back">Cambia profilo</button>
+        <div id="pin-pad" class="pin-pad" aria-label="Tastierino numerico">
+          <button type="button" data-key="1">1</button>
+          <button type="button" data-key="2">2</button>
+          <button type="button" data-key="3">3</button>
+          <button type="button" data-key="4">4</button>
+          <button type="button" data-key="5">5</button>
+          <button type="button" data-key="6">6</button>
+          <button type="button" data-key="7">7</button>
+          <button type="button" data-key="8">8</button>
+          <button type="button" data-key="9">9</button>
+          <span class="pin-pad-gap"></span>
+          <button type="button" data-key="0">0</button>
+          <button type="button" data-key="del" aria-label="Cancella">⌫</button>
+        </div>
       </form>
       <p class="error" id="login-error"></p>
     </div>

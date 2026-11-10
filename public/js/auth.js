@@ -23,13 +23,47 @@ function pickProfile(id, hasPin, name) {
   $('#pin-confirm').hidden = !pinSetup; $('#pin-confirm').required = pinSetup;
   $('#setup-code').hidden = !(pinSetup && needsSetupCode);
   $('#pin-submit').textContent = 'Avanti';
-  $('#pin-input').value = ''; $('#pin-confirm').value = ''; $('#pin-input').focus();
+  $('#pin-input').value = ''; $('#pin-confirm').value = '';
+  pinTarget = $('#pin-input');
+  $('#pin-input').classList.add('on'); $('#pin-confirm').classList.remove('on');
 }
 $('#profile-pick').addEventListener('click', (e) => {
   const b = e.target.closest('[data-profile]'); if (!b) return;
   pickProfile(b.dataset.profile, b.dataset.has === 'true', b.dataset.name);
 });
 $('#pin-back').addEventListener('click', () => { localStorage.removeItem('ap:lastProfile'); App.showLogin(); });
+let pinTarget = null;
+function pinField() {
+  if (pinTarget && !pinTarget.hidden) return pinTarget;
+  return $('#pin-input');
+}
+function typePin(key) {
+  const el = pinField(); if (!el) return;
+  const cur = String(el.value || '').replace(/\D/g, '');
+  el.value = key === 'del' ? cur.slice(0, -1) : (cur + key).slice(0, 4);
+  el.dispatchEvent(new Event('input', { bubbles: true }));
+  if (pinSetup && el === $('#pin-input') && el.value.length === 4 && !$('#pin-confirm').hidden) {
+    pinTarget = $('#pin-confirm');
+    $('#pin-input').classList.remove('on'); $('#pin-confirm').classList.add('on');
+  }
+}
+$('#pin-pad').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-key]'); if (!b) return;
+  typePin(b.dataset.key);
+});
+['pin-input', 'pin-confirm'].forEach((id) => {
+  const el = document.getElementById(id);
+  el.addEventListener('pointerdown', (e) => { e.preventDefault(); pinTarget = el; $('#pin-input').classList.toggle('on', el === $('#pin-input')); $('#pin-confirm').classList.toggle('on', el === $('#pin-confirm')); });
+  el.addEventListener('focus', () => el.blur());
+});
+document.addEventListener('keydown', (e) => {
+  const view = document.getElementById('view-login');
+  if (!view || view.hidden || $('#pin-form').hidden) return;
+  if (document.activeElement && document.activeElement.id === 'setup-code') return;
+  if (/^[0-9]$/.test(e.key)) { e.preventDefault(); typePin(e.key); }
+  else if (e.key === 'Backspace') { e.preventDefault(); typePin('del'); }
+  else if (e.key === 'Enter') { e.preventDefault(); $('#pin-form').requestSubmit(); }
+});
 $('#pin-input').addEventListener('input', (e) => { e.target.value = e.target.value.replace(/\D/g, '').slice(0, 4); if (!pinSetup && e.target.value.length === 4) $('#pin-form').requestSubmit(); });
 $('#pin-form').addEventListener('submit', async (e) => {
   e.preventDefault(); $('#login-error').textContent = '';
