@@ -1112,6 +1112,16 @@ body.solo-mode #tab-conv .msg .meta,body.solo-mode #tab-conv .msg .ticks{color:#
 body.solo-mode #tab-conv .msg .ticks.read,body.solo-mode #tab-conv .msg .ticks.saved{color:#53bdeb!important}
 body.solo-mode #tab-conv .msg.typing .body{font-style:italic;color:#667781}
 body.solo-mode #chat-form.composer{background:#F0F2F5!important;border-top:0;padding:6px 6px 8px!important;gap:4px!important;align-items:flex-end}
+body.solo-mode.solo-chat:not(.in-call) #view-app,
+body.solo-mode.solo-chat:not(.in-call) main,
+body.solo-mode.solo-chat:not(.in-call) #tab-conv,
+body.solo-mode.solo-chat:not(.in-call) #typing{
+  background:#F0F2F5;
+}
+body.solo-mode.solo-chat:not(.in-call) #chat-form.composer{
+  background:#F0F2F5!important;
+  padding-bottom:calc(8px + env(safe-area-inset-bottom))!important;
+}
 body.solo-mode #chat-form.composer{flex-wrap:nowrap!important;align-items:flex-end!important}
 body.solo-mode #chat-input{width:auto!important;flex:1 1 auto!important;min-width:0;border:0!important;border-radius:22px!important;background:#fff!important;min-height:40px!important;height:40px;max-height:88px;margin:0!important;padding:9px 12px!important;line-height:22px}
 body.solo-mode #wa-video,body.solo-mode #wa-home{position:relative;z-index:3;touch-action:manipulation}
