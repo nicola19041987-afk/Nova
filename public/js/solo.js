@@ -107,6 +107,41 @@
     vids.sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')));
     return vids[0] || null;
   }
+  function motionOn() {
+    const stage = document.getElementById('stage');
+    const voice = stage && stage.classList.contains('voice');
+    const call = document.body.classList.contains('in-call') && !document.body.classList.contains('call-min') && !voice;
+    const portrait = document.body.classList.contains('solo-portrait') && !document.body.classList.contains('in-call');
+    return call || portrait;
+  }
+  function syncMotion() {
+    const v = document.getElementById('motion-video');
+    const stage = document.getElementById('stage');
+    if (!v || !stage) return;
+    const ch = soloChar() || (App.current || null);
+    const url = motionOn() && ch && /^\/api\/motion\/[a-f0-9]{16}\.mp4$/.test(String(ch.motionVideo || '')) ? ch.motionVideo : '';
+    const stop = () => {
+      stage.classList.remove('has-motion');
+      try { v.pause(); } catch { /* già fermo */ }
+      v.hidden = true;
+      v.removeAttribute('src');
+      v.removeAttribute('poster');
+    };
+    if (!url) { stop(); return; }
+    const poster = (App.faceSrc && App.faceSrc(ch)) || '';
+    if (poster) v.poster = poster;
+    if (v.getAttribute('src') !== url) v.src = url;
+    v.muted = true; v.defaultMuted = true; v.loop = true; v.playsInline = true; v.autoplay = true;
+    v.setAttribute('playsinline', ''); v.setAttribute('webkit-playsinline', ''); v.setAttribute('muted', '');
+    v.hidden = false;
+    if (!v._motionBound) {
+      v._motionBound = true;
+      v.addEventListener('playing', () => { if (motionOn()) stage.classList.add('has-motion'); });
+      v.addEventListener('error', () => stage.classList.remove('has-motion'));
+    }
+    const play = v.play();
+    if (play && play.catch) play.catch(() => {});
+  }
   function showStage(ch) {
     const v = document.getElementById('stage-video'); if (!v || !ch) return;
     if (App.gestures && App.gestures.playing && App.gestures.playing()) return;
@@ -207,6 +242,7 @@
         if (slot && App.paintAvatar) App.paintAvatar(slot, fresh, 'nh-avatar-face');
       }
       showStage(fresh);
+      syncMotion();
     },
     syncSettings(ch) {
       const ta = $('#set-requests');
@@ -363,14 +399,17 @@
     openPortrait() {
       document.body.classList.add('solo-portrait');
       this.paintBack('page');
+      syncMotion();
       requestAnimationFrame(fit);
     },
     closePortrait() {
       document.body.classList.remove('solo-portrait');
       if (this.full) this.toggleFull(false);
       this.showPage(this._nh || 'list');
+      syncMotion();
       requestAnimationFrame(fit);
     },
+    syncMotion,
     showChat() {
       document.body.classList.add('solo-chat');
       document.body.classList.remove('solo-home', 'solo-portrait');
@@ -383,6 +422,7 @@
       const bar = $('#look-bar'); if (bar) bar.hidden = true;
       this.paintBack('chat');
       this.setDock('chat');
+      syncMotion();
       requestAnimationFrame(fit);
     },
     showHome() {
@@ -398,6 +438,7 @@
       const bar = $('#look-bar'); if (bar) bar.hidden = false;
       this.paintHome();
       this.setDock('home');
+      syncMotion();
       requestAnimationFrame(fit);
     },
     setDock(name) {

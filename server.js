@@ -1252,6 +1252,35 @@ app.get('/api/avatars/:file', auth, (req, res) => {
   if (!/^[a-f0-9]{16}\.(png|jpg)$/.test(f)) return res.status(400).end();
   sendPrivateFile(req, res, avatarPath(f));
 });
+const MOTION_MAX = 10 * 1024 * 1024;
+const MOTION_RE = /^[a-f0-9]{16}\.mp4$/;
+function isMp4(buf) { return Buffer.isBuffer(buf) && buf.length >= 12 && buf.slice(4, 8).toString('ascii') === 'ftyp'; }
+app.post('/api/characters/:id/motion-video', auth, express.raw({ type: ['video/mp4', 'application/octet-stream'], limit: MOTION_MAX }), async (req, res) => {
+  const id = req.params.id;
+  if (!ID_RE.test(id)) return res.status(400).json({ error: 'ID non valido' });
+  let ch; try { ch = getChars(req.user).find((c) => c && c.id === id); } catch (e) { return res.status(e.status || 500).json({ error: e.message }); }
+  if (!ch) return res.status(404).json({ error: 'Personaggio non trovato' });
+  if (req.user !== (ch.createdBy || ADMIN_USER)) return res.status(403).json({ error: 'Solo il proprietario può caricare questo video.', code: 'OWN_ONLY' });
+  const buf = req.body;
+  if (!isMp4(buf)) return res.status(400).json({ error: 'Serve un file MP4.' });
+  if (buf.length > MOTION_MAX) return res.status(413).json({ error: 'File troppo grande (max 10 MB)' });
+  const file = `${newId()}.mp4`;
+  fs.writeFileSync(path.join(avatarDir(), file), buf);
+  const motionVideo = `/api/motion/${file}`;
+  try {
+    const updated = await patchChar(id, (c) => { c.motionVideo = motionVideo; c.updatedAt = new Date().toISOString(); c.updatedBy = req.user; });
+    res.json({ motionVideo, character: updated });
+  } catch (e) { res.status(e.status || 500).json({ error: e.message || 'Salvataggio non riuscito' }); }
+});
+app.get('/api/motion/:file', auth, (req, res) => {
+  const f = path.basename(req.params.file);
+  if (!MOTION_RE.test(f)) return res.status(400).end();
+  const p = path.join(avatarDir(), f);
+  if (!fs.existsSync(p)) return res.status(404).end();
+  res.setHeader('Accept-Ranges', 'bytes');
+  res.type('video/mp4');
+  sendPrivateFile(req, res, p);
+});
 // Percorso di un avatar: archivio condiviso, con riserva sulle vecchie cartelle per utente (prima della migrazione).
 function avatarPath(f) {
   const p = path.join(avatarDir(), f);

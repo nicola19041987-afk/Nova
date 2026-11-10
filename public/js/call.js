@@ -53,6 +53,7 @@
     requestAnimationFrame(() => App.fitFrame && App.fitFrame());
     if (on) { state(); App.chat.header && App.chat.header(); }
     if (App.simli) App.simli.stop();
+    if (App.solo && App.solo.syncMotion) App.solo.syncMotion();
   }
   // Ritratto rotondo: copiato a ogni fotogramma dal canvas dell'avatar (respiro, labiale, sguardo continuano);
   // l'alone pulsa con la voce. Il canvas grande resta dietro, sfocato, a tutto schermo.
@@ -146,6 +147,7 @@
     if (prevAuto !== null) $('#auto-send').checked = prevAuto;
     App.toast((mode === 'voice' ? '📞 Chiamata vocale terminata · ' : '📹 Videochiamata terminata · ') + fmt(Date.now() - t0));
     requestAnimationFrame(() => { App.fitFrame && App.fitFrame(); App.chat.scroll && App.chat.scroll(); }); App.chat.header && App.chat.header();
+    if (App.solo && App.solo.syncMotion) App.solo.syncMotion();
   }
   function minimize() {
     if (!on) return;
@@ -155,6 +157,7 @@
     document.body.classList.remove('avatar-fs-on');
     document.body.classList.add('call-min');
     requestAnimationFrame(() => { App.fitFrame && App.fitFrame(); App.chat.scroll && App.chat.scroll(); });
+    if (App.solo && App.solo.syncMotion) App.solo.syncMotion();
   }
   function restore() {
     if (!on) return;
@@ -164,6 +167,7 @@
     stage.classList.add('fs', 'call');
     document.body.classList.add('avatar-fs-on', 'in-call');
     requestAnimationFrame(() => { App.fitFrame && App.fitFrame(); App.chat.scroll && App.chat.scroll(); });
+    if (App.solo && App.solo.syncMotion) App.solo.syncMotion();
   }
   // v8.4.4: fotocamera nella videochiamata (anche Safari/iPhone): chiesta passando a video (getUserMedia SOLO video: il microfono
   // della chiamata resta quello, mai fermato), anteprima piccola in alto (playsinline + muted + autoplay). Se negata: istruzioni chiare.
