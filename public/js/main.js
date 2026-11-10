@@ -259,18 +259,29 @@ App.fitFrame = function () {
   App.fitFrame();
 })();
 // v8.6.6: la barra di Safari cambia l'altezza visibile; il dock e il composer restano sopra di essa.
+// Con la tastiera iOS sposta la visual viewport (offsetTop > 0): la scocca segue quel rettangolo, senza far salire la pagina.
 (function () {
   const apply = () => {
-    const vv = window.visualViewport;
+    const vv = window.__vvTest || window.visualViewport;
     if (!vv) return;
+    document.documentElement.style.setProperty('--vv-top', Math.round(vv.offsetTop || 0) + 'px');
     document.documentElement.style.setProperty('--app-h', Math.round(vv.height) + 'px');
-    const covered = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+    const covered = Math.max(0, window.innerHeight - vv.height - (vv.offsetTop || 0));
     document.documentElement.style.setProperty('--vv-bottom', Math.round(covered) + 'px');
+    if (window.scrollX || window.scrollY) window.scrollTo(0, 0);
+    const input = document.getElementById('chat-input');
+    if (input && document.activeElement === input) {
+      const m = document.getElementById('messages');
+      if (m) m.scrollTop = m.scrollHeight;
+    }
   };
+  App.applyViewport = apply;
   apply();
   if (window.visualViewport) {
     visualViewport.addEventListener('resize', apply);
     visualViewport.addEventListener('scroll', apply);
   }
   addEventListener('orientationchange', () => setTimeout(apply, 250));
+  const input = document.getElementById('chat-input');
+  if (input) input.addEventListener('focus', () => requestAnimationFrame(apply));
 })();

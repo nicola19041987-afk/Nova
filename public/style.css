@@ -955,9 +955,11 @@ body.av-full-on .stage-tools,body.avatar-fs-on .stage-tools{right:calc(env(safe-
 /* v8.6.6: sempre il layout del telefono. Su schermi larghi la colonna è centrata, senza cornice. */
 html,body{background:#000}
 html:has(#view-login:not([hidden])),body:has(#view-login:not([hidden])){background:#fff}
+html:not(:has(#view-login:not([hidden]))),body:not(:has(#view-login:not([hidden]))){overflow:hidden;height:100%}
 #app-shell{
-  width:100%;max-width:430px;margin:0 auto;position:relative;
-  min-height:var(--app-h,100dvh);height:var(--app-h,100dvh);max-height:var(--app-h,100dvh);
+  width:min(100%,430px);max-width:430px;margin:0 auto;position:fixed;
+  top:var(--vv-top,0);left:0;right:0;
+  height:var(--app-h,100dvh);max-height:var(--app-h,100dvh);min-height:0;
   background:var(--bg);overflow:hidden;
 }
 @media (min-width:500px){
