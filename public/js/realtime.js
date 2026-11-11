@@ -163,7 +163,7 @@
       try {
         const r = await App.api(`/api/chats/${s.ch.id}/voice-turn`, { method: 'POST', body: { role, text, callMode: s.mode, ...extra } });
         s.turns++;
-        if ((r && r.adult !== s.adult) || s.turns % 8 === 0) refresh(s);
+        if ((r && (r.adult !== s.adult || r.explicitTalk !== s.explicitTalk)) || s.turns % 8 === 0) refresh(s);
         if (App.chat && App.chat.poll && App.current && App.current.id === s.ch.id) App.chat.poll();
       } catch (e) { console.warn('Trascrizione non salvata:', e.message); }
     });
@@ -171,7 +171,7 @@
   async function refresh(s) { // istruzioni aggiornate (modalità adulti, ricordi, ultimi messaggi) senza interrompere la chiamata
     try {
       const r = await App.api('/api/realtime/instructions', { method: 'POST', body: { characterId: s.ch.id, mode: s.mode } });
-      s.adult = r.adult; if (s.ws && s.ws.readyState === 1) s.ws.send(JSON.stringify({ type: 'session.update', session: { instructions: r.instructions } }));
+      s.adult = r.adult; s.explicitTalk = r.explicitTalk; if (s.ws && s.ws.readyState === 1) s.ws.send(JSON.stringify({ type: 'session.update', session: { instructions: r.instructions } }));
     } catch {}
   }
 
@@ -313,7 +313,7 @@
         s.cfg = (w && await w.p.catch(() => null)) || await App.api('/api/realtime/session', { method: 'POST', body: { characterId: s.ch.id, mode: s.mode, voice: s.voice, voiceExplicit: s.voiceExplicit === true }, ai: true });
         if (w) note('token pronto in anticipo');
         s.tokenMs = Math.round(performance.now() - t); note('token', s.tokenMs + ' ms');
-        s.adult = s.cfg.adult; await connect(s); return;
+        s.adult = s.cfg.adult; s.explicitTalk = s.cfg.explicitTalk; await connect(s); return;
       } catch (e) { last = e; note('tentativo ' + (i + 1), e.message); if (e.status && e.status < 500 && e.status !== 408) break; }
     }
     throw last || new Error('Tempo reale non disponibile');
@@ -383,6 +383,8 @@
       return S.userSpeaking ? 'Ti ascolto…' : 'Ti ascolto…';
     },
     speaking: () => !!(S && playing(S)),
+    listening: () => !!(S && S.userSpeaking),
+    refreshInstructions() { PRE = null; if (S && !S.closed) refresh(S); },
     lat: () => (S ? S.lat.slice() : []),
     _s: () => S,
     log: () => LOG.slice(),

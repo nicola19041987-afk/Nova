@@ -788,10 +788,21 @@
         const baseSway = listen ? 0.006 : 0.035;
         const nod = this.speaking ? Math.sin(now / 260) * Math.min(0.65, this.mouth || 0) * 0.05 : 0;
         const sway = (!still || reduce) ? (still ? 0 : (pose.torso || 0)) : (Math.sin(now / 5200) * baseSway + Math.sin(now / 9100 + 1.1) * baseSway * 0.35 + nod + (lib ? lib.sway * Math.sin((now - (lib.t0 || now)) / Math.max(400, lib.swayMs) * Math.PI * 2) : 0));
+        // nextBlink enorme = test del labiale: il movimento di base resta quello di prima.
+        const procOn = still && !reduce && !(this.nextBlink > 1e12) && window.MotionLib && MotionLib.drive;
+        let proc = null;
+        if (procOn) {
+          if (!this._drive) this._drive = MotionLib.createDrive();
+          const dtDrive = Math.min(80, Math.max(0, now - (this._driveAt || now)));
+          this._driveAt = now;
+          const energy = this.speaking ? Math.max(0.62, Math.min(1, 0.62 + (this.mouth || 0) * 0.38)) : (listen ? 0.14 : 0.3);
+          proc = MotionLib.drive(this._drive, now, dtDrive || 16, energy);
+        }
         ctx.translate(pivotX, pivotY);
-        ctx.rotate(sway);
-        ctx.scale(still ? 1 : lean, still ? breathY : breathY * lean);
+        ctx.rotate(sway + (proc ? proc.rot * 0.012 : 0));
+        ctx.scale(still ? 1 + (proc ? Math.max(0, proc.lean) * 0.012 : 0) : lean, still ? breathY : breathY * lean);
         ctx.translate(-pivotX, -pivotY);
+        if (proc) ctx.translate((proc.x * 0.008 + proc.shoulder * 0.004) * E.w, proc.y * E.h * 0.005);
         if (!still) {
           ctx.translate(mx, my);
           ctx.translate(0, (pose.pitch || 0) * E.h);

@@ -21,6 +21,8 @@ App.account = {
     // modalità adulti (per utente, solo dopo il consenso vocale). v8.3.1: subito dopo le impostazioni, così un errore
     // nel caricare regole/memoria/note non lascia l'interruttore bloccato o con lo stato sbagliato
     $('#set-adult').checked = !!App.settings.adultMode; $('#set-adult').disabled = false;
+    const filter = document.getElementById('set-content-filter');
+    if (filter) filter.checked = App.settings.contentFilter !== false;
     await App.account.adultStatus();
     try {
       const kw = await App.api('/api/adult-keyword'); App.kwSet = kw.set;
@@ -117,7 +119,8 @@ if (pinChange) pinChange.addEventListener('click', async () => {
 });
 
 async function saveSettings(extra) {
-  App.settings = await App.api('/api/settings', { method: 'PUT', body: { ...App.settings, adultMode: $('#set-adult').checked, noBrakes: $('#set-adult').checked && $('#set-nobrakes').checked, autoSave: $('#set-autosave').checked, allowExport: $('#set-export').checked, videoModel: $('#set-video-model').value.trim(), videoDuration: Number($('#set-video-duration').value), ...(extra || {}) } });
+  const filterEl = document.getElementById('set-content-filter');
+  App.settings = await App.api('/api/settings', { method: 'PUT', body: { ...App.settings, adultMode: $('#set-adult').checked, contentFilter: filterEl ? filterEl.checked : App.settings.contentFilter !== false, noBrakes: $('#set-adult').checked && $('#set-nobrakes').checked, autoSave: $('#set-autosave').checked, allowExport: $('#set-export').checked, videoModel: $('#set-video-model').value.trim(), videoDuration: Number($('#set-video-duration').value), ...(extra || {}) } });
   App.ls.set('settings', App.settings); App.media && App.media.renderAll(); App.feed && App.feed.render();
 }
 $('#set-autosave').addEventListener('change', saveSettings);
@@ -199,6 +202,21 @@ App.wipeDevice = async function () {
 $('#notes-save').addEventListener('click', async () => {
   const n = await App.api('/api/notes', { method: 'PUT', body: { text: $('#notes-input').value, toAI: $('#notes-ai').checked } });
   $('#notes-status').textContent = `Salvate il ${fmtDate(n.updatedAt)}`;
+});
+const contentFilter = document.getElementById('set-content-filter');
+if (contentFilter) contentFilter.addEventListener('change', async (e) => {
+  if (!e.target.checked && !confirm('Disattivare il filtro contenuti espliciti? In chat e in chiamata Nova può usare un linguaggio esplicito, solo tra adulti. Immagini e video restano non espliciti.')) {
+    e.target.checked = true;
+    return;
+  }
+  try {
+    await saveSettings();
+    if (App.rt && App.rt.refreshInstructions) App.rt.refreshInstructions();
+    App.toast(e.target.checked ? 'Filtro contenuti espliciti attivo' : 'Filtro spento per questo profilo');
+  } catch (err) {
+    e.target.checked = !e.target.checked;
+    App.toast(err.message);
+  }
 });
 $('#set-adult').addEventListener('change', async (e) => {
   if (e.target.checked && App.me && !App.me.activated) { e.target.checked = false; App.showActivation(); return; }

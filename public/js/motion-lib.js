@@ -60,6 +60,89 @@
     });
   });
   const byId = new Map(PRESETS.map((p) => [p.id, p]));
+  // Micro-movimenti dell'immagine intera (niente warp di viso o mani).
+  // I bersagli cambiano a intervalli irregolari e non ripetono l'ultimo gesto.
+  const DRIVES = [
+    { id: 'respiro', x: 0, y: 0.22, rot: 0, lean: 0.2, shoulder: 0 },
+    { id: 'sway-l', x: -0.72, y: 0.08, rot: -0.55, lean: 0.05, shoulder: -0.45 },
+    { id: 'sway-r', x: 0.72, y: 0.08, rot: 0.55, lean: 0.05, shoulder: 0.45 },
+    { id: 'nod', x: 0.04, y: 0.9, rot: 0.06, lean: 0.12, shoulder: 0.05 },
+    { id: 'tilt-l', x: -0.18, y: 0.06, rot: -0.85, lean: 0, shoulder: -0.25 },
+    { id: 'tilt-r', x: 0.18, y: 0.06, rot: 0.85, lean: 0, shoulder: 0.25 },
+    { id: 'lean', x: 0.02, y: -0.28, rot: 0.04, lean: 1, shoulder: 0.08 },
+    { id: 'shoulder', x: 0.28, y: 0.05, rot: 0.16, lean: 0.08, shoulder: 1 },
+  ];
+  const CALM_IDS = { respiro: 1, 'sway-l': 1, 'sway-r': 1, 'tilt-l': 1, 'tilt-r': 1 };
+  function createDrive() {
+    return { x: 0, y: 0, rot: 0, lean: 0, shoulder: 0, tx: 0, ty: 0, tr: 0, tl: 0, ts: 0, until: 0, recent: [], breath: 0, period: 3900, phase: 0.4, hold: '' };
+  }
+  function pickDrive(energy, recent, now) {
+    const skip = new Set(recent || []);
+    let bag = DRIVES.filter((m) => !skip.has(m.id));
+    if (energy < 0.22) bag = bag.filter((m) => CALM_IDS[m.id]);
+    if (!bag.length) bag = DRIVES.filter((m) => !skip.has(m.id));
+    if (!bag.length) bag = DRIVES.slice();
+    const n = Math.abs((Math.floor(now / 13) + (recent ? recent.length : 0) * 13) % bag.length);
+    return bag[n];
+  }
+  function drive(state, now, dt, energy) {
+    const s = state || createDrive();
+    const e = Math.max(0, Math.min(1, Number(energy) || 0));
+    if (!s.until || now >= s.until) {
+      const move = pickDrive(e, s.recent, now + (s.recent.length * 97));
+      s.recent = (s.recent || []).concat(move.id).slice(-5);
+      const amp = 0.34 + e * 0.9;
+      const j = ((Math.floor(now / 90) % 11) - 5) / 40;
+      s.tx = move.x * amp * (1 + j * 0.35);
+      s.ty = move.y * amp;
+      s.tr = move.rot * amp * (e > 0.5 ? 0.72 : 1);
+      s.tl = Math.max(0, move.lean) * (0.22 + e * 0.95);
+      s.ts = move.shoulder * amp;
+      s.until = now + (e > 0.5 ? 680 : 1500) + (Math.floor(now) % 740);
+      s.hold = move.id;
+    }
+    const step = Math.max(0, Math.min(80, dt || 16));
+    const k = 1 - Math.exp(-step / (e > 0.5 ? 160 : 460));
+    s.x += (s.tx - s.x) * k;
+    s.y += (s.ty - s.y) * k;
+    s.rot += (s.tr - s.rot) * k;
+    s.lean += (s.tl - s.lean) * k;
+    s.shoulder += (s.ts - s.shoulder) * k;
+    const want = (e > 0.5 ? 2400 : 4300) + ((Math.floor(now / 900) % 6) * 160);
+    s.period += (want - (s.period || want)) * 0.03;
+    s.phase += step / Math.max(900, s.period);
+    s.breath = Math.sin(s.phase * Math.PI * 2);
+    const talk = e > 0.45 ? Math.sin(now / (260 + (1 - e) * 220)) * e : 0;
+    return {
+      id: s.hold,
+      x: s.x,
+      y: s.y + s.breath * (0.28 + e * 0.5) + talk * 0.42,
+      rot: s.rot * (e > 0.5 ? 0.55 : 1) + talk * 0.05,
+      lean: s.lean + Math.max(0, s.breath) * 0.12 * e,
+      shoulder: s.shoulder,
+      breath: s.breath,
+      energy: e,
+    };
+  }
+  function cssPose(p) {
+    const e = Math.max(0, Math.min(1, (p && p.energy) || 0));
+    const gain = 0.5 + e * 0.85;
+    const x = ((p.x || 0) * 8 + (p.shoulder || 0) * 5) * gain;
+    const y = (p.y || 0) * (4.5 + e * 8);
+    const rot = (p.rot || 0) * (0.45 + e * 0.55);
+    const scale = 1 + Math.max(0, p.lean || 0) * (0.006 + e * 0.014);
+    const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+    return {
+      x: clamp(x, -16, 16),
+      y: clamp(y, -18, 18),
+      rot: clamp(rot, -1.35, 1.35),
+      scale: clamp(scale, 1, 1.028),
+    };
+  }
+  function cssTransform(p) {
+    const c = cssPose(p);
+    return 'translate3d(' + c.x.toFixed(2) + 'px,' + c.y.toFixed(2) + 'px,0) rotate(' + c.rot.toFixed(3) + 'deg) scale(' + c.scale.toFixed(4) + ')';
+  }
   function pick(ctx, now, recent) {
     const skip = new Set(recent || []);
     let bag = PRESETS.filter((p) => p.groups.indexOf(ctx) >= 0 && !skip.has(p.id));
@@ -77,7 +160,7 @@
     'Entrambe le mani aperte verso l’esterno',
     'Si alza e si sporge verso la camera',
   ];
-  const api = { PRESETS, count: PRESETS.length, pick, get: (id) => byId.get(id) || null, HAND_3D };
+  const api = { PRESETS, count: PRESETS.length, pick, get: (id) => byId.get(id) || null, HAND_3D, createDrive, drive, cssPose, cssTransform, DRIVES };
   if (typeof module === 'object' && module.exports) module.exports = api;
   root.MotionLib = api;
   function paintCount() {

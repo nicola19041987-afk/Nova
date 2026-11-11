@@ -456,7 +456,8 @@ app.get('/api/consent/audio', auth, (req, res) => {
 const settingsFile = (u) => path.join(userDir(u), 'settings.json');
 const getSettings = (u) => {
   const raw = readJSON(settingsFile(u), {}) || {};
-  const s = { autoSave: false, allowExport: false, adultMode: false, noBrakes: false, videoModel: '', videoDuration: 6, ...raw };
+  const s = { autoSave: false, allowExport: false, adultMode: false, noBrakes: false, contentFilter: true, videoModel: '', videoDuration: 6, ...raw };
+  if (s.contentFilter !== false) s.contentFilter = true;
   delete s.drawerScene;
   // Chi ha già il consenso trova la modalità sbloccata accesa, finché non la spegne a mano.
   if (isActivated(u) && raw.adultPicked !== false) {
@@ -488,6 +489,14 @@ function keepActive(u, body, cur) {
 const noBrakes = () => adultChat() && Object.keys(USERS).some((u) => getSettings(u).noBrakes === true);
 const adultOn = (u) => isActivated(u) && getSettings(u).adultMode === true;
 const adultChat = () => Object.keys(USERS).every(adultOn);
+// Filtro contenuti espliciti, per profilo (acceso di default). Spento = lo stesso sblocco di linguaggio della modalità adulti,
+// solo per chi è collegato. Non sblocca immagini, video o modifiche foto, e non cambia PIN o consenso vocale.
+const contentFilterOn = (u) => getSettings(u).contentFilter !== false;
+const explicitTalk = (u) => !contentFilterOn(u);
+function pickFilter(body, cur) {
+  if (body && Object.prototype.hasOwnProperty.call(body, 'contentFilter')) return body.contentFilter !== false;
+  return !cur || cur.contentFilter !== false;
+}
 // v8.3.1: stato chiaro per l'interfaccia (chi l'ha attivata, chi deve ancora farlo e cosa gli manca). Le regole non cambiano.
 function adultStatus(me) {
   const users = Object.keys(USERS).map((u) => ({ user: u, name: USERS[u].name, me: u === me, activated: isActivated(u), adultMode: getSettings(u).adultMode === true, on: adultOn(u) }));
@@ -504,10 +513,11 @@ app.put('/api/settings', auth, (req, res) => {
   if (!isAdmin(req.user)) { // v8.4: Luisa può solo dare o ritirare il PROPRIO consenso alla modalità adulti (e scegliere la sua avatar)
     const cur = getSettings(req.user), keys = ['autoSave', 'allowExport', 'videoModel', 'videoDuration'];
     if (keys.some((k) => req.body[k] !== undefined && String(req.body[k]) !== String(cur[k]))) return res.status(403).json({ error: ADMIN_MSG + ' Tu puoi solo dare o ritirare il tuo consenso alla modalità adulti.', code: 'ADMIN_ONLY' });
-    const s = { ...cur, adultMode: req.body.adultMode === true, activeChar: keepActive(req.user, req.body, cur), adultPicked: req.body.adultPicked === true ? true : req.body.adultPicked === false ? false : cur.adultPicked, noBrakes: req.body.noBrakes === true && req.body.adultMode === true, noBrakesPicked: req.body.noBrakesPicked === true ? true : req.body.noBrakesPicked === false ? false : cur.noBrakesPicked }; writeJSON(settingsFile(req.user), s); return res.json(s);
+    const s = { ...cur, adultMode: req.body.adultMode === true, contentFilter: pickFilter(req.body, cur), activeChar: keepActive(req.user, req.body, cur), adultPicked: req.body.adultPicked === true ? true : req.body.adultPicked === false ? false : cur.adultPicked, noBrakes: req.body.noBrakes === true && req.body.adultMode === true, noBrakesPicked: req.body.noBrakesPicked === true ? true : req.body.noBrakesPicked === false ? false : cur.noBrakesPicked }; writeJSON(settingsFile(req.user), s); return res.json(s);
   }
   const cur = getSettings(req.user);
   const s = { autoSave: req.body.autoSave === true, allowExport: req.body.allowExport === true, adultMode: req.body.adultMode === true,
+    contentFilter: pickFilter(req.body, cur),
     noBrakes: req.body.noBrakes === true && req.body.adultMode === true, // «Senza freni», insieme alla modalità adulti
     adultPicked: req.body.adultPicked === true ? true : req.body.adultPicked === false ? false : cur.adultPicked,
     noBrakesPicked: req.body.noBrakesPicked === true ? true : req.body.noBrakesPicked === false ? false : cur.noBrakesPicked,
@@ -1806,7 +1816,8 @@ function buildSystem(user, ch, opts = {}) {
     opts.realtime && REALTIME_TEXT(user),
     opts.chat && !opts.realtime && BODY_TEXT,
     !opts.realtime && actionsPrompt(ch),
-    adultChat() ? 'MODALITÀ ADULTI ATTIVA (scelta da entrambi gli utenti, che hanno registrato il consenso vocale): sono ammessi linguaggio esplicito e gioco di ruolo sessuale esplicito tra Nico, Luisa e il personaggio, che è una donna adulta inventata (25+). Resta sempre tutto entro le regole di base qui sotto.\n' + ADULT_FLOW + (true ? '\n' + NO_BRAKES : '') /* v8.6.0: con 18+ attiva per entrambi = sblocco massimo */
+    explicitTalk(user)
+      ? 'FILTRO CONTENUTI ESPLICITI SPENTO per ' + USERS[user].name + ' (solo il profilo collegato, adulti consenzienti): vale lo stesso sblocco di linguaggio della modalità adulti. Sono ammessi linguaggio esplicito e gioco di ruolo sessuale esplicito tra Nico, Luisa e il personaggio, che è una donna adulta inventata (25+). Resta sempre tutto entro le regole di base qui sotto.\n' + ADULT_FLOW + '\n' + NO_BRAKES + '\nVale solo per il testo della chat e per la voce. Immagini, video e modifiche alle foto restano non espliciti. Se il servizio rifiuta un contenuto, non riformulare per aggirare il rifiuto: accetta il rifiuto e cambia discorso.'
       : 'Modalità adulti NON attiva: niente contenuti sessuali espliciti. Se li chiedono, una frase sola, senza predica e senza ripetere l\'avviso.',
     (ch.requests || ch.orders) && String(ch.requests || ch.orders).trim() && `RICHIESTE DA SEGUIRE (degli utenti; valgono sempre):\n${String(ch.requests || ch.orders).trim()}`,
     ...personaNotes(user, ch),
@@ -2145,7 +2156,7 @@ app.post('/api/realtime/session', auth, requireActivated, requireKey, async (req
     res.setHeader('Cache-Control', 'no-store');
     const t1 = Date.now();
     res.json({ token, expiresAt: j.expires_at || null, url: `${REALTIME_URL}?model=${encodeURIComponent(REALTIME_MODEL)}`, model: REALTIME_MODEL, session: rtSession(req.user, ch, mode, voice),
-      mintMs: t1 - now, adult: adultChat() }); // v8.4.2: niente più extra con il modello di trascrizione (non previsto dallo schema)
+      mintMs: t1 - now, adult: adultChat(), explicitTalk: explicitTalk(req.user), contentFilter: contentFilterOn(req.user) }); // v8.4.2: niente più extra con il modello di trascrizione (non previsto dallo schema)
   } catch (e) { console.error('Errore AI tempo reale:', e.message); res.status(502).json({ error: 'Servizio voce in tempo reale non raggiungibile' }); }
 });
 // istruzioni aggiornate durante la chiamata (es. modalità adulti cambiata, nuovi ricordi): nessuna chiamata a xAI
@@ -2208,7 +2219,7 @@ app.post('/api/realtime/instructions', auth, requireActivated, (req, res) => {
   const ch = getChars(req.user).find((c) => c.id === String(req.body.characterId || ''));
   if (!ch) return res.status(404).json({ error: 'Personaggio non trovato' });
   res.setHeader('Cache-Control', 'no-store');
-  res.json({ instructions: rtInstructions(req.user, ch, req.body.mode === 'voice' ? 'voice' : 'video'), adult: adultChat() });
+  res.json({ instructions: rtInstructions(req.user, ch, req.body.mode === 'voice' ? 'voice' : 'video'), adult: adultChat(), explicitTalk: explicitTalk(req.user), contentFilter: contentFilterOn(req.user) });
 });
 // trascrizioni della chiamata salvate nella chat condivisa (come i messaggi delle videochiamate classiche)
 app.post('/api/chats/:id/voice-turn', auth, requireActivated, async (req, res) => {
@@ -2227,7 +2238,7 @@ app.post('/api/chats/:id/voice-turn', auth, requireActivated, async (req, res) =
     saved = await appendMsg(id, { role: 'assistant', author: ch.id, content: text, extra: { replyTo: req.user, ...callX } });
     try { if (isNovaChar(ch)) recordNovaMood(text, t.mood); } catch (e) { console.error('Umore Nova:', e.message); }
   }
-  res.json({ message: pubMsg(saved, ch), adult: adultChat() });
+  res.json({ message: pubMsg(saved, ch), adult: adultChat(), explicitTalk: explicitTalk(req.user), contentFilter: contentFilterOn(req.user) });
 });
 // connessione "calda" verso xAI all'inizio di una chiamata classica (DNS/TLS già pronti per la prima risposta)
 // v8.4.1: trascrizione della tua frase (chiamata classica): il telefono registra con il SUO rilevamento del parlato (microfono sempre
@@ -3085,13 +3096,17 @@ if (E2E_HARNESS) {
       ch = (Array.isArray(list) ? list : []).find((c) => c && c.id === id) || null;
     }
     if (!ch) return res.status(404).json({ error: 'Personaggio non trovato' });
-    const chat = buildSystem('nicola', ch, { chat: true });
-    const realtime = buildSystem('nicola', ch, { call: true, callMode: 'voice', realtime: true });
-    const call = buildSystem('nicola', ch, { chat: true, call: true, callMode: 'voice' });
+    const user = req.query.user === 'luisa' ? 'luisa' : 'nicola';
+    const chat = buildSystem(user, ch, { chat: true });
+    const realtime = buildSystem(user, ch, { call: true, callMode: 'voice', realtime: true });
+    const call = buildSystem(user, ch, { chat: true, call: true, callMode: 'voice' });
     res.setHeader('Cache-Control', 'no-store');
     res.json({
       id: ch.id, name: ch.name, ready: ch.ready || '', applies: usesNovaTone(ch), conflict: toneConflict(ch),
       stored: { personality: ch.personality || '', style: ch.style || '', requests: ch.requests || '', orders: ch.orders || '' },
+      user, contentFilter: contentFilterOn(user), explicitTalk: explicitTalk(user),
+      imageAdult: adultOn(user),
+      imageExplicit: imgPrefix(adultOn(user)).includes('explicit adult nudity'),
       model: CHAT_MODEL, chat, realtime, call,
     });
   });

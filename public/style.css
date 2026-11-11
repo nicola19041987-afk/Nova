@@ -1194,6 +1194,10 @@ body.solo-mode.in-call:not(.call-min) #stage.call:not(.voice) .call-btn.end{
   background:#e0303f!important;
 }
 #motion-video{display:none}
+#motion-video.nv-live,.call-portrait.nv-live{transform-origin:50% 78%;will-change:transform}
+@media (prefers-reduced-motion:reduce){
+  #motion-video.nv-live,.call-portrait.nv-live{transform:none!important}
+}
 body.solo-mode.in-call:not(.call-min) #stage.call:not(.voice).has-motion #motion-video,
 body.solo-mode.solo-portrait:not(.in-call) #stage.has-motion #motion-video{
   display:block!important;position:absolute!important;inset:0!important;z-index:3;
