@@ -17,7 +17,7 @@ const ROLES = { nico: 'Nico', nicola: 'Nicola' };
 
 function aiKey() { return (process.env.XAI_API_KEY || process.env.AI_KEY || '').trim(); }
 function tokenFor(role) { return (process.env[role === 'nico' ? 'NN_TOKEN_NICO' : 'NN_TOKEN_NICOLA'] || '').trim(); }
-function pinFor(role) { return role === 'nico' ? (process.env.NN_NICO_PIN || '').trim() : ''; }
+function pinFor(role) { return ''; } // accesso solo con password (token): PIN disattivato
 function safeEq(a, b) {
   const x = Buffer.from(String(a)); const y = Buffer.from(String(b));
   return x.length === y.length && crypto.timingSafeEqual(x, y);

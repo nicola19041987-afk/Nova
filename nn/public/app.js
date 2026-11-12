@@ -173,11 +173,21 @@
     try { const j = await api('/api/unlock', { method: 'POST', body: { pin: $('#pin-input').value } }); LS.setItem('nn.s', j.sess || ''); $('#pin-input').value = ''; start(); }
     catch (err) { $('#gate-msg').textContent = err.message; }
   });
-  async function start() {
-    if (!key()) { $('#gate').hidden = false; return; }
+  function askPass(msg) {
+    $('#gate').hidden = false; $('#pin-form').hidden = true; $('#pass-form').hidden = false;
+    $('#gate-msg').textContent = msg || 'Inserisci la password per entrare.';
+    setTimeout(() => $('#pass-input').focus(), 50);
+  }
+  $('#pass-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const p = $('#pass-input').value.trim(); if (!p) return;
+    LS.setItem('nn.k', p); LS.removeItem('nn.s'); $('#pass-input').value = ''; start(true);
+  });
+  async function start(fromForm) {
+    if (!key()) { askPass(); return; }
     try { me = await api('/api/me'); }
-    catch { $('#gate').hidden = false; $('#gate-msg').textContent = 'Link non valido. Chiedi a Nicola il link giusto.'; return; }
-    if (me.pin) { $('#gate').hidden = false; $('#pin-form').hidden = false; $('#gate-msg').textContent = 'Ciao ' + me.name + '! Inserisci il PIN.'; setTimeout(() => $('#pin-input').focus(), 50); return; }
+    catch { LS.removeItem('nn.k'); askPass(fromForm ? 'Password errata, riprova.' : ''); return; }
+    if (me.pin) { $('#gate').hidden = false; $('#pass-form').hidden = true; $('#pin-form').hidden = false; $('#gate-msg').textContent = 'Ciao ' + me.name + '! Inserisci il PIN.'; setTimeout(() => $('#pin-input').focus(), 50); return; }
     $('#gate').hidden = true;
     $('#sub').textContent = me.role === 'nicola' ? 'vedi tutto quello che scrive Nico, in tempo reale' : 'il tuo pezzetto di carta digitale';
     await poll(); bottom(); live(); paint();
