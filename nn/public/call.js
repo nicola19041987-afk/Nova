@@ -123,6 +123,7 @@
       case 'response.done': {
         s.responseActive = false; const r = s.resp; s.resp = null;
         if (r && r.text && !r.saved) { r.saved = true; addTurn(s, 'assistant', r.text); }
+        if (s.ending) s.goodbyeHeard = true;
         break;
       }
       case 'error': {
@@ -203,7 +204,8 @@
   }
   function caption(t) { const el = $('#call-caption'); el.textContent = String(t || '').slice(-160); }
 
-  async function start() {
+  async function start(opts) {
+    opts = opts || {};
     const NN = window.NN; if (!NN || S) return;
     if (!supported()) return NN.status('Chiamata non supportata da questo browser.');
     // tutto nel tocco: contesto audio + sblocco + microfono (permesso chiesto qui)
@@ -213,9 +215,10 @@
     s.timer = setInterval(ui, 500);
     try {
       const micP = navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
-      const cfgP = NN.api('/api/call/session', { method: 'POST', body: {} });
+      const cfgP = NN.api('/api/call/session', { method: 'POST', body: opts.incomingId ? { incomingId: opts.incomingId } : {} });
       s.stream = await micP.catch(() => { throw new Error('Microfono non consentito: attivalo nelle impostazioni del browser.'); });
       s.cfg = await cfgP;
+      window.NNCall.lastGreet = (s.cfg && s.cfg.greet) || '';
       if (s.closed) return;
       await startMic(s);
       await connect(s);
@@ -226,8 +229,33 @@
       if (s.cfg.greet) s.ws.send(JSON.stringify({ type: 'conversation.item.create', item: { type: 'force_message', role: 'assistant', interruptible: true, content: [{ type: 'output_text', text: s.cfg.greet }] } }));
     } catch (e) { stats.lastError = e.message; hangup(e.message || 'Chiamata non riuscita.'); }
   }
-  async function hangup(msg) {
-    const s = S; if (!s || s.closed) return; s.closed = true; S = null;
+  async function sayGoodbye(s) {
+    if (!s.ws || s.ws.readyState !== 1 || !s.ready) return;
+    s.ending = true; s.goodbyeHeard = false;
+    caption('');
+    $('#call-status').textContent = 'Saluto…';
+    try {
+      s.ws.send(JSON.stringify({
+        type: 'response.create',
+        response: { instructions: "L'utente sta riagganciando. Saluta in italiano in modo breve e naturale, una sola frase di commiato, senza fare domande e senza proporre altro. Poi taci." }
+      }));
+    } catch { return; }
+    const t0 = Date.now();
+    while (!s.closed && Date.now() - t0 < 8000) {
+      if (s.goodbyeHeard && !playing(s) && !s.responseActive) break;
+      await new Promise((r) => setTimeout(r, 80));
+    }
+    const drain = Date.now();
+    while (playing(s) && Date.now() - drain < 4000) await new Promise((r) => setTimeout(r, 80));
+    await new Promise((r) => setTimeout(r, 180));
+  }
+  async function hangup(msg, opt) {
+    const s = S; if (!s || s.closed) return;
+    if (opt && opt.goodbye && !s.ending && s.ws && s.ws.readyState === 1 && s.ready && s.t0) {
+      try { await sayGoodbye(s); } catch {}
+    }
+    if (s.closed) return;
+    s.closed = true; S = null;
     clearInterval(s.timer); clearInterval(s.dog);
     if (s.resp && s.resp.text && !s.resp.saved) addTurn(s, 'assistant', s.resp.text + '…');
     try { s.ws && s.ws.close(); } catch {}
@@ -250,8 +278,9 @@
   function mute() { const s = S; if (!s) return; s.muted = !s.muted; if (s.muted && s.ws && s.ws.readyState === 1) s.ws.send(JSON.stringify({ type: 'input_audio_buffer.clear' })); ui(); }
 
   $('#call-btn').addEventListener('click', start);
-  $('#call-end').addEventListener('click', () => hangup());
+  $('#call-end').addEventListener('click', () => hangup(null, { goodbye: true }));
   $('#call-mute').addEventListener('click', mute);
+  window.NNCall.start = start; window.NNCall.hangup = hangup;
   window.addEventListener('pagehide', () => { if (S) hangup(); });
   document.addEventListener('visibilitychange', () => { const s = S; if (s && !document.hidden) { s.c.resume().catch(() => {}); if (s.ws && s.ws.readyState > 1) reconnect(s); } });
 })();

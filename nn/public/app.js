@@ -64,16 +64,19 @@
     }
     const mine = me && m.author === me.role;
     const el = document.createElement('div');
-    el.className = 'msg ' + (mine ? 'mine' : 'other');
+    const isCall = !!m.call;
+    const missed = isCall && m.call.kind === 'missed';
+    el.className = 'msg ' + (isCall ? 'call-log' : (mine ? 'mine' : 'other'));
     const time = d.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
-    el.innerHTML = (mine ? '' : `<span class="au ${esc(m.author)}">${esc(NAMES[m.author] || m.author)}</span>`)
+    const callLabel = missed ? 'Chiamata persa da Idea' : (isCall ? ('Chiamata con Idea · ' + (m.call.dur || '')) : '');
+    el.innerHTML = (isCall ? '' : (mine ? '' : `<span class="au ${esc(m.author)}">${esc(NAMES[m.author] || m.author)}</span>`))
       + (m.media && m.media.kind === 'image' ? `<img class="ph" src="${esc(mediaUrl(m.media.id))}" alt="Foto" loading="lazy">` : '')
       + (m.media && m.media.kind === 'video' ? `<video class="vd" src="${esc(mediaUrl(m.media.id))}" controls playsinline preload="metadata"></video>` : '')
       + (m.media && m.media.kind === 'file' ? `<a class="doc" href="${esc(mediaUrl(m.media.id))}" download="${esc(m.media.name || 'documento')}" target="_blank" rel="noopener"><span class="doc-ico">📄</span><span><b>${esc(m.media.name || 'Documento')}</b><small>${esc(fileLabel(m.media))}</small></span></a>` : '')
-      + (m.voice ? `<span class="vtag">🎤 Vocale · ${m.voice.sec || 1}s</span>` + (m.voice.audio ? `<audio class="au-pl" src="${esc(mediaUrl(m.voice.audio))}" controls preload="none"></audio>` : '') : '')
-      + (m.call ? `<span class="ctag">📞 Chiamata vocale con ${esc(NAMES[m.call.with] || '')} · ${esc(m.call.dur || '')}</span>` : '')
-      + (m.content ? `<span class="tx">${m.voice ? '<i>Trascrizione:</i> ' : ''}${esc(m.content)}</span>` : '')
-      + (m.call && m.call.transcript ? `<details class="ctr"><summary>Trascrizione</summary><span>${esc(m.call.transcript)}</span></details>` : '')
+      + (m.voice ? `<span class="vtag">🎤 Vocale · ${m.voice.sec || 1}s</span>` + (m.voice.audio ? `<audio class="au-pl" src="${esc(mediaUrl(m.voice.audio))}" controls playsinline preload="metadata"></audio>` : '') : '')
+      + (isCall ? `<span class="ctag${missed ? ' missed' : ''}">📞 ${esc(callLabel)}</span>` : '')
+      + (m.content && !m.voice ? `<span class="tx">${esc(m.content)}</span>` : '')
+      + (m.voice && m.voice.text ? `<span class="vtr">${esc(m.voice.text)}</span>` : '')
       + (m.idea ? `<span class="itag">💡 Idea salvata: ${esc(m.idea)}</span>` : '')
       + `<span class="meta">${time}</span>`;
     box.appendChild(el);
@@ -94,6 +97,8 @@
     es.addEventListener('message', (ev) => { add(JSON.parse(ev.data)); typing(false); });
     es.addEventListener('typing', (ev) => typing(JSON.parse(ev.data).on));
     es.addEventListener('ideas', (ev) => ideas(JSON.parse(ev.data)));
+    es.addEventListener('incoming', (ev) => { try { showIncoming(JSON.parse(ev.data)); } catch {} });
+    es.addEventListener('incoming-end', (ev) => { try { const d = JSON.parse(ev.data); if (d && d.id && $('#incoming').dataset.id === d.id) hideIncoming(); } catch {} });
     es.addEventListener('hello', () => poll());
     // polling di riserva ogni 2 s: se SSE cade, i messaggi arrivano comunque
     clearInterval(pollT); pollT = setInterval(poll, 2000);
@@ -206,7 +211,7 @@
       if (cancel) return status('Vocale annullato.');
       if (sec < 0.6) return status('Tieni premuto il microfono mentre parli.');
       const blob = new Blob(chunks, { type: r.mimeType || 'audio/webm' });
-      status('Trascrivo il vocale…');
+      status('Invio il vocale…');
       try {
         const wav = await toWav(blob).catch(() => null);
         const body = wav || blob;
@@ -408,6 +413,7 @@
     $('#sub').textContent = 'online';
     if (me.names) setNames(me.names);
     $('#home-btn').hidden = me.role !== 'nicola';
+    $('#push-btn').hidden = me.role === 'nicola';
     if (me.welcome) {
       $('#welcome-photo').src = '/api/welcome/photo?k=' + encodeURIComponent(key()) + '&s=' + encodeURIComponent(sess());
       $('#welcome').hidden = false;
@@ -421,11 +427,123 @@
       else { savePrefsAll(); }
     } catch {}
     await poll(); bottom(); live(); paint();
+    maybeAskPush();
+    checkIncoming();
   }
   $('#welcome-ok').addEventListener('click', () => {
     $('#welcome').hidden = true;
     api('/api/welcome/seen', { method: 'POST', body: {} }).catch(() => {});
   });
-  window.NN = { api, key, sess, me: () => me, status, poll };
+  // --- notifiche e chiamata in arrivo da Idea ---
+  let ringCtx = null, ringTimer = 0, incomingId = '';
+  function startRingtone() {
+    stopRingtone();
+    const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
+    try {
+      const c = ringCtx = new AC();
+      const osc = c.createOscillator(); const g = c.createGain();
+      osc.type = 'sine'; osc.frequency.value = 440; g.gain.value = 0;
+      osc.connect(g); g.connect(c.destination); osc.start();
+      const pulse = () => {
+        if (!ringCtx) return;
+        const t = c.currentTime;
+        g.gain.cancelScheduledValues(t);
+        g.gain.setValueAtTime(0, t);
+        g.gain.linearRampToValueAtTime(0.18, t + 0.05);
+        g.gain.setValueAtTime(0.18, t + 0.35);
+        g.gain.linearRampToValueAtTime(0, t + 0.4);
+        osc.frequency.setValueAtTime(440, t);
+        osc.frequency.setValueAtTime(480, t + 0.2);
+      };
+      pulse(); ringTimer = setInterval(pulse, 900);
+    } catch {}
+  }
+  function stopRingtone() {
+    clearInterval(ringTimer); ringTimer = 0;
+    if (ringCtx) { try { ringCtx.close(); } catch {} ringCtx = null; }
+  }
+  function showIncoming(p) {
+    if (!p || !p.id) return;
+    incomingId = p.id;
+    $('#incoming').dataset.id = p.id;
+    $('#incoming-reason').textContent = p.reason || '';
+    $('#incoming').hidden = false;
+    startRingtone();
+  }
+  function hideIncoming() {
+    incomingId = '';
+    $('#incoming').hidden = true;
+    $('#incoming').dataset.id = '';
+    stopRingtone();
+  }
+  async function checkIncoming() {
+    const qs = new URLSearchParams(location.search);
+    const fromUrl = qs.get('incoming');
+    if (fromUrl) history.replaceState(null, '', '/');
+    try {
+      const j = await api('/api/call/pending');
+      if (j && j.call) { showIncoming(j.call); return; }
+    } catch {}
+    if (fromUrl) {
+      try { const j = await api('/api/call/pending'); if (j && j.call) showIncoming(j.call); } catch {}
+    }
+  }
+  $('#incoming-ok').addEventListener('click', async () => {
+    const id = incomingId || $('#incoming').dataset.id;
+    hideIncoming();
+    if (window.NNCall && window.NNCall.start) window.NNCall.start({ incomingId: id });
+  });
+  $('#incoming-no').addEventListener('click', async () => {
+    const id = incomingId || $('#incoming').dataset.id;
+    hideIncoming();
+    if (id) try { await api('/api/call/decline', { method: 'POST', body: { id } }); } catch (e) { status(e.message || 'Chiamata già chiusa.'); }
+  });
+  navigator.serviceWorker && navigator.serviceWorker.addEventListener('message', (ev) => {
+    if (ev.data && ev.data.type === 'incoming') checkIncoming();
+  });
+
+  async function enablePush() {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window) || !window.Notification) {
+      status('Le notifiche non sono disponibili su questo dispositivo.');
+      return false;
+    }
+    try {
+      const perm = await Notification.requestPermission();
+      if (perm !== 'granted') { status('Permesso notifiche non concesso.'); return false; }
+      const reg = await navigator.serviceWorker.register('/sw.js?v=6', { scope: '/' });
+      await navigator.serviceWorker.ready;
+      const vapid = await api('/api/push/vapid');
+      const key = vapid.publicKey;
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8(key),
+      });
+      await api('/api/push/subscribe', { method: 'POST', body: { subscription: sub.toJSON ? sub.toJSON() : sub } });
+      LS.setItem('nn.push.on', '1');
+      $('#push-prompt').hidden = true;
+      $('#push-btn').classList.add('on');
+      status('Notifiche attivate.');
+      return true;
+    } catch (e) { status(e.message || 'Notifiche non attivate.'); return false; }
+  }
+  function urlBase64ToUint8(b64) {
+    const pad = '='.repeat((4 - b64.length % 4) % 4);
+    const raw = atob((b64 + pad).replace(/-/g, '+').replace(/_/g, '/'));
+    const out = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+    return out;
+  }
+  function maybeAskPush() {
+    if (LS.getItem('nn.push.on') || LS.getItem('nn.push.skip')) return;
+    if (!('Notification' in window) || !('serviceWorker' in navigator)) return;
+    if (Notification.permission === 'denied') return;
+    $('#push-prompt').hidden = false;
+  }
+  $('#push-enable').addEventListener('click', () => enablePush());
+  $('#push-later').addEventListener('click', () => { LS.setItem('nn.push.skip', '1'); $('#push-prompt').hidden = true; });
+  $('#push-btn').addEventListener('click', () => enablePush());
+  $('#go-push').addEventListener('click', () => enablePush());
+
+  window.NN = { api, key, sess, me: () => me, status, poll, showIncoming };
   start();
 })();

@@ -7,6 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const extract = require('./extract');
+const { createNotify } = require('./notify');
 
 const PORT = Number(process.env.PORT) || 3000;
 const AI_BASE_URL = (process.env.AI_BASE_URL || 'https://api.x.ai/v1').replace(/\/+$/, '');
@@ -169,9 +170,12 @@ function save() {
 
 // ---------- Tempo reale (SSE) ----------
 const clients = new Set();
-function broadcast(type, data) {
+function broadcast(type, data, onlyRole) {
   const line = `event: ${type}\ndata: ${JSON.stringify(data)}\n\n`;
-  for (const c of clients) { try { c.write(line); } catch {} }
+  for (const c of clients) {
+    if (onlyRole && c.role !== onlyRole) continue;
+    try { c.res.write(line); } catch {}
+  }
 }
 function addMsg(m) {
   const msg = { id: ++db.seq, at: new Date().toISOString(), ...m };
@@ -182,7 +186,7 @@ function addMsg(m) {
 const SYSTEM = `Sei ${BOT_NAME}, l'assistente dell'app ${APP_NAME} ("Collaborazione NN"): il "pezzetto di carta digitale" di Nicola.
 In questa chat ci sono due persone: Nicola Fortunato ("Nicola"), l'amico pieno di idee che di solito le appunta su pezzetti di carta, e Nico Franchino ("Nico"), che ha creato questa app e segue tutto in tempo reale.
 Ogni messaggio arriva con il nome di chi scrive: rivolgiti a quella persona per nome (Nicola o Nico) e non confonderli.
-Possono mandarti testo, vocali (ricevi la trascrizione) e foto o video: guarda le immagini e rispondi su cosa vedi, collegandolo all'idea. Rispondi sempre e solo per iscritto. Rispondi SEMPRE in italiano, breve (1-4 frasi), caldo, diretto e concreto, come un amico sveglio su WhatsApp.
+Possono mandarti testo, vocali (ricevi la trascrizione, che userai solo per capire) e foto o video: guarda le immagini e rispondi su cosa vedi, collegandolo all'idea. Rispondi SEMPRE in italiano, breve (1-4 frasi), caldo, diretto e concreto, come un amico sveglio su WhatsApp.
 Il tuo compito: accogliere ogni idea, aiutare a chiarirla con al massimo una domanda utile, proporre un passo pratico, e ricordare le idee già raccolte.
 Ti chiami ${BOT_NAME}. Se ti presenti, di' che sei ${BOT_NAME}, il posto dove Nicola appunta le sue idee. Rispondi anche quando ti chiamano "${BOT_NAME}" o "${APP_NAME}".
 Quando nel messaggio c'è un'idea nuova (o un aggiornamento chiaro di una già nota), aggiungi in fondo, su una riga a parte, ESATTAMENTE:
@@ -243,6 +247,10 @@ function storeIdeas(ideas, autore) {
   if (n) { save(); broadcast('ideas', db.ideas); }
   return n;
 }
+function lastIsVoice() {
+  const last = db.messages[db.messages.length - 1];
+  return !!(last && last.role === 'user' && last.voice);
+}
 let busy = Promise.resolve();
 function reply() {
   busy = busy.then(async () => {
@@ -258,7 +266,7 @@ function reply() {
       if (m.role === 'assistant') return { role: 'assistant', content: m.content };
       const who = ROLES[m.author] || m.author;
       const kind = m.voice ? ' (vocale)' : m.media ? (m.media.kind === 'video' ? ' (video)' : m.media.kind === 'file' ? ' (documento)' : ' (foto)') : '';
-      let text = `${who}${kind}: ${m.content || (m.media ? (m.media.kind === 'video' ? '[ha inviato un video]' : m.media.kind === 'file' ? '[ha inviato un documento: ' + (m.media.name || '') + ']' : '[ha inviato una foto]') : '')}`;
+      let text = `${who}${kind}: ${m.content || (m.voice && m.voice.text) || (m.media ? (m.media.kind === 'video' ? '[ha inviato un video]' : m.media.kind === 'file' ? '[ha inviato un documento: ' + (m.media.name || '') + ']' : '[ha inviato una foto]') : (m.call ? '[chiamata]' : ''))}`;
       if (m.media && m.media.kind === 'file') {
         const body = readDocText(m.media.id);
         text += body ? '\nTesto estratto del documento:\n' + body.slice(0, 20000) : (m.media.scanned ? '\n(PDF scannerizzato: nessun testo estraibile.)' : '\n(Nessun testo estraibile da questo file.)');
@@ -268,7 +276,8 @@ function reply() {
       vision = true;
       return { role: 'user', content: [{ type: 'text', text: text + (m.media.kind === 'video' ? ' (ti allego il primo fotogramma del video)' : '') }, { type: 'image_url', image_url: { url: img, detail: 'high' } }] };
     });
-    const messages = [{ role: 'system', content: SYSTEM + '\n\n' + ideasContext() + (docsContext(true) ? '\n\n' + docsContext(true) : '') + '\nOggi è ' + new Date().toLocaleDateString('it-IT', { timeZone: 'Europe/Rome' }) + '.' }, ...hist];
+    const voiceHint = lastIsVoice() ? '\n\nStai rispondendo a un vocale: il tuo testo verrà letto ad alta voce da te (voce Luna) e inviato come vocale, non come messaggio scritto. Frasi brevi e naturali, niente emoji, elenchi o simboli.' : '';
+    const messages = [{ role: 'system', content: SYSTEM + '\n\n' + ideasContext() + (docsContext(true) ? '\n\n' + docsContext(true) : '') + '\nOggi è ' + new Date().toLocaleDateString('it-IT', { timeZone: 'Europe/Rome' }) + '.' + voiceHint }, ...hist];
     broadcast('typing', { on: true });
     let text;
     try { text = await callModel(vision ? VISION_MODEL : CHAT_MODEL, messages); }
@@ -282,7 +291,19 @@ function reply() {
     text = text.replace(/\[\[IDEA\s*(\{[\s\S]*?\})\s*\]\]/g, (_, js) => { try { ideas.push(JSON.parse(js)); } catch {} return ''; }).trim();
     const lastUser = [...db.messages].reverse().find((m) => m.role === 'user');
     storeIdeas(ideas, lastUser ? (ROLES[lastUser.author] || lastUser.author) : '');
-    addMsg({ role: 'assistant', author: 'nn', content: text || '👍', idea: ideas.length ? ideas.map((i) => i.titolo).join(', ') : undefined });
+    const ideaTag = ideas.length ? ideas.map((i) => i.titolo).join(', ') : undefined;
+    const spoken = (text || '').replace(/\s+/g, ' ').trim();
+    if (lastUser && lastUser.voice) {
+      try {
+        const clip = await synthSpeech(spoken || 'Va bene.');
+        addMsg({ role: 'assistant', author: 'nn', content: '', voice: { sec: clip.sec, audio: clip.id, text: spoken }, idea: ideaTag });
+      } catch (e) {
+        console.error('Vocale di Idea non sintetizzato:', e.message);
+        addMsg({ role: 'assistant', author: 'nn', content: text || '👍', idea: ideaTag });
+      }
+    } else {
+      addMsg({ role: 'assistant', author: 'nn', content: text || '👍', idea: ideaTag });
+    }
     if (lastUser && lastUser.media && lastUser.media.kind === 'file') {
       const sum = (text || '').replace(/\s+/g, ' ').trim().slice(0, 400);
       rememberDoc(lastUser.media, sum, ROLES[lastUser.author] || lastUser.author);
@@ -312,6 +333,204 @@ function saveMedia(buf, type) {
   fs.writeFileSync(path.join(MEDIA_DIR, id), buf, { mode: 0o600 });
   return id;
 }
+
+// ---------- TTS (voce Luna, stesso timbro delle chiamate) ----------
+// Endpoint ufficiale: POST /v1/tts (voice_id, language). Se non disponibile, si prova una sessione realtime.
+async function synthSpeech(text) {
+  const said = String(text || '').replace(/\s+/g, ' ').trim().slice(0, 4000) || 'Va bene.';
+  if (!aiKey()) throw new Error('no key');
+  const r = await fetch(`${AI_BASE_URL}/tts`, {
+    method: 'POST', signal: AbortSignal.timeout(30000),
+    headers: { Authorization: `Bearer ${aiKey()}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text: said, voice_id: NN_VOICE, language: 'it' }),
+  });
+  if (r.ok) {
+    const buf = Buffer.from(await r.arrayBuffer());
+    if (buf.length > 100) {
+      const ct = (r.headers.get('content-type') || 'audio/mpeg').split(';')[0];
+      const type = /wav/i.test(ct) ? 'audio/wav' : /ogg/i.test(ct) ? 'audio/ogg' : 'audio/mpeg';
+      const id = saveMedia(buf, type);
+      if (!id) throw new Error('save');
+      const sec = Math.max(1, Math.round(buf.length * 8 / 128000) || 1);
+      return { id, sec };
+    }
+  } else {
+    const err = await r.text().catch(() => '');
+    console.error('TTS HTTP', r.status, err.slice(0, 200));
+  }
+  return synthSpeechRealtime(said);
+}
+async function synthSpeechRealtime(text) {
+  const r = await fetch(`${AI_BASE_URL}/realtime/client_secrets`, {
+    method: 'POST', signal: AbortSignal.timeout(15000),
+    headers: { Authorization: `Bearer ${aiKey()}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ expires_after: { seconds: 120 } }),
+  });
+  if (!r.ok) throw new Error('realtime secret HTTP ' + r.status);
+  const j = await r.json().catch(() => ({}));
+  const token = j.value || (j.client_secret && (j.client_secret.value || j.client_secret)) || j.token || j.secret;
+  if (!token) throw new Error('no realtime token');
+  const url = `${REALTIME_URL}?model=${encodeURIComponent(REALTIME_MODEL)}`;
+  const chunks = [];
+  await new Promise((ok, ko) => {
+    const ws = new WebSocket(url, [`xai-client-secret.${token}`]);
+    const to = setTimeout(() => { try { ws.close(); } catch {} ko(new Error('tts realtime timeout')); }, 20000);
+    const finish = (e) => { clearTimeout(to); try { ws.close(); } catch {} if (e) ko(e); else ok(); };
+    ws.addEventListener('open', () => {
+      ws.send(JSON.stringify({ type: 'session.update', session: { voice: NN_VOICE, instructions: 'Leggi ad alta voce, in italiano, solo il testo che ti viene dato. Niente altro.', audio: { output: { format: { type: 'audio/pcm', rate: 24000 } } } } }));
+    });
+    ws.addEventListener('message', (ev) => {
+      const raw = ev.data;
+      if (typeof raw !== 'string') { chunks.push(Buffer.from(raw)); return; }
+      let msg; try { msg = JSON.parse(raw); } catch { return; }
+      if (msg.type === 'session.updated' || msg.type === 'session.created') {
+        ws.send(JSON.stringify({ type: 'response.create', response: { instructions: 'Dì esattamente, senza aggiungere nulla: ' + text } }));
+      }
+      if ((msg.type === 'response.output_audio.delta' || msg.type === 'response.audio.delta') && msg.delta) {
+        chunks.push(Buffer.from(msg.delta, 'base64'));
+      }
+      if (msg.type === 'response.done') finish();
+      if (msg.type === 'error') finish(new Error((msg.error && msg.error.message) || 'tts realtime'));
+    });
+    ws.addEventListener('error', () => finish(new Error('tts realtime ws')));
+  });
+  if (!chunks.length) throw new Error('tts realtime empty');
+  const pcm = Buffer.concat(chunks);
+  const wav = pcmToWav(pcm, 24000);
+  const id = saveMedia(wav, 'audio/wav');
+  if (!id) throw new Error('save wav');
+  return { id, sec: Math.max(1, Math.round(pcm.length / 2 / 24000)) };
+}
+function pcmToWav(pcm, rate) {
+  const h = Buffer.alloc(44);
+  h.write('RIFF', 0); h.writeUInt32LE(36 + pcm.length, 4); h.write('WAVE', 8);
+  h.write('fmt ', 12); h.writeUInt32LE(16, 16); h.writeUInt16LE(1, 20); h.writeUInt16LE(1, 22);
+  h.writeUInt32LE(rate, 24); h.writeUInt32LE(rate * 2, 28); h.writeUInt16LE(2, 32); h.writeUInt16LE(16, 34);
+  h.write('data', 36); h.writeUInt32LE(pcm.length, 40);
+  return Buffer.concat([h, pcm]);
+}
+
+// ---------- Idea chiama qualcuno (notifiche + schermata in arrivo) ----------
+const notify = createNotify(DATA_DIR);
+const pendingCalls = new Map();
+const RING_MS = 35000;
+function normIt(s) {
+  return String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+}
+function people() {
+  const out = [
+    { role: 'nico', names: ['Nicola', 'Nicola Fortunato'] },
+    { role: 'nicola', names: ['Nico', 'Nico Franchino'] },
+  ];
+  for (const u of extraUsers) {
+    if (!u || !u.name) continue;
+    out.push({ role: 'u_' + u.id, names: [u.name] });
+  }
+  return out;
+}
+function displayName(role) { return (ROLES[role] || namesMap()[role] || role); }
+function parseCallIntent(text, fromRole) {
+  const raw = String(text || '').trim();
+  const t = normIt(raw);
+  if (!/\b(chiama(?:re|mi|lo|la)?|telefon(?:a|are))\b/.test(t)) return null;
+  let best = null, bestLen = 0;
+  for (const p of people()) {
+    if (p.role === fromRole) continue;
+    for (const n of p.names) {
+      const nn = normIt(n);
+      if (!nn) continue;
+      const re = new RegExp('\\b' + nn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b');
+      if (re.test(t) && nn.length > bestLen) { best = { to: p.role, name: n }; bestLen = nn.length; }
+    }
+  }
+  if (!best) return null;
+  let reason = raw.replace(/^[\s\S]*?\b(?:chiama(?:re|mi|lo|la)?|telefon(?:a|are))\b/i, '').trim();
+  reason = reason.replace(new RegExp('^\\s*(?:tu|per favore|per piacere|un attimo|ora|adesso)?\\s*', 'i'), '');
+  const nameRe = new RegExp('\\b' + best.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'ig');
+  reason = reason.replace(nameRe, '').replace(/^[,.:;\-–—\s]+/, '').replace(/\s+/g, ' ').trim();
+  if (reason.length < 6) reason = 'su richiesta di ' + displayName(fromRole);
+  return { to: best.to, reason: reason.slice(0, 300) };
+}
+function publicPending(p) {
+  if (!p) return null;
+  return { id: p.id, from: p.from, to: p.to, fromName: displayName(p.from), toName: displayName(p.to), reason: whyPhrase(p.reason), status: p.status, at: p.at };
+}
+function handleCallIntent(fromRole, text) {
+  const intent = parseCallIntent(text, fromRole);
+  if (!intent) return false;
+  ringUser(fromRole, intent.to, intent.reason);
+  return true;
+}
+function ringUser(fromRole, toRole, reason) {
+  for (const old of pendingCalls.values()) {
+    if (old.to === toRole && old.status === 'ringing') finishCall(old, 'missed', true);
+  }
+  const p = {
+    id: crypto.randomBytes(8).toString('hex'),
+    from: fromRole, to: toRole,
+    reason: String(reason || ('su richiesta di ' + displayName(fromRole))).slice(0, 300),
+    status: 'ringing', at: Date.now(),
+  };
+  pendingCalls.set(p.id, p);
+  addMsg({ role: 'assistant', author: 'nn', content: 'Sto chiamando ' + displayName(toRole) + '…' });
+  const payload = publicPending(p);
+  broadcast('incoming', payload, toRole);
+  notify.send(toRole, {
+    title: 'Idea ti sta chiamando',
+    body: whyPhrase(p.reason),
+    callId: p.id,
+  }).catch((e) => console.error('Push:', e.message));
+  p.timer = setTimeout(() => finishCall(p, 'missed'), RING_MS);
+  return p;
+}
+// "digli che…" detto a Idea diventa "per dirti che…" detto alla persona chiamata
+function toSecondPerson(r) {
+  const map = [[/\b(?:digli|dille|dicigli)\b/gi, 'dirti'], [/\b(?:avvisalo|avvisala)\b/gi, 'avvisarti'], [/\b(?:ricordagli|ricordale)\b/gi, 'ricordarti'],
+    [/\b(?:chiedigli|chiedile)\b/gi, 'chiederti'], [/\b(?:spiegagli|spiegale)\b/gi, 'spiegarti'], [/\b(?:raccontagli|raccontale)\b/gi, 'raccontarti'],
+    [/\b(?:aggiornalo|aggiornala)\b/gi, 'aggiornarti'], [/\b(?:informalo|informala)\b/gi, 'informarti'], [/\b(?:dirgli|dirle)\b/gi, 'dirti'],
+    [/\b(?:gli|le) devi dire\b/gi, 'devo dirti']];
+  for (const [re, to] of map) r = r.replace(re, to);
+  return r;
+}
+function whyPhrase(reason) {
+  let r = String(reason || '').trim();
+  r = toSecondPerson(r.replace(/^e\s+/i, ''));
+  if (!r || /^su richiesta di\b/i.test(r)) return 'perché volevo parlarti';
+  if (/^che\b/i.test(r)) return 'per dirti ' + r;
+  if (r && /^(?:dirti|avvisarti|ricordarti|chiederti|spiegarti|raccontarti|aggiornarti|informarti)\b/i.test(r)) return 'per ' + r;
+  if (!r) return 'perché volevo parlarti';
+  if (/^(?:del|dello|della|dei|degli|delle|di|su|sul|sulla)\s/i.test(r)) return 'per parlarti ' + r;
+  return /^per(?:ch[eé]|\s)/i.test(r) ? r : ('perché ' + r);
+}
+function finishCall(p, status, skipNote) {
+  if (!p || (p.status !== 'ringing' && status === 'missed')) return;
+  if (p.timer) { clearTimeout(p.timer); p.timer = null; }
+  if (p.status === 'ringing' || status === 'answered') p.status = status;
+  const toName = displayName(p.to);
+  const fromName = displayName(p.from);
+  if (status === 'answered') {
+    addMsg({ role: 'assistant', author: 'nn', content: toName + ' ha risposto.' });
+    return;
+  }
+  if (status === 'declined') addMsg({ role: 'assistant', author: 'nn', content: toName + ' ha rifiutato la chiamata.' });
+  if (status === 'missed' && !skipNote) addMsg({ role: 'assistant', author: 'nn', content: toName + ' non ha risposto.' });
+  if (status === 'declined' || status === 'missed') {
+    addMsg({ role: 'assistant', author: 'nn', content: '', call: { kind: 'missed', with: p.to, from: p.from, dur: '0:00', reason: p.reason } });
+    const why = whyPhrase(p.reason);
+    const line = 'Ciao ' + toName + ', ti ho cercato ' + why + (why.endsWith('.') ? '' : '.') + ' Te l\'ha chiesto ' + fromName + '.';
+    (async () => {
+      try {
+        const clip = await synthSpeech(line);
+        addMsg({ role: 'assistant', author: 'nn', content: '', voice: { sec: clip.sec, audio: clip.id, text: line } });
+      } catch (e) {
+        console.error('Vocale di chiamata persa non sintetizzato:', e.message);
+        addMsg({ role: 'assistant', author: 'nn', content: line });
+      }
+    })();
+  }
+}
+
+
 const mediaPath = (id) => (/^[a-f0-9]{24}(-f)?\.[a-z0-9]{2,5}$/.test(String(id || '')) ? path.join(MEDIA_DIR, id) : null);
 function imageDataUrl(media) {
   try {
@@ -498,29 +717,32 @@ app.post('/api/messages', auth, limit(20, 60000), express.json({ limit: '20kb' }
   const text = String(req.body?.text || '').trim().slice(0, 4000);
   if (!text) return res.status(400).json({ error: 'Messaggio vuoto' });
   const msg = addMsg({ role: 'user', author: req.role, content: text });
-  reply();
+  if (!handleCallIntent(req.role, text)) reply();
   res.json({ message: msg });
 });
 // Messaggio vocale: audio WAV (o altro formato audio) -> xAI Speech to Text -> messaggio
 app.post('/api/voice', auth, limit(12, 60000), express.raw({ type: ['audio/*', 'application/octet-stream'], limit: '8mb' }), async (req, res) => {
   const buf = req.body;
   if (!Buffer.isBuffer(buf) || buf.length < 200) return res.status(400).json({ error: 'Audio vuoto' });
-  if (!aiKey()) return res.status(503).json({ error: 'Chiave AI non configurata' });
-  try {
-    const type = (req.get('Content-Type') || 'audio/wav').split(';')[0];
-    const ext = type.includes('wav') ? 'wav' : type.includes('mp4') || type.includes('m4a') ? 'm4a' : type.includes('mpeg') ? 'mp3' : type.includes('ogg') ? 'ogg' : 'webm';
-    const fd = new FormData(); fd.append('language', 'it'); fd.append('file', new Blob([buf], { type }), 'nota.' + ext);
-    const r = await fetch(`${AI_BASE_URL}/stt`, { method: 'POST', headers: { Authorization: `Bearer ${aiKey()}` }, body: fd, signal: AbortSignal.timeout(30000) });
-    if (!r.ok) { const t = await r.text().catch(() => ''); console.error('Errore trascrizione: HTTP', r.status, t.slice(0, 200)); return res.status(502).json({ error: 'Trascrizione non riuscita' }); }
-    const j = await r.json().catch(() => ({}));
-    const text = String(j.text || '').trim();
-    if (!text) return res.status(422).json({ error: 'Non ho capito, riprova.' });
-    const sec = Math.max(1, Math.round(Number(req.get('X-NN-Sec')) || 0));
-    let audio = null; try { audio = saveMedia(buf, type); } catch (e) { console.error('Audio non salvato:', e.code || 'errore'); }
-    const msg = addMsg({ role: 'user', author: req.role, content: text.slice(0, 4000), voice: { sec, audio: audio || undefined } });
-    reply();
-    res.json({ message: msg });
-  } catch (e) { console.error('Errore trascrizione:', e.message); res.status(502).json({ error: 'Trascrizione non raggiungibile' }); }
+  const type = (req.get('Content-Type') || 'audio/wav').split(';')[0].trim() || 'audio/wav';
+  const sec = Math.max(1, Math.round(Number(req.get('X-NN-Sec')) || 0));
+  let audio = null;
+  try { audio = saveMedia(buf, type) || saveMedia(buf, 'audio/webm'); } catch (e) { console.error('Audio non salvato:', e.code || 'errore'); }
+  if (!audio) return res.status(415).json({ error: 'Formato audio non supportato' });
+  let text = '';
+  if (aiKey()) {
+    try {
+      const ext = type.includes('wav') ? 'wav' : type.includes('mp4') || type.includes('m4a') ? 'm4a' : type.includes('mpeg') ? 'mp3' : type.includes('ogg') ? 'ogg' : 'webm';
+      const fd = new FormData(); fd.append('model', 'grok-voice-transcribe-2.0'); fd.append('language', 'it'); fd.append('file', new Blob([buf], { type }), 'nota.' + ext);
+      const r = await fetch(`${AI_BASE_URL}/stt`, { method: 'POST', headers: { Authorization: `Bearer ${aiKey()}` }, body: fd, signal: AbortSignal.timeout(30000) });
+      if (!r.ok) { const err = await r.text().catch(() => ''); console.error('Errore trascrizione: HTTP', r.status, err.slice(0, 200)); }
+      else { const j = await r.json().catch(() => ({})); text = String(j.text || '').trim(); }
+    } catch (e) { console.error('Errore trascrizione:', e.message); }
+  }
+  const msg = addMsg({ role: 'user', author: req.role, content: '', voice: { sec, audio, text: text.slice(0, 4000) || undefined } });
+  if (text && handleCallIntent(req.role, text)) { /* Idea sta già chiamando */ }
+  else reply();
+  res.json({ message: msg });
 });
 // Foto/video: corpo binario (image/* o video/*), didascalia opzionale in X-NN-Caption (URI-encoded)
 app.post('/api/media', auth, limit(20, 60000), express.raw({ type: ['image/*', 'video/*'], limit: MAX_MEDIA }), (req, res) => {
@@ -609,7 +831,7 @@ function readReport(since, limit) {
 // ---------- Chiamata vocale in tempo reale con Idea (xAI Voice Agent API) ----------
 // Il server crea solo un token effimero (5 min) con la propria chiave: la chiave non arriva mai al telefono.
 // Audio e risposte passano direttamente tra telefono e xAI; a fine chiamata il telefono manda la trascrizione e il server
-// salva in chat un riassunto (e le idee nel 💡).
+// salva in chat solo una riga compatta 'Chiamata con Idea · durata' (niente trascrizione in chat; il riassunto va nel resoconto e le idee nel 💡).
 const REALTIME_URL = (process.env.REALTIME_URL || 'wss://api.x.ai/v1/realtime').replace(/\/+$/, '');
 const REALTIME_MODEL = process.env.REALTIME_MODEL || 'grok-voice-latest';
 const XAI_VOICES = ['ara', 'eve', 'leo', 'rex', 'sal', 'carina', 'zagan', 'helix', 'orion', 'luna', 'iris', 'altair', 'zenith', 'perseus', 'helios', 'lux', 'kepler', 'rigel', 'cosmo', 'celeste', 'ursa', 'sirius', 'lumen', 'castor', 'naksh', 'atlas'];
@@ -639,10 +861,21 @@ app.post('/api/call/session', auth, express.json({ limit: '2kb' }), async (req, 
     const j = await r.json().catch(() => ({}));
     const token = j.value || (j.client_secret && (j.client_secret.value || j.client_secret)) || j.token || j.secret;
     if (!token || typeof token !== 'string') return res.status(502).json({ error: 'Token non ricevuto dal servizio voce' });
+    let greet = `Ciao ${displayName(req.role)}! Sono Idea, dimmi pure.`;
+    let extra = '';
+    const incomingId = String((req.body && req.body.incomingId) || '').trim();
+    if (incomingId) {
+      const pend = pendingCalls.get(incomingId);
+      if (!pend || pend.to !== req.role || pend.status !== 'ringing') return res.status(404).json({ error: 'Chiamata non più disponibile' });
+      finishCall(pend, 'answered');
+      const why = whyPhrase(pend.reason);
+      greet = `Ciao ${displayName(req.role)}, ti ho chiamato ${why}. Te l'ha chiesto ${displayName(pend.from)}.`;
+      extra = '\n\nQuesta chiamata l\'hai fatta tu, Idea, su richiesta di ' + displayName(pend.from) + '. Parla per prima: di\' esattamente il motivo e chi te l\'ha chiesto, poi ascolta e continua la conversazione in modo naturale.';
+    }
     res.json({ token, expiresAt: j.expires_at || null, url: `${REALTIME_URL}?model=${encodeURIComponent(REALTIME_MODEL)}`, voice: NN_VOICE, fallbackVoice: VOICE_FALLBACK,
-      greet: `Ciao ${ROLES[req.role]}! Sono Idea, dimmi pure.`,
+      greet,
       session: {
-        instructions: callInstructions(req.role), voice: NN_VOICE,
+        instructions: callInstructions(req.role) + extra, voice: NN_VOICE,
         turn_detection: { type: 'server_vad', threshold: 0.85, silence_duration_ms: 800, prefix_padding_ms: 400 },
         audio: { input: { format: { type: 'audio/pcm', rate: 24000 }, transcription: { language_hint: 'it', keyterms: ['Idea', 'Nico', 'Nicola'] } }, output: { format: { type: 'audio/pcm', rate: 24000 } } },
       } });
@@ -655,7 +888,36 @@ app.post('/api/call/log', auth, limit(120, 60000), express.json({ limit: '8kb' }
   const text = String((req.body && req.body.text) || '').replace(/\s+/g, ' ').trim().slice(0, 1500);
   if (!text) return res.status(400).json({ error: 'Testo vuoto' });
   const callId = String((req.body && req.body.callId) || '').slice(0, 80);
-  appendReport({ at: Date.now(), clientAt: Number(req.body && req.body.at) || undefined, callId, kind, text, role: req.role, who: ROLES[req.role] || req.role });
+  appendReport({ at: Date.now(), clientAt: Number(req.body && req.body.at) || undefined, callId, kind, text, role: req.role, who: displayName(req.role), });
+  if (kind === 'user') handleCallIntent(req.role, text);
+  res.json({ ok: true });
+});
+app.get('/api/call/pending', auth, (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const p = [...pendingCalls.values()].find((c) => c.to === req.role && c.status === 'ringing');
+  res.json({ call: publicPending(p) });
+});
+app.post('/api/call/decline', auth, limit(30, 60000), express.json({ limit: '2kb' }), (req, res) => {
+  const id = String((req.body && req.body.id) || '').trim();
+  const p = pendingCalls.get(id);
+  if (!p || p.to !== req.role || p.status !== 'ringing') return res.status(404).json({ error: 'Chiamata non più disponibile' });
+  finishCall(p, 'declined');
+  broadcast('incoming-end', { id: p.id, status: 'declined' }, p.to);
+  res.json({ ok: true });
+});
+app.get('/api/push/vapid', auth, (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ publicKey: notify.publicKey(), subscribed: notify.has(req.role) });
+});
+app.post('/api/push/subscribe', auth, limit(20, 60000), express.json({ limit: '8kb' }), (req, res) => {
+  const sub = req.body && req.body.subscription;
+  if (!sub || !sub.endpoint) return res.status(400).json({ error: 'Iscrizione non valida' });
+  notify.subscribe(req.role, sub);
+  res.json({ ok: true });
+});
+app.post('/api/push/unsubscribe', auth, limit(20, 60000), express.json({ limit: '4kb' }), (req, res) => {
+  const endpoint = req.body && req.body.endpoint;
+  notify.unsubscribe(req.role, endpoint);
   res.json({ ok: true });
 });
 // fine chiamata: { turns: [{ role: 'user'|'assistant', text }], sec, callId } -> messaggio in chat con riassunto + idee nel 💡
@@ -678,7 +940,7 @@ app.post('/api/call/end', auth, limit(10, 60000), express.json({ limit: '200kb' 
   const n = storeIdeas(ideas, who);
   const dur = `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
   const content = turns.length ? (summary || `Chiamata con ${who}.`) : `Chiamata senza conversazione.`;
-  const msg = addMsg({ role: 'assistant', author: 'nn', content, call: { with: req.role, sec, dur, transcript: transcript.slice(0, 8000) },
+  const msg = addMsg({ role: 'assistant', author: 'nn', content: '', call: { kind: 'done', with: req.role, sec, dur },
     idea: n ? ideas.map((i) => i.titolo).filter(Boolean).join(', ') : undefined });
   const titles = ideas.map((i) => i.titolo).filter(Boolean);
   appendReport({ at: Date.now(), callId: String((req.body && req.body.callId) || '').slice(0, 80), kind: 'summary', role: req.role, who,
@@ -695,9 +957,10 @@ app.get('/api/admin/report', auth, (req, res) => {
 app.get('/api/stream', auth, (req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
   res.write(`event: hello\ndata: ${JSON.stringify({ last: db.seq })}\n\n`);
-  clients.add(res);
+  const c = { res, role: req.role };
+  clients.add(c);
   const ping = setInterval(() => { try { res.write(': ping\n\n'); } catch {} }, 20000);
-  req.on('close', () => { clearInterval(ping); clients.delete(res); });
+  req.on('close', () => { clearInterval(ping); clients.delete(c); });
 });
 
 load().then(() => app.listen(PORT, () => console.log(`${APP_NAME} in ascolto sulla porta ${PORT}`)))
