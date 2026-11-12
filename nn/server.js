@@ -119,6 +119,18 @@ async function callModel(model, messages) {
   const j = await r.json();
   return String(j.choices?.[0]?.message?.content || '').trim();
 }
+function storeIdeas(ideas, autore) {
+  let n = 0;
+  for (const i of ideas) {
+    const titolo = String(i.titolo || '').slice(0, 80).trim(); if (!titolo) continue;
+    const rec = { autore: autore || '', titolo, descrizione: String(i.descrizione || '').slice(0, 400), stato: String(i.stato || 'nuova').slice(0, 30), data: new Date().toLocaleDateString('it-IT', { timeZone: 'Europe/Rome' }) };
+    const old = db.ideas.find((x) => x.titolo.toLowerCase() === titolo.toLowerCase());
+    if (old) Object.assign(old, rec, { data: old.data, aggiornata: rec.data, autore: old.autore || rec.autore }); else db.ideas.push({ id: db.ideas.length + 1, ...rec });
+    n++;
+  }
+  if (n) { save(); broadcast('ideas', db.ideas); }
+  return n;
+}
 let busy = Promise.resolve();
 function reply() {
   busy = busy.then(async () => {
@@ -152,14 +164,8 @@ function reply() {
     broadcast('typing', { on: false });
     const ideas = [];
     text = text.replace(/\[\[IDEA\s*(\{[\s\S]*?\})\s*\]\]/g, (_, js) => { try { ideas.push(JSON.parse(js)); } catch {} return ''; }).trim();
-    for (const i of ideas) {
-      const titolo = String(i.titolo || '').slice(0, 80).trim(); if (!titolo) continue;
-      const lastUser = [...db.messages].reverse().find((m) => m.role === 'user');
-      const rec = { autore: lastUser ? (ROLES[lastUser.author] || lastUser.author) : '', titolo, descrizione: String(i.descrizione || '').slice(0, 400), stato: String(i.stato || 'nuova').slice(0, 30), data: new Date().toLocaleDateString('it-IT', { timeZone: 'Europe/Rome' }) };
-      const old = db.ideas.find((x) => x.titolo.toLowerCase() === titolo.toLowerCase());
-      if (old) Object.assign(old, rec, { data: old.data, aggiornata: rec.data, autore: old.autore || rec.autore }); else db.ideas.push({ id: db.ideas.length + 1, ...rec });
-    }
-    if (ideas.length) broadcast('ideas', db.ideas);
+    const lastUser = [...db.messages].reverse().find((m) => m.role === 'user');
+    storeIdeas(ideas, lastUser ? (ROLES[lastUser.author] || lastUser.author) : '');
     addMsg({ role: 'assistant', author: 'nn', content: text || '👍', idea: ideas.length ? ideas.map((i) => i.titolo).join(', ') : undefined });
   }).catch((e) => console.error('Risposta fallita:', e.message));
   return busy;
@@ -316,6 +322,71 @@ app.get('/api/media/:id', auth, (req, res) => {
   const type = Object.keys(MEDIA_TYPES).find((t) => MEDIA_TYPES[t] === ext && (ext !== 'webm' || t === 'video/webm')) || 'application/octet-stream';
   res.setHeader('Cache-Control', 'private, max-age=86400');
   res.type(type).sendFile(p, { dotfiles: 'deny', acceptRanges: true });
+});
+// ---------- Chiamata vocale in tempo reale con Idea (xAI Voice Agent API) ----------
+// Il server crea solo un token effimero (5 min) con la propria chiave: la chiave non arriva mai al telefono.
+// Audio e risposte passano direttamente tra telefono e xAI; a fine chiamata il telefono manda la trascrizione e il server
+// salva in chat un riassunto (e le idee nel 💡).
+const REALTIME_URL = (process.env.REALTIME_URL || 'wss://api.x.ai/v1/realtime').replace(/\/+$/, '');
+const REALTIME_MODEL = process.env.REALTIME_MODEL || 'grok-voice-latest';
+const XAI_VOICES = ['ara', 'eve', 'leo', 'rex', 'sal', 'carina', 'zagan', 'helix', 'orion', 'luna', 'iris', 'altair', 'zenith', 'perseus', 'helios', 'lux', 'kepler', 'rigel', 'cosmo', 'celeste', 'ursa', 'sirius', 'lumen', 'castor', 'naksh', 'atlas'];
+const NN_VOICE = (() => { const v = String(process.env.NN_VOICE || 'luna').trim().toLowerCase(); return XAI_VOICES.includes(v) ? v : 'luna'; })();
+const VOICE_FALLBACK = 'eve';
+function callInstructions(role) {
+  const recent = db.messages.slice(-16).map((m) => `${m.role === 'assistant' ? BOT_NAME : (ROLES[m.author] || m.author)}: ${String(m.content || (m.media ? '[foto/video]' : '')).replace(/\s+/g, ' ').slice(0, 300)}`);
+  return [SYSTEM.replace(/Quando nel messaggio c'è un'idea nuova[\s\S]*?Non mostrare mai questa riga come testo normale[^\n]*\n?/, '').replace(' Rispondi sempre e solo per iscritto.', '').replace(/Rispondi SEMPRE in italiano, breve \(1-4 frasi\)[^\n]*/, 'Parla SEMPRE in italiano.'),
+    ideasContext(),
+    recent.length && `ULTIMI MESSAGGI DELLA CHAT (contesto):\n${recent.join('\n')}`,
+    `ORA SEI IN CHIAMATA VOCALE con ${ROLES[role]} (${FULL[role]}): lo senti dal vivo. Chiamalo per nome (${ROLES[role]}).`,
+    'In chiamata: parla in italiano, frasi brevi e naturali (1-3 frasi), come al telefono con un amico. Niente elenchi, niente emoji, niente simboli o righe tecniche. Le idee che emergono le salverai tu a fine chiamata: non serve dettarle.',
+    'Oggi è ' + new Date().toLocaleDateString('it-IT', { timeZone: 'Europe/Rome' }) + '.'].filter(Boolean).join('\n\n');
+}
+const callHits = new Map();
+app.post('/api/call/session', auth, express.json({ limit: '2kb' }), async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const now = Date.now(); const h = (callHits.get(req.role) || []).filter((t) => now - t < 3600e3);
+  if (h.length >= 30) return res.status(429).json({ error: 'Troppe chiamate, riprova più tardi.' });
+  h.push(now); callHits.set(req.role, h);
+  if (!aiKey()) return res.status(503).json({ error: 'Chiave AI non configurata' });
+  try {
+    const r = await fetch(`${AI_BASE_URL}/realtime/client_secrets`, { method: 'POST', signal: AbortSignal.timeout(15000),
+      headers: { Authorization: `Bearer ${aiKey()}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ expires_after: { seconds: 300 } }) });
+    if (!r.ok) { const t = await r.text().catch(() => ''); console.error('Errore chiamata (client_secrets): HTTP', r.status, t.slice(0, 200)); return res.status(502).json({ error: 'Chiamata non disponibile ora' }); }
+    const j = await r.json().catch(() => ({}));
+    const token = j.value || (j.client_secret && (j.client_secret.value || j.client_secret)) || j.token || j.secret;
+    if (!token || typeof token !== 'string') return res.status(502).json({ error: 'Token non ricevuto dal servizio voce' });
+    res.json({ token, expiresAt: j.expires_at || null, url: `${REALTIME_URL}?model=${encodeURIComponent(REALTIME_MODEL)}`, voice: NN_VOICE, fallbackVoice: VOICE_FALLBACK,
+      greet: `Ciao ${ROLES[req.role]}! Sono Idea, dimmi pure.`,
+      session: {
+        instructions: callInstructions(req.role), voice: NN_VOICE,
+        turn_detection: { type: 'server_vad', threshold: 0.85, silence_duration_ms: 800, prefix_padding_ms: 400 },
+        audio: { input: { format: { type: 'audio/pcm', rate: 24000 }, transcription: { language_hint: 'it', keyterms: ['Idea', 'Nico', 'Nicola'] } }, output: { format: { type: 'audio/pcm', rate: 24000 } } },
+      } });
+  } catch (e) { console.error('Errore chiamata:', e.message); res.status(502).json({ error: 'Servizio voce non raggiungibile' }); }
+});
+// fine chiamata: { turns: [{ role: 'user'|'assistant', text }], sec } -> messaggio in chat con riassunto + idee nel 💡
+app.post('/api/call/end', auth, limit(10, 60000), express.json({ limit: '200kb' }), async (req, res) => {
+  const turns = (Array.isArray(req.body?.turns) ? req.body.turns : []).slice(-200)
+    .map((t) => ({ role: t && t.role === 'assistant' ? 'assistant' : 'user', text: String((t && t.text) || '').replace(/\s+/g, ' ').trim().slice(0, 1500) })).filter((t) => t.text);
+  const sec = Math.max(0, Math.min(6 * 3600, Math.round(Number(req.body?.sec) || 0)));
+  const who = ROLES[req.role];
+  const transcript = turns.map((t) => `${t.role === 'assistant' ? BOT_NAME : who}: ${t.text}`).join('\n').slice(0, 20000);
+  let summary = '', ideas = [];
+  if (turns.some((t) => t.role === 'user') && aiKey()) {
+    try {
+      const out = await callModel(CHAT_MODEL, [
+        { role: 'system', content: `Riassumi in italiano, in 1-3 frasi, una chiamata vocale tra ${BOT_NAME} (assistente) e ${who} (${FULL[req.role]}). Scrivi in terza persona ("${who} ha raccontato…"). Poi, per OGNI idea concreta emersa (nuova o aggiornata), aggiungi una riga a parte ESATTAMENTE così:\n[[IDEA {"titolo":"titolo breve","descrizione":"una o due frasi","stato":"nuova|da approfondire|in corso|fatta"}]]\nNon inventare idee che nessuno ha detto.\n\n${ideasContext()}` },
+        { role: 'user', content: transcript },
+      ]);
+      summary = out.replace(/\[\[IDEA\s*(\{[\s\S]*?\})\s*\]\]/g, (_, js) => { try { ideas.push(JSON.parse(js)); } catch {} return ''; }).trim();
+    } catch (e) { console.error('Riassunto chiamata non riuscito:', e.message); }
+  }
+  const n = storeIdeas(ideas, who);
+  const dur = `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+  const content = turns.length ? (summary || `Chiamata con ${who}.`) : `Chiamata senza conversazione.`;
+  const msg = addMsg({ role: 'assistant', author: 'nn', content, call: { with: req.role, sec, dur, transcript: transcript.slice(0, 8000) },
+    idea: n ? ideas.map((i) => i.titolo).filter(Boolean).join(', ') : undefined });
+  res.json({ message: msg, ideas: n });
 });
 app.get('/api/stream', auth, (req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });

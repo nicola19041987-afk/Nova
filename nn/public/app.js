@@ -62,7 +62,9 @@
       + (m.media && m.media.kind === 'image' ? `<img class="ph" src="${esc(mediaUrl(m.media.id))}" alt="Foto" loading="lazy">` : '')
       + (m.media && m.media.kind === 'video' ? `<video class="vd" src="${esc(mediaUrl(m.media.id))}" controls playsinline preload="metadata"></video>` : '')
       + (m.voice ? `<span class="vtag">🎤 Vocale · ${m.voice.sec || 1}s</span>` + (m.voice.audio ? `<audio class="au-pl" src="${esc(mediaUrl(m.voice.audio))}" controls preload="none"></audio>` : '') : '')
+      + (m.call ? `<span class="ctag">📞 Chiamata vocale con ${esc(NAMES[m.call.with] || '')} · ${esc(m.call.dur || '')}</span>` : '')
       + (m.content ? `<span class="tx">${m.voice ? '<i>Trascrizione:</i> ' : ''}${esc(m.content)}</span>` : '')
+      + (m.call && m.call.transcript ? `<details class="ctr"><summary>Trascrizione</summary><span>${esc(m.call.transcript)}</span></details>` : '')
       + (m.idea ? `<span class="itag">💡 Idea salvata: ${esc(m.idea)}</span>` : '')
       + `<span class="meta">${time}</span>`;
     box.appendChild(el);
@@ -235,5 +237,6 @@
     $('#sub').textContent = 'online';
     await poll(); bottom(); live(); paint();
   }
+  window.NN = { api, key, sess, me: () => me, status, poll };
   start();
 })();
