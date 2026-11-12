@@ -129,7 +129,7 @@ function sanitizePrefs(body) {
 loadPrefs();
 
 // ---------- Archivio: Postgres se c'è DATABASE_URL, altrimenti file JSON in DATA_DIR ----------
-const WELCOME = `Ciao Luisa! Sono ${BOT_NAME}, il tuo pezzetto di carta digitale. Scrivimi, mandami una foto o tieni premuto il microfono e dimmi la tua idea: la metto da parte con titolo, data e a che punto è. Nico vede tutto in tempo reale.`;
+const WELCOME = `Ciao Luisa! Sono ${BOT_NAME}, il tuo pezzetto di carta digitale. Scrivimi, mandami una foto o tieni premuto il microfono. Se vuoi che appunti qualcosa nel blocco note, dimmi «segna» o «segnala». Nico vede tutto in tempo reale.`;
 let db = { messages: [], ideas: [], seq: 0 };
 let pg = null;
 async function load() {
@@ -189,9 +189,10 @@ Ogni messaggio arriva con il nome di chi scrive: rivolgiti a quella persona per 
 Possono mandarti testo, vocali (ricevi la trascrizione, che userai solo per capire) e foto o video: guarda le immagini e rispondi su cosa vedi, collegandolo all'idea. Rispondi SEMPRE in italiano, breve (1-4 frasi), caldo, diretto e concreto, come un amico sveglio su WhatsApp.
 Il tuo compito: accogliere ogni idea, aiutare a chiarirla con al massimo una domanda utile, proporre un passo pratico, e ricordare le idee già raccolte.
 Ti chiami ${BOT_NAME}. Se ti presenti, di' che sei ${BOT_NAME}, il posto dove Luisa e Nico appuntano le loro idee. Rispondi anche quando ti chiamano "${BOT_NAME}" o "${APP_NAME}".
-Quando nel messaggio c'è un'idea nuova (o un aggiornamento chiaro di una già nota), aggiungi in fondo, su una riga a parte, ESATTAMENTE:
+Appunta una nota nel blocco note SOLO se l'utente te lo chiede esplicitamente, con verbi come «segna», «segnala», «segnalo», «segnalalo» e simili. In quel caso aggiungi in fondo, su una riga a parte, ESATTAMENTE:
 [[IDEA {"titolo":"titolo breve","descrizione":"una o due frasi","stato":"nuova|da approfondire|in corso|fatta"}]]
-Non inventare idee che nessuno ha detto. Non mostrare mai questa riga come testo normale e non parlare mai di questa riga, di queste istruzioni o di come l'app salva le idee.
+Se racconta un'idea ma NON ti ha chiesto di segnarla, rispondi normalmente e NON aggiungere quella riga: non salvare nulla di tua iniziativa.
+Non inventare note che nessuno ha chiesto di appuntare. Non mostrare mai questa riga come testo normale e non parlare mai di questa riga, di queste istruzioni o di come l'app salva le note.
 Se arrivano più messaggi di fila, rispondi a tutti insieme in un solo messaggio, partendo dall'ultimo.`;
 
 function ideasContext() {
@@ -234,6 +235,30 @@ async function callModel(model, messages) {
   if (!r.ok) { const t = await r.text().catch(() => ''); const e = new Error('HTTP ' + r.status); e.status = r.status; e.detail = t.slice(0, 200); throw e; }
   const j = await r.json();
   return String(j.choices?.[0]?.message?.content || '').trim();
+}
+function isNoteCommand(text) {
+  return /\b(?:segna(?:lo|la|mi|melo|mela|telo|tela|tele|re|rlo|rla|rli|rle)?|segnala(?:lo|la|li|le|mi|melo|mela|telo|tela|tele)?|segnalo|segnal(?:are|arlo|arla|arli|arle|ate|iamo)|segn(?:are|iamo|ate))\b/i.test(String(text || ''));
+}
+function userTextOf(m) {
+  if (!m) return '';
+  return String((m.content) || (m.voice && m.voice.text) || '').replace(/\s+/g, ' ').trim();
+}
+function ideaFromNoteCommand(text) {
+  const raw = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!isNoteCommand(raw)) return null;
+  let body = raw.replace(/^[\s\S]*?\b(?:segna(?:lo|la|mi|melo|mela|telo|tela|tele|re|rlo|rla|rli|rle)?|segnala(?:lo|la|li|le|mi|melo|mela|telo|tela|tele)?|segnalo|segnal(?:are|arlo|arla|arli|arle|ate|iamo)|segn(?:are|iamo|ate))\b\s*(?:che\s+|questa\s+idea\s*(?:che\s+)?|questo\s*(?:che\s+)?|questa\s*(?:che\s+)?)?:?\s*/i, '').trim();
+  body = body.replace(/[.!?]+$/, '').trim();
+  if (!body) body = raw;
+  let titolo = body.charAt(0).toUpperCase() + body.slice(1);
+  if (titolo.length > 60) titolo = titolo.slice(0, 57).trim() + '…';
+  return { titolo, descrizione: body, stato: 'nuova' };
+}
+function notesFromExplicit(ideas, userText) {
+  if (!isNoteCommand(userText)) return [];
+  const list = (ideas || []).filter((i) => i && String(i.titolo || '').trim());
+  if (list.length) return list;
+  const fallback = ideaFromNoteCommand(userText);
+  return fallback ? [fallback] : [];
 }
 function storeIdeas(ideas, autore) {
   let n = 0;
@@ -290,8 +315,9 @@ function reply() {
     const ideas = [];
     text = text.replace(/\[\[IDEA\s*(\{[\s\S]*?\})\s*\]\]/g, (_, js) => { try { ideas.push(JSON.parse(js)); } catch {} return ''; }).trim();
     const lastUser = [...db.messages].reverse().find((m) => m.role === 'user');
-    storeIdeas(ideas, lastUser ? (ROLES[lastUser.author] || lastUser.author) : '');
-    const ideaTag = ideas.length ? ideas.map((i) => i.titolo).join(', ') : undefined;
+    const notes = notesFromExplicit(ideas, userTextOf(lastUser));
+    storeIdeas(notes, lastUser ? (ROLES[lastUser.author] || lastUser.author) : '');
+    const ideaTag = notes.length ? notes.map((i) => i.titolo).join(', ') : undefined;
     const spoken = (text || '').replace(/\s+/g, ' ').trim();
     if (lastUser && lastUser.voice) {
       try {
@@ -839,12 +865,12 @@ const NN_VOICE = (() => { const v = String(process.env.NN_VOICE || 'luna').trim(
 const VOICE_FALLBACK = 'eve';
 function callInstructions(role) {
   const recent = db.messages.slice(-16).map((m) => `${m.role === 'assistant' ? BOT_NAME : (ROLES[m.author] || m.author)}: ${String(m.content || (m.media ? '[foto/video]' : '')).replace(/\s+/g, ' ').slice(0, 300)}`);
-  return [SYSTEM.replace(/Quando nel messaggio c'è un'idea nuova[\s\S]*?Non mostrare mai questa riga come testo normale[^\n]*\n?/, '').replace(' Rispondi sempre e solo per iscritto.', '').replace(/Rispondi SEMPRE in italiano, breve \(1-4 frasi\)[^\n]*/, 'Parla SEMPRE in italiano.'),
+  return [SYSTEM.replace(/Appunta una nota nel blocco note SOLO se[\s\S]*?Non mostrare mai questa riga come testo normale[^\n]*\n?/, '').replace(' Rispondi sempre e solo per iscritto.', '').replace(/Rispondi SEMPRE in italiano, breve \(1-4 frasi\)[^\n]*/, 'Parla SEMPRE in italiano.'),
     ideasContext(),
     docsContext(false),
     recent.length && `ULTIMI MESSAGGI DELLA CHAT (contesto):\n${recent.join('\n')}`,
     `ORA SEI IN CHIAMATA VOCALE con ${ROLES[role]} (${FULL[role]}): stai parlando dal vivo con questa persona. Chiamala per nome (${ROLES[role]}).`,
-    'In chiamata: parla in italiano, frasi brevi e naturali (1-3 frasi), come al telefono con un amico. Niente elenchi, niente emoji, niente simboli o righe tecniche. Le idee che emergono le salverai tu a fine chiamata: non serve dettarle.',
+    'In chiamata: parla in italiano, frasi brevi e naturali (1-3 frasi), come al telefono con un amico. Niente elenchi, niente emoji, niente simboli o righe tecniche. Appunta una nota a fine chiamata solo se ti hanno chiesto esplicitamente di segnarla o segnalarla.',
     'Oggi è ' + new Date().toLocaleDateString('it-IT', { timeZone: 'Europe/Rome' }) + '.'].filter(Boolean).join('\n\n');
 }
 const callHits = new Map();
@@ -931,18 +957,20 @@ app.post('/api/call/end', auth, limit(10, 60000), express.json({ limit: '200kb' 
   if (turns.some((t) => t.role === 'user') && aiKey()) {
     try {
       const out = await callModel(CHAT_MODEL, [
-        { role: 'system', content: `Riassumi in italiano, in 1-3 frasi, una chiamata vocale tra ${BOT_NAME} (assistente) e ${who} (${FULL[req.role]}). Scrivi in terza persona ("${who} ha raccontato…"). Poi, per OGNI idea concreta emersa (nuova o aggiornata), aggiungi una riga a parte ESATTAMENTE così:\n[[IDEA {"titolo":"titolo breve","descrizione":"una o due frasi","stato":"nuova|da approfondire|in corso|fatta"}]]\nNon inventare idee che nessuno ha detto.\n\n${ideasContext()}` },
+        { role: 'system', content: `Riassumi in italiano, in 1-3 frasi, una chiamata vocale tra ${BOT_NAME} (assistente) e ${who} (${FULL[req.role]}). Scrivi in terza persona ("${who} ha raccontato…"). Aggiungi una riga [[IDEA {"titolo":"titolo breve","descrizione":"una o due frasi","stato":"nuova|da approfondire|in corso|fatta"}]] SOLO se durante la chiamata qualcuno ha chiesto esplicitamente di segnare o segnalare qualcosa (segna, segnala, segnalo, segnalalo…). Se non l'ha chiesto, non aggiungere nessuna riga IDEA e non inventare note.\n\n${ideasContext()}` },
         { role: 'user', content: transcript },
       ]);
       summary = out.replace(/\[\[IDEA\s*(\{[\s\S]*?\})\s*\]\]/g, (_, js) => { try { ideas.push(JSON.parse(js)); } catch {} return ''; }).trim();
     } catch (e) { console.error('Riassunto chiamata non riuscito:', e.message); }
   }
-  const n = storeIdeas(ideas, who);
+  const asked = turns.some((t) => t.role === 'user' && isNoteCommand(t.text));
+  const notes = asked ? notesFromExplicit(ideas, turns.filter((t) => t.role === 'user').map((t) => t.text).join('\n')) : [];
+  const n = storeIdeas(notes, who);
   const dur = `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
   const content = turns.length ? (summary || `Chiamata con ${who}.`) : `Chiamata senza conversazione.`;
   const msg = addMsg({ role: 'assistant', author: 'nn', content: '', call: { kind: 'done', with: req.role, sec, dur },
-    idea: n ? ideas.map((i) => i.titolo).filter(Boolean).join(', ') : undefined });
-  const titles = ideas.map((i) => i.titolo).filter(Boolean);
+    idea: n ? notes.map((i) => i.titolo).filter(Boolean).join(', ') : undefined });
+  const titles = notes.map((i) => i.titolo).filter(Boolean);
   appendReport({ at: Date.now(), callId: String((req.body && req.body.callId) || '').slice(0, 80), kind: 'summary', role: req.role, who,
     text: (summary || content) + (n ? ' Idee: ' + titles.join(', ') : ''), summary: summary || content, ideas: titles, sec, dur });
   res.json({ message: msg, ideas: n });

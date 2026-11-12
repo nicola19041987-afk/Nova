@@ -2,15 +2,20 @@
 html, body { margin: 0; height: 100%; background: #0b141a; color: #e9edef; font: 16px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; overflow: hidden; overscroll-behavior: none; }
 /* Layout stabile: l'app occupa esattamente il visualViewport (tastiera inclusa), niente salti */
 #app { position: fixed; left: 0; right: 0; top: var(--vv-top, 0px); height: var(--vv-h, 100dvh); display: flex; flex-direction: column; }
-#topbar { flex: 0 0 auto; display: flex; align-items: center; gap: 10px; padding: calc(env(safe-area-inset-top) + 8px) 10px 8px; min-height: 60px; background: var(--header-bg, #202c33); color: #e9edef; z-index: 2; box-shadow: 0 1px 3px rgba(0,0,0,.4); }
+#topbar { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; padding: calc(env(safe-area-inset-top) + 8px) 8px 8px; min-height: 60px; background: var(--header-bg, #202c33); color: #e9edef; z-index: 2; box-shadow: 0 1px 3px rgba(0,0,0,.4); }
 #topbar .pfp { width: 42px; height: 42px; border-radius: 50%; display: block; flex: 0 0 auto; object-fit: cover; background: #000; }
 .pfp.big { width: 180px; height: 180px; margin: 0 auto 12px; display: block; object-fit: contain; background: #000; }
 .who { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 #brand { margin: 0; font-size: 17px; line-height: 1.2; font-weight: 600; color: #e9edef; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #sub { font-size: 12.5px; color: #8696a0; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #sub.typing { color: #00a884; }
-#ideas-btn { background: none; border: 0; color: #fff; font-size: 22px; position: relative; padding: 6px; }
-#ideas-count { position: absolute; top: 0; right: -2px; font-size: 10px; background: #25d366; color: #000; border-radius: 9px; padding: 0 5px; }
+#ideas-btn { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 3px; background: rgba(255,255,255,.08); border: 0; color: #e9edef; font: 600 11px/1.15 system-ui, -apple-system, sans-serif; letter-spacing: -0.02em; padding: 5px 7px 5px 6px; border-radius: 16px; position: relative; white-space: nowrap; }
+#ideas-btn:active { background: rgba(255,255,255,.14); }
+#ideas-btn .ideas-lbl { font: inherit; }
+@media (max-width: 400px) {
+  #topbar { gap: 6px; padding-left: 8px; padding-right: 8px; }
+}
+#ideas-count { position: absolute; top: -5px; right: -4px; font-size: 10px; font-weight: 700; background: #25d366; color: #000; border-radius: 9px; padding: 0 5px; line-height: 1.4; }
 #ideas-count:empty { display: none; }
 #messages { flex: 1 1 auto; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; padding: 10px 10px 6px; background-color: var(--chat-bg, #0b141a); background-image: radial-gradient(rgba(255,255,255,.03) 1px, transparent 1.4px), radial-gradient(rgba(255,255,255,.02) 1px, transparent 1.4px); background-size: 22px 22px, 22px 22px; background-position: 0 0, 11px 11px; }
 .day { text-align: center; margin: 8px 0; }

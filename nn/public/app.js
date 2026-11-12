@@ -77,7 +77,7 @@
       + (isCall ? `<span class="ctag${missed ? ' missed' : ''}">📞 ${esc(callLabel)}</span>` : '')
       + (m.content && !m.voice ? `<span class="tx">${esc(m.content)}</span>` : '')
       + (m.voice && m.voice.text ? `<span class="vtr">${esc(m.voice.text)}</span>` : '')
-      + (m.idea ? `<span class="itag">💡 Idea salvata: ${esc(m.idea)}</span>` : '')
+      + (m.idea ? `<span class="itag">📝 ${esc(m.idea)}</span>` : '')
       + `<span class="meta">${time}</span>`;
     box.appendChild(el);
     el.querySelectorAll('img.ph, video.vd').forEach((x) => x.addEventListener(x.tagName === 'IMG' ? 'load' : 'loadedmetadata', () => { if (stick || mine) bottom(); }, { once: true }));
@@ -86,7 +86,7 @@
   }
   function ideas(list) {
     $('#ideas-count').textContent = list && list.length ? list.length : '';
-    $('#ideas-list').innerHTML = (list || []).slice().reverse().map((i) => `<li><b>${esc(i.titolo)}</b>${esc(i.descrizione)}<br><small>${esc(i.data)} · ${esc(i.stato)}${i.autore ? " · di " + esc(i.autore) : ""}</small></li>`).join('') || '<li>Ancora nessuna idea. Scrivine una!</li>';
+    $('#ideas-list').innerHTML = (list || []).slice().reverse().map((i) => `<li><b>📝 ${esc(i.titolo)}</b>${esc(i.descrizione)}<br><small>${esc(i.data)} · ${esc(i.stato)}${i.autore ? " · di " + esc(i.autore) : ""}</small></li>`).join('') || '<li>Ancora nessuna nota. Scrivi «segna» o «segnala» per appuntarne una.</li>';
   }
   async function poll() {
     try { const j = await api('/api/messages?since=' + last); if (j.names) setNames(j.names); j.messages.forEach(add); ideas(j.ideas); } catch (e) { if (e.status === 401) return start(); }
@@ -510,7 +510,7 @@
     try {
       const perm = await Notification.requestPermission();
       if (perm !== 'granted') { status('Permesso notifiche non concesso.'); return false; }
-      const reg = await navigator.serviceWorker.register('/sw.js?v=7', { scope: '/' });
+      const reg = await navigator.serviceWorker.register('/sw.js?v=8', { scope: '/' });
       await navigator.serviceWorker.ready;
       const vapid = await api('/api/push/vapid');
       const key = vapid.publicKey;

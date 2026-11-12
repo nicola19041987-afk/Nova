@@ -10,16 +10,16 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="apple-mobile-web-app-title" content="Luisa e Nico">
 <title>Luisa e Nico</title>
-<link rel="manifest" href="/manifest.json?v=7">
-<link rel="icon" href="/icon.svg?v=7" type="image/svg+xml">
-<link rel="icon" href="/icons/icon-32.png?v=7" sizes="32x32" type="image/png">
-<link rel="apple-touch-icon" href="/icons/icon-180.png?v=7">
-<link rel="stylesheet" href="/style.css?v=7">
+<link rel="manifest" href="/manifest.json?v=8">
+<link rel="icon" href="/icon.svg?v=8" type="image/svg+xml">
+<link rel="icon" href="/icons/icon-32.png?v=8" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="/icons/icon-180.png?v=8">
+<link rel="stylesheet" href="/style.css?v=8">
 </head>
 <body>
 <div id="app">
   <header id="topbar">
-    <img class="pfp" src="/logo-ln-avatar.svg?v=7" alt="Luisa e Nico">
+    <img class="pfp" src="/logo-ln-avatar.svg?v=8" alt="Luisa e Nico">
     <button id="home-btn" type="button" hidden aria-label="Impostazioni">
       <svg viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M12 3.2 4 10h2v9h5v-6h2v6h5v-9h2L12 3.2z"/></svg>
       <span class="admin-tag">admin</span>
@@ -32,7 +32,7 @@
     <button id="call-btn" type="button" aria-label="Chiama Idea">
       <svg viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M6.62 10.79a15.05 15.05 0 0 0 6.59 6.59l2.2-2.2a1 1 0 0 1 1.02-.24c1.12.37 2.33.57 3.57.57a1 1 0 0 1 1 1V20a1 1 0 0 1-1 1C10.61 21 3 13.39 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.45.57 3.57a1 1 0 0 1-.25 1.02l-2.2 2.2z"/></svg>
     </button>
-    <button id="ideas-btn" type="button" aria-label="Idee salvate">💡<b id="ideas-count"></b></button>
+    <button id="ideas-btn" type="button" aria-label="Blocco note">📝 <span class="ideas-lbl">Blocco note</span><b id="ideas-count"></b></button>
   </header>
 
   <main id="messages" aria-live="polite"></main>
@@ -67,7 +67,7 @@
 
 <div id="ideas-panel" hidden>
   <div class="sheet">
-    <div class="sheet-head"><b>Idee salvate</b><button id="ideas-close" type="button" aria-label="Chiudi">✕</button></div>
+    <div class="sheet-head"><b>Blocco note</b><button id="ideas-close" type="button" aria-label="Chiudi">✕</button></div>
     <ul id="ideas-list"></ul>
   </div>
 </div>
@@ -76,7 +76,7 @@
 
 <div id="call" hidden role="dialog" aria-label="Chiamata con Idea">
   <div class="call-top">
-    <img class="call-logo" src="/logo-ln.svg?v=7" alt="Luisa e Nico">
+    <img class="call-logo" src="/logo-ln.svg?v=8" alt="Luisa e Nico">
     <div class="call-name">Idea</div>
     <div id="call-status">Chiamata in corso…</div>
     <div id="call-time"></div>
@@ -94,7 +94,7 @@
 </div>
 
 <div id="incoming" hidden role="dialog" aria-label="Chiamata in arrivo da Idea">
-  <img class="call-logo" src="/logo-ln.svg?v=7" alt="Luisa e Nico">
+  <img class="call-logo" src="/logo-ln.svg?v=8" alt="Luisa e Nico">
   <div class="call-name">Idea</div>
   <div id="incoming-title">Idea ti sta chiamando</div>
   <p id="incoming-reason"></p>
@@ -184,7 +184,7 @@
 <div id="gate" hidden>
 
   <div class="gate-box">
-    <img class="pfp big" src="/logo-ln.svg?v=7" alt="Luisa e Nico">
+    <img class="pfp big" src="/logo-ln.svg?v=8" alt="Luisa e Nico">
     <p id="gate-msg">Inserisci la password per entrare.</p>
     <form id="pass-form" autocomplete="on">
       <div class="pass-wrap"><input id="pass-input" type="password" inputmode="numeric" placeholder="Password" autocomplete="current-password" required><button type="button" id="pass-eye" aria-label="Mostra password" title="Mostra/nascondi">👁</button></div>
@@ -196,7 +196,7 @@
     </form>
   </div>
 </div>
-<script src="/app.js?v=7"></script>
-<script src="/call.js?v=7"></script>
+<script src="/app.js?v=8"></script>
+<script src="/call.js?v=8"></script>
 </body>
 </html>
