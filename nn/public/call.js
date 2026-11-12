@@ -73,9 +73,19 @@
   }
   function addTurn(s, role, text) { text = String(text || '').replace(/\s+/g, ' ').trim(); if (text) s.turns.push({ role, text }); }
 
+  // dopo una riconnessione Idea riparte sapendo di cosa stavate parlando
+  function sessionFor(s) {
+    const sess = { ...s.cfg.session };
+    if (s.reconnects && s.turns.length) {
+      const recap = s.turns.slice(-12).map((t) => (t.role === 'assistant' ? 'Idea' : 'Lui') + ': ' + t.text.slice(0, 300)).join('\n');
+      sess.instructions = (sess.instructions || '') + '\n\nLA LINEA È CADUTA UN ATTIMO ED È TORNATA: continua la stessa chiamata senza risalutare e senza ricominciare da capo. Ultime battute:\n' + recap;
+    }
+    return sess;
+  }
   function onEvent(s, ev) {
+    s.lastEv = Date.now();
     switch (ev.type) {
-      case 'session.created': note('session.created'); s.ws.send(JSON.stringify({ type: 'session.update', session: s.cfg.session })); break;
+      case 'session.created': note('session.created'); s.ws.send(JSON.stringify({ type: 'session.update', session: sessionFor(s) })); break;
       case 'session.updated':
         note('session.updated');
         if (!s.ready) { s.ready = true; s.ok && s.ok(); for (const pcm of s.early.splice(0)) if (!s.muted) s.ws.send(JSON.stringify({ type: 'input_audio_buffer.append', audio: b64(pcm) })); }
@@ -89,12 +99,12 @@
           s.resp = null;
         }
         break;
-      case 'input_audio_buffer.speech_stopped': s.userSpeaking = false; ui(); break;
+      case 'input_audio_buffer.speech_stopped': s.userSpeaking = false; s.waitSince = Date.now(); ui(); break;
       case 'conversation.item.input_audio_transcription.completed': addTurn(s, 'user', ev.transcript); break;
-      case 'response.created': s.responseActive = true; s.resp = { id: ev.response && ev.response.id, text: '' }; break;
+      case 'response.created': s.waitSince = 0; s.respAt = Date.now(); s.responseActive = true; s.resp = { id: ev.response && ev.response.id, text: '' }; break;
       case 'response.output_audio.delta': case 'response.audio.delta':
         if (s.cancelled && s.cancelled === ev.response_id) break;
-        if (ev.delta) play(s, unb64(ev.delta)); ui(); break;
+        s.respAt = Date.now(); if (ev.delta) play(s, unb64(ev.delta)); ui(); break;
       case 'response.output_audio_transcript.delta': case 'response.audio_transcript.delta':
         if (s.resp) { s.resp.text += ev.delta || ''; caption(s.resp.text); } break;
       case 'response.output_audio_transcript.done': case 'response.audio_transcript.done':
@@ -125,15 +135,58 @@
       ws.onmessage = (m) => { if (typeof m.data !== 'string') { play(s, m.data); return; } let ev; try { ev = JSON.parse(m.data); } catch { return; } onEvent(s, ev); };
       ws.onopen = () => note('ws.open');
       ws.onerror = () => { note('ws.error'); setTimeout(() => fin(new Error('Connessione al servizio voce non riuscita')), 300); };
-      ws.onclose = (e) => { note('ws.close ' + e.code); if (!done) fin(new Error('Connessione chiusa dal servizio voce (' + e.code + ')')); else if (!s.closed) hangup('La chiamata si è interrotta.'); };
+      ws.onclose = (e) => { note('ws.close ' + e.code); if (s.ws !== ws) return; if (!done) fin(new Error('Connessione chiusa dal servizio voce (' + e.code + ')')); else if (!s.closed) reconnect(s); };
     });
+  }
+
+  // linea caduta (rete, token scaduto, iPhone in pausa): nuova sessione e si continua, senza chiudere la chiamata
+  async function reconnect(s) {
+    if (s.closed || s.reconnecting) return; s.reconnecting = true; s.ready = false;
+    stopPlayback(s); s.responseActive = false; s.resp = null; s.waitSince = 0;
+    try { if (s.ws) { s.ws.onclose = null; s.ws.close(); } } catch {}
+    caption('Linea disturbata, riconnetto…'); ui();
+    for (let i = 0; i < 4 && !s.closed; i++) {
+      try {
+        s.reconnects = (s.reconnects || 0) + 1; note('reconnect ' + s.reconnects);
+        s.cfg = await window.NN.api('/api/call/session', { method: 'POST', body: {} });
+        if (s.closed) break;
+        await connect(s);
+        s.reconnecting = false; caption(''); ui(); return;
+      } catch (e) { stats.lastError = e.message; await new Promise((r) => setTimeout(r, 1000 * (i + 1))); }
+    }
+    s.reconnecting = false;
+    if (!s.closed) hangup('La chiamata si è interrotta: la linea non è tornata.');
+  }
+  // controllo ogni secondo: audio dell'iPhone sospeso, microfono spento dal sistema, Idea che non risponde
+  async function watchdog(s) {
+    if (s.closed || s.reconnecting) return;
+    const c = s.c;
+    if (c.state !== 'running') { note('audio ' + c.state); c.resume().catch(() => {}); }
+    const tr = s.stream && s.stream.getAudioTracks()[0];
+    if (tr && tr.readyState === 'ended' && !s.micFixing) { // iPhone: chiamata/Siri/blocco schermo spengono il microfono
+      s.micFixing = true; note('mic ended');
+      try { try { s.node && s.node.disconnect(); s.src && s.src.disconnect(); } catch {}
+        s.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } }); await startMic(s); }
+      catch (e) { stats.lastError = 'mic: ' + e.message; }
+      s.micFixing = false;
+    }
+    if (!s.ready || !s.ws || s.ws.readyState !== 1) return;
+    const now = Date.now();
+    // hai finito di parlare ma non arriva risposta: la chiediamo noi
+    if (s.waitSince && !s.responseActive && !playing(s) && !s.userSpeaking && now - s.waitSince > 5000) {
+      s.waitSince = 0; note('nudge'); try { s.ws.send(JSON.stringify({ type: 'response.create' })); } catch {}
+    }
+    // risposta bloccata a metà (nessun audio da 15 s): la sblocchiamo
+    if (s.responseActive && !playing(s) && now - (s.respAt || now) > 15000) { note('stuck response'); s.responseActive = false; s.resp = null; }
+    // il microfono si accumula senza partire (oltre ~20 s di audio in coda): linea morta, riconnetto
+    if (s.ws.bufferedAmount > 1000000) { note('dead line'); reconnect(s); }
   }
 
   // ---------- schermata ----------
   const fmt = (sec) => Math.floor(sec / 60) + ':' + String(Math.floor(sec % 60)).padStart(2, '0');
   function ui() {
     const s = S; if (!s) return;
-    $('#call-status').textContent = !s.ready ? 'Chiamata in corso…' : s.muted ? 'Microfono spento' : playing(s) ? 'Idea sta parlando…' : s.userSpeaking ? 'Ti ascolto…' : 'In linea';
+    $('#call-status').textContent = s.reconnecting ? 'Riconnessione…' : !s.ready ? 'Chiamata in corso…' : s.muted ? 'Microfono spento' : playing(s) ? 'Idea sta parlando…' : s.userSpeaking ? 'Ti ascolto…' : 'In linea';
     $('#call-time').textContent = s.t0 ? fmt((Date.now() - s.t0) / 1000) : '';
     $('#call-mute').classList.toggle('on', !!s.muted); $('#call-mute').setAttribute('aria-pressed', s.muted ? 'true' : 'false');
   }
@@ -156,13 +209,15 @@
       await startMic(s);
       await connect(s);
       if (s.closed) return;
-      s.t0 = Date.now(); ui();
+      s.t0 = Date.now(); s.lastEv = Date.now(); ui();
+      s.dog = setInterval(() => watchdog(s), 1000);
+      c.onstatechange = () => { if (!s.closed && c.state !== 'running') c.resume().catch(() => {}); };
       if (s.cfg.greet) s.ws.send(JSON.stringify({ type: 'conversation.item.create', item: { type: 'force_message', role: 'assistant', interruptible: true, content: [{ type: 'output_text', text: s.cfg.greet }] } }));
     } catch (e) { stats.lastError = e.message; hangup(e.message || 'Chiamata non riuscita.'); }
   }
   async function hangup(msg) {
     const s = S; if (!s || s.closed) return; s.closed = true; S = null;
-    clearInterval(s.timer);
+    clearInterval(s.timer); clearInterval(s.dog);
     if (s.resp && s.resp.text && !s.resp.saved) addTurn(s, 'assistant', s.resp.text + '…');
     try { s.ws && s.ws.close(); } catch {}
     stopPlayback(s);
@@ -186,4 +241,5 @@
   $('#call-end').addEventListener('click', () => hangup());
   $('#call-mute').addEventListener('click', mute);
   window.addEventListener('pagehide', () => { if (S) hangup(); });
+  document.addEventListener('visibilitychange', () => { const s = S; if (s && !document.hidden) { s.c.resume().catch(() => {}); if (s.ws && s.ws.readyState > 1) reconnect(s); } });
 })();
