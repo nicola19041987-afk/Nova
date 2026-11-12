@@ -6,6 +6,7 @@
   // --- chiave dal link segreto: salvata sul dispositivo e tolta dalla barra degli indirizzi
   const qs = new URLSearchParams(location.search);
   if (qs.get('k')) { LS.setItem('nn.k', qs.get('k')); history.replaceState(null, '', '/'); }
+  else if (qs.get('r')) history.replaceState(null, '', '/');
   const key = () => LS.getItem('nn.k') || '';
   const sess = () => LS.getItem('nn.s') || '';
   let me = null, last = 0, es = null, pollT = 0;
@@ -235,6 +236,12 @@
 
   // --- idee
   $('#ideas-btn').addEventListener('click', () => { $('#ideas-panel').hidden = false; });
+  // tasto Aggiorna: ricarica l'app con i file nuovi, senza perdere l'accesso
+  $('#refresh-btn').addEventListener('click', async () => {
+    $('#refresh-btn').classList.add('spin');
+    try { if (window.caches) { const ks = await caches.keys(); await Promise.all(ks.map((k) => caches.delete(k))); } } catch {}
+    location.replace('/?r=' + Date.now());
+  });
   $('#ideas-close').addEventListener('click', () => { $('#ideas-panel').hidden = true; });
   $('#ideas-panel').addEventListener('click', (e) => { if (e.target.id === 'ideas-panel') $('#ideas-panel').hidden = true; });
 

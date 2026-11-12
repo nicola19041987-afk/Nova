@@ -10,21 +10,22 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="apple-mobile-web-app-title" content="N&amp;N Ideas">
 <title>N&N Ideas</title>
-<link rel="manifest" href="/manifest.json?v=4">
-<link rel="icon" href="/icon.svg?v=4" type="image/svg+xml">
-<link rel="icon" href="/icons/icon-32.png?v=4" sizes="32x32" type="image/png">
-<link rel="apple-touch-icon" href="/icons/icon-180.png?v=4">
-<link rel="stylesheet" href="/style.css?v=4">
+<link rel="manifest" href="/manifest.json?v=5">
+<link rel="icon" href="/icon.svg?v=5" type="image/svg+xml">
+<link rel="icon" href="/icons/icon-32.png?v=5" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="/icons/icon-180.png?v=5">
+<link rel="stylesheet" href="/style.css?v=5">
 </head>
 <body>
 <div id="app">
   <header id="topbar">
-    <img class="pfp" src="/logo-nn-avatar.svg?v=4" alt="N&amp;N Ideas">
+    <img class="pfp" src="/logo-nn-avatar.svg?v=5" alt="N&amp;N Ideas">
     <button id="home-btn" type="button" hidden aria-label="Impostazioni">
       <svg viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M12 3.2 4 10h2v9h5v-6h2v6h5v-9h2L12 3.2z"/></svg>
       <span class="admin-tag">admin</span>
     </button>
     <div class="who"><h1 id="brand">N&N Ideas</h1><span id="sub">online</span></div>
+    <button id="refresh-btn" type="button" aria-label="Aggiorna"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg></button>
     <button id="call-btn" type="button" aria-label="Chiama Idea">
       <svg viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M6.62 10.79a15.05 15.05 0 0 0 6.59 6.59l2.2-2.2a1 1 0 0 1 1.02-.24c1.12.37 2.33.57 3.57.57a1 1 0 0 1 1 1V20a1 1 0 0 1-1 1C10.61 21 3 13.39 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.45.57 3.57a1 1 0 0 1-.25 1.02l-2.2 2.2z"/></svg>
     </button>
@@ -72,7 +73,7 @@
 
 <div id="call" hidden role="dialog" aria-label="Chiamata con Idea">
   <div class="call-top">
-    <img class="call-logo" src="/logo-nn-avatar.svg?v=4" alt="N&amp;N Ideas">
+    <img class="call-logo" src="/logo-nn-avatar.svg?v=5" alt="N&amp;N Ideas">
     <div class="call-name">Idea</div>
     <div id="call-status">Chiamata in corso…</div>
     <div id="call-time"></div>
@@ -156,7 +157,7 @@
 <div id="gate" hidden>
 
   <div class="gate-box">
-    <img class="pfp big" src="/logo-nn-triangolo.svg?v=4" alt="N&amp;N Ideas">
+    <img class="pfp big" src="/logo-nn-triangolo.svg?v=5" alt="N&amp;N Ideas">
     <p id="gate-msg">Inserisci la password per entrare.</p>
     <form id="pass-form" autocomplete="on">
       <div class="pass-wrap"><input id="pass-input" type="password" inputmode="numeric" placeholder="Password" autocomplete="current-password" required><button type="button" id="pass-eye" aria-label="Mostra password" title="Mostra/nascondi">👁</button></div>
@@ -168,7 +169,7 @@
     </form>
   </div>
 </div>
-<script src="/app.js?v=4"></script>
-<script src="/call.js?v=4"></script>
+<script src="/app.js?v=5"></script>
+<script src="/call.js?v=5"></script>
 </body>
 </html>
