@@ -15,7 +15,7 @@
     try {
       var q = new URLSearchParams(location.search);
       var TOKEN = q.get('refresh');
-      if (TOKEN !== '2d' && TOKEN !== '2d-face' && TOKEN !== '2d-see' && TOKEN !== '2d-6' && TOKEN !== '2d-7' && TOKEN !== '2d-8' && TOKEN !== '2d-9' && TOKEN !== '2d-10' && TOKEN !== '2d-11' && TOKEN !== '2d-12' && TOKEN !== '2d-13' && TOKEN !== '2d-14' && TOKEN !== '2d-15' && TOKEN !== '2d-16' && TOKEN !== '2d-17' && TOKEN !== '2d-18' && TOKEN !== '2d-19' && TOKEN !== '2d-20' && TOKEN !== '2d-21' && TOKEN !== '2d-22' && TOKEN !== '2d-23' && TOKEN !== '2d-24' && TOKEN !== '2d-25') return;
+      if (TOKEN !== '2d' && TOKEN !== '2d-face' && TOKEN !== '2d-see' && TOKEN !== '2d-6' && TOKEN !== '2d-7' && TOKEN !== '2d-8' && TOKEN !== '2d-9' && TOKEN !== '2d-10' && TOKEN !== '2d-11' && TOKEN !== '2d-12' && TOKEN !== '2d-13' && TOKEN !== '2d-14' && TOKEN !== '2d-15' && TOKEN !== '2d-16' && TOKEN !== '2d-17' && TOKEN !== '2d-18' && TOKEN !== '2d-19' && TOKEN !== '2d-20' && TOKEN !== '2d-21' && TOKEN !== '2d-22' && TOKEN !== '2d-23' && TOKEN !== '2d-24' && TOKEN !== '2d-25' && TOKEN !== '2d-26' && TOKEN !== '2d-27') return;
       var key = 'nova-refresh-' + TOKEN;
       q.delete('refresh');
       var rest = q.toString();
@@ -476,6 +476,8 @@
           <p class="muted small">Di default tutto resta privato: le immagini e gli avatar generati restano solo in memoria per questa sessione finché non li salvi tu.</p>
           <label class="switch"><input type="checkbox" id="set-autosave"> Salva automaticamente i contenuti generati</label>
           <label class="switch"><input type="checkbox" id="set-export"> Consenti esportazione/condivisione</label>
+          <label class="switch"><input type="checkbox" id="set-content-filter" checked> Filtro contenuti espliciti</label>
+          <p class="muted small" id="content-filter-note">Vale solo per il profilo con cui hai fatto l'accesso.</p>
           <label class="switch"><input type="checkbox" id="set-adult"> Modalità adulti (18+)</label>
           <p class="muted small" id="adult-info">Disattivata.</p>
           <label class="switch" id="nobrakes-row" hidden><input type="checkbox" id="set-nobrakes"> Senza freni</label>
@@ -807,6 +809,7 @@
   <button type="button" id="audio-unlock" class="audio-unlock" hidden>🔊 Tocca per attivare l'audio</button>
 </div>
   <script src="/js/motion-lib.js"></script>
+  <script src="/js/live-motion.js"></script>
   <script src="/avatar.js"></script>
   <script src="/js/core.js"></script>
   <script src="/js/simli.js"></script>
