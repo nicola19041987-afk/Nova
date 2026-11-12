@@ -20,6 +20,10 @@
 <div id="app">
   <header id="topbar">
     <img class="pfp" src="/logo-nn-avatar.svg" alt="N&amp;N Ideas">
+    <button id="home-btn" type="button" hidden aria-label="Impostazioni">
+      <svg viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M12 3.2 4 10h2v9h5v-6h2v6h5v-9h2L12 3.2z"/></svg>
+      <span class="admin-tag">admin</span>
+    </button>
     <div class="who"><h1 id="brand">N&N Ideas</h1><span id="sub">online</span></div>
     <button id="call-btn" type="button" aria-label="Chiama Idea">
       <svg viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M6.62 10.79a15.05 15.05 0 0 0 6.59 6.59l2.2-2.2a1 1 0 0 1 1.02-.24c1.12.37 2.33.57 3.57.57a1 1 0 0 1 1 1V20a1 1 0 0 1-1 1C10.61 21 3 13.39 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.45.57 3.57a1 1 0 0 1-.25 1.02l-2.2 2.2z"/></svg>
@@ -73,6 +77,60 @@
     <button id="call-end" type="button" aria-label="Riaggancia">
       <svg viewBox="0 0 24 24" width="32" height="32"><path fill="currentColor" d="M12 9c-1.6 0-3.15.25-4.6.72v3.1c0 .39-.23.74-.56.9-.98.49-1.87 1.12-2.66 1.85-.18.18-.43.28-.7.28a1 1 0 0 1-.71-.29L.29 13.08A1 1 0 0 1 0 12.37c0-.28.11-.53.29-.71C3.34 8.78 7.46 7 12 7s8.66 1.78 11.71 4.66c.18.18.29.43.29.71 0 .28-.11.53-.29.71l-2.48 2.48a1 1 0 0 1-.71.29c-.27 0-.52-.11-.7-.28a11.27 11.27 0 0 0-2.67-1.85 1 1 0 0 1-.56-.9v-3.1A15.9 15.9 0 0 0 12 9z"/></svg>
     </button>
+  </div>
+</div>
+
+<div id="home-panel" hidden>
+  <div class="sheet light" id="home-sheet">
+    <div class="sheet-head">
+      <button type="button" id="home-back" hidden aria-label="Indietro">‹</button>
+      <b id="home-title">Impostazioni</b>
+      <button type="button" id="home-close" aria-label="Chiudi">✕</button>
+    </div>
+    <div id="home-menu">
+      <button type="button" class="set-row" id="go-prefs">Personalizza <span>›</span></button>
+      <button type="button" class="set-row" id="go-users">Utenti <span>›</span></button>
+    </div>
+    <div id="home-prefs" hidden>
+      <p class="set-lab">Sfondo della chat</p>
+      <div class="swatches" id="sw-chat" data-key="chatBg"></div>
+      <label class="set-custom">Colore personalizzato <input type="color" id="col-chat" data-key="chatBg"></label>
+      <p class="set-lab">Colore dei tuoi messaggi</p>
+      <div class="swatches" id="sw-bubble" data-key="bubble"></div>
+      <label class="set-custom">Colore personalizzato <input type="color" id="col-bubble" data-key="bubble"></label>
+      <p class="set-lab">Colore dell’intestazione</p>
+      <div class="swatches" id="sw-header" data-key="header"></div>
+      <label class="set-custom">Colore personalizzato <input type="color" id="col-header" data-key="header"></label>
+      <p class="set-lab">Dimensione del testo</p>
+      <div class="size-row" id="text-size">
+        <button type="button" data-size="small">Piccolo</button>
+        <button type="button" data-size="normal">Normale</button>
+        <button type="button" data-size="large">Grande</button>
+      </div>
+      <button type="button" id="prefs-reset" class="set-reset">Ripristina</button>
+    </div>
+    <div id="home-users" hidden>
+      <ul id="users-list"></ul>
+      <form id="user-add" autocomplete="off">
+        <p class="set-lab">Aggiungi utente</p>
+        <input id="user-name" maxlength="40" placeholder="Nome (es. Marco)" required>
+        <div class="pass-wrap">
+          <input id="user-pass" type="password" inputmode="numeric" maxlength="4" placeholder="Password 4 cifre (opzionale)" autocomplete="new-password">
+          <button type="button" id="user-pass-eye" aria-label="Mostra password" title="Mostra/nascondi">👁</button>
+        </div>
+        <button type="submit">Aggiungi utente</button>
+      </form>
+      <div id="user-once" hidden>
+        <p>Password di <b id="user-once-name"></b> (mostrata una sola volta):</p>
+        <div class="once-row">
+          <div class="pass-wrap">
+            <input id="user-once-pass" type="password" readonly>
+            <button type="button" id="user-once-eye" aria-label="Mostra password">👁</button>
+          </div>
+          <button type="button" id="user-once-copy">Copia</button>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 

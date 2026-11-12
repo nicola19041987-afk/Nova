@@ -29,7 +29,11 @@ let fileKey = '';
 function loadFileKey() { try { fileKey = fs.readFileSync(KEY_FILE, 'utf8').trim(); } catch { fileKey = ''; } }
 loadFileKey();
 function aiKey() { return (process.env.XAI_API_KEY || '').trim() || (process.env.AI_KEY || '').trim() || fileKey; }
-function tokenFor(role) { return (process.env[role === 'nico' ? 'NN_TOKEN_NICO' : 'NN_TOKEN_NICOLA'] || '').trim(); }
+function tokenFor(role) {
+  if (role === 'nico') return (process.env.NN_TOKEN_NICO || '').trim();
+  if (role === 'nicola') return (process.env.NN_TOKEN_NICOLA || '').trim();
+  return '';
+}
 function pinFor(role) { return ''; } // accesso solo con password (token): PIN disattivato
 function safeEq(a, b) {
   const x = Buffer.from(String(a)); const y = Buffer.from(String(b));
@@ -37,10 +41,90 @@ function safeEq(a, b) {
 }
 function roleOf(key) {
   if (!key) return null;
-  for (const r of Object.keys(ROLES)) { const t = tokenFor(r); if (t.length >= 4 && safeEq(key, t)) return r; }
+  for (const r of ['nico', 'nicola']) { const t = tokenFor(r); if (t.length >= 4 && safeEq(key, t)) return r; }
+  if (extraUsers.length && /^\d{4}$/.test(key)) {
+    const h = hashPass(key);
+    for (const u of extraUsers) { if (u.hash && u.hash.length === h.length && safeEq(h, u.hash)) return 'u_' + u.id; }
+  }
   return null;
 }
-function sessFor(role) { return crypto.createHmac('sha256', tokenFor(role)).update('pin:' + pinFor(role)).digest('base64url'); }
+function sessFor(role) { return crypto.createHmac('sha256', tokenFor(role) || 'x').update('pin:' + pinFor(role)).digest('base64url'); }
+
+// ---------- Utenti extra (fino a 3), password in hash, mai in chiaro su disco ----------
+const USERS_FILE = path.join(DATA_DIR, 'users.json');
+const USERS_SECRET_FILE = path.join(DATA_DIR, 'users.secret');
+const MAX_EXTRA_USERS = 3;
+let extraUsers = []; // { id, name, hash, createdAt }
+function usersSecret() {
+  try { return fs.readFileSync(USERS_SECRET_FILE, 'utf8').trim(); } catch {
+    const s = crypto.randomBytes(32).toString('hex');
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(USERS_SECRET_FILE, s, { mode: 0o600 });
+    return s;
+  }
+}
+function hashPass(pass) { return crypto.createHmac('sha256', usersSecret()).update(String(pass)).digest('hex'); }
+function refreshUserRoles() {
+  for (const k of Object.keys(ROLES)) if (k.startsWith('u_')) { delete ROLES[k]; delete FULL[k]; }
+  for (const u of extraUsers) { const r = 'u_' + u.id; ROLES[r] = u.name; FULL[r] = u.name; }
+}
+function loadUsers() {
+  try {
+    const j = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
+    extraUsers = Array.isArray(j.users) ? j.users : [];
+  } catch { extraUsers = []; }
+  refreshUserRoles();
+}
+function saveUsers() {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  const tmp = USERS_FILE + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify({ users: extraUsers }), { mode: 0o600 });
+  fs.chmodSync(tmp, 0o600); fs.renameSync(tmp, USERS_FILE);
+  refreshUserRoles();
+}
+function passTaken(pass) {
+  for (const r of ['nico', 'nicola']) { const t = tokenFor(r); if (t && t.length === pass.length && safeEq(pass, t)) return true; }
+  const h = hashPass(pass);
+  return extraUsers.some((u) => u.hash && u.hash.length === h.length && safeEq(h, u.hash));
+}
+function genPass() {
+  for (let i = 0; i < 80; i++) {
+    const p = String(crypto.randomInt(0, 10000)).padStart(4, '0');
+    if (!passTaken(p)) return p;
+  }
+  const e = new Error('Impossibile generare una password libera'); e.status = 500; throw e;
+}
+function namesMap() { const o = { nn: BOT_NAME }; for (const [k, v] of Object.entries(ROLES)) o[k] = v; return o; }
+function publicUsers() {
+  return [
+    { id: 'nicola', name: ROLES.nicola, full: FULL.nicola, builtin: true, owner: true },
+    { id: 'nico', name: ROLES.nico, full: FULL.nico, builtin: true },
+    ...extraUsers.map((u) => ({ id: String(u.id), name: u.name, full: u.name, builtin: false })),
+  ];
+}
+loadUsers();
+
+// ---------- Preferenze di visualizzazione (per utente) ----------
+const PREFS_FILE = path.join(DATA_DIR, 'prefs.json');
+let prefsDb = {};
+function defaultPrefs() { return { chatBg: '', bubble: '', header: '', textSize: 'normal' }; }
+function loadPrefs() { try { prefsDb = JSON.parse(fs.readFileSync(PREFS_FILE, 'utf8')) || {}; } catch { prefsDb = {}; } }
+function savePrefs() {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  const tmp = PREFS_FILE + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(prefsDb)); fs.renameSync(tmp, PREFS_FILE);
+}
+function isColor(s) { return typeof s === 'string' && /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(s.trim()); }
+function sanitizePrefs(body) {
+  const d = defaultPrefs();
+  const src = body && typeof body === 'object' ? body : {};
+  const chatBg = isColor(src.chatBg) ? src.chatBg.trim() : (src.chatBg === '' ? '' : d.chatBg);
+  const bubble = isColor(src.bubble) ? src.bubble.trim() : (src.bubble === '' ? '' : d.bubble);
+  const header = isColor(src.header) ? src.header.trim() : (src.header === '' ? '' : d.header);
+  const textSize = ['small', 'normal', 'large'].includes(src.textSize) ? src.textSize : d.textSize;
+  return { chatBg, bubble, header, textSize };
+}
+loadPrefs();
 
 // ---------- Archivio: Postgres se c'è DATABASE_URL, altrimenti file JSON in DATA_DIR ----------
 const WELCOME = `Ciao Nicola! Sono ${BOT_NAME}, il tuo pezzetto di carta digitale. Scrivimi, mandami una foto o tieni premuto il microfono e dimmi la tua idea: la metto da parte con titolo, data e a che punto è. Nico vede tutto in tempo reale.`;
@@ -261,13 +345,60 @@ app.get('/api/me', limit(10, 60000), (req, res, next) => {
   const role = roleOf(req.get('X-NN-Key') || '');
   if (role && pinFor(role) && !safeEq(req.get('X-NN-Sess') || '', sessFor(role))) return res.json({ role, name: ROLES[role], pin: true, app: APP_NAME });
   next();
-}, auth, (req, res) => res.json({ role: req.role, name: ROLES[req.role], pin: false, app: APP_NAME }));
+}, auth, (req, res) => res.json({ role: req.role, name: ROLES[req.role], pin: false, app: APP_NAME, admin: req.role === 'nicola', names: namesMap() }));
 app.get('/api/messages', auth, (req, res) => {
   const since = Number(req.query.since) || 0;
   res.setHeader('Cache-Control', 'no-store');
-  res.json({ messages: db.messages.filter((m) => m.id > since).slice(-500), ideas: db.ideas });
+  res.json({ messages: db.messages.filter((m) => m.id > since).slice(-500), ideas: db.ideas, names: namesMap() });
 });
 app.get('/api/ideas', auth, (req, res) => res.json({ ideas: db.ideas }));
+app.get('/api/prefs', auth, (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ prefs: Object.assign(defaultPrefs(), prefsDb[req.role] || {}) });
+});
+app.put('/api/prefs', auth, limit(30, 60000), express.json({ limit: '4kb' }), (req, res) => {
+  const prefs = sanitizePrefs(req.body && (req.body.prefs || req.body));
+  prefsDb[req.role] = prefs; savePrefs();
+  res.json({ prefs });
+});
+function ownerOnly(req, res, next) { if (req.role !== 'nicola') return res.status(403).json({ error: 'Non autorizzato' }); next(); }
+app.get('/api/admin/users', auth, ownerOnly, (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ users: publicUsers(), max: MAX_EXTRA_USERS });
+});
+app.post('/api/admin/users', auth, ownerOnly, limit(20, 60000), express.json({ limit: '4kb' }), (req, res) => {
+  if (extraUsers.length >= MAX_EXTRA_USERS) return res.status(400).json({ error: 'Puoi aggiungere al massimo 3 utenti.' });
+  const name = String((req.body && req.body.name) || '').replace(/\s+/g, ' ').trim().slice(0, 40);
+  if (name.length < 2) return res.status(400).json({ error: 'Nome non valido' });
+  let pass = String((req.body && req.body.pass) || '').trim();
+  if (pass) {
+    if (!/^\d{4}$/.test(pass)) return res.status(400).json({ error: 'La password deve essere di 4 cifre.' });
+    if (passTaken(pass)) return res.status(409).json({ error: 'Questa password è già in uso, scegline un’altra.' });
+  } else { pass = genPass(); }
+  const id = (extraUsers.reduce((m, u) => Math.max(m, Number(u.id) || 0), 0) + 1);
+  extraUsers.push({ id, name, hash: hashPass(pass), createdAt: new Date().toISOString() });
+  saveUsers();
+  res.json({ user: { id: String(id), name, full: name, builtin: false }, pass });
+});
+app.delete('/api/admin/users/:id', auth, ownerOnly, limit(20, 60000), (req, res) => {
+  const id = String(req.params.id || '');
+  const i = extraUsers.findIndex((u) => String(u.id) === id);
+  if (i < 0) return res.status(404).json({ error: 'Utente non trovato' });
+  extraUsers.splice(i, 1); saveUsers();
+  res.json({ ok: true, users: publicUsers() });
+});
+app.post('/api/admin/users/:id/reset', auth, ownerOnly, limit(20, 60000), express.json({ limit: '4kb' }), (req, res) => {
+  const id = String(req.params.id || '');
+  const u = extraUsers.find((x) => String(x.id) === id);
+  if (!u) return res.status(404).json({ error: 'Utente non trovato' });
+  let pass = String((req.body && req.body.pass) || '').trim();
+  if (pass) {
+    if (!/^\d{4}$/.test(pass)) return res.status(400).json({ error: 'La password deve essere di 4 cifre.' });
+    if (passTaken(pass)) return res.status(409).json({ error: 'Questa password è già in uso, scegline un’altra.' });
+  } else { pass = genPass(); }
+  u.hash = hashPass(pass); saveUsers();
+  res.json({ user: { id: String(u.id), name: u.name }, pass });
+});
 app.post('/api/messages', auth, limit(20, 60000), express.json({ limit: '20kb' }), (req, res) => {
   const text = String(req.body?.text || '').trim().slice(0, 4000);
   if (!text) return res.status(400).json({ error: 'Messaggio vuoto' });

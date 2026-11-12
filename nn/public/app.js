@@ -39,7 +39,8 @@
   const bottom = () => { box.scrollTop = box.scrollHeight; };
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   // ruoli interni -> nomi: 'nico' = Nicola Fortunato (amico, con PIN), 'nicola' = Nico Franchino (proprietario)
-  const NAMES = { nico: 'Nicola', nicola: 'Nico', nn: 'Idea' };
+  let NAMES = { nico: 'Nicola', nicola: 'Nico', nn: 'Idea' };
+  function setNames(map) { if (map && typeof map === 'object') NAMES = Object.assign({ nico: 'Nicola', nicola: 'Nico', nn: 'Idea' }, map); }
   const mediaUrl = (id) => '/api/media/' + encodeURIComponent(id) + '?k=' + encodeURIComponent(key()) + '&s=' + encodeURIComponent(sess());
   let lastDay = '';
   function add(m) {
@@ -77,7 +78,7 @@
     $('#ideas-list').innerHTML = (list || []).slice().reverse().map((i) => `<li><b>${esc(i.titolo)}</b>${esc(i.descrizione)}<br><small>${esc(i.data)} · ${esc(i.stato)}${i.autore ? " · di " + esc(i.autore) : ""}</small></li>`).join('') || '<li>Ancora nessuna idea. Scrivine una!</li>';
   }
   async function poll() {
-    try { const j = await api('/api/messages?since=' + last); j.messages.forEach(add); ideas(j.ideas); } catch (e) { if (e.status === 401) return start(); }
+    try { const j = await api('/api/messages?since=' + last); if (j.names) setNames(j.names); j.messages.forEach(add); ideas(j.ideas); } catch (e) { if (e.status === 401) return start(); }
   }
   function live() {
     if (es) es.close();
@@ -207,6 +208,132 @@
   $('#ideas-close').addEventListener('click', () => { $('#ideas-panel').hidden = true; });
   $('#ideas-panel').addEventListener('click', (e) => { if (e.target.id === 'ideas-panel') $('#ideas-panel').hidden = true; });
 
+  // --- preferenze e menu casetta (solo il proprietario vede la casetta)
+  const PREF_DEF = { chatBg: '#0b141a', bubble: '#005c4b', header: '#202c33', textSize: 'normal' };
+  const SW = {
+    chatBg: ['#0b141a', '#12211c', '#1a1a1a', '#0f1c2e', '#1c1410', '#15202b', '#2a1a12'],
+    bubble: ['#005c4b', '#075e54', '#1b6b93', '#6b4e16', '#5c2a4a', '#2d3436'],
+    header: ['#202c33', '#111b21', '#1a2330', '#2a1f16', '#1c2a22', '#000000'],
+  };
+  let prefs = Object.assign({}, PREF_DEF);
+  try { const s = LS.getItem('nn.prefs'); if (s) Object.assign(prefs, JSON.parse(s)); } catch {}
+  function applyPrefs(pr) {
+    prefs = Object.assign({}, PREF_DEF, pr || {});
+    const a = $('#app');
+    a.style.setProperty('--chat-bg', prefs.chatBg || PREF_DEF.chatBg);
+    a.style.setProperty('--bubble-mine', prefs.bubble || PREF_DEF.bubble);
+    a.style.setProperty('--header-bg', prefs.header || PREF_DEF.header);
+    a.dataset.text = prefs.textSize || 'normal';
+    document.documentElement.style.background = prefs.chatBg || PREF_DEF.chatBg;
+    paintPrefs();
+  }
+  function savePrefsLocal() { try { LS.setItem('nn.prefs', JSON.stringify(prefs)); } catch {} }
+  async function savePrefsAll() {
+    savePrefsLocal();
+    try { await api('/api/prefs', { method: 'PUT', body: { prefs } }); } catch {}
+  }
+  applyPrefs(prefs); // applica subito quelle del dispositivo
+  function paintPrefs() {
+    document.querySelectorAll('.swatches button').forEach((b) => b.classList.toggle('on', (prefs[b.parentElement.dataset.key] || '').toLowerCase() === b.dataset.color.toLowerCase()));
+    const map = { 'col-chat': 'chatBg', 'col-bubble': 'bubble', 'col-header': 'header' };
+    for (const [id, k] of Object.entries(map)) { const el = $('#' + id); if (el) el.value = (prefs[k] && /^#([0-9a-fA-F]{6})$/.test(prefs[k]) ? prefs[k] : PREF_DEF[k]); }
+    document.querySelectorAll('#text-size button').forEach((b) => b.classList.toggle('on', b.dataset.size === (prefs.textSize || 'normal')));
+  }
+  function fillSwatches() {
+    for (const [id, key] of [['sw-chat', 'chatBg'], ['sw-bubble', 'bubble'], ['sw-header', 'header']]) {
+      const box = $('#' + id); if (!box || box.dataset.ready) continue;
+      box.dataset.ready = '1';
+      (SW[key] || []).forEach((c) => {
+        const b = document.createElement('button'); b.type = 'button'; b.dataset.color = c; b.style.background = c; b.setAttribute('aria-label', c);
+        b.addEventListener('click', () => { prefs[key] = c; applyPrefs(prefs); savePrefsAll(); });
+        box.appendChild(b);
+      });
+    }
+    paintPrefs();
+  }
+  ['col-chat', 'col-bubble', 'col-header'].forEach((id) => {
+    const el = $('#' + id); if (!el) return;
+    el.addEventListener('input', () => { prefs[el.dataset.key] = el.value; applyPrefs(prefs); });
+    el.addEventListener('change', () => { prefs[el.dataset.key] = el.value; applyPrefs(prefs); savePrefsAll(); });
+  });
+  $('#text-size').addEventListener('click', (e) => {
+    const b = e.target.closest('button'); if (!b) return;
+    prefs.textSize = b.dataset.size; applyPrefs(prefs); savePrefsAll();
+  });
+  $('#prefs-reset').addEventListener('click', () => { applyPrefs(PREF_DEF); savePrefsAll(); });
+
+  function homeOpen(page) {
+    $('#home-panel').hidden = false;
+    $('#home-menu').hidden = !!page;
+    $('#home-prefs').hidden = page !== 'prefs';
+    $('#home-users').hidden = page !== 'users';
+    $('#home-back').hidden = !page;
+    $('#home-title').textContent = page === 'prefs' ? 'Personalizza' : page === 'users' ? 'Utenti' : 'Impostazioni';
+    if (page === 'prefs') { fillSwatches(); paintPrefs(); }
+    if (page === 'users') loadUsers();
+  }
+  function homeClose() { $('#home-panel').hidden = true; homeOpen(''); $('#home-panel').hidden = true; }
+  $('#home-btn').addEventListener('click', () => homeOpen(''));
+  $('#home-close').addEventListener('click', homeClose);
+  $('#home-back').addEventListener('click', () => homeOpen(''));
+  $('#home-panel').addEventListener('click', (e) => { if (e.target.id === 'home-panel') homeClose(); });
+  $('#go-prefs').addEventListener('click', () => homeOpen('prefs'));
+  $('#go-users').addEventListener('click', () => homeOpen('users'));
+
+  function toggleEye(input, btn) {
+    const show = input.type === 'password';
+    input.type = show ? 'text' : 'password';
+    btn.textContent = show ? '🙈' : '👁';
+    btn.setAttribute('aria-label', show ? 'Nascondi password' : 'Mostra password');
+  }
+  $('#user-pass-eye').addEventListener('click', () => toggleEye($('#user-pass'), $('#user-pass-eye')));
+  $('#user-once-eye').addEventListener('click', () => toggleEye($('#user-once-pass'), $('#user-once-eye')));
+  $('#user-once-copy').addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText($('#user-once-pass').value); status('Password copiata.'); } catch { $('#user-once-pass').select(); document.execCommand('copy'); }
+  });
+  function showOnce(name, pass) {
+    $('#user-once').hidden = false;
+    $('#user-once-name').textContent = name;
+    $('#user-once-pass').type = 'password'; $('#user-once-pass').value = pass;
+    $('#user-once-eye').textContent = '👁';
+  }
+  async function loadUsers() {
+    try {
+      const j = await api('/api/admin/users');
+      const ul = $('#users-list');
+      ul.innerHTML = (j.users || []).map((u) => {
+        const tag = u.owner ? 'proprietario' : u.builtin ? 'già presente' : 'aggiunto';
+        const acts = u.builtin ? '' : `<button type="button" data-act="reset" data-id="${esc(u.id)}">Nuova password</button><button type="button" class="danger" data-act="del" data-id="${esc(u.id)}">Rimuovi</button>`;
+        return `<li data-id="${esc(u.id)}"><span class="meta"><b>${esc(u.full || u.name)}</b><small>${esc(tag)}</small></span>${acts}</li>`;
+      }).join('');
+    } catch (e) { status(e.message || 'Elenco utenti non disponibile.'); }
+  }
+  $('#users-list').addEventListener('click', async (e) => {
+    const b = e.target.closest('button'); if (!b) return;
+    const id = b.dataset.id;
+    if (b.dataset.act === 'del') {
+      if (!confirm('Togliere l’accesso a questa persona?')) return;
+      try { await api('/api/admin/users/' + encodeURIComponent(id), { method: 'DELETE' }); $('#user-once').hidden = true; loadUsers(); } catch (err) { status(err.message); }
+    } else if (b.dataset.act === 'reset') {
+      try {
+        const j = await api('/api/admin/users/' + encodeURIComponent(id) + '/reset', { method: 'POST', body: {} });
+        showOnce(j.user && j.user.name || 'utente', j.pass); loadUsers();
+      } catch (err) { status(err.message); }
+    }
+  });
+  $('#user-add').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const name = $('#user-name').value.trim();
+    const pass = $('#user-pass').value.trim();
+    if (!name) return;
+    try {
+      const j = await api('/api/admin/users', { method: 'POST', body: pass ? { name, pass } : { name } });
+      $('#user-name').value = ''; $('#user-pass').value = '';
+      showOnce(j.user && j.user.name || name, j.pass);
+      loadUsers();
+    } catch (err) { status(err.message || 'Aggiunta non riuscita.'); }
+  });
+
   // --- accesso
   $('#pin-form').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -235,6 +362,15 @@
     if (me.pin) { $('#gate').hidden = false; $('#pass-form').hidden = true; $('#pin-form').hidden = false; $('#gate-msg').textContent = 'Ciao ' + me.name + '! Inserisci il PIN.'; setTimeout(() => $('#pin-input').focus(), 50); return; }
     $('#gate').hidden = true;
     $('#sub').textContent = 'online';
+    if (me.names) setNames(me.names);
+    $('#home-btn').hidden = me.role !== 'nicola';
+    try {
+      const j = await api('/api/prefs');
+      const sp = (j && j.prefs) || {};
+      const serverSet = !!(sp.chatBg || sp.bubble || sp.header || (sp.textSize && sp.textSize !== 'normal'));
+      if (serverSet) { applyPrefs(Object.assign({}, PREF_DEF, sp)); savePrefsLocal(); }
+      else { savePrefsAll(); }
+    } catch {}
     await poll(); bottom(); live(); paint();
   }
   window.NN = { api, key, sess, me: () => me, status, poll };
