@@ -772,8 +772,9 @@
         const pose = A.pose || {};
         const libBreath = still && !reduce && this._lib ? this._lib.breath : 1;
         const pre = this._preBreath && now - this._preBreath < 1100 ? 1.7 : 1;
+        // v2d-29: sul ritratto intero (solo-mode) niente respiro dell'immagine intera: la cornice resta ferma.
         const breathY = still
-          ? (reduce ? 1 : 1 + 0.028 * libBreath * pre * (0.5 + 0.5 * Math.max(-1, Math.min(1, pose.breath || 0))))
+          ? 1
           : 1 + 0.016 * (0.5 + 0.5 * (pose.breath || 0));
         const lean = pose.lean || 1;
         const mouthPt = this.lm && this.lm.mouth;
@@ -787,9 +788,12 @@
         const listen = this.motionContext && this.motionContext() === 'listen';
         const baseSway = listen ? 0.006 : 0.035;
         const nod = this.speaking ? Math.sin(now / 260) * Math.min(0.65, this.mouth || 0) * 0.05 : 0;
-        const sway = (!still || reduce) ? (still ? 0 : (pose.torso || 0)) : (Math.sin(now / 5200) * baseSway + Math.sin(now / 9100 + 1.1) * baseSway * 0.35 + nod + (lib ? lib.sway * Math.sin((now - (lib.t0 || now)) / Math.max(400, lib.swayMs) * Math.PI * 2) : 0));
-        // nextBlink enorme = test del labiale: il movimento di base resta quello di prima.
-        const procOn = still && !reduce && !(this.nextBlink > 1e12) && window.MotionLib && MotionLib.drive;
+        // v2d-29: sul ritratto intero niente ondeggiamento, cenni o zoom della foto intera (si muoveva troppo).
+        const sway = still ? 0 : (pose.torso || 0);
+        void baseSway; void nod; void lib; void libBreath; void pre;
+        // Il motore procedurale (traslazione/rotazione/scala della foto) e la toppa della mano sono spenti:
+        // spostavano un cerchio di pixel dell'avambraccio, non la mano vera.
+        const procOn = false;
         let proc = null;
         if (procOn) {
           if (!this._drive) this._drive = MotionLib.createDrive();

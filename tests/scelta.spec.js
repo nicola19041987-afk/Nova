@@ -131,7 +131,8 @@ test('la foto scelta apre la bocca lungo le labbra e il movimento di base c’è
   }
   expect(snap.midRatio).toBeLessThan(2.4);
   expect(snap.openRatio).toBeLessThan(2.4);
-  expect(snap.breath).toBeGreaterThan(0.4);
+  // v2d-29: niente respiro dell'immagine intera, la cornice resta ferma.
+  expect(snap.breath).toBeLessThan(0.4);
   expect(snap.blink).toBeGreaterThan(0.4);
   expect(Math.abs(snap.gx)).toBeGreaterThan(0.05);
   expect(snap.gaze).toBeGreaterThan(0.15);

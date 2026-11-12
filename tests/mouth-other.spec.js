@@ -138,7 +138,8 @@ test('su un altro volto i punti di Nova non deformano, e la bocca vera resta sim
   expect(snap.cL && snap.cR).toBeTruthy();
   expect(Math.abs(snap.cL.y - snap.cR.y)).toBeLessThan(6);
   expect(Math.abs(snap.cL.x + snap.cR.x)).toBeLessThan(10);
-  expect(snap.idle).toBeGreaterThan(0.4);
+  // v2d-29: a riposo, senza ammiccare, la foto resta ferma (niente respiro né ondeggiamento).
+  expect(snap.idle).toBeLessThan(0.4);
   const dir = path.join(__dirname, '..', 'docs', 'mouth-check', 'glasses');
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, 'before.png'), Buffer.from(snap.before.split(',')[1], 'base64'));

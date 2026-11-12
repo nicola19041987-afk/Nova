@@ -120,7 +120,8 @@ test('la bionda nuova apre la bocca dritta e il movimento di base c’è', async
   }
   expect(snap.midRatio).toBeLessThan(1.8);
   expect(snap.openRatio).toBeLessThan(1.8);
-  expect(snap.breath).toBeGreaterThan(0.4);
+  // v2d-29: niente respiro dell'immagine intera, la cornice resta ferma.
+  expect(snap.breath).toBeLessThan(0.4);
   expect(snap.blink).toBeGreaterThan(0.4);
   expect(Math.abs(snap.gx)).toBeGreaterThan(0.05);
   expect(snap.gaze).toBeGreaterThan(0.15);

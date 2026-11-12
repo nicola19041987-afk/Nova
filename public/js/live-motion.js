@@ -1,6 +1,5 @@
-/* Strato di movimento sull'immagine intera (foto o video idle).
-   Traslazione, rotazione e scala uniforme: niente deformazione di viso o mani.
-   Più vivo mentre parla, più fermo mentre ascolta. Rispetta prefers-reduced-motion. */
+/* Strato di movimento sull'immagine intera (foto o video idle): spento dalla v2d-29.
+   La cornice non trasla, non ruota e non si ingrandisce. energy() resta per chi la legge. */
 (function () {
   const reduced = () => {
     try { return !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches); }
@@ -43,38 +42,18 @@
     el.style.transform = '';
     el.classList.remove('nv-live');
   }
-  function tick(now) {
-    const Lib = window.MotionLib;
+  // v2d-29: niente più movimento dell'immagine intera (respiro, ondeggiamento, zoom). La cornice resta ferma:
+  // si muove solo il corpo dentro il video idle, e la bocca sul ritratto mentre parla.
+  function tick() {
     const t = targets();
-    if (!Lib || reduced() || (!t.v && !t.portrait)) {
-      clear(t.v); clear(document.getElementById('motion-video'));
-      clear(t.portrait);
-      state.on = false;
-      return null;
-    }
-    if (!state.drive) state.drive = Lib.createDrive();
-    const dt = state.at ? Math.min(80, Math.max(8, now - state.at)) : 16;
-    state.at = now;
-    const pose = Lib.drive(state.drive, now, dt, energy());
-    const css = Lib.cssTransform(pose);
-    if (t.v) { t.v.classList.add('nv-live'); t.v.style.transform = css; }
-    if (t.portrait) { t.portrait.classList.add('nv-live'); t.portrait.style.transform = css; }
-    state.on = true;
-    return pose;
-  }
-  function loop(now) {
-    const t = targets();
-    const active = !!(t.v || t.portrait) && !reduced();
-    if (active || state.on) tick(now);
-    if (active) state.raf = requestAnimationFrame(loop);
-    else {
-      state.raf = 0;
-      state.timer = setTimeout(() => { state.timer = 0; state.raf = requestAnimationFrame(loop); }, 500);
-    }
+    clear(t.v); clear(document.getElementById('motion-video'));
+    clear(t.portrait); clear(document.getElementById('call-portrait'));
+    state.on = false;
+    return null;
   }
   function start() {
-    if (state.raf || state.timer || typeof requestAnimationFrame !== 'function') return;
-    state.raf = requestAnimationFrame(loop);
+    if (state.raf || typeof requestAnimationFrame !== 'function') return;
+    state.raf = requestAnimationFrame(() => { tick(); });
   }
   window.LiveMotion = { tick, energy, reduced, start };
   if (typeof document !== 'undefined') {

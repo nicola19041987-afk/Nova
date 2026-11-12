@@ -78,8 +78,10 @@ test('bolla e sta scrivendo prima del token, senza un giro in più per la parola
   expect(snap.reply).toContain('Ciao');
 });
 
-test('la mano sul ritratto si muove e torna, per circa venti secondi', async ({ page }, testInfo) => {
-  test.skip(testInfo.project.name === 'webkit', 'La sequenza della mano è registrata su Chromium. WebKit esegue il resto della suite.');
+// v2d-29: la toppa della mano (un cerchio di pixel dell'avambraccio spostato) è spenta: non muoveva la mano vera.
+// La foto sul ritratto resta ferma fuori da occhi e bocca.
+test('sul ritratto la foto resta ferma: niente toppa della mano né respiro', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name === 'webkit', 'Misurato su Chromium.');
   test.setTimeout(60000);
   await page.setViewportSize({ width: 390, height: 844 });
   await mockApp(page, 0);
@@ -87,35 +89,26 @@ test('la mano sul ritratto si muove e torna, per circa venti secondi', async ({ 
   await page.waitForFunction(() => document.body.classList.contains('solo-mode') && App.avatarConv && App.avatarConv.img && App.avatarConv.img.naturalWidth > 0);
   await page.locator('#back-btn').click();
   await page.locator('#nh-photo').click();
-  await page.waitForFunction(() => document.body.classList.contains('solo-portrait') && App.avatarConv && App.avatarConv._handPose);
-  const dir = '/opt/cursor/artifacts';
-  fs.mkdirSync(dir, { recursive: true });
+  await page.waitForFunction(() => document.body.classList.contains('solo-portrait') && App.avatarConv && App.avatarConv._drawn !== undefined);
   const samples = [];
-  for (let i = 0; i < 11; i++) {
-    if (i) await page.waitForTimeout(2000);
-    const shot = path.join(dir, `hand-${String(i).padStart(2, '0')}.png`);
-    await page.locator('#stage').screenshot({ path: shot });
-    const pose = await page.evaluate(() => {
+  await page.waitForTimeout(1500);
+  for (let i = 0; i < 5; i++) {
+    if (i) await page.waitForTimeout(1500);
+    samples.push(await page.evaluate(() => {
       const c = document.getElementById('avatar-canvas');
       const ctx = c.getContext('2d');
       const w = c.width, h = c.height;
-      const y0 = Math.floor(h * 0.62), y1 = Math.floor(h * 0.9);
-      const x0 = Math.floor(w * 0.08), x1 = Math.floor(w * 0.38);
-      const im = ctx.getImageData(x0, y0, Math.max(1, x1 - x0), Math.max(1, y1 - y0));
-      let n = 0, acc = 0;
-      for (let k = 0; k < im.data.length; k += 16) { acc += im.data[k] + im.data[k + 1] + im.data[k + 2]; n++; }
-      const hp = App.avatarConv._handPose || {};
-      return { mean: acc / Math.max(1, n), phase: hp.phase, lift: hp.lift, side: hp.side, idle: hp.idle };
-    });
-    samples.push({ i, file: shot, ...pose });
+      const reg = (fx0, fy0, fx1, fy1) => {
+        const x0 = Math.floor(w * fx0), y0 = Math.floor(h * fy0);
+        const im = ctx.getImageData(x0, y0, Math.max(1, Math.floor(w * fx1) - x0), Math.max(1, Math.floor(h * fy1) - y0));
+        let acc = 0, n = 0; for (let k = 0; k < im.data.length; k += 16) { acc += im.data[k] + im.data[k + 1] + im.data[k + 2]; n++; }
+        return acc / Math.max(1, n);
+      };
+      return { hand: reg(0.08, 0.62, 0.38, 0.9), body: reg(0.4, 0.75, 0.95, 0.98), pose: App.avatarConv._handPose };
+    }));
   }
-  fs.writeFileSync(path.join(dir, 'hand-samples.json'), JSON.stringify(samples, null, 2));
-  const means = samples.map((s) => s.mean);
-  const spread = Math.max(...means) - Math.min(...means);
-  const lifts = samples.map((s) => s.lift);
-  expect(Math.max(...lifts)).toBeGreaterThan(0.6);
-  expect(lifts.filter((n) => n === 0).length).toBeGreaterThan(0);
-  expect(spread).toBeGreaterThan(1.5);
-  const idles = samples.map((s) => Number(s.idle).toFixed(2));
-  expect(new Set(idles).size).toBeGreaterThan(2);
+  const spread = (k) => Math.max(...samples.map((s) => s[k])) - Math.min(...samples.map((s) => s[k]));
+  expect(samples.every((s) => !s.pose)).toBe(true);
+  expect(spread('hand')).toBeLessThan(0.5);
+  expect(spread('body')).toBeLessThan(0.5);
 });

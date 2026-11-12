@@ -114,6 +114,16 @@
     const portrait = document.body.classList.contains('solo-portrait') && !document.body.classList.contains('in-call');
     return call || portrait;
   }
+  const CLIP_AFTER_TALK_MS = 1500;
+  function talkingNow() {
+    const av = App.avatarConv;
+    return !!(
+      (av && av.speaking) ||
+      (App.tts && (App.tts.playing || (App.tts.q && App.tts.q.length))) ||
+      (App.rt && typeof App.rt.speaking === 'function' && App.rt.speaking()) ||
+      (window.speechSynthesis && window.speechSynthesis.speaking)
+    );
+  }
   function syncMotion() {
     const v = document.getElementById('motion-video');
     const stage = document.getElementById('stage');
@@ -145,6 +155,19 @@
       const Lib = window.MotionLib;
       if (!Lib || !Lib.stepClipPlay) return;
       if (!v._clip) v._clip = Lib.createClipPlay();
+      // v2d-29: il video idle è muto e a bocca chiusa e copre il canvas del labiale.
+      // Mentre Nova parla resta la foto con la bocca che si muove; il video riparte solo dopo una pausa.
+      const nowT = performance.now();
+      if (talkingNow()) {
+        v._quietAt = nowT;
+        if (v._clipOn || v._clip.on) {
+          v._clipOn = false; v._clip.on = false; v._clip.next = nowT + CLIP_AFTER_TALK_MS;
+          stage.classList.remove('has-motion');
+          try { v.pause(); } catch { /* già fermo */ }
+        }
+        return;
+      }
+      if (v._quietAt && nowT - v._quietAt < CLIP_AFTER_TALK_MS) return;
       const durMs = (v.duration && isFinite(v.duration)) ? v.duration * 1000 : 0;
       const step = Lib.stepClipPlay(v._clip, performance.now(), durMs);
       if (!step.play) {

@@ -571,6 +571,8 @@ dialog{background:#1c1c1e;border:0}
 @keyframes nv-breathe{0%,100%{scale:1 1}50%{scale:1.005 1.012}}
 #avatar-canvas{transform-origin:50% 100%;animation:none;backface-visibility:hidden;-webkit-backface-visibility:hidden}
 #stage.av-stalled #avatar-canvas,#stage.av-stalled.speaking #avatar-canvas{animation:nv-breathe 4.6s ease-in-out infinite}
+/* v2d-29: in solo-mode niente respiro CSS dell'immagine intera, nemmeno in fallback */
+body.solo-mode #stage.av-stalled #avatar-canvas,body.solo-mode #stage.av-stalled.speaking #avatar-canvas{animation:none}
 @media (prefers-reduced-motion:reduce){
   #avatar-canvas,#stage.av-stalled #avatar-canvas,#stage.av-stalled.speaking #avatar-canvas{animation:none}
 }
