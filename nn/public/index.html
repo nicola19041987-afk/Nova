@@ -8,8 +8,8 @@
 <meta name="theme-color" content="#000000">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
-<meta name="apple-mobile-web-app-title" content="N&amp;N">
-<title>N&amp;N</title>
+<meta name="apple-mobile-web-app-title" content="N&amp;N Ideas">
+<title>N&N Ideas</title>
 <link rel="manifest" href="/manifest.json">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
 <link rel="icon" href="/icons/icon-32.png" sizes="32x32" type="image/png">
@@ -19,18 +19,22 @@
 <body>
 <div id="app">
   <header id="topbar">
-    <img class="pfp" src="/icon.svg" alt="N&amp;N">
-    <div class="who"><h1 id="brand">N&amp;N</h1><span id="sub">le idee di Nico</span></div>
+    <img class="pfp" src="/logo-nn-avatar.svg" alt="N&amp;N Ideas">
+    <div class="who"><h1 id="brand">N&N Ideas</h1><span id="sub">online</span></div>
     <button id="ideas-btn" type="button" aria-label="Idee salvate">💡<b id="ideas-count"></b></button>
   </header>
 
   <main id="messages" aria-live="polite"></main>
 
-  <div id="typing" hidden>N&amp;N sta scrivendo…</div>
+  <div id="typing" hidden>Idea sta scrivendo…</div>
   <div id="status" hidden></div>
 
   <form id="bar" autocomplete="off">
     <div id="rec-hud" hidden><span class="dot"></span><span id="rec-time">0:00</span><span class="hint">← scorri per annullare</span></div>
+    <label id="attach" for="file" role="button" aria-label="Allega foto o video">
+      <svg viewBox="0 0 24 24" width="26" height="26"><path fill="currentColor" d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6z"/></svg>
+    </label>
+    <input id="file" class="vh" type="file" accept="image/*,video/*">
     <textarea id="input" rows="1" placeholder="Scrivi un'idea…" enterkeyhint="send"></textarea>
     <button id="mic" type="button" aria-label="Tieni premuto per registrare">
       <svg viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/></svg>
@@ -48,9 +52,11 @@
   </div>
 </div>
 
+<div id="viewer" hidden><img alt=""><button type="button" id="viewer-close" aria-label="Chiudi">✕</button></div>
+
 <div id="gate" hidden>
   <div class="gate-box">
-    <img class="pfp big" src="/icon.svg" alt="N&amp;N">
+    <img class="pfp big" src="/logo-nn-triangolo.svg" alt="N&amp;N Ideas">
     <p id="gate-msg">Inserisci la password per entrare.</p>
     <form id="pass-form" autocomplete="on">
       <div class="pass-wrap"><input id="pass-input" type="password" inputmode="numeric" placeholder="Password" autocomplete="current-password" required><button type="button" id="pass-eye" aria-label="Mostra password" title="Mostra/nascondi">👁</button></div>

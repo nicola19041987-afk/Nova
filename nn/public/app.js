@@ -1,4 +1,4 @@
-/* N&N — chat stile WhatsApp: testo, vocali (tieni premuto), tempo reale (SSE + polling di riserva). */
+/* N&N Ideas — chat stile WhatsApp: testo, foto/video, vocali (tieni premuto), tempo reale (SSE + polling di riserva). */
 (function () {
   'use strict';
   const $ = (s) => document.querySelector(s);
@@ -38,7 +38,9 @@
   const nearBottom = () => box.scrollHeight - box.scrollTop - box.clientHeight < 80;
   const bottom = () => { box.scrollTop = box.scrollHeight; };
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-  const NAMES = { nico: 'Nico', nicola: 'Nicola', nn: 'N&N' };
+  // ruoli interni -> nomi: 'nico' = Nicola Fortunato (amico, con PIN), 'nicola' = Nico Franchino (proprietario)
+  const NAMES = { nico: 'Nicola', nicola: 'Nico', nn: 'Idea' };
+  const mediaUrl = (id) => '/api/media/' + encodeURIComponent(id) + '?k=' + encodeURIComponent(key()) + '&s=' + encodeURIComponent(sess());
   let lastDay = '';
   function add(m) {
     if (seen.has(m.id)) return; seen.add(m.id); last = Math.max(last, m.id);
@@ -57,16 +59,20 @@
     el.className = 'msg ' + (mine ? 'mine' : 'other');
     const time = d.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
     el.innerHTML = (mine ? '' : `<span class="au ${esc(m.author)}">${esc(NAMES[m.author] || m.author)}</span>`)
-      + (m.voice ? `<span class="vtag">🎤 Vocale · ${m.voice.sec || 1}s</span>` : '')
-      + `<span class="tx">${esc(m.content)}</span>`
+      + (m.media && m.media.kind === 'image' ? `<img class="ph" src="${esc(mediaUrl(m.media.id))}" alt="Foto" loading="lazy">` : '')
+      + (m.media && m.media.kind === 'video' ? `<video class="vd" src="${esc(mediaUrl(m.media.id))}" controls playsinline preload="metadata"></video>` : '')
+      + (m.voice ? `<span class="vtag">🎤 Vocale · ${m.voice.sec || 1}s</span>` + (m.voice.audio ? `<audio class="au-pl" src="${esc(mediaUrl(m.voice.audio))}" controls preload="none"></audio>` : '') : '')
+      + (m.content ? `<span class="tx">${m.voice ? '<i>Trascrizione:</i> ' : ''}${esc(m.content)}</span>` : '')
       + (m.idea ? `<span class="itag">💡 Idea salvata: ${esc(m.idea)}</span>` : '')
       + `<span class="meta">${time}</span>`;
     box.appendChild(el);
+    el.querySelectorAll('img.ph, video.vd').forEach((x) => x.addEventListener(x.tagName === 'IMG' ? 'load' : 'loadedmetadata', () => { if (stick || mine) bottom(); }, { once: true }));
+    const ph = el.querySelector('img.ph'); if (ph) ph.addEventListener('click', () => { $('#viewer img').src = ph.src; $('#viewer').hidden = false; });
     if (stick || mine) bottom();
   }
   function ideas(list) {
     $('#ideas-count').textContent = list && list.length ? list.length : '';
-    $('#ideas-list').innerHTML = (list || []).slice().reverse().map((i) => `<li><b>${esc(i.titolo)}</b>${esc(i.descrizione)}<br><small>${esc(i.data)} · ${esc(i.stato)}</small></li>`).join('') || '<li>Ancora nessuna idea. Scrivine una!</li>';
+    $('#ideas-list').innerHTML = (list || []).slice().reverse().map((i) => `<li><b>${esc(i.titolo)}</b>${esc(i.descrizione)}<br><small>${esc(i.data)} · ${esc(i.stato)}${i.autore ? " · di " + esc(i.autore) : ""}</small></li>`).join('') || '<li>Ancora nessuna idea. Scrivine una!</li>';
   }
   async function poll() {
     try { const j = await api('/api/messages?since=' + last); j.messages.forEach(add); ideas(j.ideas); } catch (e) { if (e.status === 401) return start(); }
@@ -74,14 +80,46 @@
   function live() {
     if (es) es.close();
     es = new EventSource('/api/stream?k=' + encodeURIComponent(key()) + '&s=' + encodeURIComponent(sess()));
-    es.addEventListener('message', (ev) => { add(JSON.parse(ev.data)); $('#typing').hidden = true; });
-    es.addEventListener('typing', (ev) => { $('#typing').hidden = !JSON.parse(ev.data).on; });
+    es.addEventListener('message', (ev) => { add(JSON.parse(ev.data)); typing(false); });
+    es.addEventListener('typing', (ev) => typing(JSON.parse(ev.data).on));
     es.addEventListener('ideas', (ev) => ideas(JSON.parse(ev.data)));
     es.addEventListener('hello', () => poll());
     // polling di riserva ogni 2 s: se SSE cade, i messaggi arrivano comunque
     clearInterval(pollT); pollT = setInterval(poll, 2000);
   }
   document.addEventListener('visibilitychange', () => { if (!document.hidden && me) { poll(); if (!es || es.readyState === 2) live(); } });
+
+  function typing(on) { $('#typing').hidden = !on; const s = $('#sub'); s.textContent = on ? 'Idea sta scrivendo…' : 'online'; s.classList.toggle('typing', !!on); }
+
+  // --- foto e video: "+" apre fotocamera o galleria del telefono
+  const fileIn = $('#file');
+  $('#attach').addEventListener('pointerdown', (e) => { if (document.activeElement === input) e.preventDefault(); });
+  fileIn.addEventListener('change', async () => {
+    const f = fileIn.files && fileIn.files[0]; fileIn.value = ''; if (!f) return;
+    if (f.size > 50 * 1024 * 1024) return status('File troppo grande (max 50 MB).');
+    const isVideo = /^video\//.test(f.type);
+    const caption = input.value.trim();
+    status(isVideo ? 'Invio il video…' : 'Invio la foto…');
+    try {
+      let body = f, type = f.type || (isVideo ? 'video/mp4' : 'image/jpeg');
+      if (!isVideo) { const small = await shrink(f).catch(() => null); if (small) { body = small; type = 'image/jpeg'; } }
+      const j = await api('/api/media', { method: 'POST', body, headers: { 'Content-Type': type, 'X-NN-Caption': encodeURIComponent(caption) } });
+      if (caption) { input.value = ''; paint(); }
+      status(''); add(j.message);
+    } catch (err) { status(err.message || 'Invio non riuscito.'); }
+  });
+  // riduce le foto (max 1600 px, JPEG): più veloci da inviare e leggibili da Idea
+  async function shrink(file) {
+    const url = URL.createObjectURL(file);
+    try {
+      const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
+      const k = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight));
+      const c = document.createElement('canvas'); c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      return await new Promise((res) => c.toBlob((b) => res(b), 'image/jpeg', 0.85));
+    } finally { URL.revokeObjectURL(url); }
+  }
+  $('#viewer').addEventListener('click', () => { $('#viewer').hidden = true; $('#viewer img').src = ''; });
 
   // --- invio testo
   const input = $('#input');
@@ -194,7 +232,7 @@
     catch { LS.removeItem('nn.k'); askPass(fromForm ? 'Password errata, riprova.' : ''); return; }
     if (me.pin) { $('#gate').hidden = false; $('#pass-form').hidden = true; $('#pin-form').hidden = false; $('#gate-msg').textContent = 'Ciao ' + me.name + '! Inserisci il PIN.'; setTimeout(() => $('#pin-input').focus(), 50); return; }
     $('#gate').hidden = true;
-    $('#sub').textContent = me.role === 'nicola' ? 'vedi tutto quello che scrive Nico, in tempo reale' : 'il tuo pezzetto di carta digitale';
+    $('#sub').textContent = 'online';
     await poll(); bottom(); live(); paint();
   }
   start();

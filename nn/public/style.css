@@ -2,16 +2,17 @@
 html, body { margin: 0; height: 100%; background: #0b141a; color: #e9edef; font: 16px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; overflow: hidden; overscroll-behavior: none; }
 /* Layout stabile: l'app occupa esattamente il visualViewport (tastiera inclusa), niente salti */
 #app { position: fixed; left: 0; right: 0; top: var(--vv-top, 0px); height: var(--vv-h, 100dvh); display: flex; flex-direction: column; }
-#topbar { flex: 0 0 auto; display: flex; align-items: center; gap: 12px; padding: calc(env(safe-area-inset-top) + 8px) 12px 8px; background: #000; color: #fff; z-index: 2; }
-.pfp { width: 44px; height: 44px; border-radius: 50%; background: #000; display: block; flex: 0 0 auto; box-shadow: 0 0 10px rgba(226,178,60,.35); }
-.pfp.big { width: 120px; height: 120px; margin: 0 auto 16px; }
+#topbar { flex: 0 0 auto; display: flex; align-items: center; gap: 10px; padding: calc(env(safe-area-inset-top) + 8px) 10px 8px; min-height: 60px; background: #202c33; color: #e9edef; z-index: 2; box-shadow: 0 1px 3px rgba(0,0,0,.4); }
+#topbar .pfp { width: 42px; height: 42px; border-radius: 50%; display: block; flex: 0 0 auto; object-fit: cover; background: #000; }
+.pfp.big { width: 180px; height: 180px; margin: 0 auto 12px; display: block; object-fit: contain; }
 .who { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-#brand { margin: 0; font-size: 30px; line-height: 1; font-weight: 900; letter-spacing: 1px; color: #fff; text-transform: uppercase; }
-#sub { font-size: 12px; color: #bbb; margin-top: 3px; }
+#brand { margin: 0; font-size: 17px; line-height: 1.2; font-weight: 600; color: #e9edef; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#sub { font-size: 12.5px; color: #8696a0; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#sub.typing { color: #00a884; }
 #ideas-btn { background: none; border: 0; color: #fff; font-size: 22px; position: relative; padding: 6px; }
 #ideas-count { position: absolute; top: 0; right: -2px; font-size: 10px; background: #25d366; color: #000; border-radius: 9px; padding: 0 5px; }
 #ideas-count:empty { display: none; }
-#messages { flex: 1 1 auto; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; padding: 10px 10px 6px; background: #0b141a; }
+#messages { flex: 1 1 auto; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; padding: 10px 10px 6px; background-color: #0b141a; background-image: radial-gradient(rgba(255,255,255,.03) 1px, transparent 1.4px), radial-gradient(rgba(255,255,255,.02) 1px, transparent 1.4px); background-size: 22px 22px, 22px 22px; background-position: 0 0, 11px 11px; }
 .day { text-align: center; margin: 8px 0; }
 .day span { background: #182229; color: #8696a0; font-size: 12px; padding: 4px 10px; border-radius: 8px; }
 .msg { max-width: 82%; margin: 3px 0; padding: 6px 9px 4px; border-radius: 8px; position: relative; white-space: pre-wrap; word-wrap: break-word; clear: both; }
@@ -23,10 +24,14 @@ html, body { margin: 0; height: 100%; background: #0b141a; color: #e9edef; font:
 .msg .vtag { font-size: 12px; color: rgba(233,237,239,.7); display: block; margin-bottom: 2px; }
 .msg .itag { display: block; margin-top: 4px; font-size: 12px; color: #25d366; }
 .row { display: flex; }
-#typing, #status { flex: 0 0 auto; font-size: 13px; color: #8696a0; padding: 2px 14px; background: #0b141a; }
+#typing { display: none !important; } /* "sta scrivendo…" ora è nell'intestazione, come WhatsApp */
+#status { flex: 0 0 auto; font-size: 13px; color: #8696a0; padding: 2px 14px; background: #0b141a; }
 #status { color: #f7b267; }
 #bar { flex: 0 0 auto; display: flex; align-items: flex-end; gap: 8px; padding: 6px 8px calc(env(safe-area-inset-bottom) + 6px); background: #0b141a; position: relative; }
 #input { flex: 1; resize: none; border: 0; outline: 0; border-radius: 22px; padding: 11px 16px; background: #2a3942; color: #e9edef; font: inherit; font-size: 16px; max-height: 120px; }
+#attach { width: 40px; height: 46px; display: grid; place-items: center; flex: 0 0 auto; color: #8696a0; cursor: pointer; border-radius: 50%; }
+#attach:active { background: rgba(255,255,255,.08); }
+.vh { position: absolute !important; width: 1px; height: 1px; opacity: 0; overflow: hidden; clip: rect(0 0 0 0); pointer-events: none; }
 #mic, #send { width: 46px; height: 46px; border-radius: 50%; border: 0; background: #00a884; color: #fff; display: grid; place-items: center; flex: 0 0 auto; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 #mic.rec { background: #e53935; transform: scale(1.15); }
 #rec-hud { position: absolute; left: 8px; right: 62px; top: 6px; bottom: calc(env(safe-area-inset-bottom) + 6px); background: #2a3942; border-radius: 22px; display: flex; align-items: center; gap: 10px; padding: 0 16px; z-index: 1; }
@@ -52,3 +57,11 @@ html, body { margin: 0; height: 100%; background: #0b141a; color: #e9edef; font:
 .pass-wrap { position: relative; display: inline-block; }
 .pass-wrap input { padding-right: 52px !important; }
 #pass-eye { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); background: transparent; border: 0; font-size: 22px; padding: 6px; cursor: pointer; }
+/* foto, video e vocali nelle bolle */
+.msg img.ph, .msg video.vd { display: block; max-width: 100%; width: 260px; max-height: 340px; object-fit: cover; border-radius: 6px; margin: 2px 0 4px; background: #111; }
+.msg img.ph { cursor: zoom-in; }
+.msg audio.au-pl { display: block; width: 240px; max-width: 100%; height: 36px; margin: 2px 0 4px; }
+.msg .tx i { color: rgba(233,237,239,.6); font-style: normal; font-size: 12.5px; }
+#viewer { position: fixed; inset: 0; z-index: 30; background: rgba(0,0,0,.95); display: grid; place-items: center; padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom); }
+#viewer img { max-width: 100vw; max-height: 100%; object-fit: contain; }
+#viewer-close { position: absolute; top: calc(env(safe-area-inset-top) + 10px); right: 12px; background: rgba(255,255,255,.12); color: #fff; border: 0; border-radius: 50%; width: 40px; height: 40px; font-size: 18px; }
