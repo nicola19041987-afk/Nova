@@ -29,8 +29,10 @@
 
   // ---------- microfono -> 24 kHz PCM16, blocchi da 100 ms ----------
   async function startMic(s) {
-    s.stream = await App.audio.mic(); // v8.4.4: microfono condiviso della chiamata (mai fermato qui)
+    s.stream = await App.audio.mic(); // v8.4.4: microfono condiviso della chiamata (mai fermato qui). Eco e rumore già attivi.
     if (s.closed) return;
+    const tr = s.stream && s.stream.getAudioTracks && s.stream.getAudioTracks()[0];
+    if (tr && tr.applyConstraints) tr.applyConstraints({ echoCancellation: true, noiseSuppression: true, autoGainControl: true }).catch(() => {});
     const c = ctx(); // v8.4.7: contesto audio DOPO il microfono (iPhone: con la sessione 'play-and-record')
     if (s.out && s.out.c !== c) { s.out = null; s.playT = 0; } // contesto rinnovato: la catena della sua voce si rifà
     s.micT0 = performance.now(); s.micPeak = 0;
@@ -41,6 +43,10 @@
       if (rms > 0.012 && !playing(s)) s.lastVoiceAt = performance.now(); // fine del parlato (per misurare la latenza)
       if (rms > s.micPeak) s.micPeak = rms; // v8.4.7: microfono «muto» -> riaperto una volta
       if (!s.reacq && !App.audio._reacq) { const tr = s.stream && s.stream.getAudioTracks()[0], mt = !!(tr && (tr.muted || tr.readyState !== 'live')); if (mt || (performance.now() - s.micT0 > 4000 && s.micPeak < 0.0012)) { s.reacq = true; note('microfono muto: riapro', mt ? 'traccia muta' : 'livello ' + s.micPeak.toFixed(4)); App.audio.reacquire(mt ? 'traccia muta' : 'livello quasi zero').catch(() => {}); return; } }
+      if (s.userSpeaking) {
+        s.bargeSamples = (s.bargeSamples || 0) + 1;
+        if (rms >= 0.06) s.bargeVoiced = (s.bargeVoiced || 0) + 1;
+      }
       if (s.muted) return;
       if (s.ready && s.ws && s.ws.readyState === 1) s.ws.send(JSON.stringify({ type: 'input_audio_buffer.append', audio: b64(pcm) }));
       else { s.early.push(pcm); if (s.early.length > 15) s.early.shift(); } // tiene ~1,5 s finché la sessione non è pronta
@@ -183,11 +189,12 @@
       case 'session.updated':
         s.upd = (s.upd || 0) + 1; note('session.updated'); if (s.step) { const f = s.step; s.step = null; f(true); } break;
       case 'input_audio_buffer.speech_started':
-        s.userSpeaking = true; s.phase = 'listening';
-        if (playing(s) || s.resp) bargeIn(s, false);
+        s.userSpeaking = true; s.phase = 'listening'; s.bargeSamples = 0; s.bargeVoiced = 0; s.live = '';
+        if (playing(s) || s.resp || s.responseActive) armBarge(s);
         if (App.call && App.call.onInterim) App.call.onInterim('…'); break;
       case 'input_audio_buffer.speech_stopped':
-        s.userSpeaking = false; s.waitUser = true; s.phase = 'replying'; // ottimista: "sta parlando…" appena hai finito
+        s.userSpeaking = false; clearBarge(s);
+        s.waitUser = true; s.phase = 'replying'; // ottimista: "sta parlando…" appena hai finito
         s.eosAt = s.lastVoiceAt && performance.now() - s.lastVoiceAt < 3000 ? s.lastVoiceAt : performance.now() - 500;
         [App.avatarConv, App.avatarPresence].forEach((a) => a && a.breathM && a.breathM.preInhale(performance.now()));
         if (App.sight && App.sight.onUtterance) App.sight.onUtterance();
@@ -252,6 +259,24 @@
   function ready(s) {
     if (s.isReady || s.closed) return; s.isReady = true; s.ready = true; s.ok();
     for (const pcm of s.early.splice(0)) if (!s.muted) s.ws.send(JSON.stringify({ type: 'input_audio_buffer.append', audio: b64(pcm) }));
+  }
+  // Un rumore breve non la taglia. Si ferma solo se la voce resta sopra soglia ~700 ms e c'è già un po' di testo.
+  function clearBarge(s) { if (s.bargeTimer) { clearInterval(s.bargeTimer); s.bargeTimer = 0; } }
+  function bargeReady(s) {
+    const held = performance.now() - (s.bargeAt || 0);
+    const text = String(s.live || '').replace(/\s+/g, ' ').trim();
+    if (held < 700) return false;
+    if (text.length < 8) return false;
+    return true;
+  }
+  function armBarge(s) {
+    if (s.bargeTimer) return;
+    s.bargeAt = performance.now();
+    s.bargeTimer = setInterval(() => {
+      if (s.closed || !s.userSpeaking) { clearBarge(s); return; }
+      if (bargeReady(s)) { clearBarge(s); bargeIn(s, false); }
+      else if (performance.now() - s.bargeAt > 2200) clearBarge(s);
+    }, 80);
   }
   // interruzione: la sua voce si ferma subito; la risposta in corso viene annullata (e salvata fin dove è arrivata)
   function bargeIn(s, manual) {

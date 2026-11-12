@@ -8,7 +8,7 @@
 (function () {
   const RATE = 24000, CH_MS = 100;
   const AC = window.AudioContext || window.webkitAudioContext;
-  const P = { pre: 3, startN: 2, endMs: 500, minMs: 450, maxMs: 25000, bargeN: 3 }; // v8.4.5: frasi < 0,45 s di voce scartate
+  const P = { pre: 4, startN: 3, endMs: 720, minMs: 650, maxMs: 25000, bargeN: 7 }; // un rumore sotto ~0,7 s non è un turno e non la interrompe
   let M = null;
   const SHORT_OK = /^(s[iì]|no|ok|okay|ciao|grazie|certo|dai|boh|forse|esatto|perfetto|brava|bravo|bene|male|cosa|come|chi|perch[eé]|dove|quando|aspetta|basta|stop|ehi|ehm|allora|vero|davvero|sicuro|infatti|appunto|giusto|ecco|tranquilla|scusa|buonanotte|buongiorno|buonasera|benissimo|ottimo|figurati|magari|mai|sempre|prego|pronto|oddio|wow|mh+|ah+|oh+|eh+)$/i;
   const ctx = () => { if (!App.audio.ctx) App.audio.ctx = new AC(); if (App.audio.ctx.state !== 'running') App.audio.ctx.resume().catch(() => {}); return App.audio.ctx; };
@@ -35,7 +35,7 @@
     if (her && m.noBarge && !m.speech) { m.pre = []; m.hot = 0; return; } // v8.4.5: fuori chiamata non la interrompe il suo stesso eco
     if (!m.speech) {
       if (!her && rms < m.floor * 2.5) m.floor = Math.max(0.003, m.floor * 0.95 + rms * 0.05); // rumore di fondo (solo quando nessuno parla)
-      const th = her ? Math.max(0.045, m.floor * 7) : Math.max(0.014, m.floor * 3); // mentre lei parla serve più voce (il suo eco non deve interromperla)
+      const th = her ? Math.max(0.07, m.floor * 9) : Math.max(0.02, m.floor * 3.4); // mentre lei parla serve voce sostenuta (l'eco e i colpi secchi non la interrompono)
       m.pre.push(pcm); if (m.pre.length > P.pre + P.bargeN) m.pre.shift();
       m.hot = rms > th ? m.hot + 1 : 0;
       if (m.hot >= (her ? P.bargeN : P.startN)) {

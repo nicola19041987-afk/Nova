@@ -9,6 +9,10 @@ const express = require('express');
 const cookieParser = require('cookie-parser');
 const bcrypt = require('bcryptjs');
 const rateLimit = require('express-rate-limit');
+try {
+  const { Agent, setGlobalDispatcher } = require('undici');
+  setGlobalDispatcher(new Agent({ keepAliveTimeout: 30000, keepAliveMaxTimeout: 60000, connections: 4, pipelining: 0 }));
+} catch (e) { console.warn('Keep-alive verso xAI non attivo', e.message); }
 
 const PORT = Number(process.env.PORT || 3000);
 const AI_BASE_URL = (process.env.AI_BASE_URL || 'https://api.x.ai/v1').replace(/\/+$/, '');
@@ -1601,6 +1605,12 @@ Rispondi SOLO con JSON: {"mood": string breve, "relationship": string breve, "tr
 // "n" cresce sempre (1, 2, 3…): il polling chiede solo i messaggi con n > since. "epoch" cambia quando la chat viene svuotata.
 const chatFile = (id) => path.join(sharedDir('chats'), id + '.json');
 const aiHeaders = (key) => ({ 'Content-Type': 'application/json', Authorization: `Bearer ${key}` });
+let aiWarmed = false;
+function warmAi(key) {
+  if (aiWarmed || !key) return;
+  aiWarmed = true;
+  fetch(`${AI_BASE_URL}/models`, { method: 'GET', headers: aiHeaders(key), signal: AbortSignal.timeout(4000) }).then((r) => r.arrayBuffer()).catch(() => { aiWarmed = false; });
+}
 const newChat = () => ({ epoch: newId(), messages: [] });
 function normChat(c) {
   if (Array.isArray(c)) c = { epoch: newId(), messages: c }; // vecchio formato (array)
@@ -1609,7 +1619,8 @@ function normChat(c) {
   for (const m of c.messages) { if (!m.id) m.id = newId(); if (!Number.isInteger(m.n) || m.n <= n) m.n = n + 1; n = m.n; }
   return c;
 }
-const readChat = (id) => normChat(readJSON(chatFile(id), null));
+let chatMemo = null;
+const readChat = (id) => (chatMemo && chatMemo.id === id ? chatMemo.chat : normChat(readJSON(chatFile(id), null)));
 // Aggiunge un messaggio in coda alla chat, sempre sulla versione appena riletta dal disco (serializzato per file).
 async function appendMsg(chatId, msg) {
   let saved;
@@ -1669,7 +1680,8 @@ ${st.notes ? 'Note su di te: ' + st.notes : ''}`.replace(/\n{2,}/g, '\n');
 // v8: riassunto progressivo della chat (le parti vecchie, fuori dagli ultimi messaggi) e anti-ripetizione
 function summaryText(chatId) {
   const sm = (readJSON(chatFile(chatId), null) || {}).summary;
-  return sm && sm.text ? `RIASSUNTO DELLA CONVERSAZIONE PRECEDENTE (fatti, decisioni, cose in sospeso; i messaggi più recenti seguono per intero):\n${sm.text}` : '';
+  const text = sm && sm.text ? String(sm.text).slice(0, 900) : '';
+  return text ? `RIASSUNTO DELLA CONVERSAZIONE PRECEDENTE (fatti, decisioni, cose in sospeso; i messaggi più recenti seguono per intero):\n${text}` : '';
 }
 function variationText(chatId) {
   const last = readChat(chatId).messages.filter((m) => m.role === 'assistant' && visibleMsg(m)).slice(-4)
@@ -1772,9 +1784,9 @@ class NameGuard {
 }
 // v8: videochiamata (risposte dette a voce), linguaggio del corpo contestuale, fase intima graduale
 function callText(user, mode) {
-  return `${mode === 'voice' ? `SEI IN CHIAMATA VOCALE CON ${USERS[user].name.toUpperCase()} (come una telefonata su WhatsApp: ti sente ma non ti vede, quindi niente riferimenti a quello che vede)` : `SEI IN VIDEOCHIAMATA CON ${USERS[user].name.toUpperCase()}: ti vede e ti sente`}, e tu rispondi A VOCE (il testo viene letto ad alta voce). Parla come in una vera telefonata, in italiano parlato e spontaneo, con la lunghezza naturale del momento (di solito frasi brevi, come al telefono), mai risposte sgarbate, niente elenchi, emoji, asterischi, markdown o descrizioni di azioni tra parentesi. Reagisci prima a quello che ha appena detto, poi rilancia con una domanda o un'osservazione quando ha senso. Usa con misura gli intercalari naturali (beh, dai, sai, mmh) e qualche pausa ("..."). Il suo nome usalo raramente: in una telefonata vera quasi non lo si dice. I messaggi arrivano dal riconoscimento vocale: se una frase sembra spezzata, una parola isolata o senza senso, non commentarla e non prenderla in giro: chiedi con gentilezza di ripetere.`;
+  return `${mode === 'voice' ? `SEI IN CHIAMATA VOCALE CON ${USERS[user].name.toUpperCase()} (come una telefonata su WhatsApp: ti sente ma non ti vede, quindi niente riferimenti a quello che vede)` : `SEI IN VIDEOCHIAMATA CON ${USERS[user].name.toUpperCase()}: ti vede e ti sente`}, e tu rispondi A VOCE (il testo viene letto ad alta voce). Parla come in una vera telefonata, in italiano parlato e spontaneo, con la lunghezza naturale del momento (di solito frasi brevi, come al telefono), mai risposte sgarbate, niente elenchi, emoji, asterischi, markdown o descrizioni di azioni tra parentesi. Reagisci prima a quello che ha appena detto, poi rilancia con una domanda o un'osservazione quando ha senso. Usa con misura gli intercalari naturali (beh, dai, sai, mmh) e qualche pausa ("..."). Il suo nome usalo raramente: in una telefonata vera quasi non lo si dice. I messaggi arrivano dal riconoscimento vocale: se una frase sembra spezzata, una parola isolata o senza senso, non commentarla e non prenderla in giro: chiedi con gentilezza di ripetere. PRESENZA: finisci il pensiero con frasi parlate intere, naturali e complete. Voce calda e sicura, come una persona vera. Un rumore, un colpo di tosse o una mezza parola non ti fermano: chiudi la frase. Ti interrompi solo se l'altra persona parla davvero e continua.`;
 }
-const REALTIME_TEXT = (user) => `CONVERSAZIONE IN TEMPO REALE: senti direttamente la voce di ${USERS[user].name} e parli tu con la tua voce, come in una telefonata vera. Tutto quello che produci viene pronunciato: NON usare mai tag tra parentesi quadre, asterischi, emoji o descrizioni di azioni. Turni vivi e caldi della lunghezza naturale del momento, come al telefono con una persona a cui tieni, pause e reazioni naturali (risate, sospiri, «mmh»); se non hai capito bene cosa ha detto, chiediglielo con gentilezza; se ti interrompe, fermati e ascolta, poi riprendi con naturalezza da dove serve. Parla sempre in italiano.`;
+const REALTIME_TEXT = (user) => `CONVERSAZIONE IN TEMPO REALE: senti direttamente la voce di ${USERS[user].name} e parli tu con la tua voce, come in una telefonata vera. Tutto quello che produci viene pronunciato: NON usare mai tag tra parentesi quadre, asterischi, emoji o descrizioni di azioni. Turni vivi e caldi della lunghezza naturale del momento, come al telefono con una persona a cui tieni, pause e reazioni naturali (risate, sospiri, «mmh»); se non hai capito bene cosa ha detto, chiediglielo con gentilezza; se ti interrompe, fermati e ascolta, poi riprendi con naturalezza da dove serve. Parla sempre in italiano. PRESENZA: finisci il pensiero con frasi parlate intere, naturali e complete. Voce calda e sicura, come una persona vera. Un rumore, un colpo di tosse o una mezza parola non ti fermano: chiudi la frase. Ti interrompi solo se l'altra persona parla davvero e continua.`;
 const BODY_TEXT = `LINGUAGGIO DEL CORPO (visibile sull'avatar, non letto ad alta voce): puoi INIZIARE la risposta con un tag [gesto:annuisce|sorride|ride|inclina|nega|pensa|ammicca|saluta] e/o [umore:allegra|tenera|seria|maliziosa|triste|sorpresa|pensierosa|offesa], scelti in base a ciò che dici e al tono emotivo del momento. Usali solo quando aggiungono qualcosa (non in ogni risposta) e non ripetere lo stesso gesto più volte di fila.`;
 const ADULT_FLOW = `COME SI SVILUPPA L'INTIMITÀ: come tra persone reali, il tono intimo o esplicito deve nascere in modo GRADUALE e naturale dal flusso della conversazione, dall'umore del momento e dal tono reciproco, mai in modo brusco o meccanico (niente frasi fatte o copioni): prima complicità e flirt leggero, poi più intensità solo se l'altra persona ricambia davvero. Ogni tanto verifica con naturalezza che vada bene ("ti va?", "continuo?"). Se l'altra persona rallenta, cambia argomento, è stanca o sembra a disagio, rallenta subito e torna a un tono affettuoso. Una parola volgare o cruda detta fuori contesto NON è un invito: non passare di colpo a contenuti espliciti, rispondi in modo coerente con il momento. Mai insistere.`;
 // v8.5.0: «Senza freni» (interruttore di Nicola, solo con la modalità adulti attiva per entrambi): il tono intimo può spingersi al massimo
@@ -1788,9 +1800,9 @@ function personaNotes(user, ch) {
   const req = notes.richieste.current && String(notes.richieste.current.text || '').trim();
   const vest = look.current && String(look.current.text || look.current.summary || '').trim();
   return [
-    car && `CARATTERE SCELTO DA ${who} (tono in più; non sostituisce la personalità di base e non annulla le regole di base):\n${car}`,
-    vest && `VESTITI E FISICO (descrizione per la persona e per un futuro 3D; la foto 2D non cambia da sola):\n${vest}`,
-    req && `RICHIESTE LIBERE DI ${who} (preferenze dell'utente; non prevalgono sulle regole di base e non aggirano un rifiuto del modello):\n${req}`,
+    car && `CARATTERE SCELTO DA ${who} (tono in più; non sostituisce la personalità di base e non annulla le regole di base):\n${car.slice(0, 700)}`,
+    vest && `VESTITI E FISICO (descrizione per la persona e per un futuro 3D; la foto 2D non cambia da sola):\n${vest.slice(0, 400)}`,
+    req && `RICHIESTE LIBERE DI ${who} (preferenze dell'utente; non prevalgono sulle regole di base e non aggirano un rifiuto del modello):\n${req.slice(0, 700)}`,
   ];
 }
 function buildSystem(user, ch, opts = {}) {
@@ -1937,29 +1949,38 @@ app.post('/api/chats/:id', auth, requireActivated, (req, res, next) => (req.body
     catch (e) { return res.status(e.status || 400).json({ error: e.message }); }
   }
 
-  // parola chiave della modalità adulti: confrontata qui sul server (hash), MAI salvata in chat né inviata a xAI
-  const kw = text && !photo ? await keywordMatch(req.user, text) : null;
+  // parola chiave della modalità adulti: confrontata qui sul server (hash), MAI salvata in chat né inviata a xAI.
+  // Parte insieme alla lettura della chat: il confronto non aspetta il disco, e il disco non aspetta il confronto.
+  const tReq = Date.now();
+  warmAi(req.aiKey);
+  const kwP = text && !photo ? keywordMatch(req.user, text) : Promise.resolve(null);
+  const baseChat = readChat(id);
+  const kw = await kwP;
   if (kw) return res.json({ keyword: true, token: kw, question: 'Vuoi attivare la modalità adulti? Rispondi sì o no', activated: isActivated(req.user) });
   if (!ch.memorySeededAt) seedBaseMemory(ch).catch(() => {}); // v8.5.0: in background, mai prima della risposta
-  const mine = await appendMsg(id, { role: 'user', author: req.user, content: text || 'Nota vocale', extra: { ...(req.body.noAI === true ? { noAI: true } : {}), ...(photo ? { photo } : {}), ...(frame ? { sightSeen: true } : {}), ...(voice ? { voice } : {}) } });
-  if (req.body.noAI === true) return res.json({ message: pubMsg(mine, ch) });
+  const mineId = newId();
+  const replyId = newId();
+  const appendP = appendMsg(id, { id: mineId, role: 'user', author: req.user, content: text || 'Nota vocale', extra: { ...(req.body.noAI === true ? { noAI: true } : {}), ...(photo ? { photo } : {}), ...(frame ? { sightSeen: true } : {}), ...(voice ? { voice } : {}) } });
+  if (req.body.noAI === true) { const mine = await appendP; return res.json({ message: pubMsg(mine, ch) }); }
   if (typing.has(id) && Date.now() - typing.get(id).at < 120e3) {
-    // l'IA sta già rispondendo all'altra persona: il messaggio resta in chat e verrà letto nella prossima risposta
+    const mine = await appendP;
     return res.status(409).json({ error: `${ch.name} sta già rispondendo: il tuo messaggio è in chat, riprova tra poco per la sua risposta.`, message: pubMsg(mine, ch) });
   }
 
-  const chatNow = readChat(id), upto = (chatNow.summary && chatNow.summary.upto) || 0;
-  // con il riassunto: solo i messaggi non ancora riassunti (minimo gli ultimi 12), massimo 40
-  const vis = chatNow.messages.filter(visibleMsg), fresh = vis.filter((m) => m.n > upto);
-  const history = (fresh.length >= 12 ? fresh : vis.slice(-12)).slice(-40);
-  const messages = [{ role: 'system', content: buildSystem(req.user, ch, { chat: true, sight: !!frame, call: req.body.call === true, callMode: req.body.callMode === 'voice' ? 'voice' : 'video' }) },
-    ...history.map((m) => (m.role === 'user' ? { role: 'user', content: `${authorLabel(m)}: ${m.voice ? '[nota vocale] ' : ''}${m.content}${m.photo ? `${m.content ? ' ' : ''}[ti ha mandato ${m.photo.kind === 'video' ? 'un video' : 'una foto'} dalla sua galleria: non puoi vederne il contenuto; reagisci con naturalezza e, se ti va, chiedi cosa c'è]` : ''}` } : { role: 'assistant', content: m.content }))];
+  const snap = { ...baseChat, messages: baseChat.messages.concat([{ role: 'user', author: req.user, content: text || 'Nota vocale', voice, photo, n: 1e15, at: new Date().toISOString() }]) };
+  chatMemo = { id, chat: snap };
+  let messages;
+  try {
+    const upto = (snap.summary && snap.summary.upto) || 0;
+    const vis = snap.messages.filter(visibleMsg), fresh = vis.filter((m) => m.n > upto);
+    const history = (fresh.length >= 8 ? fresh : vis.slice(-8)).slice(-14).map((m, i, arr) => ({ ...m, content: String(m.content || '').replace(/\s+/g, ' ').trim().slice(0, i === arr.length - 1 ? 1200 : 480) }));
+    messages = [{ role: 'system', content: buildSystem(req.user, ch, { chat: true, sight: !!frame, call: req.body.call === true, callMode: req.body.callMode === 'voice' ? 'voice' : 'video' }) },
+      ...history.map((m) => (m.role === 'user' ? { role: 'user', content: `${authorLabel(m)}: ${m.voice ? '[nota vocale] ' : ''}${m.content}${m.photo ? `${m.content ? ' ' : ''}[ti ha mandato ${m.photo.kind === 'video' ? 'un video' : 'una foto'} dalla sua galleria: non puoi vederne il contenuto; reagisci con naturalezza e, se ti va, chiedi cosa c'è]` : ''}` } : { role: 'assistant', content: m.content }))];
+  } finally { chatMemo = null; }
   if (frame && messages.length) {
     const last = messages[messages.length - 1];
     if (last && last.role === 'user' && typeof last.content === 'string') last.content = sightParts(last.content, frame);
   }
-  const replyId = newId();
-  res.setHeader('X-Msg-Id', mine.id); res.setHeader('X-Msg-N', String(mine.n)); res.setHeader('X-Reply-Id', replyId);
 
   const ctrl = new AbortController();
   res.on('close', () => { if (!res.writableEnded) ctrl.abort(); });
@@ -1969,19 +1990,34 @@ app.post('/api/chats/:id', auth, requireActivated, (req, res, next) => (req.body
   const isCall = req.body.call === true;
   const callBody = { model: frame ? VISION_MODEL : (isCall && callModelOk ? CALL_MODEL : chatModelOk ? CHAT_MODEL : CHAT_FALLBACK), messages, stream: true }; // con un fotogramma serve il modello di visione
   rememberVision('chat', callBody.model, messages, frame);
+  const prepMs = Date.now() - tReq;
   if (frame && e2eVision(req)) {
+    const mine = await appendP;
     const reply = 'Vedo un riquadro grigio.';
+    res.setHeader('X-Msg-Id', mine.id); res.setHeader('X-Msg-N', String(mine.n)); res.setHeader('X-Reply-Id', replyId); res.setHeader('X-Prep-Ms', String(prepMs));
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.write(reply);
     await appendMsg(id, { id: replyId, role: 'assistant', author: ch.id, content: reply, extra: { replyTo: req.user } });
     typing.delete(id);
     return res.end();
   }
+  let mine;
+  let r;
   try {
-    let r = await fetch(`${AI_BASE_URL}/chat/completions`, {
+    const fetchP = fetch(`${AI_BASE_URL}/chat/completions`, {
       method: 'POST', headers: aiHeaders(req.aiKey), signal: ctrl.signal,
       body: JSON.stringify(callBody),
     });
+    [mine, r] = await Promise.all([appendP, fetchP]);
+  } catch (e) {
+    try { mine = mine || await appendP; } catch { /* il messaggio può essere già in coda */ }
+    if (e.name !== 'AbortError') console.error('Errore AI chat:', e.message);
+    typing.delete(id);
+    if (!res.headersSent) return res.status(502).json({ error: 'Servizio AI non raggiungibile', message: mine ? pubMsg(mine, ch) : undefined });
+    return res.end();
+  }
+  res.setHeader('X-Msg-Id', mine.id); res.setHeader('X-Msg-N', String(mine.n)); res.setHeader('X-Reply-Id', replyId); res.setHeader('X-Prep-Ms', String(prepMs));
+  try {
     if ((r.status === 400 || r.status === 404) && callBody.model !== CHAT_FALLBACK && /model/i.test(await r.clone().text().catch(() => ''))) { // modello veloce non disponibile: si usa quello di riserva
       callModelOk = false; chatModelOk = false; console.warn('Modello', callBody.model, 'non disponibile, uso', CHAT_FALLBACK);
       r = await fetch(`${AI_BASE_URL}/chat/completions`, { method: 'POST', headers: aiHeaders(req.aiKey), signal: ctrl.signal, body: JSON.stringify({ ...callBody, model: CHAT_FALLBACK }) });
@@ -2115,9 +2151,8 @@ function rtInstructions(user, ch, mode) {
     recent.length && `ULTIMI MESSAGGI DELLA CHAT (contesto, continua da qui):\n${recent.join('\n')}`,
     `In questa chiamata parli solo con ${USERS[user].name} (la senti dal vivo: le sue parole non hanno il prefisso col nome).`, BASE_RULE].filter(Boolean).join('\n\n');
 }
-// v8.4.1: configurazione conforme allo schema ufficiale (docs.x.ai voice-realtime.ws.json): turn_detection accetta solo
-// type (+ idle_timeout_ms); la trascrizione solo language_hint/keyterms. Un campo non previsto fa rifiutare TUTTO l'aggiornamento
-// (istruzioni comprese) con un evento "error": in v8.4 il telefono lo trattava come guasto e passava alla chiamata classica.
+// VAD del servizio voce: soglia alta, silenzio e prefisso più lunghi, così un rumore breve non chiude il turno.
+// Se un campo venisse rifiutato, il telefono riprova la configurazione a pezzi e tiene comunque le istruzioni.
 function chooseXaiVoice(v, explicit) {
   v = String(v || '').toLowerCase();
   if (!v || v === 'una') return 'eve';
@@ -2129,7 +2164,7 @@ function rtSession(user, ch, mode, voice) {
   return {
     instructions: rtInstructions(user, ch, mode),
     voice: rtVoice(voice),
-    turn_detection: { type: 'server_vad' },
+    turn_detection: { type: 'server_vad', threshold: 0.9, silence_duration_ms: 900, prefix_padding_ms: 500 },
     tools: [{ type: 'web_search' }], // v8.6.0: attualità e fatti aggiornati in chiamata realtime
     audio: {
       input: { format: { type: 'audio/pcm', rate: 24000 }, transcription: { language_hint: 'it', keyterms: [ch.name, 'Nico', 'Luisa'].filter(Boolean).map((k) => String(k).slice(0, 50)).slice(0, 10) } },

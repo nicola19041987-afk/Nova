@@ -160,7 +160,63 @@
     'Entrambe le mani aperte verso l’esterno',
     'Si alza e si sporge verso la camera',
   ];
-  const api = { PRESETS, count: PRESETS.length, pick, get: (id) => byId.get(id) || null, HAND_3D, createDrive, drive, cssPose, cssTransform, DRIVES };
+  // Gesti della mano: pochi secondi, poi posa neutra (lift 0). A riposo un micro-movimento,
+  // così la mano non resta piantata. Nessun gesto dura più di HAND_PLAY_MS.
+  const HAND_PLAY_MS = 2800;
+  const HAND_REST_MS = 4300;
+  function createHand() {
+    return { phase: 'rest', t0: 0, until: 0, side: 1, lift: 0 };
+  }
+  function stepHand(state, now) {
+    const s = state || createHand();
+    const t = Number(now) || 0;
+    if (!s.until) { s.phase = 'rest'; s.t0 = t; s.until = t + 700; s.lift = 0; s.side = 1; }
+    if (s.phase !== 'go' && t >= s.until) {
+      s.phase = 'go';
+      s.t0 = t;
+      s.side = s.side > 0 ? -1 : 1;
+      s.until = t + HAND_PLAY_MS;
+    }
+    let lift = 0;
+    if (s.phase === 'go') {
+      const u = (t - s.t0) / HAND_PLAY_MS;
+      if (u >= 1) {
+        s.phase = 'rest';
+        s.t0 = t;
+        s.until = t + HAND_REST_MS + ((Math.floor(t / 1000) % 4) * 450);
+        lift = 0;
+      } else if (u < 0.2) lift = u / 0.2;
+      else if (u < 0.58) lift = 1;
+      else lift = Math.max(0, 1 - (u - 0.58) / 0.42);
+    }
+    s.lift = lift;
+    const idle = Math.sin(t / 900) * 0.22 + Math.sin(t / 1500 + 1.2) * 0.12;
+    return { phase: s.phase, side: s.side, lift, idle, msLeft: s.phase === 'go' ? Math.max(0, s.until - t) : 0 };
+  }
+  // Il video idle sul disco non va in loop: un tratto breve, poi la foto (posa neutra), poi un altro tratto.
+  const CLIP_PLAY_MS = 3200;
+  const CLIP_GAP_MS = 4800;
+  function createClipPlay() { return { on: false, from: 0, slot: 0, until: 0, next: 0 }; }
+  function stepClipPlay(state, now, durationMs) {
+    const s = state || createClipPlay();
+    const t = Number(now) || 0;
+    const dur = Math.max(0, Number(durationMs) || 0);
+    if (!s.next) s.next = t + 500;
+    if (s.on) {
+      if (t >= s.until) { s.on = false; s.next = t + CLIP_GAP_MS + ((Math.floor(t / 1000) % 3) * 400); return { play: false, seek: null }; }
+      return { play: true, seek: null };
+    }
+    if (t < s.next) return { play: false, seek: null };
+    let from = 0;
+    if (dur > CLIP_PLAY_MS + 400) {
+      const slots = Math.max(1, Math.floor(dur / CLIP_PLAY_MS));
+      s.slot = (s.slot + 1) % slots;
+      from = Math.min(Math.max(0, dur - CLIP_PLAY_MS), s.slot * CLIP_PLAY_MS);
+    }
+    s.on = true; s.from = from; s.until = t + Math.min(CLIP_PLAY_MS, dur || CLIP_PLAY_MS);
+    return { play: true, seek: from };
+  }
+  const api = { PRESETS, count: PRESETS.length, pick, get: (id) => byId.get(id) || null, HAND_3D, createDrive, drive, cssPose, cssTransform, DRIVES, createHand, stepHand, HAND_PLAY_MS, createClipPlay, stepClipPlay, CLIP_PLAY_MS };
   if (typeof module === 'object' && module.exports) module.exports = api;
   root.MotionLib = api;
   function paintCount() {
