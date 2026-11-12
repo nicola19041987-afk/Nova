@@ -1,8 +1,8 @@
 {
-  "name": "collaborazione-nn",
+  "name": "luisa-e-nico",
   "version": "1.0.0",
   "private": true,
-  "description": "N&N: chat stile WhatsApp per raccogliere idee (Collaborazione NN)",
+  "description": "Luisa e Nico: chat stile WhatsApp per raccogliere idee (clone di N&N Ideas)",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

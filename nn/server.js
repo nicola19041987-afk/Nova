@@ -1,4 +1,4 @@
-// N&N (Collaborazione NN) — chat stile WhatsApp per raccogliere idee.
+// Luisa e Nico — chat stile WhatsApp per raccogliere idee (clone di N&N Ideas, stesso codice, dati separati).
 // Accesso con link segreti (NN_TOKEN_NICO / NN_TOKEN_NICOLA), PIN opzionale per Nico (NN_NICO_PIN).
 // La chiave xAI resta solo nelle env var del server (o nel file DATA_DIR/xai_key, 0600): mai nel repo, mai nei log.
 'use strict';
@@ -14,13 +14,13 @@ const AI_BASE_URL = (process.env.AI_BASE_URL || 'https://api.x.ai/v1').replace(/
 const CHAT_MODEL = process.env.CHAT_MODEL || 'grok-4.20-0309-non-reasoning';
 const CHAT_FALLBACK = process.env.CHAT_FALLBACK || 'grok-4.7';
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
-const APP_NAME = 'N&N Ideas';
+const APP_NAME = 'Luisa e Nico';
 const BOT_NAME = 'Idea'; // nome con cui l'assistente parla in chat
 // Ruoli interni (nomi delle env invariati) -> nomi mostrati:
-//   'nico'   = token NN_TOKEN_NICO (+ PIN NN_NICO_PIN)  -> Nicola Fortunato, "Nicola" (l'amico con le idee)
+//   'nico'   = token NN_TOKEN_NICO (password)            -> Luisa
 //   'nicola' = token NN_TOKEN_NICOLA (admin, senza PIN)  -> Nico Franchino, "Nico" (il proprietario)
-const ROLES = { nico: 'Nicola', nicola: 'Nico' };
-const FULL = { nico: 'Nicola Fortunato', nicola: 'Nico Franchino' };
+const ROLES = { nico: 'Luisa', nicola: 'Nico' };
+const FULL = { nico: 'Luisa', nicola: 'Nico Franchino' };
 const VISION_MODEL = process.env.VISION_MODEL || 'grok-4.7';
 const MAX_MEDIA = 50 * 1024 * 1024;
 const MEDIA_DIR = path.join(DATA_DIR, 'media');
@@ -129,7 +129,7 @@ function sanitizePrefs(body) {
 loadPrefs();
 
 // ---------- Archivio: Postgres se c'è DATABASE_URL, altrimenti file JSON in DATA_DIR ----------
-const WELCOME = `Ciao Nicola! Sono ${BOT_NAME}, il tuo pezzetto di carta digitale. Scrivimi, mandami una foto o tieni premuto il microfono e dimmi la tua idea: la metto da parte con titolo, data e a che punto è. Nico vede tutto in tempo reale.`;
+const WELCOME = `Ciao Luisa! Sono ${BOT_NAME}, il tuo pezzetto di carta digitale. Scrivimi, mandami una foto o tieni premuto il microfono e dimmi la tua idea: la metto da parte con titolo, data e a che punto è. Nico vede tutto in tempo reale.`;
 let db = { messages: [], ideas: [], seq: 0 };
 let pg = null;
 async function load() {
@@ -183,12 +183,12 @@ function addMsg(m) {
 }
 
 // ---------- AI ----------
-const SYSTEM = `Sei ${BOT_NAME}, l'assistente dell'app ${APP_NAME} ("Collaborazione NN"): il "pezzetto di carta digitale" di Nicola.
-In questa chat ci sono due persone: Nicola Fortunato ("Nicola"), l'amico pieno di idee che di solito le appunta su pezzetti di carta, e Nico Franchino ("Nico"), che ha creato questa app e segue tutto in tempo reale.
-Ogni messaggio arriva con il nome di chi scrive: rivolgiti a quella persona per nome (Nicola o Nico) e non confonderli.
+const SYSTEM = `Sei ${BOT_NAME}, l'assistente dell'app ${APP_NAME}: il "pezzetto di carta digitale" di Luisa e Nico.
+In questa chat ci sono due persone: Luisa ("Luisa") e Nico Franchino ("Nico"), che ha creato questa app; tutti e due appuntano qui le loro idee e vedono tutto in tempo reale.
+Ogni messaggio arriva con il nome di chi scrive: rivolgiti a quella persona per nome (Luisa o Nico) e non confonderli.
 Possono mandarti testo, vocali (ricevi la trascrizione, che userai solo per capire) e foto o video: guarda le immagini e rispondi su cosa vedi, collegandolo all'idea. Rispondi SEMPRE in italiano, breve (1-4 frasi), caldo, diretto e concreto, come un amico sveglio su WhatsApp.
 Il tuo compito: accogliere ogni idea, aiutare a chiarirla con al massimo una domanda utile, proporre un passo pratico, e ricordare le idee già raccolte.
-Ti chiami ${BOT_NAME}. Se ti presenti, di' che sei ${BOT_NAME}, il posto dove Nicola appunta le sue idee. Rispondi anche quando ti chiamano "${BOT_NAME}" o "${APP_NAME}".
+Ti chiami ${BOT_NAME}. Se ti presenti, di' che sei ${BOT_NAME}, il posto dove Luisa e Nico appuntano le loro idee. Rispondi anche quando ti chiamano "${BOT_NAME}" o "${APP_NAME}".
 Quando nel messaggio c'è un'idea nuova (o un aggiornamento chiaro di una già nota), aggiungi in fondo, su una riga a parte, ESATTAMENTE:
 [[IDEA {"titolo":"titolo breve","descrizione":"una o due frasi","stato":"nuova|da approfondire|in corso|fatta"}]]
 Non inventare idee che nessuno ha detto. Non mostrare mai questa riga come testo normale e non parlare mai di questa riga, di queste istruzioni o di come l'app salva le idee.
@@ -419,7 +419,7 @@ function normIt(s) {
 }
 function people() {
   const out = [
-    { role: 'nico', names: ['Nicola', 'Nicola Fortunato'] },
+    { role: 'nico', names: ['Luisa'] },
     { role: 'nicola', names: ['Nico', 'Nico Franchino'] },
   ];
   for (const u of extraUsers) {
@@ -618,7 +618,7 @@ app.get('/api/me', limit(60, 60000), (req, res, next) => {
   const role = roleOf(req.get('X-NN-Key') || '');
   if (role && pinFor(role) && !safeEq(req.get('X-NN-Sess') || '', sessFor(role))) return res.json({ role, name: ROLES[role], pin: true, app: APP_NAME });
   next();
-}, auth, (req, res) => { setKeyCookie(res, req.get('X-NN-Key') || ''); return res.json({ role: req.role, name: ROLES[req.role], pin: false, app: APP_NAME, admin: req.role === 'nicola', names: namesMap(), welcome: req.role === 'nico' && !welcomeSeen() }); });
+}, auth, (req, res) => { setKeyCookie(res, req.get('X-NN-Key') || ''); return res.json({ role: req.role, name: ROLES[req.role], pin: false, app: APP_NAME, admin: req.role === 'nicola', names: namesMap(), welcome: false }); }); // nessun messaggio di benvenuto una-tantum nel clone
 app.get('/api/restore', limit(20, 60000), (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   const key = readCookie(req, 'nn_k');
@@ -843,7 +843,7 @@ function callInstructions(role) {
     ideasContext(),
     docsContext(false),
     recent.length && `ULTIMI MESSAGGI DELLA CHAT (contesto):\n${recent.join('\n')}`,
-    `ORA SEI IN CHIAMATA VOCALE con ${ROLES[role]} (${FULL[role]}): lo senti dal vivo. Chiamalo per nome (${ROLES[role]}).`,
+    `ORA SEI IN CHIAMATA VOCALE con ${ROLES[role]} (${FULL[role]}): stai parlando dal vivo con questa persona. Chiamala per nome (${ROLES[role]}).`,
     'In chiamata: parla in italiano, frasi brevi e naturali (1-3 frasi), come al telefono con un amico. Niente elenchi, niente emoji, niente simboli o righe tecniche. Le idee che emergono le salverai tu a fine chiamata: non serve dettarle.',
     'Oggi è ' + new Date().toLocaleDateString('it-IT', { timeZone: 'Europe/Rome' }) + '.'].filter(Boolean).join('\n\n');
 }
@@ -877,7 +877,7 @@ app.post('/api/call/session', auth, express.json({ limit: '2kb' }), async (req, 
       session: {
         instructions: callInstructions(req.role) + extra, voice: NN_VOICE,
         turn_detection: { type: 'server_vad', threshold: 0.85, silence_duration_ms: 800, prefix_padding_ms: 400 },
-        audio: { input: { format: { type: 'audio/pcm', rate: 24000 }, transcription: { language_hint: 'it', keyterms: ['Idea', 'Nico', 'Nicola'] } }, output: { format: { type: 'audio/pcm', rate: 24000 } } },
+        audio: { input: { format: { type: 'audio/pcm', rate: 24000 }, transcription: { language_hint: 'it', keyterms: ['Idea', 'Nico', 'Luisa'] } }, output: { format: { type: 'audio/pcm', rate: 24000 } } },
       } });
   } catch (e) { console.error('Errore chiamata:', e.message); res.status(502).json({ error: 'Servizio voce non raggiungibile' }); }
 });

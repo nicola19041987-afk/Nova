@@ -1,4 +1,4 @@
-/* N&N Ideas — chat stile WhatsApp: testo, foto/video, vocali (tieni premuto), tempo reale (SSE + polling di riserva). */
+/* Luisa e Nico — chat stile WhatsApp: testo, foto/video, vocali (tieni premuto), tempo reale (SSE + polling di riserva). */
 (function () {
   'use strict';
   const $ = (s) => document.querySelector(s);
@@ -39,9 +39,9 @@
   const nearBottom = () => box.scrollHeight - box.scrollTop - box.clientHeight < 80;
   const bottom = () => { box.scrollTop = box.scrollHeight; };
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-  // ruoli interni -> nomi: 'nico' = Nicola Fortunato (amico, con PIN), 'nicola' = Nico Franchino (proprietario)
-  let NAMES = { nico: 'Nicola', nicola: 'Nico', nn: 'Idea' };
-  function setNames(map) { if (map && typeof map === 'object') NAMES = Object.assign({ nico: 'Nicola', nicola: 'Nico', nn: 'Idea' }, map); }
+  // ruoli interni -> nomi: 'nico' = Luisa (con password), 'nicola' = Nico Franchino (proprietario)
+  let NAMES = { nico: 'Luisa', nicola: 'Nico', nn: 'Idea' };
+  function setNames(map) { if (map && typeof map === 'object') NAMES = Object.assign({ nico: 'Luisa', nicola: 'Nico', nn: 'Idea' }, map); }
   const mediaUrl = (id) => '/api/media/' + encodeURIComponent(id) + '?k=' + encodeURIComponent(key()) + '&s=' + encodeURIComponent(sess());
   function fileLabel(m) {
     const ext = String((m && m.name) || '').split('.').pop().toUpperCase() || 'FILE';

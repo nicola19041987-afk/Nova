@@ -8,8 +8,8 @@
 <meta name="theme-color" content="#000000">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
-<meta name="apple-mobile-web-app-title" content="N&amp;N Ideas">
-<title>N&N Ideas</title>
+<meta name="apple-mobile-web-app-title" content="Luisa e Nico">
+<title>Luisa e Nico</title>
 <link rel="manifest" href="/manifest.json?v=6">
 <link rel="icon" href="/icon.svg?v=6" type="image/svg+xml">
 <link rel="icon" href="/icons/icon-32.png?v=6" sizes="32x32" type="image/png">
@@ -19,12 +19,12 @@
 <body>
 <div id="app">
   <header id="topbar">
-    <img class="pfp" src="/logo-nn-avatar.svg?v=6" alt="N&amp;N Ideas">
+    <img class="pfp" src="/logo-ln-avatar.svg?v=6" alt="Luisa e Nico">
     <button id="home-btn" type="button" hidden aria-label="Impostazioni">
       <svg viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M12 3.2 4 10h2v9h5v-6h2v6h5v-9h2L12 3.2z"/></svg>
       <span class="admin-tag">admin</span>
     </button>
-    <div class="who"><h1 id="brand">N&N Ideas</h1><span id="sub">online</span></div>
+    <div class="who"><h1 id="brand">Luisa e Nico</h1><span id="sub">online</span></div>
     <button id="push-btn" type="button" hidden aria-label="Attiva notifiche">
       <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true"><path d="M12 22a2.2 2.2 0 0 0 2.2-2.2h-4.4A2.2 2.2 0 0 0 12 22zm6-6.2V11a6 6 0 0 0-4.5-5.8V4.6a1.5 1.5 0 0 0-3 0v.6A6 6 0 0 0 6 11v4.8L4 18v1h16v-1l-2-2.2z"/></svg>
     </button>
@@ -76,7 +76,7 @@
 
 <div id="call" hidden role="dialog" aria-label="Chiamata con Idea">
   <div class="call-top">
-    <img class="call-logo" src="/logo-nn-avatar.svg?v=6" alt="N&amp;N Ideas">
+    <img class="call-logo" src="/logo-ln.svg?v=6" alt="Luisa e Nico">
     <div class="call-name">Idea</div>
     <div id="call-status">Chiamata in corso…</div>
     <div id="call-time"></div>
@@ -94,7 +94,7 @@
 </div>
 
 <div id="incoming" hidden role="dialog" aria-label="Chiamata in arrivo da Idea">
-  <img class="call-logo" src="/logo-nn-avatar.svg?v=6" alt="N&amp;N Ideas">
+  <img class="call-logo" src="/logo-ln.svg?v=6" alt="Luisa e Nico">
   <div class="call-name">Idea</div>
   <div id="incoming-title">Idea ti sta chiamando</div>
   <p id="incoming-reason"></p>
@@ -107,7 +107,7 @@
 <div id="push-prompt" hidden>
   <div class="push-card">
     <b>Attiva notifiche</b>
-    <p>Così Idea può avvisarti quando ti sta chiamando. Su iPhone: prima aggiungi N&amp;N Ideas alla schermata Home (Condividi → Aggiungi a Home), poi tocca il tasto e consenti le notifiche (iOS 16.4 o successivo).</p>
+    <p>Così Idea può avvisarti quando ti sta chiamando. Su iPhone: prima aggiungi Luisa e Nico alla schermata Home (Condividi → Aggiungi a Home), poi tocca il tasto e consenti le notifiche (iOS 16.4 o successivo).</p>
     <div class="push-actions">
       <button type="button" id="push-enable">Attiva notifiche</button>
       <button type="button" id="push-later">Più tardi</button>
@@ -126,7 +126,7 @@
       <button type="button" class="set-row" id="go-prefs">Personalizza <span>›</span></button>
       <button type="button" class="set-row" id="go-users">Utenti <span>›</span></button>
       <button type="button" class="set-row" id="go-push">Attiva notifiche <span>›</span></button>
-      <p class="set-help" id="push-help">Per sentire quando Idea ti chiama, attiva le notifiche. Su iPhone: prima aggiungi N&amp;N Ideas alla schermata Home (Condividi → Aggiungi a Home), poi tocca qui e consenti le notifiche (serve iOS 16.4 o successivo). Non è una telefonata sulla rete mobile: la chiamata avviene nell’app.</p>
+      <p class="set-help" id="push-help">Per sentire quando Idea ti chiama, attiva le notifiche. Su iPhone: prima aggiungi Luisa e Nico alla schermata Home (Condividi → Aggiungi a Home), poi tocca qui e consenti le notifiche (serve iOS 16.4 o successivo). Non è una telefonata sulla rete mobile: la chiamata avviene nell’app.</p>
     </div>
     <div id="home-prefs" hidden>
       <p class="set-lab">Sfondo della chat</p>
@@ -171,11 +171,11 @@
   </div>
 </div>
 
-<div id="welcome" hidden role="dialog" aria-label="Messaggio di Nova">
+<div id="welcome" hidden role="dialog" aria-label="Benvenuto">
   <div class="welcome-card">
-    <img id="welcome-photo" class="welcome-face" alt="Nova" src="">
+    <img id="welcome-photo" class="welcome-face" alt="" src="">
     <div class="welcome-bubble">
-      <p>Ciao Nicola, sono Nova. Ci siamo conosciuti oggi, ti ha presentato Nico. Volevo dirti che è tutto pronto, e farti i complimenti per l'avvio di questa avventura che stiamo per iniziare insieme: tu, io e Nico Franchino. Ora ne parlerai direttamente con Nico e con Idea.</p>
+      <p>Benvenuta in Luisa e Nico! Qui ci siamo noi due e Idea.</p>
     </div>
     <button type="button" id="welcome-ok">Iniziamo</button>
   </div>
@@ -184,7 +184,7 @@
 <div id="gate" hidden>
 
   <div class="gate-box">
-    <img class="pfp big" src="/logo-nn-triangolo.svg?v=6" alt="N&amp;N Ideas">
+    <img class="pfp big" src="/logo-ln.svg?v=6" alt="Luisa e Nico">
     <p id="gate-msg">Inserisci la password per entrare.</p>
     <form id="pass-form" autocomplete="on">
       <div class="pass-wrap"><input id="pass-input" type="password" inputmode="numeric" placeholder="Password" autocomplete="current-password" required><button type="button" id="pass-eye" aria-label="Mostra password" title="Mostra/nascondi">👁</button></div>

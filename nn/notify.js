@@ -18,7 +18,7 @@ function createNotify(DATA_DIR) {
       fs.writeFileSync(VAPID_FILE, JSON.stringify(vapid), { mode: 0o600 });
       try { fs.chmodSync(VAPID_FILE, 0o600); } catch {}
     }
-    webpush.setVapidDetails('mailto:nn-ideas@localhost', vapid.publicKey, vapid.privateKey);
+    webpush.setVapidDetails('mailto:luisa-nico@localhost', vapid.publicKey, vapid.privateKey);
     return vapid;
   }
   function publicKey() { return loadVapid().publicKey; }

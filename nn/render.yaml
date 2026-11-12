@@ -1,18 +1,18 @@
-# Blueprint per N&N (Collaborazione NN). Path del blueprint: nn/render.yaml, branch nn-app.
+# Blueprint per "Luisa e Nico" (clone di N&N Ideas, dati separati). Path del blueprint: nn/render.yaml, branch ln-app.
 services:
   - type: web
-    name: collaborazione-nn
+    name: luisa-e-nico
     runtime: node
     region: frankfurt
     plan: starter
-    branch: nn-app
+    branch: ln-app
     rootDir: nn
     buildCommand: npm install
     startCommand: node server.js
     healthCheckPath: /healthz
     autoDeploy: true
     disk:
-      name: nn-data
+      name: ln-data
       mountPath: /var/data
       sizeGB: 1
     envVars:
@@ -23,6 +23,4 @@ services:
       - key: NN_TOKEN_NICO
         sync: false
       - key: NN_TOKEN_NICOLA
-        sync: false
-      - key: NN_NICO_PIN
         sync: false

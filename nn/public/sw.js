@@ -1,4 +1,4 @@
-/* N&N Ideas — solo notifiche push, nessuna cache delle pagine. */
+/* Luisa e Nico — solo notifiche push, nessuna cache delle pagine. */
 self.addEventListener('install', (e) => { self.skipWaiting(); });
 self.addEventListener('activate', (e) => { e.waitUntil(self.clients.claim()); });
 self.addEventListener('push', (event) => {

@@ -1,11 +1,10 @@
-# N&N — Collaborazione NN
+# Luisa e Nico
 
-Chat stile WhatsApp dove Nico appunta le sue idee (testo o vocale tenendo premuto il microfono).
-L'assistente (xAI Grok) risponde in italiano e salva ogni idea con titolo, descrizione, data e stato.
-Nicola vede tutto in tempo reale (SSE + polling di riserva ogni 2 s).
+Clone di N&N Ideas con lo stesso codice e dati completamente separati (servizio, disco e chiavi VAPID propri).
+Chat stile WhatsApp con l'assistente Idea: testo, foto, documenti, vocali veri con risposta vocale, chiamata vocale
+che finisce con il saluto di Idea, e Idea che chiama l'altra persona su richiesta (notifiche push + schermata di chiamata in arrivo).
 
-- Accesso: link segreti `https://<servizio>/?k=<NN_TOKEN_NICO>` e `?k=<NN_TOKEN_NICOLA>` (token casuali, solo env var su Render).
-- PIN facoltativo per Nico: env var `NN_NICO_PIN` (se vuota, nessun PIN).
+- Utenti: Nico (proprietario/admin, `NN_TOKEN_NICOLA`) e Luisa (`NN_TOKEN_NICO`). I nomi delle env var restano quelli di N&N.
+- Accesso: password a 4 cifre o link `https://<servizio>/?k=<token>`; dopo il primo accesso resta collegato (cookie HttpOnly).
 - Dati: file JSON in `DATA_DIR` (disco Render) oppure Postgres se c'è `DATABASE_URL`.
 - Niente segreti nel repo: `.env`, `data/` e `node_modules/` sono ignorati. `noindex` + `robots.txt` Disallow.
-- Token: `npm run gen-tokens`.
