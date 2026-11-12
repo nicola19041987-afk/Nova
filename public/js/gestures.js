@@ -2,7 +2,7 @@
  * Il catalogo arriva da /api/gestures. Per aggiungerne uno: file in assets/gestures/ e una riga nel manifest
  * (full:true = tutto schermo, per i gesti a figura intera). */
 (function () {
-  const QUIET_MS = 700, IDLE_GAP = 180000, IDLE_AFTER = 90000;
+  const QUIET_MS = 700, IDLE_GAP = 180000, IDLE_AFTER = 90000, HAND_MS = 3400;
   const FALLBACK = [
     { id: 'saluto', label: 'Saluta con la mano', emoji: '👋', full: false, keys: ['ciao con la mano', 'salut'], url: '/api/gestures/saluto' },
     { id: 'capelli', label: 'Si sistema i capelli', emoji: '💇‍♀️', full: false, keys: ['pettin', 'capell'], url: '/api/gestures/capelli' },
@@ -36,6 +36,7 @@
     playing = null;
   }
   function endClip(v, clip) {
+    if (clip && clip._cap) { clearTimeout(clip._cap); clip._cap = 0; }
     if (clip && clip.full && clip._restoreFull && App.solo && App.solo.toggleFull) App.solo.toggleFull(false);
     hide(v);
     if (pending && !talking() && !simli()) { const id = pending; pending = null; play(id); }
@@ -49,6 +50,8 @@
     playing = clip; pending = null; lastPlay = Date.now(); quietSince = 0;
     v.loop = false; v.muted = true; v.defaultMuted = true; v.playsInline = true;
     v.setAttribute('playsinline', ''); v.removeAttribute('loop');
+    if (clip._cap) clearTimeout(clip._cap);
+    clip._cap = setTimeout(() => { if (playing === clip) endClip(v, clip); }, HAND_MS);
     if (clip.full && App.solo && App.solo.toggleFull && !App.solo.full) { clip._restoreFull = true; App.solo.toggleFull(true); }
     else clip._restoreFull = false;
     const go = () => { if (playing !== clip) return; v.hidden = false; requestAnimationFrame(() => { if (playing === clip) v.classList.add('gesture-on'); }); const p = v.play(); if (p && p.catch) p.catch(() => {}); };

@@ -809,6 +809,12 @@
           ctx.translate(-mx, -my);
         }
         ctx.drawImage(src, E.x0, E.y0, E.w, E.h);
+        if (procOn && window.MotionLib && MotionLib.stepHand) {
+          if (!this._hand) this._hand = MotionLib.createHand();
+          const hp = MotionLib.stepHand(this._hand, now);
+          this._handPose = hp;
+          this.paintHand(ctx, src, E, S, hp);
+        } else this._handPose = null;
         // Gesti (mezzo busto / figura intera): braccia che si muovono col ritmo e l'intensità del parlato.
         const tgt = (this.speaking ? 0.35 + this.mouth * 0.7 + (now - this.emph < 700 ? 0.6 : 0) : 0) + M.energy * 0.6 + wave * 0.8;
         this.gesture = Math.max(0, spring(this.gesture, tgt, 'gesture', 9)); // gesti morbidi (molla smorzata)
@@ -892,6 +898,56 @@
       return im._edges;
     }
     colorFilter() { const col = this.colors; return (!+col.hue && +col.saturation === 100 && +col.brightness === 100) ? 'none' : `hue-rotate(${col.hue}deg) saturate(${col.saturation}%) brightness(${col.brightness}%)`; }
+    // Sposta solo una zona della mano/avambraccio, poi torna sui pixel della foto. La testa non si tocca.
+    // Sulle foto in cui la bocca è al centro (primo piano) non c'è una mano in quadro: non si deforma nulla.
+    paintHand(ctx, img, E, S, hp) {
+      if (!hp || !img || !img.naturalWidth) return;
+      const nw = img.naturalWidth, nh = img.naturalHeight;
+      if (nh / nw < 1.18) return;
+      const mouth = this.lm && this.lm.mouth;
+      if (!mouth) return;
+      const sideLen = Math.min(nw, nh), oy = (nh - sideLen) / 2;
+      const my = (mouth.y * sideLen + oy) / nh;
+      if (my > 0.42) return;
+      const lift = Math.max(0, Math.min(1, hp.lift || 0));
+      const idle = Math.max(-0.4, Math.min(0.4, hp.idle || 0));
+      const amp = lift * 0.065 + idle * 0.008;
+      if (amp < 0.004 && lift < 0.02) return;
+      const side = hp.side < 0 ? -1 : 1;
+      const body = this.lm && this.lm.body;
+      const wrist = body && (side < 0 ? body.wristL : body.wristR);
+      let hx = side < 0 ? 0.12 : 0.9, hy = 0.82;
+      if (wrist && wrist.x != null) { hx = wrist.x; hy = wrist.y; }
+      else if (body && body.shL && body.shR) {
+        const sh = side < 0 ? body.shL : body.shR;
+        hx = sh.x + side * 0.04;
+        hy = Math.min(0.92, sh.y + 0.34);
+      }
+      const px = hx * S, py = hy * S;
+      const rad = S * 0.11;
+      const size = Math.ceil(rad * 2.3);
+      const buf = this._handBuf || (this._handBuf = document.createElement('canvas'));
+      if (buf.width !== size) { buf.width = buf.height = size; }
+      const g = buf.getContext('2d');
+      g.setTransform(1, 0, 0, 1, 0, 0);
+      g.clearRect(0, 0, size, size);
+      g.save();
+      g.beginPath();
+      g.arc(size / 2, size / 2, rad, 0, Math.PI * 2);
+      g.clip();
+      g.translate(size / 2 - px + (-side * amp * S * 0.25), size / 2 - py + (-amp * S));
+      g.drawImage(img, E.x0, E.y0, E.w, E.h);
+      g.restore();
+      g.globalCompositeOperation = 'destination-in';
+      const grd = g.createRadialGradient(size / 2, size / 2, rad * 0.25, size / 2, size / 2, rad);
+      grd.addColorStop(0, 'rgba(0,0,0,1)');
+      grd.addColorStop(0.72, 'rgba(0,0,0,0.85)');
+      grd.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = grd;
+      g.fillRect(0, 0, size, size);
+      g.globalCompositeOperation = 'source-over';
+      ctx.drawImage(buf, px - size / 2, py - size / 2);
+    }
     // ---- AZIONI (v7): clip video o posa, disegnate nel riquadro dell'avatar con gli stessi movimenti (niente ritagli) ----
     // spec: { kind: 'video', url } | { kind: 'pose', url, lm? }. Restituisce una Promise che si risolve a fine azione.
     playAction(spec) {
@@ -903,7 +959,7 @@
           const v = this._vid || (this._vid = document.createElement('video'));
           const snd = !!(window.App && App.audio && App.audio.clipSound()); v.muted = !snd; v.defaultMuted = !snd; v.volume = 1; v.playsInline = true; // v7.3: audio della clip se la lettura è attiva e l'audio sbloccato
            v.setAttribute('playsinline', ''); v.setAttribute('webkit-playsinline', ''); v.preload = 'auto'; v.loop = false;
-          const act = { kind: 'video', el: v, resolve, start: 0, fadeIn: 420, fadeOut: 560, endAt: 0, ready: false };
+          const act = { kind: 'video', el: v, resolve, start: 0, fadeIn: 420, fadeOut: 560, endAt: 0, ready: false, maxMs: spec.maxMs || 0 };
           this.act = act;
           const to = setTimeout(() => fail(new Error('Video non caricato')), 9000);
           v.oncanplay = () => { if (this.act !== act || act.ready) return; act.ready = true; clearTimeout(to); act.start = performance.now(); v.play().catch((e) => { if (!v.muted) { v.muted = true; v.play().catch((e2) => fail(e2)); } else fail(e); }); }; // se l'audio è bloccato, riparte muta
@@ -932,6 +988,7 @@
       if (a.kind === 'video') {
         const v = a.el, left = (v.duration && isFinite(v.duration)) ? (v.duration - v.currentTime) * 1000 : 9999;
         if (!a.endAt && left < a.fadeOut) a.endAt = now + left - a.fadeOut;
+        if (a.maxMs && !a.endAt && t >= Math.max(400, a.maxMs - a.fadeOut)) { a.endAt = now; try { v.pause(); } catch {} }
         if (t > 15000 && !a.endAt) a.endAt = now; // tetto di sicurezza
         if (a.endAt) { const p = (now - a.endAt) / a.fadeOut; if (p >= 1) { a.finish(); return null; } al = Math.min(1, t / a.fadeIn) * (1 - Math.max(0, p)); }
         else al = Math.min(1, t / a.fadeIn);

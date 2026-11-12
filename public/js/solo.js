@@ -127,20 +127,43 @@
       v.removeAttribute('src');
       v.removeAttribute('poster');
     };
-    if (!url) { stop(); return; }
+    if (!url) { stop(); if (v._clipTimer) { clearInterval(v._clipTimer); v._clipTimer = 0; } return; }
     const poster = (App.faceSrc && App.faceSrc(ch)) || '';
     if (poster) v.poster = poster;
-    if (v.getAttribute('src') !== url) v.src = url;
-    v.muted = true; v.defaultMuted = true; v.loop = true; v.playsInline = true; v.autoplay = true;
+    if (v.getAttribute('src') !== url) { v.src = url; v._clip = null; }
+    v.muted = true; v.defaultMuted = true; v.loop = false; v.playsInline = true; v.autoplay = false;
     v.setAttribute('playsinline', ''); v.setAttribute('webkit-playsinline', ''); v.setAttribute('muted', '');
-    v.hidden = false;
+    v.removeAttribute('loop');
     if (!v._motionBound) {
       v._motionBound = true;
-      v.addEventListener('playing', () => { if (motionOn()) stage.classList.add('has-motion'); });
-      v.addEventListener('error', () => stage.classList.remove('has-motion'));
+      v.addEventListener('playing', () => { if (motionOn() && v._clipOn) stage.classList.add('has-motion'); });
+      v.addEventListener('error', () => { stage.classList.remove('has-motion'); v._clipOn = false; });
+      v.addEventListener('ended', () => { if (v._clip && v._clip.on) v._clip.until = performance.now() - 1; });
     }
-    const play = v.play();
-    if (play && play.catch) play.catch(() => {});
+    const tick = () => {
+      if (!motionOn()) { stage.classList.remove('has-motion'); v._clipOn = false; try { v.pause(); } catch { /* fermo */ } return; }
+      const Lib = window.MotionLib;
+      if (!Lib || !Lib.stepClipPlay) return;
+      if (!v._clip) v._clip = Lib.createClipPlay();
+      const durMs = (v.duration && isFinite(v.duration)) ? v.duration * 1000 : 0;
+      const step = Lib.stepClipPlay(v._clip, performance.now(), durMs);
+      if (!step.play) {
+        if (v._clipOn) { v._clipOn = false; stage.classList.remove('has-motion'); try { v.pause(); } catch { /* già fermo */ } }
+        return;
+      }
+      if (step.seek == null) return;
+      const start = () => {
+        v._clipOn = true; v.hidden = false;
+        const p = v.play(); if (p && p.catch) p.catch(() => {});
+      };
+      if (Math.abs((v.currentTime || 0) - step.seek / 1000) > 0.25) {
+        const on = () => { v.removeEventListener('seeked', on); start(); };
+        v.addEventListener('seeked', on);
+        try { v.currentTime = step.seek / 1000; } catch { start(); }
+      } else start();
+    };
+    tick();
+    if (!v._clipTimer) v._clipTimer = setInterval(tick, 200);
   }
   function showStage(ch) {
     const v = document.getElementById('stage-video'); if (!v || !ch) return;

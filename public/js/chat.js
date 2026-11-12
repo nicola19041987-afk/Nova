@@ -157,16 +157,11 @@ App.chat = {
     text = (text || '').trim(); if (voice && !text) text = 'Nota vocale'; if (photo && photo.localOnly && !text) text = 'Foto'; if ((!text && !photo && !voice) || !App.current || this.busy) return;
     if (text && App.gestures && App.gestures.hear) App.gestures.hear(text, { defer: !noAI });
     if (!photo && this.pendingAdult) return this.answerAdult(text); // risposta sì/no alla domanda di conferma (resta sul telefono)
-    if (!photo && App.kwSet && text.length <= 80) { // parola chiave: confronto sul server (hash), mai in chat né all'IA
-      try { const k = await App.api('/api/adult-keyword/check', { method: 'POST', body: { text } }); if (k.match) return this.askAdult(k.token); } catch { /* prosegui */ }
-    }
     if (!noAI && !App.hasAi()) return App.toast('🔑 Inserisci la chiave xAI in Impostazioni (oppure usa 💬 per scrivere solo all\'altra persona)');
+    // Bolla tua e «sta scrivendo…» subito. La parola chiave la controlla il server, senza un giro in più prima del disegno.
     this.busy = true; const ch = App.current;
     const meName = App.me.name;
-    let sight = null;
-    if (!noAI && !photo && App.sight && App.sight.active && App.sight.active()) {
-      sight = App.sight.takeFrame();
-    }
+    const tSend = performance.now();
     const local = this.addMsg({ role: 'user', author: App.me.user, authorName: meName, content: text, noAI, at: new Date().toISOString(), ...(photo ? { photo: { localSrc: photo.url, localThumb: photo.thumb, kind: photo.kind, w: photo.w, h: photo.h } } : {}), ...(voice ? { voice } : {}) });
     const ph = photo && photo.id ? { photo: { gid: photo.id } } : {};
     const voiceBody = voice ? { voice: { sec: voice.sec, wave: voice.wave } } : {};
@@ -178,9 +173,18 @@ App.chat = {
     }
     this.header();
     const bubble = this.addMsg({ role: 'assistant', authorName: ch.name, content: 'sta scrivendo…' }); bubble.classList.add('typing'); this.scroll();
+    if (App.latency) App.latency.paint = Math.round(performance.now() - tSend);
     const body = bubble.querySelector('.body');
-    let reply = '', streamTTS = false;
+    let sight = null;
+    if (!photo && App.sight && App.sight.active && App.sight.active()) sight = App.sight.takeFrame();
+    let reply = '', streamTTS = false, painted = false, queued = false;
+    const stick = this.nearBottom();
     const cue = App.chat.cues();
+    const paint = () => {
+      queued = false;
+      body.textContent = App.actions ? App.actions.strip(reply) : reply;
+      if (stick) this.scroll();
+    };
     try {
       const r = await App.api(`/api/chats/${ch.id}`, { method: 'POST', body: { message: text, ...ph, ...voiceBody, ...(sight ? { sight } : {}), ...(App.call && App.call.active ? { call: true, callMode: App.call.mode || 'video' } : {}) }, ai: true, raw: true });
       if (!r.ok) {
@@ -195,19 +199,20 @@ App.chat = {
       }
       this.claim(local, r.headers.get('X-Msg-Id')); this.claim(bubble, r.headers.get('X-Reply-Id'));
       const reader = r.body.getReader(); const dec = new TextDecoder();
-      bubble.classList.remove('typing');
       streamTTS = !!(App.voice && App.voice.streamStart && App.voice.streamStart()); // v8: voce naturale frase per frase
       for (;;) {
         const { done, value } = await reader.read(); if (done) break;
         const chunk = dec.decode(value, { stream: true });
         reply += chunk;
-        { const L = App.latency && App.latency.cur; if (L && !L.tok && chunk.trim()) L.tok = Math.round(performance.now() - L.end); } // v8.4.5: tempo alla prima parola
-        body.textContent = App.actions ? App.actions.strip(reply) : reply; this.scroll();
+        if (!painted && chunk.trim()) { painted = true; bubble.classList.remove('typing'); const L = App.latency && App.latency.cur; if (L && !L.tok) L.tok = Math.round(performance.now() - L.end); }
+        if (!queued) { queued = true; requestAnimationFrame(paint); }
         if (!cue.done) cue.check(reply); // v8: gesto/umore scelti dall'IA in base a ciò che dice (tag a inizio risposta)
-        if (App.call && App.call.active) App.call.caption(App.actions ? App.actions.strip(reply) : reply);
+        if (App.call && App.call.active && painted) App.call.caption(App.actions ? App.actions.strip(reply) : reply);
         if (streamTTS) App.voice.streamFeed(chunk);
         else if (!App.voice || !App.voice.ttsOn()) App.avatarConv.talkText(chunk); // labiale anche senza lettura vocale
       }
+      if (queued) paint();
+      if (!painted) bubble.classList.remove('typing');
     } catch (e) { body.textContent = '⚠️ ' + e.message; bubble.classList.remove('typing'); }
     this.busy = false; this.header();
     this.poll();

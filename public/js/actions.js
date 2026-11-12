@@ -148,11 +148,12 @@
       const src = await App.actionCache.local(a.url); // v8.5.0: dal telefono (scaricata), parte subito anche offline
       if (GESTURE_IDS.includes(aid)) { lastGest = Date.now(); lastGestId = aid; gestLog.push(lastGest); A.breathM && A.breathM.gestureStart(aid, performance.now()); }
       try {
+        const hand = /capelli|saluta|maglia|bacio|tosse|starnuto|gesticola|tocco_|ciao|pensa|stiracchia|caffe|acqua|vino|sorseggia|patatine|mangia/.test(aid);
         if (a.kind === 'pose') {
-          const p = A.playAction({ kind: 'pose', url: src, lm: poseLm.get(a.url) || null }); if (A.act) A.act.adult = !!meta(aid).adult;
+          const p = A.playAction({ kind: 'pose', url: src, lm: poseLm.get(a.url) || null, dur: hand ? 3200 : undefined }); if (A.act) A.act.adult = !!meta(aid).adult;
           if (!poseLm.has(a.url) && App.findFace) App.findFace(a.url).then((lm) => { poseLm.set(a.url, lm); if (lm) A.setActionLandmarks(lm); });
           await p;
-        } else { const p = A.playAction({ kind: 'video', url: src }); if (A.act) A.act.adult = !!meta(aid).adult; await p; }
+        } else { const p = A.playAction({ kind: 'video', url: src, maxMs: hand ? 3400 : 0 }); if (A.act) A.act.adult = !!meta(aid).adult; await p; }
         return true;
       } catch (e) { console.warn('Azione non riprodotta', aid, why, e && e.message); return false; }
       finally { if (GESTURE_IDS.includes(aid) && A.breathM) A.breathM.gestureEnd(aid, performance.now()); }

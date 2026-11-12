@@ -59,3 +59,52 @@ test('il movimento procedurale varia, è più vivo mentre parla e non rimpicciol
   expect(a).toContain('translate3d');
   expect(a).not.toBe(b);
 });
+
+test('la mano non resta alzata: il gesto dura pochi secondi e torna neutro', () => {
+  const s = lib.createHand();
+  let now = 1000;
+  let maxGo = 0;
+  let goStart = 0;
+  let sawLift = false;
+  let back = false;
+  let sides = new Set();
+  const idles = [];
+  for (let i = 0; i < 80; i++) {
+    now += 250;
+    const p = lib.stepHand(s, now);
+    sides.add(p.side);
+    if (p.phase === 'go') {
+      if (!goStart) goStart = now;
+      maxGo = Math.max(maxGo, now - goStart);
+      if (p.lift > 0.8) sawLift = true;
+      expect(p.msLeft).toBeLessThanOrEqual(lib.HAND_PLAY_MS);
+    } else {
+      goStart = 0;
+      expect(p.lift).toBe(0);
+      if (sawLift) back = true;
+      idles.push(p.idle);
+    }
+  }
+  expect(sawLift).toBe(true);
+  expect(back).toBe(true);
+  expect(maxGo).toBeLessThanOrEqual(lib.HAND_PLAY_MS);
+  expect(sides.size).toBe(2);
+  const varied = new Set(idles.map((n) => n.toFixed(2))).size;
+  expect(varied).toBeGreaterThan(2);
+});
+
+test('il video idle non resta in loop: un tratto breve, poi la foto', () => {
+  const s = lib.createClipPlay();
+  let now = 0;
+  const first = lib.stepClipPlay(s, now, 20000);
+  expect(first.play).toBe(false);
+  now = 500;
+  const play = lib.stepClipPlay(s, now, 20000);
+  expect(play.play).toBe(true);
+  expect(play.seek).toBeGreaterThan(0);
+  const mid = lib.stepClipPlay(s, now + 1000, 20000);
+  expect(mid.play).toBe(true);
+  expect(mid.seek).toBe(null);
+  const done = lib.stepClipPlay(s, now + lib.CLIP_PLAY_MS, 20000);
+  expect(done.play).toBe(false);
+});

@@ -109,7 +109,7 @@ test('in chiamata e nel ritratto il video gira, la testata resta la foto', async
     };
   });
   expect(portrait.muted).toBe(true);
-  expect(portrait.loop).toBe(true);
+  expect(portrait.loop).toBe(false);
   expect(portrait.inline).toBe(true);
   expect(portrait.fit).toBe('cover');
   expect(portrait.w).toBeGreaterThanOrEqual(388);
