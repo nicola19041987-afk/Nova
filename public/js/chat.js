@@ -319,16 +319,23 @@ $('#char-list').addEventListener('click', (e) => {
 });
 $('#new-char').addEventListener('click', () => App.editor.open(null));
 $('#back-btn').addEventListener('click', () => App.chat.close());
-// In solo il campo resta su una riga e cresce al massimo a due; oltre, scorre dentro.
+// Il campo cresce fino a cinque righe e spinge solo la lista. Oltre, scorre dentro.
 function fitComposer() {
   const i = $('#chat-input'); if (!i) return;
   if (App.voiceNote && App.voiceNote.paintMic) App.voiceNote.paintMic();
   if (!document.body.classList.contains('solo-mode')) { i.style.height = ''; i.style.overflowY = ''; return; }
+  const cs = getComputedStyle(i);
+  const lh = parseFloat(cs.lineHeight) || 22;
+  const pad = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
+  const border = (parseFloat(cs.borderTopWidth) || 0) + (parseFloat(cs.borderBottomWidth) || 0);
+  const min = Math.round(lh + pad + border);
+  const max = Math.round(lh * 5 + pad + border);
   i.style.height = 'auto';
   const empty = !i.value;
-  const next = empty ? 40 : Math.min(88, Math.max(40, i.scrollHeight));
+  const next = empty ? min : Math.min(max, Math.max(min, i.scrollHeight));
   i.style.height = next + 'px';
   i.style.overflowY = !empty && i.scrollHeight > next + 2 ? 'auto' : 'hidden';
+  if (App.stickChat) App.stickChat();
 }
 $('#chat-form').addEventListener('submit', (e) => { e.preventDefault(); const i = $('#chat-input'); const t = i.value; i.value = ''; fitComposer(); App.chat.send(t); });
 $('#chat-only').addEventListener('click', () => { const i = $('#chat-input'); const t = i.value; if (!t.trim()) return App.toast('Scrivi prima il messaggio'); i.value = ''; fitComposer(); App.chat.send(t, true); });

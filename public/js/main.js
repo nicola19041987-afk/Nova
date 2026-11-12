@@ -258,30 +258,52 @@ App.fitFrame = function () {
   document.addEventListener('fullscreenchange', () => setTimeout(App.fitFrame, 50));
   App.fitFrame();
 })();
-// v8.6.6: la barra di Safari cambia l'altezza visibile; il dock e il composer restano sopra di essa.
-// Con la tastiera iOS sposta la visual viewport (offsetTop > 0): la scocca segue quel rettangolo, senza far salire la pagina.
+// La tastiera (iOS offsetTop, Android che riduce l'altezza) non deve muovere la pagina:
+// la scocca resta alta quanto la visual viewport e il campo si appoggia sul bordo.
 (function () {
+  const root = document.documentElement;
+  const input = document.getElementById('chat-input');
+  const list = () => document.getElementById('messages');
+  const nearEnd = (m) => !m || m.scrollHeight - m.scrollTop - m.clientHeight < 160;
+  const stick = () => {
+    const m = list();
+    if (m) m.scrollTop = m.scrollHeight;
+  };
   const apply = () => {
+    const m = list();
+    const pin = nearEnd(m) || (input && document.activeElement === input);
     const vv = window.__vvTest || window.visualViewport;
     if (!vv) return;
-    document.documentElement.style.setProperty('--vv-top', Math.round(vv.offsetTop || 0) + 'px');
-    document.documentElement.style.setProperty('--app-h', Math.round(vv.height) + 'px');
-    const covered = Math.max(0, window.innerHeight - vv.height - (vv.offsetTop || 0));
-    document.documentElement.style.setProperty('--vv-bottom', Math.round(covered) + 'px');
+    const top = Math.max(0, Math.round(vv.offsetTop || 0));
+    const height = Math.max(0, Math.round(vv.height || window.innerHeight));
+    const covered = Math.max(0, Math.round(window.innerHeight - height - top));
+    root.style.setProperty('--vv-top', top + 'px');
+    root.style.setProperty('--app-h', height + 'px');
+    root.style.setProperty('--vv-bottom', covered + 'px');
+    const keyboard = covered > 110;
+    root.classList.toggle('kb-open', keyboard);
+    document.body.classList.toggle('kb-open', keyboard);
     if (window.scrollX || window.scrollY) window.scrollTo(0, 0);
-    const input = document.getElementById('chat-input');
-    if (input && document.activeElement === input) {
-      const m = document.getElementById('messages');
-      if (m) m.scrollTop = m.scrollHeight;
+    if (pin && m) {
+      m.getBoundingClientRect();
+      m.scrollTop = m.scrollHeight;
     }
   };
   App.applyViewport = apply;
+  App.stickChat = stick;
   apply();
   if (window.visualViewport) {
     visualViewport.addEventListener('resize', apply);
     visualViewport.addEventListener('scroll', apply);
   }
   addEventListener('orientationchange', () => setTimeout(apply, 250));
-  const input = document.getElementById('chat-input');
-  if (input) input.addEventListener('focus', () => requestAnimationFrame(apply));
+  if (input) {
+    input.scrollIntoView = function () {};
+    input.addEventListener('focus', () => {
+      const lock = () => { if (window.scrollX || window.scrollY) window.scrollTo(0, 0); apply(); };
+      lock();
+      requestAnimationFrame(lock);
+      setTimeout(lock, 80);
+    });
+  }
 })();

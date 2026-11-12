@@ -64,7 +64,7 @@ test('la chat occupa il resto dello schermo, l’avatar sta circa a un terzo e i
     const overlaps = (r) => r.height > 1 && r.top < faceBottom - 1 && r.bottom > stage.top;
     const input = document.getElementById('chat-input');
     const hot = document.getElementById('hot-btn');
-    input.value = 'prima riga della frase\nseconda riga ancora visibile\nterza riga che deve scorrere dentro il campo senza alzarlo';
+    input.value = 'prima riga della frase\nseconda riga ancora visibile\nterza riga\nquarta riga\nquinta riga\nsesta riga che deve scorrere dentro il campo\nsettima riga senza alzare la testata';
     input.dispatchEvent(new Event('input', { bubbles: true }));
     const cs = getComputedStyle(input);
     const lh = parseFloat(cs.lineHeight) || 20;
@@ -80,7 +80,7 @@ test('la chat occupa il resto dello schermo, l’avatar sta circa a un terzo e i
       hotHidden: !hot || getComputedStyle(hot).display === 'none',
       lines: input.clientHeight / lh,
       scrolls: input.scrollHeight > input.clientHeight + 1,
-      max: lh * 2 + pad + border,
+      max: lh * 5 + pad + border,
       client: input.clientHeight,
     };
   });
