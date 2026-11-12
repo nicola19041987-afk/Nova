@@ -178,6 +178,11 @@
     $('#gate-msg').textContent = msg || 'Inserisci la password per entrare.';
     setTimeout(() => $('#pass-input').focus(), 50);
   }
+  $('#pass-eye').addEventListener('click', () => {
+    const i = $('#pass-input'); const show = i.type === 'password';
+    i.type = show ? 'text' : 'password'; $('#pass-eye').textContent = show ? '🙈' : '👁';
+    $('#pass-eye').setAttribute('aria-label', show ? 'Nascondi password' : 'Mostra password'); i.focus();
+  });
   $('#pass-form').addEventListener('submit', (e) => {
     e.preventDefault();
     const p = $('#pass-input').value.trim(); if (!p) return;

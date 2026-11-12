@@ -53,7 +53,7 @@
     <img class="pfp big" src="/icon.svg" alt="N&amp;N">
     <p id="gate-msg">Inserisci la password per entrare.</p>
     <form id="pass-form" autocomplete="on">
-      <input id="pass-input" type="password" placeholder="Password" autocomplete="current-password" required>
+      <div class="pass-wrap"><input id="pass-input" type="password" inputmode="numeric" placeholder="Password" autocomplete="current-password" required><button type="button" id="pass-eye" aria-label="Mostra password" title="Mostra/nascondi">👁</button></div>
       <button type="submit">Entra</button>
     </form>
     <form id="pin-form" hidden>

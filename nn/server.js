@@ -24,7 +24,7 @@ function safeEq(a, b) {
 }
 function roleOf(key) {
   if (!key) return null;
-  for (const r of Object.keys(ROLES)) { const t = tokenFor(r); if (t.length >= 16 && safeEq(key, t)) return r; }
+  for (const r of Object.keys(ROLES)) { const t = tokenFor(r); if (t.length >= 4 && safeEq(key, t)) return r; }
   return null;
 }
 function sessFor(role) { return crypto.createHmac('sha256', tokenFor(role)).update('pin:' + pinFor(role)).digest('base64url'); }
@@ -170,7 +170,7 @@ app.post('/api/unlock', express.json({ limit: '2kb' }), limit(8, 60000), (req, r
   if (!safeEq(String(req.body?.pin || ''), pin)) return res.status(403).json({ error: 'PIN errato' });
   res.json({ ok: true, sess: sessFor(role) });
 });
-app.get('/api/me', (req, res, next) => {
+app.get('/api/me', limit(10, 60000), (req, res, next) => {
   const role = roleOf(req.get('X-NN-Key') || '');
   if (role && pinFor(role) && !safeEq(req.get('X-NN-Sess') || '', sessFor(role))) return res.json({ role, name: ROLES[role], pin: true, app: APP_NAME });
   next();
