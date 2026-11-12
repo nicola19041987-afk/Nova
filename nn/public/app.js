@@ -244,8 +244,32 @@
   // tasto Aggiorna: ricarica l'app con i file nuovi, senza perdere l'accesso
   $('#refresh-btn').addEventListener('click', async () => {
     $('#refresh-btn').classList.add('spin');
-    try { if (window.caches) { const ks = await caches.keys(); await Promise.all(ks.map((k) => caches.delete(k))); } } catch {}
-    location.replace('/?r=' + Date.now());
+    try {
+      if ('serviceWorker' in navigator) {
+        const reg = await navigator.serviceWorker.getRegistration();
+        if (reg) {
+          try { await reg.update(); } catch {}
+          if (reg.waiting) {
+            const done = new Promise((resolve) => {
+              let settled = false;
+              const finish = () => { if (!settled) { settled = true; resolve(); } };
+              navigator.serviceWorker.addEventListener('controllerchange', finish, { once: true });
+              setTimeout(finish, 1200);
+            });
+            reg.waiting.postMessage({ type: 'skipWaiting' });
+            await done;
+          }
+        }
+      }
+      if (window.caches) {
+        const ks = await caches.keys();
+        await Promise.all(ks.map((k) => caches.delete(k)));
+      }
+    } catch {}
+    const u = new URL(location.href);
+    u.searchParams.set('r', String(Date.now()));
+    history.replaceState(null, '', u.pathname + u.search + u.hash);
+    location.reload();
   });
   $('#ideas-close').addEventListener('click', () => { $('#ideas-panel').hidden = true; });
   $('#ideas-panel').addEventListener('click', (e) => { if (e.target.id === 'ideas-panel') $('#ideas-panel').hidden = true; });
@@ -510,7 +534,7 @@
     try {
       const perm = await Notification.requestPermission();
       if (perm !== 'granted') { status('Permesso notifiche non concesso.'); return false; }
-      const reg = await navigator.serviceWorker.register('/sw.js?v=8', { scope: '/' });
+      const reg = await navigator.serviceWorker.register('/sw.js?v=9', { scope: '/' });
       await navigator.serviceWorker.ready;
       const vapid = await api('/api/push/vapid');
       const key = vapid.publicKey;
