@@ -14,7 +14,9 @@
   const stats = window.NNCall = { frames: 0, bytes: 0, events: [], lastError: '', turns: () => (S ? S.turns.slice() : []) };
   const note = (t) => { stats.events.push(t); if (stats.events.length > 80) stats.events.shift(); };
 
-  function audioSession(on) { try { if (navigator.audioSession) navigator.audioSession.type = on ? 'play-and-record' : 'auto'; } catch {} }
+  // iPhone: la sessione "play-and-record" forzata manda la voce nella capsula (auricolare), bassissima.
+  // Lasciamo "auto": Safari col microfono attivo usa l'altoparlante, come una chiamata in vivavoce.
+  function audioSession() { try { if (navigator.audioSession && navigator.audioSession.type !== 'auto') navigator.audioSession.type = 'auto'; } catch {} }
   function unlock(c) { // iPhone: suono muto nel tocco, così la voce di Idea può partire
     try { const b = c.createBuffer(1, 1, c.sampleRate), src = c.createBufferSource(); src.buffer = b; src.connect(c.destination); src.start(0); } catch {}
     if (c.state !== 'running') c.resume().catch(() => {});
@@ -52,7 +54,11 @@
   function play(s, buf) {
     const c = s.c, i16 = new Int16Array(buf), n = i16.length; if (!n) return;
     stats.frames++; stats.bytes += buf.byteLength;
-    if (!s.out) { s.out = c.createGain(); s.out.connect(c.destination); }
+    if (!s.out) { // voce più forte senza distorsioni: guadagno + compressore prima dell'uscita
+      s.out = c.createGain(); s.boost = c.createGain(); s.boost.gain.value = 1.8;
+      try { const k = c.createDynamicsCompressor(); k.threshold.value = -12; k.knee.value = 6; k.ratio.value = 8; k.attack.value = 0.003; k.release.value = 0.15; s.out.connect(s.boost); s.boost.connect(k); k.connect(c.destination); }
+      catch { s.out.connect(c.destination); }
+    }
     const ab = c.createBuffer(1, n, RATE), d = ab.getChannelData(0);
     for (let i = 0; i < n; i++) d[i] = i16[i] / 32768;
     const src = c.createBufferSource(); src.buffer = ab; src.connect(s.out);
