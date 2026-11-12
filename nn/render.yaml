@@ -1,0 +1,28 @@
+# Blueprint per N&N (Collaborazione NN). Path del blueprint: nn/render.yaml, branch nn-app.
+services:
+  - type: web
+    name: collaborazione-nn
+    runtime: node
+    region: frankfurt
+    plan: starter
+    branch: nn-app
+    rootDir: nn
+    buildCommand: npm install
+    startCommand: node server.js
+    healthCheckPath: /healthz
+    autoDeploy: true
+    disk:
+      name: nn-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: DATA_DIR
+        value: /var/data
+      - key: XAI_API_KEY
+        sync: false
+      - key: NN_TOKEN_NICO
+        sync: false
+      - key: NN_TOKEN_NICOLA
+        sync: false
+      - key: NN_NICO_PIN
+        sync: false

@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="38%" r="70%">
+      <stop offset="0" stop-color="#1a1a1a"/><stop offset="1" stop-color="#000"/>
+    </radialGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffe7a3"/><stop offset=".5" stop-color="#e2b23c"/><stop offset="1" stop-color="#a8761a"/>
+    </linearGradient>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="7" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <rect width="512" height="512" fill="url(#bg)"/>
+  <circle cx="256" cy="256" r="226" fill="none" stroke="url(#gold)" stroke-width="6" opacity=".9"/>
+  <!-- prima N -->
+  <path d="M66 350V162h36l66 112V162h32v188h-36l-66-112v112z" fill="#fff"/>
+  <!-- seconda N -->
+  <path d="M312 350V162h36l66 112V162h32v188h-36l-66-112v112z" fill="#fff"/>
+  <!-- & dorata con bagliore, sovrapposta al centro -->
+  <text x="256" y="338" text-anchor="middle" font-family="Georgia,'Times New Roman',serif" font-style="italic" font-weight="700" font-size="176" fill="url(#gold)" filter="url(#glow)" stroke="#000" stroke-width="0" paint-order="stroke">&amp;</text>
+</svg>

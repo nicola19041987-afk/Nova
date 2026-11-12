@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<meta name="robots" content="noindex, nofollow, noarchive">
+<meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#000000">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="N&amp;N">
+<title>N&amp;N</title>
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="icon" href="/icons/icon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="/icons/icon-180.png">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div id="app">
+  <header id="topbar">
+    <img class="pfp" src="/icon.svg" alt="N&amp;N">
+    <div class="who"><h1 id="brand">N&amp;N</h1><span id="sub">le idee di Nico</span></div>
+    <button id="ideas-btn" type="button" aria-label="Idee salvate">💡<b id="ideas-count"></b></button>
+  </header>
+
+  <main id="messages" aria-live="polite"></main>
+
+  <div id="typing" hidden>N&amp;N sta scrivendo…</div>
+  <div id="status" hidden></div>
+
+  <form id="bar" autocomplete="off">
+    <div id="rec-hud" hidden><span class="dot"></span><span id="rec-time">0:00</span><span class="hint">← scorri per annullare</span></div>
+    <textarea id="input" rows="1" placeholder="Scrivi un'idea…" enterkeyhint="send"></textarea>
+    <button id="mic" type="button" aria-label="Tieni premuto per registrare">
+      <svg viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/></svg>
+    </button>
+    <button id="send" type="submit" aria-label="Invia" hidden>
+      <svg viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M2 21l21-9L2 3v7l15 2-15 2z"/></svg>
+    </button>
+  </form>
+</div>
+
+<div id="ideas-panel" hidden>
+  <div class="sheet">
+    <div class="sheet-head"><b>Idee salvate</b><button id="ideas-close" type="button" aria-label="Chiudi">✕</button></div>
+    <ul id="ideas-list"></ul>
+  </div>
+</div>
+
+<div id="gate" hidden>
+  <div class="gate-box">
+    <img class="pfp big" src="/icon.svg" alt="N&amp;N">
+    <p id="gate-msg">Apri N&amp;N dal link che ti è stato mandato.</p>
+    <form id="pin-form" hidden>
+      <input id="pin-input" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" placeholder="PIN" autocomplete="off">
+      <button type="submit">Entra</button>
+    </form>
+  </div>
+</div>
+<script src="/app.js"></script>
+</body>
+</html>
