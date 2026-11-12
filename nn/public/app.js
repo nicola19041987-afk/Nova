@@ -1,4 +1,4 @@
-/* N&N Ideas — chat stile WhatsApp: testo, foto/video, vocali (tieni premuto), tempo reale (SSE + polling di riserva). */
+/* Ideas — chat stile WhatsApp: testo, foto/video, vocali (tieni premuto), tempo reale (SSE + polling di riserva). */
 (function () {
   'use strict';
   const $ = (s) => document.querySelector(s);
@@ -534,7 +534,7 @@
     try {
       const perm = await Notification.requestPermission();
       if (perm !== 'granted') { status('Permesso notifiche non concesso.'); return false; }
-      const reg = await navigator.serviceWorker.register('/sw.js?v=7', { scope: '/' });
+      const reg = await navigator.serviceWorker.register('/sw.js?v=8', { scope: '/' });
       await navigator.serviceWorker.ready;
       const vapid = await api('/api/push/vapid');
       const key = vapid.publicKey;

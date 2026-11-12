@@ -1,4 +1,4 @@
-// N&N (Collaborazione NN) — chat stile WhatsApp per raccogliere idee.
+// Ideas (ex «N&N Ideas», Collaborazione NN) — chat stile WhatsApp per raccogliere idee.
 // Accesso con link segreti (NN_TOKEN_NICO / NN_TOKEN_NICOLA), PIN opzionale per Nico (NN_NICO_PIN).
 // La chiave xAI resta solo nelle env var del server (o nel file DATA_DIR/xai_key, 0600): mai nel repo, mai nei log.
 'use strict';
@@ -14,7 +14,7 @@ const AI_BASE_URL = (process.env.AI_BASE_URL || 'https://api.x.ai/v1').replace(/
 const CHAT_MODEL = process.env.CHAT_MODEL || 'grok-4.20-0309-non-reasoning';
 const CHAT_FALLBACK = process.env.CHAT_FALLBACK || 'grok-4.7';
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
-const APP_NAME = 'N&N Ideas';
+const APP_NAME = 'Ideas';
 const BOT_NAME = 'Idea'; // nome con cui l'assistente parla in chat
 // Ruoli interni (nomi delle env invariati) -> nomi mostrati:
 //   'nico'   = token NN_TOKEN_NICO (+ PIN NN_NICO_PIN)  -> Nicola Fortunato, "Nicola" (l'amico con le idee)
