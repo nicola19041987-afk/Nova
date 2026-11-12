@@ -282,8 +282,9 @@ function reply() {
     // una sola risposta per raffica di messaggi: se l'ultimo è già di Idea, niente doppioni
     const lastMsg = db.messages[db.messages.length - 1];
     if (!lastMsg || lastMsg.role === 'assistant') return;
+    if (lastMsg.role === 'user' && sistemaText(userTextOf(lastMsg)) !== null) return; // «sistema»: gestito a parte, niente risposta AI
     if (!aiKey()) { addMsg({ role: 'assistant', author: 'nn', content: 'Chiave AI non configurata sul server.' }); return; }
-    const recent = db.messages.slice(-30);
+    const recent = db.messages.slice(-30).filter((m) => !(m.role === 'user' && sistemaText(userTextOf(m)) !== null));
     // allega le immagini solo degli ultimi messaggi con foto/video (max 2), per non appesantire
     const withImg = new Set(recent.filter((m) => m.role === 'user' && m.media && (m.media.kind === 'image' || m.media.frame)).slice(-2).map((m) => m.id));
     let vision = false;
@@ -485,6 +486,65 @@ function handleCallIntent(fromRole, text) {
   const intent = parseCallIntent(text, fromRole);
   if (!intent) return false;
   ringUser(fromRole, intent.to, intent.reason);
+  return true;
+}
+
+// ---------- comando «sistema»: richiesta di modifica inoltrata a Nova (Grok Bot), mai alla chat AI e mai nel blocco note ----------
+// Env: SISTEMA_WEBHOOK_URL, SISTEMA_WEBHOOK_KEY (stesso formato degli Appunti di Nova: header Authorization, valore copiato così com'è;
+// se la chiave non contiene già uno schema tipo "Bearer ", viene aggiunto "Bearer "). SISTEMA_WEBHOOK_HEADER opzionale (predefinito Authorization).
+const SISTEMA_FILE = path.join(DATA_DIR, 'sistema.json');
+const SISTEMA_OK = "Richiesta inviata a Nova: ti chiederà l'ok prima di modificare qualcosa.";
+const SISTEMA_OFF = 'Comando sistema non ancora collegato: ho salvato la richiesta, la invio appena è collegato.';
+const SISTEMA_RETRY = 'Richiesta salvata: non sono riuscito a inviarla a Nova adesso, riprovo da solo tra poco.';
+const SISTEMA_LIMIT = 'Troppe richieste «sistema» in poco tempo: riprova più tardi.';
+const SISTEMA_EMPTY = 'Dimmi cosa sistemare subito dopo la parola «sistema».';
+function sistemaText(text) {
+  const m = /^\s*[«"“']?\s*sistema(?![a-zà-ù0-9])[\s:;,.!?\-–—»"”']*/i.exec(String(text || ''));
+  return m ? String(text).slice(m[0].length).replace(/\s+/g, ' ').trim() : null;
+}
+function sistemaConfigured() { return !!(String(process.env.SISTEMA_WEBHOOK_URL || '').trim() && String(process.env.SISTEMA_WEBHOOK_KEY || '').trim()); }
+function loadSistema() { try { const j = JSON.parse(fs.readFileSync(SISTEMA_FILE, 'utf8')); return Array.isArray(j) ? j : []; } catch { return []; } }
+function saveSistema(list) { const tmp = SISTEMA_FILE + '.tmp'; fs.writeFileSync(tmp, JSON.stringify(list.slice(-500)), { mode: 0o600 }); fs.renameSync(tmp, SISTEMA_FILE); }
+async function deliverSistema(rec) {
+  const url = String(process.env.SISTEMA_WEBHOOK_URL || '').trim();
+  const key = String(process.env.SISTEMA_WEBHOOK_KEY || '').trim();
+  if (!url || !key) return false;
+  const header = String(process.env.SISTEMA_WEBHOOK_HEADER || 'Authorization').trim() || 'Authorization';
+  const value = header.toLowerCase() === 'authorization' && !/\s/.test(key) ? 'Bearer ' + key : key;
+  try {
+    const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', [header]: value },
+      body: JSON.stringify({ app: rec.app, from: rec.from, text: rec.text, channel: rec.channel, at: rec.at }), signal: AbortSignal.timeout(12000) });
+    if (!r.ok) console.error('Richiesta sistema non inoltrata: HTTP', r.status);
+    return r.ok;
+  } catch (e) { console.error('Richiesta sistema non inoltrata:', e.message); return false; }
+}
+let sistemaChain = Promise.resolve();
+function withSistema(fn) { const run = sistemaChain.then(fn, fn); sistemaChain = run.then(() => {}, () => {}); return run; }
+async function flushSistema() {
+  if (!sistemaConfigured()) return;
+  const list = loadSistema(); let changed = false;
+  for (const r of list) { if (r && !r.delivered && await deliverSistema(r)) { r.delivered = true; r.deliveredAt = new Date().toISOString(); changed = true; } }
+  if (changed) saveSistema(list);
+}
+setInterval(() => { withSistema(flushSistema).catch(() => {}); }, 5 * 60e3).unref();
+const sistemaHits = new Map();
+// true se il testo è un comando «sistema» (gestito qui: niente risposta AI, niente nota). opts.silent: nessun messaggio in chat (es. chiamata).
+function handleSistema(role, text, channel, opts = {}) {
+  const body = sistemaText(text);
+  if (body === null) return false;
+  const say = (t) => { if (!opts.silent) addMsg({ role: 'assistant', author: 'nn', content: t }); };
+  if (!body) { say(SISTEMA_EMPTY); return true; }
+  const now = Date.now(); const h = (sistemaHits.get(role) || []).filter((t) => now - t < 3600e3);
+  if (h.length >= 10) { say(SISTEMA_LIMIT); return true; }
+  h.push(now); sistemaHits.set(role, h);
+  const rec = { id: crypto.randomBytes(6).toString('hex'), app: APP_NAME, from: displayName(role), role, text: body.slice(0, 4000), channel, at: new Date().toISOString(), delivered: false };
+  withSistema(async () => {
+    const list = loadSistema(); list.push(rec); saveSistema(list);
+    if (!sistemaConfigured()) { say(SISTEMA_OFF); return; }
+    const ok = await deliverSistema(rec);
+    if (ok) { rec.delivered = true; rec.deliveredAt = new Date().toISOString(); const l2 = loadSistema(); const x = l2.find((r) => r && r.id === rec.id); if (x) Object.assign(x, rec); saveSistema(l2); }
+    say(ok ? SISTEMA_OK : SISTEMA_RETRY);
+  }).catch((e) => { console.error('Richiesta sistema:', e.message); say(SISTEMA_RETRY); });
   return true;
 }
 function ringUser(fromRole, toRole, reason) {
@@ -743,7 +803,8 @@ app.post('/api/messages', auth, limit(20, 60000), express.json({ limit: '20kb' }
   const text = String(req.body?.text || '').trim().slice(0, 4000);
   if (!text) return res.status(400).json({ error: 'Messaggio vuoto' });
   const msg = addMsg({ role: 'user', author: req.role, content: text });
-  if (!handleCallIntent(req.role, text)) reply();
+  if (handleSistema(req.role, text, 'testo')) { /* richiesta «sistema»: niente AI, niente nota */ }
+  else if (!handleCallIntent(req.role, text)) reply();
   res.json({ message: msg });
 });
 // Messaggio vocale: audio WAV (o altro formato audio) -> xAI Speech to Text -> messaggio
@@ -766,7 +827,8 @@ app.post('/api/voice', auth, limit(12, 60000), express.raw({ type: ['audio/*', '
     } catch (e) { console.error('Errore trascrizione:', e.message); }
   }
   const msg = addMsg({ role: 'user', author: req.role, content: '', voice: { sec, audio, text: text.slice(0, 4000) || undefined } });
-  if (text && handleCallIntent(req.role, text)) { /* Idea sta già chiamando */ }
+  if (text && handleSistema(req.role, text, 'voce')) { /* richiesta «sistema»: niente AI, niente nota */ }
+  else if (text && handleCallIntent(req.role, text)) { /* Idea sta già chiamando */ }
   else reply();
   res.json({ message: msg });
 });
@@ -871,6 +933,7 @@ function callInstructions(role) {
     recent.length && `ULTIMI MESSAGGI DELLA CHAT (contesto):\n${recent.join('\n')}`,
     `ORA SEI IN CHIAMATA VOCALE con ${ROLES[role]} (${FULL[role]}): lo senti dal vivo. Chiamalo per nome (${ROLES[role]}).`,
     'In chiamata: parla in italiano, frasi brevi e naturali (1-3 frasi), come al telefono con un amico. Niente elenchi, niente emoji, niente simboli o righe tecniche. Appunta una nota a fine chiamata solo se ti hanno chiesto esplicitamente di segnarla o segnalarla.',
+    `Se chi parla inizia una frase con la parola «sistema», è una richiesta di modifica dell'app che il server inoltra da solo: non commentarla, non segnarla come nota e rispondi soltanto: «${sistemaConfigured() ? SISTEMA_OK : 'Comando sistema non ancora collegato: ho salvato la richiesta.'}»`,
     'Oggi è ' + new Date().toLocaleDateString('it-IT', { timeZone: 'Europe/Rome' }) + '.'].filter(Boolean).join('\n\n');
 }
 const callHits = new Map();
@@ -915,7 +978,7 @@ app.post('/api/call/log', auth, limit(120, 60000), express.json({ limit: '8kb' }
   if (!text) return res.status(400).json({ error: 'Testo vuoto' });
   const callId = String((req.body && req.body.callId) || '').slice(0, 80);
   appendReport({ at: Date.now(), clientAt: Number(req.body && req.body.at) || undefined, callId, kind, text, role: req.role, who: displayName(req.role), });
-  if (kind === 'user') handleCallIntent(req.role, text);
+  if (kind === 'user' && !handleSistema(req.role, text, 'voce', { silent: true })) handleCallIntent(req.role, text);
   res.json({ ok: true });
 });
 app.get('/api/call/pending', auth, (req, res) => {
@@ -963,8 +1026,9 @@ app.post('/api/call/end', auth, limit(10, 60000), express.json({ limit: '200kb' 
       summary = out.replace(/\[\[IDEA\s*(\{[\s\S]*?\})\s*\]\]/g, (_, js) => { try { ideas.push(JSON.parse(js)); } catch {} return ''; }).trim();
     } catch (e) { console.error('Riassunto chiamata non riuscito:', e.message); }
   }
-  const asked = turns.some((t) => t.role === 'user' && isNoteCommand(t.text));
-  const notes = asked ? notesFromExplicit(ideas, turns.filter((t) => t.role === 'user').map((t) => t.text).join('\n')) : [];
+  const noteTurns = turns.filter((t) => t.role === 'user' && sistemaText(t.text) === null); // le richieste «sistema» non diventano note
+  const asked = noteTurns.some((t) => isNoteCommand(t.text));
+  const notes = asked ? notesFromExplicit(ideas, noteTurns.map((t) => t.text).join('\n')) : [];
   const n = storeIdeas(notes, who);
   const dur = `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
   const content = turns.length ? (summary || `Chiamata con ${who}.`) : `Chiamata senza conversazione.`;
