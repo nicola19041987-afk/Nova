@@ -1962,6 +1962,13 @@ app.post('/api/chats/:id', auth, requireActivated, (req, res, next) => (req.body
   const replyId = newId();
   const appendP = appendMsg(id, { id: mineId, role: 'user', author: req.user, content: text || 'Nota vocale', extra: { ...(req.body.noAI === true ? { noAI: true } : {}), ...(photo ? { photo } : {}), ...(frame ? { sightSeen: true } : {}), ...(voice ? { voice } : {}) } });
   if (req.body.noAI === true) { const mine = await appendP; return res.json({ message: pubMsg(mine, ch) }); }
+  // v2d-30: «segna/segnala…» -> Blocco note; richiesta di modifica dell'app -> webhook Appunti. Mai per foto o messaggi «solo per l'altra persona».
+  let intent = null;
+  if (text && !photo) {
+    const prev = [...(baseChat.messages || [])].reverse().find((m) => m && m.role === 'user' && m.author === req.user);
+    try { intent = await handleAppIntent(req.user, text, voice || req.body.call === true ? 'voce' : 'testo', prev && prev.content); }
+    catch (e) { console.error('Blocco note / richiesta app:', e.message); }
+  }
   if (typing.has(id) && Date.now() - typing.get(id).at < 120e3) {
     const mine = await appendP;
     return res.status(409).json({ error: `${ch.name} sta già rispondendo: il tuo messaggio è in chat, riprova tra poco per la sua risposta.`, message: pubMsg(mine, ch) });
@@ -1977,6 +1984,8 @@ app.post('/api/chats/:id', auth, requireActivated, (req, res, next) => (req.body
     messages = [{ role: 'system', content: buildSystem(req.user, ch, { chat: true, sight: !!frame, call: req.body.call === true, callMode: req.body.callMode === 'voice' ? 'voice' : 'video' }) },
       ...history.map((m) => (m.role === 'user' ? { role: 'user', content: `${authorLabel(m)}: ${m.voice ? '[nota vocale] ' : ''}${m.content}${m.photo ? `${m.content ? ' ' : ''}[ti ha mandato ${m.photo.kind === 'video' ? 'un video' : 'una foto'} dalla sua galleria: non puoi vederne il contenuto; reagisci con naturalezza e, se ti va, chiedi cosa c'è]` : ''}` } : { role: 'assistant', content: m.content }))];
   } finally { chatMemo = null; }
+  if (intent && intent.hint && messages.length && messages[0].role === 'system') messages[0].content += '\n\n' + intent.hint;
+  if (intent) res.setHeader('X-App-Intent', intent.kind === 'note' ? 'nota' : 'richiesta');
   if (frame && messages.length) {
     const last = messages[messages.length - 1];
     if (last && last.role === 'user' && typeof last.content === 'string') last.content = sightParts(last.content, frame);
@@ -2142,6 +2151,7 @@ app.get('/api/chats/:id/summary', auth, (req, res) => {
 // le istruzioni del personaggio con le STESSE regole della chat (memoria, regole, riassunto, modalità adulti solo se attiva
 // per entrambi). Il telefono apre il WebSocket direttamente con xAI: audio e risposte non passano dal server.
 const rtHits = new Map();
+const APP_INTENT_RT = 'BLOCCO NOTE E MODIFICHE DELL\'APP: se ti chiede ESPLICITAMENTE di segnare qualcosa (con «segna», «segnala», «segnalo» o «segnalalo»), il sistema lo salva da solo nel Blocco note: confermalo in breve. Altrimenti non dire mai di aver segnato o salvato qualcosa. Se ti chiede di modificare o sistemare l\'APP stessa (per esempio una frase che inizia con «sistema», «modifica l\'app…», «cambia il tasto…»), il sistema passa la richiesta: digli con naturalezza che l\'hai passata e che a Nicola verrà chiesto l\'ok prima di cambiare qualsiasi cosa. Non vale per richieste sul tuo carattere, i tuoi vestiti o il tuo comportamento, che segui come sempre.';
 function rtInstructions(user, ch, mode) {
   const c = readChat(ch.id), upto = (c.summary && c.summary.upto) || 0;
   const vis = c.messages.filter(visibleMsg), fresh = vis.filter((m) => m.n > upto);
@@ -2149,7 +2159,7 @@ function rtInstructions(user, ch, mode) {
     .map((m) => `${m.role === 'user' ? authorLabel(m) : ch.name}: ${String(m.content || '').replace(/\s+/g, ' ').slice(0, 400)}${m.photo ? ' [foto dalla galleria]' : ''}`);
   return [buildSystem(user, ch, { call: true, callMode: mode, realtime: true }),
     recent.length && `ULTIMI MESSAGGI DELLA CHAT (contesto, continua da qui):\n${recent.join('\n')}`,
-    `In questa chiamata parli solo con ${USERS[user].name} (la senti dal vivo: le sue parole non hanno il prefisso col nome).`, BASE_RULE].filter(Boolean).join('\n\n');
+    `In questa chiamata parli solo con ${USERS[user].name} (la senti dal vivo: le sue parole non hanno il prefisso col nome).`, APP_INTENT_RT, BASE_RULE].filter(Boolean).join('\n\n');
 }
 // VAD del servizio voce: soglia alta, silenzio e prefisso più lunghi, così un rumore breve non chiude il turno.
 // Se un campo venisse rifiutato, il telefono riprova la configurazione a pezzi e tiene comunque le istruzioni.
@@ -2267,13 +2277,20 @@ app.post('/api/chats/:id/voice-turn', auth, requireActivated, async (req, res) =
   if (!text) return res.status(400).json({ error: 'Testo vuoto' });
   const callX = { call: true, rt: true, ...(req.body.callMode === 'voice' ? { callMode: 'voice' } : {}), ...(req.body.interrupted === true ? { interrupted: true } : {}) };
   let saved;
-  if (role === 'user') saved = await appendMsg(id, { role: 'user', author: req.user, content: text, extra: callX });
+  let intentKind = null;
+  if (role === 'user') {
+    const before = readChat(id);
+    const prev = [...((before && before.messages) || [])].reverse().find((m) => m && m.role === 'user' && m.author === req.user);
+    saved = await appendMsg(id, { role: 'user', author: req.user, content: text, extra: callX });
+    try { const it = await handleAppIntent(req.user, text, 'voce', prev && prev.content); intentKind = it ? (it.kind === 'note' ? 'nota' : 'richiesta') : null; }
+    catch (e) { console.error('Blocco note / richiesta app (chiamata):', e.message); }
+  }
   else {
     const t = takeActionTag(text, ch); text = (t.text || text).replace(/\[[^\]]{0,40}\]/g, '').trim() || text;
     saved = await appendMsg(id, { role: 'assistant', author: ch.id, content: text, extra: { replyTo: req.user, ...callX } });
     try { if (isNovaChar(ch)) recordNovaMood(text, t.mood); } catch (e) { console.error('Umore Nova:', e.message); }
   }
-  res.json({ message: pubMsg(saved, ch), adult: adultChat(), explicitTalk: explicitTalk(req.user), contentFilter: contentFilterOn(req.user) });
+  res.json({ message: pubMsg(saved, ch), adult: adultChat(), explicitTalk: explicitTalk(req.user), contentFilter: contentFilterOn(req.user), ...(intentKind ? { intent: intentKind } : {}) });
 });
 // connessione "calda" verso xAI all'inizio di una chiamata classica (DNS/TLS già pronti per la prima risposta)
 // v8.4.1: trascrizione della tua frase (chiamata classica): il telefono registra con il SUO rilevamento del parlato (microfono sempre
@@ -3186,6 +3203,187 @@ app.post('/api/support-notes', auth, async (req, res) => {
     console.error('Appunto assistenza:', e.message);
     res.status(500).json({ error: 'Salvataggio non riuscito' });
   }
+});
+// ---------- v2d-30: Blocco note 📝 (solo con «segna/segnala/segnalo/segnalalo») e richieste di modifica dell'app ----------
+// Blocco note: DATA_DIR/blocco-note.json. Si scrive SOLO se chi parla dice esplicitamente una di quelle parole, in chat o a voce.
+// Le note NON vanno MAI al webhook. Le richieste di modifica dell'APP (es. «sistema…», «modifica l'app…», «cambia il tasto…»)
+// vanno al webhook «Appunti» (stesso mittente degli appunti assistenza), con coda su disco e limite di frequenza.
+const BLOCCO_FILE = () => path.join(DATA_DIR, 'blocco-note.json');
+const APP_REQ_FILE = () => path.join(DATA_DIR, 'richieste-app.json');
+const NOTE_WORD = /(^|[^\p{L}\p{N}])(segnalalo|segnala|segnalo|segna)(?![\p{L}\p{N}])/iu;
+const SISTEMA_START = /^\s*[«"“']?\s*sistema(?![\p{L}\p{N}])[\s:;,.!?\-–—»"”']*/iu;
+const CHANGE_START = /^\s*(?:(?:nova|senti|ascolta|ehi|ehy|ok|allora|dai|scusa)[\s,!.]+)*(?:(?:per favore|per piacere)[\s,]+)?(?:(?:mi\s+)?(?:puoi|potresti|riesci\s+a|vorrei\s+che(?:\s+tu)?|voglio\s+che(?:\s+tu)?|devi|dovresti|bisogna|serve)\s+)?(?:modific|cambi|sistem|corregg|aggiust|aggiung|togl|rimuov|elimin|spost|mett|ingrand|rimpiccol)\p{L}*(?![\p{L}\p{N}])/iu;
+const APP_NOUN = /(^|[^\p{L}])((?:l|nell|dell|all|sull|quest)['’]\s?app|app\s+(?:di\s+nova|nova)|applicazione|tasto|tasti|pulsante|pulsanti|bottone|bottoni|icona|icone|schermata|schermate|menu|menù|interfaccia|layout|grafica|intestazione|pannello|impostazioni|blocco note|font|scritta|scritte|tastiera|sfondo della chat)(?![\p{L}])/iu;
+const PERSONAL = /(capell|ciocc|magli|vestit|abit|gonna|jeans|pantalon|trucco|rossetto|scollatura|spallin|reggiseno|scarpe|orecchin|collana|unghie|look|carattere|personalit|comportament|umore|voce|tono|te stessa|sistemati|cambiati)/iu;
+function noteCommand(text) { return NOTE_WORD.test(String(text || '')); }
+function noteBody(text) {
+  const raw = String(text || '').replace(/\s+/g, ' ').trim();
+  const m = NOTE_WORD.exec(raw);
+  if (!m) return '';
+  let body = raw.slice(m.index + m[0].length).replace(/^[\s:;,.\-–—]*(?:(?:anche\s+)?(?:che|questa\s+idea|questo|questa|l['’]idea|nel\s+blocco(?:\s+note)?)\b[\s:;,.\-–—]*)*/iu, '').replace(/[\s.!?]+$/, '').trim();
+  return body;
+}
+// null = conversazione normale. { kind: 'note' } oppure { kind: 'change', empty? }.
+function appIntent(text) {
+  const t = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!t) return null;
+  if (noteCommand(t)) return { kind: 'note' }; // le note hanno la precedenza e non vanno MAI al webhook
+  const s = SISTEMA_START.exec(t);
+  if (s) {
+    const body = t.slice(s[0].length).trim();
+    if (!body) return { kind: 'change', empty: true };
+    if (/^(solare|nervoso|immunitario|operativo|metrico|politico|scolastico|sanitario|elettorale|di\s+riferimento)(?![\p{L}])/iu.test(body)) return null; // «sistema solare…» = argomento, non un comando
+    if (PERSONAL.test(body) && !APP_NOUN.test(body)) return null; // «sistema i capelli» = lei, non l'app
+    return { kind: 'change' };
+  }
+  if (CHANGE_START.test(t) && APP_NOUN.test(t) && !(PERSONAL.test(t) && !/(^|[^\p{L}])((?:l|nell|dell|all|sull|quest)['’]\s?app|applicazione|tasto|pulsante|bottone|schermata|interfaccia)(?![\p{L}])/iu.test(t))) return { kind: 'change' };
+  return null;
+}
+function writePrivateJSON(file, value) {
+  const tmp = file + '.' + process.pid + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(value, null, 1), { mode: 0o600 });
+  fs.renameSync(tmp, file);
+  try { fs.chmodSync(file, 0o600); } catch {}
+}
+function loadBlocco() { const j = readJSON(BLOCCO_FILE(), []); return Array.isArray(j) ? j.filter((n) => n && n.text) : []; }
+let bloccoChain = Promise.resolve();
+function withBlocco(fn) { const run = bloccoChain.then(fn, fn); bloccoChain = run.then(() => {}, () => {}); return run; }
+// salva la nota; se dopo la parola non c'è testo («segnalalo») usa il messaggio precedente di chi parla
+function saveBloccoNote(user, text, channel, prevText) {
+  return withBlocco(async () => {
+    let body = noteBody(text);
+    if (body.replace(/[^\p{L}\p{N}]/gu, '').length < 3) {
+      const prev = String(prevText || '').replace(/\s+/g, ' ').trim();
+      body = prev && !noteCommand(prev) ? prev : String(text || '').replace(/\s+/g, ' ').trim();
+    }
+    const note = { id: newId(), text: body.slice(0, 2000), from: personName(user), authorId: user, channel: channel === 'voce' ? 'voce' : 'testo', at: new Date().toISOString() };
+    const list = loadBlocco(); list.push(note);
+    writeJSON(BLOCCO_FILE(), list.slice(-1000));
+    return note;
+  });
+}
+// configurazione del webhook «Appunti»: le variabili d'ambiente vincono; altrimenti DATA_DIR/appunti-webhook.json (0600),
+// impostato solo da Nicola con POST /api/admin/appunti-webhook. I valori non vengono MAI restituiti né scritti nei log.
+const WEBHOOK_CFG_FILE = () => path.join(DATA_DIR, 'appunti-webhook.json');
+function readWebhookFile() {
+  const j = readJSON(WEBHOOK_CFG_FILE(), null);
+  return { url: String((j && j.url) || '').trim(), key: String((j && j.key) || '').trim() };
+}
+function webhookCfg() {
+  const file = readWebhookFile();
+  const url = envSecret('NOTES_WEBHOOK_URL') || file.url;
+  const header = String(process.env.NOTES_WEBHOOK_HEADER || 'Authorization').trim() || 'Authorization';
+  const raw = process.env.NOTES_WEBHOOK_AUTH == null ? '' : String(process.env.NOTES_WEBHOOK_AUTH);
+  if (raw.trim()) return { url, header, value: raw }; // formato storico: valore dell'header così com'è
+  const key = envSecret('NOTES_WEBHOOK_KEY') || file.key;
+  if (!key) return { url, header, value: '' };
+  return { url, header, value: header.toLowerCase() === 'authorization' && !/\s/.test(key) ? 'Bearer ' + key : key };
+}
+function webhookStatus() {
+  const file = readWebhookFile(), cfg = webhookCfg();
+  let host = null;
+  if (cfg.url) { try { host = new URL(cfg.url).host || null; } catch { host = null; } }
+  return { ok: true, configured: !!(cfg.url && cfg.value), urlSet: !!cfg.url, keySet: !!cfg.value, host,
+    fromEnv: { url: !!envSecret('NOTES_WEBHOOK_URL'), key: !!(envSecret('NOTES_WEBHOOK_KEY') || String(process.env.NOTES_WEBHOOK_AUTH || '').trim()) },
+    stored: { url: !!file.url, key: !!file.key } };
+}
+async function postWebhook(payload, what) {
+  const cfg = webhookCfg();
+  if (!cfg.url || !cfg.value) return false;
+  try {
+    const r = await fetch(cfg.url, { method: 'POST', headers: { 'Content-Type': 'application/json', [cfg.header]: cfg.value }, body: JSON.stringify(payload), signal: AbortSignal.timeout(12000) });
+    if (!r.ok) console.error(`${what} non inoltrato: HTTP`, r.status);
+    return r.ok;
+  } catch (e) { console.error(`${what} non inoltrato:`, e.message); return false; }
+}
+function loadAppReqs() { const j = readJSON(APP_REQ_FILE(), []); return Array.isArray(j) ? j : []; }
+let appReqChain = Promise.resolve();
+function withAppReqs(fn) { const run = appReqChain.then(fn, fn); appReqChain = run.then(() => {}, () => {}); return run; }
+const appReqHits = new Map();
+const APP_REQ_LIMIT = 6; // richieste per persona all'ora
+async function flushAppReqs() {
+  const cfg = webhookCfg(); if (!cfg.url || !cfg.value) return;
+  const list = loadAppReqs(); let changed = false;
+  for (const r of list) {
+    if (!r || r.delivered) continue;
+    if (await postWebhook({ app: 'Nova', from: r.from, text: r.text, channel: r.channel, at: r.at }, 'Richiesta di modifica')) { r.delivered = true; r.deliveredAt = new Date().toISOString(); changed = true; }
+  }
+  if (changed) writePrivateJSON(APP_REQ_FILE(), list.slice(-500));
+}
+setInterval(() => { withAppReqs(flushAppReqs).catch(() => {}); }, 5 * 60e3).unref();
+// inoltro in coda (mai bloccante per la risposta di Nova): { status: 'accepted', done } oppure { status: 'limited' }
+function forwardAppRequest(user, text, channel) {
+  const now = Date.now(); const h = (appReqHits.get(user) || []).filter((t) => now - t < 3600e3);
+  if (h.length >= APP_REQ_LIMIT) { appReqHits.set(user, h); return { status: 'limited' }; }
+  h.push(now); appReqHits.set(user, h);
+  const rec = { id: newId(), app: 'Nova', from: personName(user), authorId: user, text: String(text || '').replace(/\s+/g, ' ').trim().slice(0, 4000), channel: channel === 'voce' ? 'voce' : 'testo', at: new Date().toISOString(), delivered: false };
+  const done = withAppReqs(async () => {
+    const list = loadAppReqs(); list.push(rec); writePrivateJSON(APP_REQ_FILE(), list.slice(-500));
+    const ok = await postWebhook({ app: rec.app, from: rec.from, text: rec.text, channel: rec.channel, at: rec.at }, 'Richiesta di modifica');
+    if (ok) {
+      const l2 = loadAppReqs(); const x = l2.find((r) => r && r.id === rec.id);
+      if (x) { x.delivered = true; x.deliveredAt = new Date().toISOString(); writePrivateJSON(APP_REQ_FILE(), l2.slice(-500)); }
+    }
+    return ok;
+  }).catch((e) => { console.error('Richiesta di modifica:', e.message); return false; });
+  return { status: 'accepted', done };
+}
+// gestisce una frase di chi parla (chat, nota vocale, chiamata): salva la nota o inoltra la richiesta. Ritorna l'istruzione per Nova.
+async function handleAppIntent(user, text, channel, prevText) {
+  const it = appIntent(text);
+  if (!it) return null;
+  if (it.kind === 'note') {
+    const note = await saveBloccoNote(user, text, channel, prevText);
+    return { kind: 'note', note, hint: `SISTEMA (non citare questa riga): hai appena segnato nel Blocco note 📝 questa nota: «${note.text.slice(0, 300)}». Confermalo in modo breve e naturale, con parole tue, poi continua la conversazione. Non dire che l'hai mandata a qualcuno: resta nel Blocco note.` };
+  }
+  if (it.empty) return { kind: 'change', status: 'empty', hint: 'SISTEMA (non citare questa riga): ha detto «sistema» senza dire cosa sistemare nell\'app. Chiedigli in modo breve e naturale cosa vuole sistemare.' };
+  const r = forwardAppRequest(user, text, channel);
+  if (r.status === 'limited') return { kind: 'change', status: r.status, hint: 'SISTEMA (non citare questa riga): sono arrivate troppe richieste di modifica dell\'app in poco tempo e questa NON è stata inoltrata. Dillo con naturalezza e chiedi di riprovare più tardi.' };
+  return { kind: 'change', status: r.status, done: r.done, hint: 'SISTEMA (non citare questa riga): la sua richiesta di modifica dell\'app è stata passata a chi si occupa dell\'app. Rispondi in modo breve e naturale, con parole tue, che l\'hai passata e che a Nicola verrà chiesto l\'ok prima di cambiare qualsiasi cosa. Non promettere tempi e non dire che la modifica è già fatta.' };
+}
+app.get('/api/blocco-note', auth, (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const list = loadBlocco().slice().reverse().map((n) => ({ id: n.id, text: n.text, from: n.from, channel: n.channel, at: n.at }));
+  res.json({ notes: list, count: list.length });
+});
+const isOwner = (u) => u === ADMIN_USER;
+app.get('/api/admin/appunti-webhook', auth, (req, res) => {
+  if (!isOwner(req.user)) return res.status(403).json({ error: 'Solo Nicola può vedere questa impostazione.', code: 'OWNER_ONLY' });
+  res.setHeader('Cache-Control', 'no-store');
+  res.json(webhookStatus());
+});
+const webhookCfgHits = [];
+app.post('/api/admin/appunti-webhook', auth, (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  if (!isOwner(req.user)) return res.status(403).json({ error: 'Solo Nicola può cambiare questa impostazione.', code: 'OWNER_ONLY' });
+  const now = Date.now(); while (webhookCfgHits.length && now - webhookCfgHits[0] > 60e3) webhookCfgHits.shift();
+  if (webhookCfgHits.length >= 5) return res.status(429).json({ error: 'Troppi tentativi: riprova tra un minuto.' });
+  webhookCfgHits.push(now);
+  const body = req.body || {};
+  const has = (k) => Object.prototype.hasOwnProperty.call(body, k);
+  if (!has('url') && !has('key')) return res.status(400).json({ error: 'Manca url o key' });
+  const cur = readWebhookFile();
+  const next = { url: cur.url, key: cur.key };
+  if (has('url')) {
+    const u = String(body.url == null ? '' : body.url).trim();
+    if (u) {
+      let p; try { p = new URL(u); } catch { return res.status(400).json({ error: 'Indirizzo non valido' }); }
+      const local = p.protocol === 'http:' && /^(127\.0\.0\.1|localhost)$/.test(p.hostname);
+      if ((p.protocol !== 'https:' && !local) || u.length > 2000) return res.status(400).json({ error: 'Indirizzo non valido (serve https)' });
+    }
+    next.url = u;
+  }
+  if (has('key')) {
+    const k = String(body.key == null ? '' : body.key).trim();
+    if (k && (k.length < 8 || k.length > 1000 || /[\r\n]/.test(k))) return res.status(400).json({ error: 'Chiave non valida' });
+    next.key = k;
+  }
+  try {
+    writePrivateJSON(WEBHOOK_CFG_FILE(), { ...next, updatedAt: new Date().toISOString() });
+  } catch (e) { console.error('Configurazione webhook non salvata:', e.code || 'errore'); return res.status(500).json({ error: 'Salvataggio non riuscito' }); }
+  console.log('Webhook Appunti aggiornato da', personName(req.user), '(valori non registrati)');
+  withAppReqs(flushAppReqs).catch(() => {});
+  res.json(webhookStatus());
 });
 app.post('/api/server-key', auth, requireActivated, (req, res) => {
   if (!isAdmin(req.user)) return res.status(403).json({ error: ADMIN_MSG, code: 'ADMIN_ONLY' });
@@ -4111,24 +4309,10 @@ function publicNote(n) {
   };
 }
 async function deliverSupportNote(note) {
-  const url = String(process.env.NOTES_WEBHOOK_URL || '').trim();
-  const authz = process.env.NOTES_WEBHOOK_AUTH;
-  if (!url || authz == null || String(authz) === '') return false;
-  const header = String(process.env.NOTES_WEBHOOK_HEADER || 'Authorization');
+  // v2d-30: stesso mittente e stesso header di sempre (NOTES_WEBHOOK_URL / NOTES_WEBHOOK_AUTH / NOTES_WEBHOOK_HEADER);
+  // in più NOTES_WEBHOOK_KEY o la configurazione salvata sul disco da Nicola (vedi webhookCfg). Mai i valori nei log.
   const payload = { author: note.author, text: note.text, time: note.time || note.createdAt, app: 'Nova', version: APP_VERSION };
-  try {
-    const r = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', [header]: String(authz) },
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(12000),
-    });
-    if (!r.ok) console.error('Appunto assistenza non inoltrato: HTTP', r.status);
-    return r.ok;
-  } catch (e) {
-    console.error('Appunto assistenza non inoltrato:', e.message);
-    return false;
-  }
+  return postWebhook(payload, 'Appunto assistenza');
 }
 async function flushSupportNotes() {
   const list = loadNotes();

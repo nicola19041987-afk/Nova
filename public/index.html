@@ -46,6 +46,7 @@
   <link rel="apple-touch-startup-image" media="screen and (device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/splash/iphone-x.png?v=864">
   <link rel="apple-touch-startup-image" media="screen and (device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" href="/splash/iphone-8.png?v=864">
   <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/blocco.css">
 </head>
 <body>
 <div id="app-shell">
@@ -140,6 +141,7 @@
       <button type="button" id="support-note-btn" class="support-ic" title="Appunto per assistenza" aria-label="Appunto per assistenza">📝</button>
       <button type="button" id="app-refresh" title="Aggiorna" aria-label="Aggiorna">↻</button>
       <span id="who" class="muted small"></span>
+      <button type="button" id="blocco-btn" title="Blocco note" aria-label="Blocco note">📝<b id="blocco-count" hidden></b></button>
       <button type="button" id="wa-video" class="wa-ic" title="Videochiamata" aria-label="Videochiamata"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><rect x="2.5" y="6" width="12" height="12" rx="2.2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M14.5 10.2L21 7.2v9.6l-6.5-3z" fill="currentColor"/></svg></button>
       <button type="button" id="wa-home" class="wa-ic" title="Home" aria-label="Home"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M4 11.2L12 4l8 7.2V20a1 1 0 01-1 1h-5.2v-6.2H10.2V21H5a1 1 0 01-1-1z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg></button>
     </header>
@@ -837,6 +839,7 @@
   <script src="/js/solo.js"></script>
   <script src="/js/mood.js"></script>
   <script src="/js/support.js"></script>
+  <script src="/js/blocco.js"></script>
   <script src="/js/frame.js"></script>
   <script src="/js/live.js" type="module"></script>
   <script src="/js/close.js"></script>

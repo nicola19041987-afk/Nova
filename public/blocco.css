@@ -1,0 +1,18 @@
+/* v2d-30: Blocco note 📝 nell'intestazione della chat (stile WhatsApp, come Ventuno e Ideas) */
+#blocco-btn{display:none;position:relative;align-items:center;justify-content:center;width:42px;height:42px;min-width:42px;min-height:42px;flex:0 0 42px;padding:0;border:0;border-radius:50%;background:transparent;font-size:20px;line-height:1;color:inherit;cursor:pointer}
+body.wa-conv #blocco-btn,body.solo-mode #blocco-btn{display:inline-flex}
+body.solo-mode.in-call:not(.call-min) #blocco-btn{display:none}
+#blocco-btn:active{background:#0000000f}
+#blocco-count{position:absolute;top:3px;right:1px;min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:#25d366;color:#fff;font:600 10px/16px system-ui,-apple-system,sans-serif;text-align:center;box-sizing:border-box}
+#blocco-count[hidden]{display:none}
+#blocco-form{padding:4px 2px 2px}
+dialog:has(> .layer-x) #blocco-form{margin-top:-46px}
+.blocco-head{display:flex;align-items:center;gap:8px;min-height:44px;padding-right:56px}
+.blocco-head h3{flex:1;margin:0;font-size:18px}
+.blocco-hint{margin:6px 0 10px}
+.blocco-list{display:flex;flex-direction:column;gap:8px;max-height:min(60dvh,520px);overflow:auto;-webkit-overflow-scrolling:touch}
+.blocco-item{background:#fffbea;border:1px solid #f1e3a6;border-radius:12px;padding:9px 11px}
+.blocco-item p{margin:0}
+.blocco-item .txt{white-space:pre-wrap;word-break:break-word;color:#1f2328;font-size:15px}
+.blocco-item .who{margin-top:4px;font-size:12px;color:#6b7280}
+.blocco-empty{text-align:center;padding:18px 0}
