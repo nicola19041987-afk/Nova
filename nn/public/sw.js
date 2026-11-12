@@ -1,4 +1,4 @@
-/* Luisa e Nico — solo notifiche push, nessuna cache delle pagine. */
+/* Luisa e Nico — solo notifiche push, nessuna cache delle pagine. asset-v=7 */
 self.addEventListener('install', (e) => { self.skipWaiting(); });
 self.addEventListener('activate', (e) => { e.waitUntil(self.clients.claim()); });
 self.addEventListener('push', (event) => {
