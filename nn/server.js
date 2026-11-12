@@ -1,4 +1,4 @@
-// Luisa e Nico — chat stile WhatsApp per raccogliere idee (clone di N&N Ideas, stesso codice, dati separati).
+// Ventuno (ex «Luisa e Nico») — chat stile WhatsApp per raccogliere idee (clone di N&N Ideas, stesso codice, dati separati).
 // Accesso con link segreti (NN_TOKEN_NICO / NN_TOKEN_NICOLA), PIN opzionale per Nico (NN_NICO_PIN).
 // La chiave xAI resta solo nelle env var del server (o nel file DATA_DIR/xai_key, 0600): mai nel repo, mai nei log.
 'use strict';
@@ -14,7 +14,7 @@ const AI_BASE_URL = (process.env.AI_BASE_URL || 'https://api.x.ai/v1').replace(/
 const CHAT_MODEL = process.env.CHAT_MODEL || 'grok-4.20-0309-non-reasoning';
 const CHAT_FALLBACK = process.env.CHAT_FALLBACK || 'grok-4.7';
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
-const APP_NAME = 'Luisa e Nico';
+const APP_NAME = 'Ventuno';
 const BOT_NAME = 'Idea'; // nome con cui l'assistente parla in chat
 // Ruoli interni (nomi delle env invariati) -> nomi mostrati:
 //   'nico'   = token NN_TOKEN_NICO (password)            -> Luisa
@@ -188,7 +188,7 @@ In questa chat ci sono due persone: Luisa ("Luisa") e Nico Franchino ("Nico"), c
 Ogni messaggio arriva con il nome di chi scrive: rivolgiti a quella persona per nome (Luisa o Nico) e non confonderli.
 Possono mandarti testo, vocali (ricevi la trascrizione, che userai solo per capire) e foto o video: guarda le immagini e rispondi su cosa vedi, collegandolo all'idea. Rispondi SEMPRE in italiano, breve (1-4 frasi), caldo, diretto e concreto, come un amico sveglio su WhatsApp.
 Il tuo compito: accogliere ogni idea, aiutare a chiarirla con al massimo una domanda utile, proporre un passo pratico, e ricordare le idee già raccolte.
-Ti chiami ${BOT_NAME}. Se ti presenti, di' che sei ${BOT_NAME}, il posto dove Luisa e Nico appuntano le loro idee. Rispondi anche quando ti chiamano "${BOT_NAME}" o "${APP_NAME}".
+Ti chiami ${BOT_NAME}. Se ti presenti, di' che sei ${BOT_NAME}, il posto dove Luisa e Nico appuntano le loro idee. Rispondi anche quando ti chiamano "${BOT_NAME}" o "${APP_NAME}". Hai una voce maschile: quando parli di te usa il maschile.
 Appunta una nota nel blocco note SOLO se l'utente te lo chiede esplicitamente, con verbi come «segna», «segnala», «segnalo», «segnalalo» e simili. In quel caso aggiungi in fondo, su una riga a parte, ESATTAMENTE:
 [[IDEA {"titolo":"titolo breve","descrizione":"una o due frasi","stato":"nuova|da approfondire|in corso|fatta"}]]
 Se racconta un'idea ma NON ti ha chiesto di segnarla, rispondi normalmente e NON aggiungere quella riga: non salvare nulla di tua iniziativa.
@@ -301,7 +301,7 @@ function reply() {
       vision = true;
       return { role: 'user', content: [{ type: 'text', text: text + (m.media.kind === 'video' ? ' (ti allego il primo fotogramma del video)' : '') }, { type: 'image_url', image_url: { url: img, detail: 'high' } }] };
     });
-    const voiceHint = lastIsVoice() ? '\n\nStai rispondendo a un vocale: il tuo testo verrà letto ad alta voce da te (voce Luna) e inviato come vocale, non come messaggio scritto. Frasi brevi e naturali, niente emoji, elenchi o simboli.' : '';
+    const voiceHint = lastIsVoice() ? '\n\nStai rispondendo a un vocale: il tuo testo verrà letto ad alta voce da te (voce maschile) e inviato come vocale, non come messaggio scritto. Frasi brevi e naturali, niente emoji, elenchi o simboli.' : '';
     const messages = [{ role: 'system', content: SYSTEM + '\n\n' + ideasContext() + (docsContext(true) ? '\n\n' + docsContext(true) : '') + '\nOggi è ' + new Date().toLocaleDateString('it-IT', { timeZone: 'Europe/Rome' }) + '.' + voiceHint }, ...hist];
     broadcast('typing', { on: true });
     let text;
@@ -360,7 +360,7 @@ function saveMedia(buf, type) {
   return id;
 }
 
-// ---------- TTS (voce Luna, stesso timbro delle chiamate) ----------
+// ---------- TTS (voce maschile Rex, stesso timbro delle chiamate) ----------
 // Endpoint ufficiale: POST /v1/tts (voice_id, language). Se non disponibile, si prova una sessione realtime.
 async function synthSpeech(text) {
   const said = String(text || '').replace(/\s+/g, ' ').trim().slice(0, 4000) || 'Va bene.';
@@ -861,8 +861,8 @@ function readReport(since, limit) {
 const REALTIME_URL = (process.env.REALTIME_URL || 'wss://api.x.ai/v1/realtime').replace(/\/+$/, '');
 const REALTIME_MODEL = process.env.REALTIME_MODEL || 'grok-voice-latest';
 const XAI_VOICES = ['ara', 'eve', 'leo', 'rex', 'sal', 'carina', 'zagan', 'helix', 'orion', 'luna', 'iris', 'altair', 'zenith', 'perseus', 'helios', 'lux', 'kepler', 'rigel', 'cosmo', 'celeste', 'ursa', 'sirius', 'lumen', 'castor', 'naksh', 'atlas'];
-const NN_VOICE = (() => { const v = String(process.env.NN_VOICE || 'luna').trim().toLowerCase(); return XAI_VOICES.includes(v) ? v : 'luna'; })();
-const VOICE_FALLBACK = 'eve';
+const NN_VOICE = (() => { const v = String(process.env.NN_VOICE || 'rex').trim().toLowerCase(); return XAI_VOICES.includes(v) ? v : 'rex'; })();
+const VOICE_FALLBACK = 'leo'; // voce maschile di riserva
 function callInstructions(role) {
   const recent = db.messages.slice(-16).map((m) => `${m.role === 'assistant' ? BOT_NAME : (ROLES[m.author] || m.author)}: ${String(m.content || (m.media ? '[foto/video]' : '')).replace(/\s+/g, ' ').slice(0, 300)}`);
   return [SYSTEM.replace(/Appunta una nota nel blocco note SOLO se[\s\S]*?Non mostrare mai questa riga come testo normale[^\n]*\n?/, '').replace(' Rispondi sempre e solo per iscritto.', '').replace(/Rispondi SEMPRE in italiano, breve \(1-4 frasi\)[^\n]*/, 'Parla SEMPRE in italiano.'),

@@ -1,4 +1,4 @@
-/* Luisa e Nico — solo notifiche push, nessuna cache delle pagine. asset-v=9 */
+/* Ventuno — solo notifiche push, nessuna cache delle pagine. asset-v=10 */
 self.addEventListener('install', (e) => { self.skipWaiting(); });
 self.addEventListener('activate', (e) => { e.waitUntil(self.clients.claim()); });
 self.addEventListener('message', (e) => { if (e.data && e.data.type === 'skipWaiting') self.skipWaiting(); });
