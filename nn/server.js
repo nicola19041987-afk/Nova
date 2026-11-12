@@ -391,7 +391,7 @@ app.get('/api/me', limit(10, 60000), (req, res, next) => {
   const role = roleOf(req.get('X-NN-Key') || '');
   if (role && pinFor(role) && !safeEq(req.get('X-NN-Sess') || '', sessFor(role))) return res.json({ role, name: ROLES[role], pin: true, app: APP_NAME });
   next();
-}, auth, (req, res) => res.json({ role: req.role, name: ROLES[req.role], pin: false, app: APP_NAME, admin: req.role === 'nicola', names: namesMap() }));
+}, auth, (req, res) => res.json({ role: req.role, name: ROLES[req.role], pin: false, app: APP_NAME, admin: req.role === 'nicola', names: namesMap(), welcome: req.role === 'nico' && !welcomeSeen() }));
 app.get('/api/messages', auth, (req, res) => {
   const since = Number(req.query.since) || 0;
   res.setHeader('Cache-Control', 'no-store');
@@ -408,6 +408,41 @@ app.put('/api/prefs', auth, limit(30, 60000), express.json({ limit: '4kb' }), (r
   res.json({ prefs });
 });
 function ownerOnly(req, res, next) { if (req.role !== 'nicola') return res.status(403).json({ error: 'Non autorizzato' }); next(); }
+const WELCOME_SEEN = path.join(DATA_DIR, 'welcome-seen.json');
+const WELCOME_PHOTO = path.join(DATA_DIR, 'welcome-nova.jpg');
+function welcomeSeen() { try { return !!JSON.parse(fs.readFileSync(WELCOME_SEEN, 'utf8')).nico; } catch { return false; } }
+function markWelcomeSeen() {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  fs.writeFileSync(WELCOME_SEEN, JSON.stringify({ nico: true, at: new Date().toISOString() }), { mode: 0o600 });
+}
+app.post('/api/welcome/seen', auth, limit(10, 60000), express.json({ limit: '1kb' }), (req, res) => {
+  if (req.role === 'nico') markWelcomeSeen();
+  res.json({ ok: true });
+});
+app.get('/api/welcome/photo', auth, (req, res) => {
+  res.setHeader('Cache-Control', 'private, max-age=60');
+  if (fs.existsSync(WELCOME_PHOTO)) return res.type('image/jpeg').sendFile(WELCOME_PHOTO);
+  res.type('image/svg+xml').send('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><circle cx="64" cy="64" r="64" fill="#202c33"/><text x="64" y="82" text-anchor="middle" font-size="64" fill="#e9edef" font-family="-apple-system,Segoe UI,sans-serif">N</text></svg>');
+});
+app.post('/api/admin/welcome-photo', auth, ownerOnly, limit(5, 60000), express.raw({ type: ['image/jpeg', 'image/png', 'image/webp'], limit: 2 * 1024 * 1024 }), (req, res) => {
+  const buf = req.body;
+  const type = (req.get('Content-Type') || '').split(';')[0].trim().toLowerCase();
+  if (!Buffer.isBuffer(buf) || buf.length < 100) return res.status(400).json({ error: 'Immagine vuota' });
+  try {
+    let out = buf;
+    if (type !== 'image/jpeg') {
+      const { spawnSync } = require('child_process');
+      const r = spawnSync('python3', ['-c', "import sys; from PIL import Image; im=Image.open(sys.stdin.buffer).convert('RGB'); im.thumbnail((1024,1024)); im.save(sys.stdout.buffer,'JPEG',quality=90)"], { input: buf, timeout: 15000, maxBuffer: 4 * 1024 * 1024 });
+      if (r.status !== 0 || !r.stdout || r.stdout.length < 100) return res.status(400).json({ error: 'Conversione immagine non riuscita' });
+      out = r.stdout;
+    }
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    const tmp = WELCOME_PHOTO + '.tmp';
+    fs.writeFileSync(tmp, out, { mode: 0o600 }); fs.chmodSync(tmp, 0o600); fs.renameSync(tmp, WELCOME_PHOTO);
+    res.json({ ok: true, size: out.length });
+  } catch (e) { console.error('Foto benvenuto non salvata:', e.code || 'errore'); res.status(500).json({ error: 'Salvataggio non riuscito' }); }
+});
+app.use('/api/admin/welcome-photo', (err, req, res, next) => { if (err && err.type === 'entity.too.large') return res.status(413).json({ error: 'Immagine troppo grande (max 2 MB)' }); next(err); });
 app.get('/api/admin/users', auth, ownerOnly, (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   res.json({ users: publicUsers(), max: MAX_EXTRA_USERS });

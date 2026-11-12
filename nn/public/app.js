@@ -394,6 +394,11 @@
     $('#sub').textContent = 'online';
     if (me.names) setNames(me.names);
     $('#home-btn').hidden = me.role !== 'nicola';
+    if (me.welcome) {
+      $('#welcome-photo').src = '/api/welcome/photo?k=' + encodeURIComponent(key()) + '&s=' + encodeURIComponent(sess());
+      $('#welcome').hidden = false;
+      setTimeout(() => { api('/api/welcome/seen', { method: 'POST', body: {} }).catch(() => {}); }, 4000);
+    }
     try {
       const j = await api('/api/prefs');
       const sp = (j && j.prefs) || {};
@@ -403,6 +408,10 @@
     } catch {}
     await poll(); bottom(); live(); paint();
   }
+  $('#welcome-ok').addEventListener('click', () => {
+    $('#welcome').hidden = true;
+    api('/api/welcome/seen', { method: 'POST', body: {} }).catch(() => {});
+  });
   window.NN = { api, key, sess, me: () => me, status, poll };
   start();
 })();
