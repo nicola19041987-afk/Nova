@@ -1121,6 +1121,108 @@ app.get('/api/admin/report', auth, (req, res) => {
   const limitN = Math.min(1000, Math.max(1, Number(req.query.limit) || 200));
   res.json({ lines: readReport(since, limitN) });
 });
+function countDataFiles(dir) {
+  let n = 0;
+  if (!fs.existsSync(dir)) return 0;
+  const walk = (d) => {
+    for (const f of fs.readdirSync(d, { withFileTypes: true })) {
+      const p = path.join(d, f.name);
+      if (f.isDirectory()) walk(p);
+      else n++;
+    }
+  };
+  walk(dir);
+  return n;
+}
+function latestResetBackup() {
+  const dir = path.join(DATA_DIR, 'backups');
+  let best = null, bestM = -1;
+  try {
+    for (const f of fs.readdirSync(dir)) {
+      if (!/^pre-reset-.+\.tgz$/.test(f)) continue;
+      const p = path.join(dir, f);
+      let st; try { st = fs.statSync(p); } catch { continue; }
+      if (st.isFile() && st.mtimeMs >= bestM) { best = p; bestM = st.mtimeMs; }
+    }
+  } catch {}
+  return best;
+}
+async function runAdminReset() {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  const bakDir = path.join(DATA_DIR, 'backups');
+  fs.mkdirSync(bakDir, { recursive: true });
+  const ts = new Date().toISOString().replace(/[:.]/g, '-');
+  const bakName = 'pre-reset-' + ts + '.tgz';
+  const bakPath = path.join(bakDir, bakName);
+  const r = require('child_process').spawnSync('tar', ['-czf', bakPath, '--exclude=backups', '--exclude=./backups', '-C', DATA_DIR, '.'], { timeout: 120000 });
+  if (r.status !== 0 || !fs.existsSync(bakPath) || !fs.statSync(bakPath).size) {
+    try { fs.rmSync(bakPath, { force: true }); } catch {}
+    const err = new Error('Backup non riuscito'); err.status = 500; throw err;
+  }
+  try { fs.chmodSync(bakPath, 0o600); } catch {}
+
+  const removed = {
+    messages: (db.messages || []).length,
+    ideas: (db.ideas || []).length,
+    docs: (db.docs || []).length,
+    media: countDataFiles(MEDIA_DIR),
+    welcomeSeen: 0,
+    ideaReport: 0,
+    sistema: 0,
+    tmp: 0,
+  };
+
+  db.messages = [];
+  db.ideas = [];
+  db.docs = [];
+  db.seq = 0;
+  await save();
+  // stesso percorso di load() al primo utilizzo: un solo messaggio di benvenuto
+  if (!db.messages.length) {
+    db.messages.push({ id: ++db.seq, at: new Date().toISOString(), role: 'assistant', author: 'nn', content: WELCOME });
+    await save();
+  }
+
+  if (fs.existsSync(MEDIA_DIR)) fs.rmSync(MEDIA_DIR, { recursive: true, force: true });
+  fs.mkdirSync(MEDIA_DIR, { recursive: true });
+
+  const delIfExists = (p, key) => { if (fs.existsSync(p)) { fs.rmSync(p, { force: true }); removed[key] = 1; } };
+  delIfExists(WELCOME_SEEN, 'welcomeSeen');
+  delIfExists(REPORT_FILE, 'ideaReport');
+  delIfExists(SISTEMA_FILE, 'sistema');
+
+  try {
+    for (const f of fs.readdirSync(DATA_DIR, { withFileTypes: true })) {
+      if (!f.isFile() || !f.name.endsWith('.tmp')) continue;
+      fs.rmSync(path.join(DATA_DIR, f.name), { force: true });
+      removed.tmp++;
+    }
+  } catch {}
+
+  return { ok: true, backup: bakName, removed };
+}
+app.get('/api/admin/reset/backup', auth, ownerOnly, (req, res) => {
+  const p = latestResetBackup();
+  if (!p) return res.status(404).json({ error: 'Nessun backup' });
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Content-Type', 'application/gzip');
+  res.setHeader('Content-Disposition', 'attachment; filename="' + path.basename(p) + '"');
+  res.sendFile(p);
+});
+let lastAdminResetAt = 0;
+app.post('/api/admin/reset', auth, ownerOnly, express.json({ limit: '1kb' }), async (req, res) => {
+  if (!req.body || req.body.confirm !== 'RESET') return res.status(400).json({ error: 'Conferma richiesta' });
+  const now = Date.now();
+  if (now - lastAdminResetAt < 60000) return res.status(429).json({ error: 'Troppi messaggi, aspetta un attimo.' });
+  lastAdminResetAt = now;
+  try {
+    res.json(await runAdminReset());
+  } catch (e) {
+    console.error('Reset non riuscito:', e.status || e.code || 'errore');
+    res.status(e.status || 500).json({ error: e.message === 'Backup non riuscito' ? 'Backup non riuscito' : 'Reset non riuscito' });
+  }
+});
+
 app.get('/api/stream', auth, (req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
   res.write(`event: hello\ndata: ${JSON.stringify({ last: db.seq })}\n\n`);
