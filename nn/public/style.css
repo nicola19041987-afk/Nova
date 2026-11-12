@@ -4,7 +4,7 @@ html, body { margin: 0; height: 100%; background: #0b141a; color: #e9edef; font:
 #app { position: fixed; left: 0; right: 0; top: var(--vv-top, 0px); height: var(--vv-h, 100dvh); display: flex; flex-direction: column; }
 #topbar { flex: 0 0 auto; display: flex; align-items: center; gap: 10px; padding: calc(env(safe-area-inset-top) + 8px) 10px 8px; min-height: 60px; background: #202c33; color: #e9edef; z-index: 2; box-shadow: 0 1px 3px rgba(0,0,0,.4); }
 #topbar .pfp { width: 42px; height: 42px; border-radius: 50%; display: block; flex: 0 0 auto; object-fit: cover; background: #000; }
-.pfp.big { width: 180px; height: 180px; margin: 0 auto 12px; display: block; object-fit: contain; }
+.pfp.big { width: 180px; height: 180px; margin: 0 auto 12px; display: block; object-fit: contain; background: #000; }
 .who { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 #brand { margin: 0; font-size: 17px; line-height: 1.2; font-weight: 600; color: #e9edef; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #sub { font-size: 12.5px; color: #8696a0; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -76,7 +76,7 @@ html, body { margin: 0; height: 100%; background: #0b141a; color: #e9edef; font:
   background: radial-gradient(120% 80% at 50% 25%, #1b2a44 0%, #0b141a 60%, #000 100%);
   padding: calc(env(safe-area-inset-top) + 48px) 20px calc(env(safe-area-inset-bottom) + 36px); }
 .call-top { display: flex; flex-direction: column; align-items: center; gap: 6px; }
-.call-logo { width: 168px; height: 168px; border-radius: 50%; box-shadow: 0 0 0 6px rgba(83,189,235,.12), 0 10px 40px rgba(0,0,0,.6); margin-bottom: 18px; }
+.call-logo { width: 168px; height: 168px; border-radius: 50%; background: #000; box-shadow: 0 0 0 6px rgba(83,189,235,.12), 0 10px 40px rgba(0,0,0,.6); margin-bottom: 18px; }
 .call-name { font-size: 28px; font-weight: 600; }
 #call-status { font-size: 15px; color: #8696a0; }
 #call-time { font-size: 17px; font-variant-numeric: tabular-nums; color: #e9edef; min-height: 22px; }
