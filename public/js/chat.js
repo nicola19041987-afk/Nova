@@ -160,6 +160,7 @@ App.chat = {
     if (!noAI && !App.hasAi()) return App.toast('🔑 Inserisci la chiave xAI in Impostazioni (oppure usa 💬 per scrivere solo all\'altra persona)');
     // Bolla tua e «sta scrivendo…» subito. La parola chiave la controlla il server, senza un giro in più prima del disegno.
     this.busy = true; const ch = App.current;
+    this.motionHear(text, false); // «etciù», «ahah», «ciao»… detto da voi: Nova reagisce con il corpo
     const meName = App.me.name;
     const tSend = performance.now();
     const local = this.addMsg({ role: 'user', author: App.me.user, authorName: meName, content: text, noAI, at: new Date().toISOString(), ...(photo ? { photo: { localSrc: photo.url, localThumb: photo.thumb, kind: photo.kind, w: photo.w, h: photo.h } } : {}), ...(voice ? { voice } : {}) });
@@ -223,6 +224,7 @@ App.chat = {
       if (bodyEl) bodyEl.before(note);
     }
     if (reply) { cue.check(reply, true); if (!cue.any) App.avatarConv.emote(reply); }
+    if (reply) App.chat.motionHear(reply, !cue.m); // v2d-30: umore ed eventi del discorso -> movimento
     if (reply && App.actions) App.actions.fromReply(reply);
     if (streamTTS) App.voice.streamEnd();
     else if (reply && App.voice) App.voice.speak(App.actions ? App.actions.strip(reply) : reply);
@@ -230,13 +232,20 @@ App.chat = {
   },
   // v8: linguaggio del corpo contestuale. L'IA può iniziare la risposta con [gesto:…] e/o [umore:…]:
   // il gesto parte quando arriva (insieme alla voce), niente animazioni casuali.
+  // v2d-30: testo -> evento (starnuto, risata, saluto…) e, per le risposte senza tag, umore per i clip di movimento.
+  motionHear(text, withMood) {
+    const G = window.MotionGraph, P = App.motionPlayer;
+    if (!G || !P || !text) return;
+    const ev = G.eventFromText(text); if (ev) P.event(ev);
+    if (withMood) { const m = G.moodFromText(text); if (m) P.mood(m); }
+  },
   cues() {
     const G = { annuisce: 'nod', sorride: 'smile', ride: 'smile', inclina: 'tilt', nega: 'shake', pensa: 'tilt', ammicca: 'smile', saluta: 'wave' };
     const M = { allegra: 'smile', tenera: 'smile', maliziosa: 'smile', sorpresa: 'tilt', pensierosa: 'tilt', triste: 'tilt', seria: null, offesa: null };
     const c = { done: false, any: false, g: null, m: null,
       check(t, final) {
-        if (!this.g) { const g = /\[gesto:\s*([a-zà-ù]+)\s*\]/i.exec(t); if (g) { this.g = g[1].toLowerCase(); this.any = true; if (G[this.g]) App.avatarConv.react(G[this.g], this.g === 'ride' ? '😄' : null); if (App.actions && App.actions.cue) { const C = { ride: ['ride', 0.6], sorride: ['sorriso', 0.35], annuisce: ['annuisce', 0.35], inclina: ['inclina', 0.4] }[this.g]; /* v8.5.0: anche sorriso, cenno, testa inclinata */ if (C) App.actions.cue(C[0], C[1]); } } }
-        if (!this.m) { const m = /\[umore:\s*([a-zà-ù]+)\s*\]/i.exec(t); if (m) { this.m = m[1].toLowerCase(); this.any = true; if (App.avatarConv) { App.avatarConv.replyMood = this.m; App.avatarConv.replyMoodUntil = performance.now() + 20000; } if (!this.g && M[this.m]) App.avatarConv.react(M[this.m]); if (this.m === 'triste' && App.avatarConv.breathM) App.avatarConv.breathM.sigh(performance.now()); if ((this.m === 'tenera' || this.m === 'maliziosa') && App.actions && App.actions.cue) App.actions.cue('capelli', 0.3); } }
+        if (!this.g) { const g = /\[gesto:\s*([a-zà-ù]+)\s*\]/i.exec(t); if (g) { this.g = g[1].toLowerCase(); this.any = true; if (App.motionPlayer && window.MotionGraph) { const ev = window.MotionGraph.eventFromText('[gesto:' + this.g + ']'); if (ev) App.motionPlayer.event(ev); } if (G[this.g]) App.avatarConv.react(G[this.g], this.g === 'ride' ? '😄' : null); if (App.actions && App.actions.cue) { const C = { ride: ['ride', 0.6], sorride: ['sorriso', 0.35], annuisce: ['annuisce', 0.35], inclina: ['inclina', 0.4] }[this.g]; /* v8.5.0: anche sorriso, cenno, testa inclinata */ if (C) App.actions.cue(C[0], C[1]); } } }
+        if (!this.m) { const m = /\[umore:\s*([a-zà-ù]+)\s*\]/i.exec(t); if (m) { this.m = m[1].toLowerCase(); this.any = true; if (App.motionPlayer) App.motionPlayer.mood(this.m); if (App.avatarConv) { App.avatarConv.replyMood = this.m; App.avatarConv.replyMoodUntil = performance.now() + 20000; } if (!this.g && M[this.m]) App.avatarConv.react(M[this.m]); if (this.m === 'triste' && App.avatarConv.breathM) App.avatarConv.breathM.sigh(performance.now()); if ((this.m === 'tenera' || this.m === 'maliziosa') && App.actions && App.actions.cue) App.actions.cue('capelli', 0.3); } }
         if ((this.g && this.m) || final || t.length > 160) this.done = true;
       } };
     return c;

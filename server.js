@@ -1288,6 +1288,55 @@ app.post('/api/characters/:id/motion-video', auth, express.raw({ type: ['video/m
     res.json({ motionVideo, character: updated });
   } catch (e) { res.status(e.status || 500).json({ error: e.message || 'Salvataggio non riuscito' }); }
 });
+// v2d-30: libreria di clip di movimento collegati per posa (from -> to). Centinaia di clip, file sul disco privato.
+const MOTION_CLIPS_MAX = 800;
+const MOTION_TOKEN = /^[a-z_]{1,24}$/;
+const motionTok = (v, d = '') => { const t = String(v || '').toLowerCase().trim(); return MOTION_TOKEN.test(t) ? t : d; };
+function motionOwner(req, res) {
+  const id = req.params.id;
+  if (!ID_RE.test(id)) { res.status(400).json({ error: 'ID non valido' }); return null; }
+  let ch; try { ch = getChars(req.user).find((c) => c && c.id === id); } catch (e) { res.status(e.status || 500).json({ error: e.message }); return null; }
+  if (!ch) { res.status(404).json({ error: 'Personaggio non trovato' }); return null; }
+  if (req.user !== (ch.createdBy || ADMIN_USER)) { res.status(403).json({ error: 'Solo il proprietario può gestire questi video.', code: 'OWN_ONLY' }); return null; }
+  return ch;
+}
+app.get('/api/characters/:id/motion-clips', auth, (req, res) => {
+  if (!ID_RE.test(req.params.id)) return res.status(400).json({ error: 'ID non valido' });
+  let ch; try { ch = getChars(req.user).find((c) => c && c.id === req.params.id); } catch (e) { return res.status(e.status || 500).json({ error: e.message }); }
+  if (!ch) return res.status(404).json({ error: 'Personaggio non trovato' });
+  res.json({ clips: Array.isArray(ch.motionClips) ? ch.motionClips : [], motionVideo: ch.motionVideo || null });
+});
+app.post('/api/characters/:id/motion-clips', auth, express.raw({ type: ['video/mp4', 'application/octet-stream'], limit: MOTION_MAX }), async (req, res) => {
+  const ch = motionOwner(req, res); if (!ch) return;
+  const buf = req.body;
+  if (!isMp4(buf)) return res.status(400).json({ error: 'Serve un file MP4.' });
+  if (buf.length > MOTION_MAX) return res.status(413).json({ error: 'File troppo grande (max 10 MB)' });
+  if ((ch.motionClips || []).length >= MOTION_CLIPS_MAX) return res.status(409).json({ error: `Libreria piena (max ${MOTION_CLIPS_MAX} clip)` });
+  const q = req.query || {};
+  const kind = ['base', 'move', 'event', 'parla'].includes(q.kind) ? q.kind : 'base';
+  const from = motionTok(q.from, 'petto'), to = motionTok(q.to, from);
+  const event = motionTok(q.event);
+  if (kind === 'event' && !event) return res.status(400).json({ error: 'Per un clip evento serve il nome dell\'evento' });
+  const mood = String(q.mood || '').split(',').map((m) => motionTok(m)).filter(Boolean).slice(0, 6);
+  const file = `${newId()}.mp4`;
+  fs.writeFileSync(path.join(avatarDir(), file), buf);
+  const clip = { id: newId(), url: `/api/motion/${file}`, kind, from, to, mood, ...(event ? { event } : {}), weight: Math.max(0.05, Math.min(10, Number(q.weight) || 1)), label: String(q.label || '').slice(0, 60), bytes: buf.length, at: new Date().toISOString(), by: req.user };
+  try {
+    const updated = await patchChar(ch.id, (c) => { c.motionClips = [...(Array.isArray(c.motionClips) ? c.motionClips : []), clip].slice(-MOTION_CLIPS_MAX); c.updatedAt = new Date().toISOString(); c.updatedBy = req.user; });
+    res.json({ clip, count: updated.motionClips.length });
+  } catch (e) { res.status(e.status || 500).json({ error: e.message || 'Salvataggio non riuscito' }); }
+});
+// Toglie un clip dalla libreria. Il file resta sul disco (si può rimettere senza ricaricarlo).
+app.delete('/api/characters/:id/motion-clips/:clipId', auth, async (req, res) => {
+  const ch = motionOwner(req, res); if (!ch) return;
+  const cid = String(req.params.clipId || '');
+  if (!ID_RE.test(cid)) return res.status(400).json({ error: 'ID non valido' });
+  if (!(ch.motionClips || []).some((c) => c && c.id === cid)) return res.status(404).json({ error: 'Clip non trovato' });
+  try {
+    const updated = await patchChar(ch.id, (c) => { c.motionClips = (c.motionClips || []).filter((x) => x && x.id !== cid); c.updatedAt = new Date().toISOString(); c.updatedBy = req.user; });
+    res.json({ ok: true, count: updated.motionClips.length });
+  } catch (e) { res.status(e.status || 500).json({ error: e.message || 'Salvataggio non riuscito' }); }
+});
 app.get('/api/motion/:file', auth, (req, res) => {
   const f = path.basename(req.params.file);
   if (!MOTION_RE.test(f)) return res.status(400).end();

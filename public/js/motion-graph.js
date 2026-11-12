@@ -1,0 +1,292 @@
+/* motion-graph.js — v2d-30: movimento continuo di Nova.
+   Libreria di clip collegate da POSE (grafo): ogni clip parte da una posa (from) e finisce in una posa (to).
+   Il clip successivo parte sempre dalla posa in cui è finito il precedente, così non ci sono salti.
+   Due <video> sovrapposti: mentre uno suona, l'altro è già caricato sul primo fotogramma; alla fine si passa
+   al secondo con una dissolvenza brevissima. Scelta automatica in base all'umore della risposta e agli eventi
+   del discorso (starnuto, risata, saluto…). I file sono messi in cache sul telefono in anticipo. */
+(function (root) {
+  const HOME = 'petto'; // posa della foto: mano sul petto. Il labiale lavora su questa foto.
+  const TOKEN = /^[a-z_]{1,24}$/;
+  const tok = (v, d) => { const s = String(v || '').toLowerCase().trim(); return TOKEN.test(s) ? s : d; };
+
+  // Umori dei tag [umore:…] dell'IA -> famiglia di movimento.
+  const MOOD_FAMILY = {
+    allegra: 'allegra', maliziosa: 'allegra', sorpresa: 'vivace', vivace: 'vivace', giocosa: 'allegra', felice: 'allegra',
+    tenera: 'affettuosa', affettuosa: 'affettuosa', dolce: 'affettuosa',
+    pensierosa: 'pensierosa', seria: 'calma', triste: 'pensierosa', offesa: 'calma', calma: 'calma', stanca: 'calma',
+  };
+  // Clip di "carattere" vivace sono buoni anche per allegra e viceversa.
+  const MOOD_NEAR = { allegra: ['vivace'], vivace: ['allegra'], affettuosa: ['calma'], pensierosa: ['calma'], calma: ['pensierosa', 'affettuosa'] };
+
+  function moodFromText(text) {
+    const t = String(text || '').toLowerCase();
+    if (!t.trim()) return null;
+    const tag = /\[umore:\s*([a-zà-ù]+)\s*\]/i.exec(t);
+    if (tag && MOOD_FAMILY[tag[1]]) return MOOD_FAMILY[tag[1]];
+    const n = (re) => (t.match(re) || []).length;
+    const happy = n(/ahah|haha|ihih|😂|🤣|😄|😁|😆|😜|😉|evviva|che bello|fantastic|divertent|scherz/g) + (n(/!/g) >= 2 ? 1 : 0);
+    const love = n(/❤|💕|😘|🥰|tesoro|amore|caro|cara|abbracci|coccol|ti voglio bene|dolcezza/g);
+    const think = n(/\bforse\b|\bpenso\b|\bcredo\b|chissà|mmm|\bboh\b|riflett|\bdipende\b|🤔|\bdubbi/g) + (n(/\?/g) >= 2 ? 1 : 0);
+    const sad = n(/mi dispiace|triste|😢|😔|purtroppo|che peccato/g);
+    const best = [['allegra', happy], ['affettuosa', love], ['pensierosa', think + sad]].sort((a, b) => b[1] - a[1])[0];
+    return best[1] > 0 ? best[0] : 'calma';
+  }
+
+  // Eventi del discorso -> clip speciale che suona una volta e poi si torna alla base.
+  const EVENTS = [
+    ['starnuto', /etci[uù]|starnut|🤧/],
+    ['tosse', /\btossisc|\bcolpo di tosse|\bcoff\b|\bcough/],
+    ['ride', /ahah+|haha+|😂|🤣|\bride(re)?\b|\brisata|mi fai ridere|scoppio a ridere/],
+    ['saluta', /👋|\bti saluto\b|\bsaluta(mi)?\b|\bciao ciao\b|\bbuonanotte\b|\ba domani\b/],
+    ['annuisce', /\bannuisc|\bsì sì\b|\besatto\b|\bcerto che sì\b/],
+    ['nega', /\bscuote la testa\b|\bno no\b|\bassolutamente no\b/],
+    ['sbadiglio', /sbadigl|🥱|\bche sonno\b/],
+    ['occhiolino', /😉|\bocchiolino\b|\bammicc/],
+    ['bacio', /😘|\bbacio\b|\bbacino\b|\bbaci\b/],
+    ['capelli', /\bcapelli\b|\bciocca\b|\bpettin/],
+    ['pensa', /🤔|\bfammi pensare\b|\bci penso\b/],
+    ['applaude', /👏|\bapplaus|\bbrav[ao]!/],
+    ['spalle', /🤷|\balzo le spalle\b|\bchi lo sa\b|\bboh\b/],
+  ];
+  const GESTURE_EVENT = { annuisce: 'annuisce', ride: 'ride', saluta: 'saluta', nega: 'nega', ammicca: 'occhiolino', pensa: 'pensa', sorride: null, inclina: null };
+  function eventFromText(text) {
+    const t = String(text || '').toLowerCase();
+    const g = /\[gesto:\s*([a-zà-ù_]+)\s*\]/i.exec(t);
+    if (g && GESTURE_EVENT[g[1]]) return GESTURE_EVENT[g[1]];
+    for (const [ev, re] of EVENTS) if (re.test(t)) return ev;
+    return null;
+  }
+
+  // Normalizza la libreria del personaggio. Compatibile con il vecchio campo motionVideo (un solo clip petto->petto).
+  const URL_RE = /^\/api\/motion\/[a-f0-9]{16}\.mp4$/;
+  function libraryOf(ch) {
+    const out = [];
+    const seen = new Set();
+    const list = (ch && Array.isArray(ch.motionClips)) ? ch.motionClips : [];
+    for (const c of list) {
+      if (!c || !URL_RE.test(String(c.url || ''))) continue;
+      const key = [c.url, c.kind, c.event, c.from, c.to].join('|'); // lo stesso file può servire da base e da evento
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const kind = ['base', 'move', 'event', 'parla'].includes(c.kind) ? c.kind : 'base';
+      const from = tok(c.from, HOME), to = tok(c.to, from);
+      out.push({ id: String(c.id || key), url: c.url, from, to, kind: kind === 'base' && from !== to ? 'move' : kind,
+        mood: (Array.isArray(c.mood) ? c.mood : [c.mood]).map((m) => tok(m, '')).filter(Boolean),
+        event: tok(c.event, ''), weight: Math.max(0.05, Math.min(10, Number(c.weight) || 1)), label: String(c.label || '').slice(0, 60) });
+    }
+    if (!out.length && ch && URL_RE.test(String(ch.motionVideo || ''))) {
+      out.push({ id: 'legacy', url: ch.motionVideo, from: HOME, to: HOME, kind: 'base', mood: [], event: '', weight: 1, label: 'idle' });
+    }
+    return out;
+  }
+  function poses(lib) { const s = new Set([HOME]); for (const c of lib) { s.add(c.from); s.add(c.to); } return [...s]; }
+
+  // Percorso più breve (in numero di clip) tra due pose, usando base/move.
+  function pathStep(lib, from, target) {
+    if (from === target) return null;
+    const edges = lib.filter((c) => (c.kind === 'move' || c.kind === 'base') && c.from !== c.to);
+    const prev = new Map([[from, null]]);
+    const q = [from];
+    while (q.length) {
+      const p = q.shift();
+      if (p === target) break;
+      for (const e of edges) if (e.from === p && !prev.has(e.to)) { prev.set(e.to, p); q.push(e.to); }
+    }
+    if (!prev.has(target)) return null;
+    let n = target; while (prev.get(n) !== from) n = prev.get(n);
+    return n; // prima posa da raggiungere
+  }
+
+  function rnd(r) { return typeof r === 'function' ? r() : Math.random(); }
+  function weighted(cands, wf, r) {
+    const ws = cands.map(wf); const sum = ws.reduce((a, b) => a + b, 0);
+    if (!(sum > 0)) return cands[0] || null;
+    let x = rnd(r) * sum;
+    for (let i = 0; i < cands.length; i++) { x -= ws[i]; if (x <= 0) return cands[i]; }
+    return cands[cands.length - 1];
+  }
+
+  function createState() { return { pose: HOME, recent: [], dwell: 0, event: null, eventUntil: 0, mood: 'calma', moodUntil: 0 }; }
+
+  // Sceglie il prossimo clip. opts: { now, home (tornare alla foto), talk (clip di parlato ammessi), rand }
+  function pickNext(lib, st, opts = {}) {
+    const now = Number(opts.now) || 0;
+    const r = opts.rand;
+    const pose = st.pose || HOME;
+    const mood = now < (st.moodUntil || 0) ? st.mood : 'calma';
+    if (st.event && now > (st.eventUntil || 0)) st.event = null;
+    const usable = lib.filter((c) => c.kind !== 'parla' || opts.talk);
+    // 1) evento richiesto dal discorso
+    if (st.event && !opts.home) {
+      const ev = usable.filter((c) => c.kind === 'event' && c.event === st.event);
+      const here = ev.filter((c) => c.from === pose);
+      if (here.length) { st.event = null; return { clip: weighted(here, (c) => c.weight, r), why: 'evento' }; }
+      if (ev.length) {
+        const hop = pathStep(usable, pose, ev[0].from);
+        if (hop) { const c = weighted(usable.filter((x) => x.from === pose && x.to === hop && x.kind !== 'event'), (x) => x.weight, r); if (c) return { clip: c, why: 'verso-evento' }; }
+      } else st.event = null; // nessun clip per questo evento
+    }
+    // 2) sta per parlare: si torna alla posa della foto (labiale)
+    if (opts.home && pose !== HOME) {
+      const hop = pathStep(usable, pose, HOME);
+      if (hop) { const c = weighted(usable.filter((x) => x.from === pose && x.to === hop && x.kind !== 'event'), (x) => x.weight, r); if (c) return { clip: c, why: 'verso-foto' }; }
+    }
+    // 3) base: movimenti dalla posa attuale, pesati per umore, senza ripetere, cambiando posa ogni tanto
+    let cands = usable.filter((c) => c.from === pose && c.kind !== 'event' && (opts.talk ? true : c.kind !== 'parla'));
+    if (opts.home) { const stay = cands.filter((c) => c.to === HOME); if (stay.length) cands = stay; }
+    if (opts.talk) { const t = cands.filter((c) => c.kind === 'parla'); if (t.length) cands = t; }
+    if (!cands.length) {
+      // posa senza uscite (libreria incompleta): qualunque clip che riporti alla foto, o qualunque base
+      cands = usable.filter((c) => c.to === HOME && c.kind !== 'event');
+      if (!cands.length) cands = usable.filter((c) => c.kind !== 'event');
+      if (!cands.length) return { clip: null, why: 'vuota' };
+    }
+    const near = MOOD_NEAR[mood] || [];
+    const pick = weighted(cands, (c) => {
+      let w = c.weight;
+      if (c.mood.includes(mood)) w *= 4; else if (c.mood.some((m) => near.includes(m))) w *= 1.8;
+      if (c.kind === 'move' && c.to !== pose) w *= 1 + Math.min(4, st.dwell); // dopo un po' cambia posa: mani e braccia si spostano
+      const k = st.recent.indexOf(c.id);
+      if (k === 0) w *= cands.length > 1 ? 0.15 : 1; else if (k > 0) w *= 0.35;
+      return w;
+    }, r);
+    return { clip: pick, why: 'base:' + mood };
+  }
+  function commit(st, clip) {
+    if (!clip) return st;
+    st.dwell = clip.to === st.pose ? st.dwell + 1 : 0;
+    st.pose = clip.to;
+    st.recent = [clip.id, ...st.recent.filter((x) => x !== clip.id)].slice(0, 4);
+    return st;
+  }
+
+  // ---------- cache dei clip (disco del telefono) + URL locali pronti ----------
+  const CACHE_NAME = 'nova-motion-v1';
+  const blobs = new Map(); // url -> objectURL (LRU)
+  const BLOB_MAX = 24;
+  async function cached(url) {
+    if (blobs.has(url)) { const u = blobs.get(url); blobs.delete(url); blobs.set(url, u); return u; }
+    let res = null;
+    try { if (root.caches) { const c = await caches.open(CACHE_NAME); res = await c.match(url); if (!res) { const r = await fetch(url, { credentials: 'same-origin' }); if (r.ok) { await c.put(url, r.clone()); res = r; } } } } catch { res = null; }
+    if (!res) return url; // senza Cache API: il browser usa la sua cache HTTP (file immutabili)
+    try {
+      const b = await res.blob();
+      const u = URL.createObjectURL(b.type ? b : new Blob([b], { type: 'video/mp4' }));
+      blobs.set(url, u);
+      while (blobs.size > BLOB_MAX) { const [k, v] = blobs.entries().next().value; blobs.delete(k); try { URL.revokeObjectURL(v); } catch { /* */ } }
+      return u;
+    } catch { return url; }
+  }
+  const prefetchState = { running: false, done: new Set() };
+  async function prefetchAll(lib) {
+    if (!root.caches || prefetchState.running) return;
+    const nav = root.navigator || {};
+    if (nav.connection && nav.connection.saveData) return;
+    prefetchState.running = true;
+    try {
+      const c = await caches.open(CACHE_NAME);
+      const want = new Set(lib.map((x) => x.url));
+      for (const req of await c.keys()) { const p = new URL(req.url).pathname; if (!want.has(p)) await c.delete(req); } // clip tolti dalla libreria
+      // prima le pose vicine alla foto, poi il resto; due alla volta
+      const order = [...lib].sort((a, b) => (a.from === HOME ? 0 : 1) - (b.from === HOME ? 0 : 1));
+      let i = 0;
+      const worker = async () => {
+        while (i < order.length) {
+          const u = order[i++].url;
+          if (prefetchState.done.has(u)) continue;
+          try { if (!(await c.match(u))) { const r = await fetch(u, { credentials: 'same-origin' }); if (r.ok) await c.put(u, r); } prefetchState.done.add(u); } catch { /* rete: riprova la prossima volta */ }
+        }
+      };
+      await Promise.all([worker(), worker()]);
+    } finally { prefetchState.running = false; }
+  }
+
+  // ---------- lettore a due video ----------
+  const XFADE_MS = 320;
+  function createPlayer(a, b, hooks = {}) {
+    const P = { els: [a, b], cur: 0, lib: [], st: createState(), on: false, playing: null, nextClip: null, raf: 0, swapping: false, log: [], hooks };
+    for (const v of P.els) {
+      v.muted = true; v.defaultMuted = true; v.loop = false; v.playsInline = true; v.autoplay = false; v.preload = 'auto';
+      v.setAttribute('playsinline', ''); v.setAttribute('webkit-playsinline', ''); v.setAttribute('muted', ''); v.removeAttribute('loop');
+      v.style.transition = `opacity ${XFADE_MS}ms linear`;
+    }
+    const front = () => P.els[P.cur], back = () => P.els[1 - P.cur];
+    async function load(v, clip) {
+      const src = await cached(clip.url);
+      if (v._clipId === clip.id && v.getAttribute('src')) { try { v.currentTime = 0; } catch { /* */ } return; }
+      v._clipId = clip.id; v._url = clip.url;
+      v.src = src;
+      try { v.load(); } catch { /* */ }
+      await new Promise((ok) => { if (v.readyState >= 2) return ok(); const f = () => { v.removeEventListener('loadeddata', f); v.removeEventListener('error', f); ok(); }; v.addEventListener('loadeddata', f); v.addEventListener('error', f); setTimeout(f, 4000); });
+      try { v.currentTime = 0; } catch { /* */ }
+    }
+    async function prepareNext() {
+      const opts = { now: performance.now(), home: !!(hooks.wantHome && hooks.wantHome()), talk: !!(hooks.talkClips && hooks.talkClips()) };
+      const probe = Object.assign({}, P.st, { recent: P.st.recent.slice() });
+      const { clip, why } = pickNext(P.lib, probe, opts);
+      if (!clip) { P.nextClip = null; return; }
+      P.st.event = probe.event; // un evento usato viene consumato
+      P.nextClip = clip; P.nextWhy = why; P.nextHome = opts.home;
+      await load(back(), clip);
+    }
+    async function swap() {
+      if (P.swapping) return; P.swapping = true;
+      try {
+        const homeNow = !!(hooks.wantHome && hooks.wantHome());
+        if (!P.nextClip || P.nextHome !== homeNow) await prepareNext();
+        const clip = P.nextClip; if (!clip || !P.on) return;
+        const nv = back(), ov = front();
+        if (nv._clipId !== clip.id) await load(nv, clip);
+        nv.hidden = false; nv.style.opacity = '0'; nv.style.zIndex = '4'; ov.style.zIndex = '3';
+        const pr = nv.play(); if (pr && pr.catch) pr.catch(() => {});
+        // dissolvenza dopo il primo fotogramma vero, non prima
+        await new Promise((ok) => { let done = false; const f = () => { if (done) return; done = true; ok(); }; if (nv.requestVideoFrameCallback) nv.requestVideoFrameCallback(f); else nv.addEventListener('playing', f, { once: true }); setTimeout(f, 300); });
+        nv.style.opacity = '1';
+        P.cur = 1 - P.cur; P.playing = clip;
+        commit(P.st, clip);
+        P.log.push({ at: Math.round(performance.now()), id: clip.id, from: clip.from, to: clip.to, why: P.nextWhy });
+        if (P.log.length > 60) P.log.shift();
+        if (hooks.onClip) hooks.onClip(clip, P.nextWhy);
+        P.nextClip = null;
+        setTimeout(() => { if (front() !== ov) { try { ov.pause(); } catch { /* */ } ov.style.opacity = '0'; } }, XFADE_MS + 40);
+        prepareNext().catch(() => {});
+      } finally { P.swapping = false; }
+    }
+    function loop() {
+      P.raf = 0;
+      if (!P.on) return;
+      const v = front();
+      const d = v.duration;
+      if (!P.playing || !isFinite(d) || d <= 0) swap().catch(() => {});
+      else if (v.ended || v.currentTime >= d - (XFADE_MS / 1000) - 0.05) swap().catch(() => {});
+      else if (v.paused && !P.swapping) { const pr = v.play(); if (pr && pr.catch) pr.catch(() => {}); }
+      P.raf = requestAnimationFrame(loop);
+    }
+    P.setLibrary = (lib) => {
+      const key = lib.map((c) => c.id + c.from + c.to + c.kind).join('|');
+      if (key === P._libKey) return; P._libKey = key; P.lib = lib;
+      if (!lib.some((c) => c.from === P.st.pose)) P.st.pose = HOME;
+      P.nextClip = null;
+      prefetchAll(lib).catch(() => {});
+    };
+    P.start = (fromPose) => {
+      if (P.on) return;
+      if (fromPose) P.st.pose = fromPose;
+      P.on = true; P.playing = null; P.nextClip = null; P.cur = 1; // il primo clip va nel primo video
+      for (const v of P.els) v.style.opacity = '0';
+      if (!P.raf) P.raf = requestAnimationFrame(loop);
+    };
+    P.stop = () => {
+      P.on = false; if (P.raf) { cancelAnimationFrame(P.raf); P.raf = 0; }
+      for (const v of P.els) { try { v.pause(); } catch { /* */ } v.style.opacity = '0'; }
+      P.playing = null; P.nextClip = null;
+    };
+    P.mood = (m, ms = 60000) => { const f = MOOD_FAMILY[m] || (TOKEN.test(m || '') ? m : null); if (!f) return; if (f !== P.st.mood && !P.swapping) P.nextClip = null; /* il prossimo clip segue subito il nuovo umore */ P.st.mood = f; P.st.moodUntil = performance.now() + ms; };
+    P.event = (e, ms = 25000) => { if (!e) return; P.st.event = e; P.st.eventUntil = performance.now() + ms; P.nextClip = null; };
+    return P;
+  }
+
+  const api = { HOME, MOOD_FAMILY, moodFromText, eventFromText, libraryOf, poses, pathStep, pickNext, commit, createState, createPlayer, prefetchAll, cached, CACHE_NAME, XFADE_MS };
+  if (typeof module === 'object' && module.exports) module.exports = api;
+  root.MotionGraph = api;
+})(typeof window !== 'undefined' ? window : globalThis);

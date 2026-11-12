@@ -124,66 +124,60 @@
       (window.speechSynthesis && window.speechSynthesis.speaking)
     );
   }
+  // v2d-30: movimento continuo. Libreria di clip collegati per posa (MotionGraph): uno finisce, il successivo
+  // parte dalla stessa posa, senza fermo immagine. Mentre Nova parla resta la foto col labiale (come v2d-29);
+  // quando sta per rispondere i clip la riportano verso la posa della foto, così il passaggio non salta.
+  // Prova facoltativa (spenta): mentre parla, clip «parla» con corpo in movimento al posto della foto col labiale.
+  function talkClipsOn() {
+    try { return !!(App.ls && App.ls.get('motionTalk', '') === '1' && (App.motionPlayer && App.motionPlayer.lib.some((c) => c.kind === 'parla'))); } catch { return false; }
+  }
+  function motionPlayer() {
+    if (App.motionPlayer) return App.motionPlayer;
+    const G = window.MotionGraph;
+    const a = document.getElementById('motion-video');
+    const b = document.getElementById('motion-video-b');
+    if (!G || !a || !b) return null;
+    App.motionPlayer = G.createPlayer(a, b, {
+      wantHome: () => !!((App.chat && App.chat.busy) || talkingNow()),
+      talkClips: () => talkClipsOn(),
+      onClip: () => { const st = document.getElementById('stage'); if (st && motionOn()) st.classList.add('has-motion'); },
+    });
+    return App.motionPlayer;
+  }
   function syncMotion() {
     const v = document.getElementById('motion-video');
     const stage = document.getElementById('stage');
     if (!v || !stage) return;
     const ch = soloChar() || (App.current || null);
-    const url = motionOn() && ch && /^\/api\/motion\/[a-f0-9]{16}\.mp4$/.test(String(ch.motionVideo || '')) ? ch.motionVideo : '';
-    const stop = () => {
-      stage.classList.remove('has-motion');
-      try { v.pause(); } catch { /* già fermo */ }
-      v.hidden = true;
-      v.removeAttribute('src');
-      v.removeAttribute('poster');
-    };
-    if (!url) { stop(); if (v._clipTimer) { clearInterval(v._clipTimer); v._clipTimer = 0; } return; }
+    const G = window.MotionGraph;
+    const lib = motionOn() && ch && G ? G.libraryOf(ch) : [];
+    const P = motionPlayer();
+    const vids = [v, document.getElementById('motion-video-b')].filter(Boolean);
     const poster = (App.faceSrc && App.faceSrc(ch)) || '';
-    if (poster) v.poster = poster;
-    if (v.getAttribute('src') !== url) { v.src = url; v._clip = null; }
-    v.muted = true; v.defaultMuted = true; v.loop = false; v.playsInline = true; v.autoplay = false;
-    v.setAttribute('playsinline', ''); v.setAttribute('webkit-playsinline', ''); v.setAttribute('muted', '');
-    v.removeAttribute('loop');
+    const off = () => {
+      if (!P || !P.on) { stage.classList.remove('has-motion'); return; }
+      P.stop(); // dissolvenza verso la foto, poi il video sparisce
+      clearTimeout(v._offT); v._offT = setTimeout(() => { if (!P.on) stage.classList.remove('has-motion'); }, window.MotionGraph.XFADE_MS + 30);
+    };
+    if (!lib.length || !P) {
+      off();
+      for (const x of vids) { x.hidden = true; x.removeAttribute('src'); x.removeAttribute('poster'); x._clipId = null; }
+      if (v._clipTimer) { clearInterval(v._clipTimer); v._clipTimer = 0; }
+      return;
+    }
+    for (const x of vids) { if (poster && x.getAttribute('poster') !== poster) x.poster = poster; }
+    P.setLibrary(lib);
     if (!v._motionBound) {
       v._motionBound = true;
-      v.addEventListener('playing', () => { if (motionOn() && v._clipOn) stage.classList.add('has-motion'); });
-      v.addEventListener('error', () => { stage.classList.remove('has-motion'); v._clipOn = false; });
-      v.addEventListener('ended', () => { if (v._clip && v._clip.on) v._clip.until = performance.now() - 1; });
+      for (const x of vids) x.addEventListener('error', () => { if (P.playing && x === P.els[P.cur]) { P.playing = null; } });
     }
     const tick = () => {
-      if (!motionOn()) { stage.classList.remove('has-motion'); v._clipOn = false; try { v.pause(); } catch { /* fermo */ } return; }
-      const Lib = window.MotionLib;
-      if (!Lib || !Lib.stepClipPlay) return;
-      if (!v._clip) v._clip = Lib.createClipPlay();
-      // v2d-29: il video idle è muto e a bocca chiusa e copre il canvas del labiale.
-      // Mentre Nova parla resta la foto con la bocca che si muove; il video riparte solo dopo una pausa.
+      if (!motionOn()) { off(); return; }
       const nowT = performance.now();
-      if (talkingNow()) {
-        v._quietAt = nowT;
-        if (v._clipOn || v._clip.on) {
-          v._clipOn = false; v._clip.on = false; v._clip.next = nowT + CLIP_AFTER_TALK_MS;
-          stage.classList.remove('has-motion');
-          try { v.pause(); } catch { /* già fermo */ }
-        }
-        return;
-      }
+      if (talkingNow()) { v._quietAt = nowT; if (talkClipsOn()) { if (!P.on) P.start(window.MotionGraph.HOME); return; } if (P.on) off(); return; }
       if (v._quietAt && nowT - v._quietAt < CLIP_AFTER_TALK_MS) return;
-      const durMs = (v.duration && isFinite(v.duration)) ? v.duration * 1000 : 0;
-      const step = Lib.stepClipPlay(v._clip, performance.now(), durMs);
-      if (!step.play) {
-        if (v._clipOn) { v._clipOn = false; stage.classList.remove('has-motion'); try { v.pause(); } catch { /* già fermo */ } }
-        return;
-      }
-      if (step.seek == null) return;
-      const start = () => {
-        v._clipOn = true; v.hidden = false;
-        const p = v.play(); if (p && p.catch) p.catch(() => {});
-      };
-      if (Math.abs((v.currentTime || 0) - step.seek / 1000) > 0.25) {
-        const on = () => { v.removeEventListener('seeked', on); start(); };
-        v.addEventListener('seeked', on);
-        try { v.currentTime = step.seek / 1000; } catch { start(); }
-      } else start();
+      // la foto (labiale) è nella posa di casa: si riparte da lì
+      if (!P.on) P.start(window.MotionGraph.HOME);
     };
     tick();
     if (!v._clipTimer) v._clipTimer = setInterval(tick, 200);
