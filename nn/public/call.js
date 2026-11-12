@@ -71,7 +71,18 @@
     for (const x of s.sources) { try { x.onended = null; x.stop(); } catch {} }
     s.sources = []; s.playT = 0;
   }
-  function addTurn(s, role, text) { text = String(text || '').replace(/\s+/g, ' ').trim(); if (text) s.turns.push({ role, text }); }
+  function report(s, kind, text) {
+    if (!s || !s.callId || !window.NN) return;
+    const body = { callId: s.callId, kind, text: String(text || '').replace(/\s+/g, ' ').trim().slice(0, 1500), at: Date.now() };
+    if (!body.text) return;
+    try { window.NN.api('/api/call/log', { method: 'POST', body }).catch(() => {}); } catch {}
+  }
+  function addTurn(s, role, text) {
+    text = String(text || '').replace(/\s+/g, ' ').trim();
+    if (!text) return;
+    s.turns.push({ role, text });
+    report(s, role === 'assistant' ? 'idea' : 'user', text);
+  }
 
   // dopo una riconnessione Idea riparte sapendo di cosa stavate parlando
   function sessionFor(s) {
@@ -147,7 +158,7 @@
     caption('Linea disturbata, riconnetto…'); ui();
     for (let i = 0; i < 4 && !s.closed; i++) {
       try {
-        s.reconnects = (s.reconnects || 0) + 1; note('reconnect ' + s.reconnects);
+        s.reconnects = (s.reconnects || 0) + 1; note('reconnect ' + s.reconnects); report(s, 'event', 'riconnessione');
         s.cfg = await window.NN.api('/api/call/session', { method: 'POST', body: {} });
         if (s.closed) break;
         await connect(s);
@@ -155,7 +166,7 @@
       } catch (e) { stats.lastError = e.message; await new Promise((r) => setTimeout(r, 1000 * (i + 1))); }
     }
     s.reconnecting = false;
-    if (!s.closed) hangup('La chiamata si è interrotta: la linea non è tornata.');
+    if (!s.closed) { report(s, 'event', 'riconnessione non riuscita'); hangup('La chiamata si è interrotta: la linea non è tornata.'); }
   }
   // controllo ogni secondo: audio dell'iPhone sospeso, microfono spento dal sistema, Idea che non risponde
   async function watchdog(s) {
@@ -166,7 +177,7 @@
     if (tr && tr.readyState === 'ended' && !s.micFixing) { // iPhone: chiamata/Siri/blocco schermo spengono il microfono
       s.micFixing = true; note('mic ended');
       try { try { s.node && s.node.disconnect(); s.src && s.src.disconnect(); } catch {}
-        s.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } }); await startMic(s); }
+        s.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } }); await startMic(s); report(s, 'event', 'microfono riattivato'); }
       catch (e) { stats.lastError = 'mic: ' + e.message; }
       s.micFixing = false;
     }
@@ -174,7 +185,7 @@
     const now = Date.now();
     // hai finito di parlare ma non arriva risposta: la chiediamo noi
     if (s.waitSince && !s.responseActive && !playing(s) && !s.userSpeaking && now - s.waitSince > 5000) {
-      s.waitSince = 0; note('nudge'); try { s.ws.send(JSON.stringify({ type: 'response.create' })); } catch {}
+      s.waitSince = 0; note('nudge'); report(s, 'event', 'risposta sollecitata'); try { s.ws.send(JSON.stringify({ type: 'response.create' })); } catch {}
     }
     // risposta bloccata a metà (nessun audio da 15 s): la sblocchiamo
     if (s.responseActive && !playing(s) && now - (s.respAt || now) > 15000) { note('stuck response'); s.responseActive = false; s.resp = null; }
@@ -197,7 +208,7 @@
     if (!supported()) return NN.status('Chiamata non supportata da questo browser.');
     // tutto nel tocco: contesto audio + sblocco + microfono (permesso chiesto qui)
     const c = new AC(); unlock(c); audioSession(true);
-    const s = S = { c, early: [], sources: [], turns: [], playT: 0, ready: false, muted: false, closed: false, t0: 0 };
+    const s = S = { c, early: [], sources: [], turns: [], playT: 0, ready: false, muted: false, closed: false, t0: 0, callId: (crypto.randomUUID ? crypto.randomUUID() : ('c' + Date.now() + Math.random().toString(16).slice(2))) };
     $('#call').hidden = false; caption(''); ui();
     s.timer = setInterval(ui, 500);
     try {
@@ -209,7 +220,7 @@
       await startMic(s);
       await connect(s);
       if (s.closed) return;
-      s.t0 = Date.now(); s.lastEv = Date.now(); ui();
+      s.t0 = Date.now(); s.lastEv = Date.now(); ui(); report(s, 'event', 'chiamata iniziata');
       s.dog = setInterval(() => watchdog(s), 1000);
       c.onstatechange = () => { if (!s.closed && c.state !== 'running') c.resume().catch(() => {}); };
       if (s.cfg.greet) s.ws.send(JSON.stringify({ type: 'conversation.item.create', item: { type: 'force_message', role: 'assistant', interruptible: true, content: [{ type: 'output_text', text: s.cfg.greet }] } }));
@@ -230,8 +241,9 @@
     stats.lastTurns = s.turns.slice();
     if (msg) window.NN.status(msg);
     if (s.t0) {
+      report(s, 'event', 'chiamata terminata, durata ' + (Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0')));
       window.NN.status('Salvo la chiamata…');
-      try { await window.NN.api('/api/call/end', { method: 'POST', body: { turns: s.turns, sec } }); window.NN.status(''); window.NN.poll(); stats.saved = true; }
+      try { await window.NN.api('/api/call/end', { method: 'POST', body: { turns: s.turns, sec, callId: s.callId } }); window.NN.status(''); window.NN.poll(); stats.saved = true; }
       catch (e) { window.NN.status('Chiamata non salvata: ' + e.message); }
     }
   }

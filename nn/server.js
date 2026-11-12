@@ -323,6 +323,31 @@ app.get('/api/media/:id', auth, (req, res) => {
   res.setHeader('Cache-Control', 'private, max-age=86400');
   res.type(type).sendFile(p, { dotfiles: 'deny', acceptRanges: true });
 });
+// ---------- Resoconto in diretta delle chiamate di Idea, per Nova (solo testo, mai audio o token) ----------
+const REPORT_FILE = path.join(DATA_DIR, 'idea-report.jsonl');
+const REPORT_MAX = 5000;
+let reportWrites = 0;
+function appendReport(obj) {
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.appendFileSync(REPORT_FILE, JSON.stringify(obj) + '\n');
+    if (++reportWrites % 20 === 0) trimReport();
+  } catch (e) { console.error('Resoconto non salvato:', e.code || 'errore'); }
+}
+function trimReport() {
+  try {
+    const lines = fs.readFileSync(REPORT_FILE, 'utf8').split('\n').filter(Boolean);
+    if (lines.length <= REPORT_MAX) return;
+    fs.writeFileSync(REPORT_FILE + '.tmp', lines.slice(-REPORT_MAX).join('\n') + '\n');
+    fs.renameSync(REPORT_FILE + '.tmp', REPORT_FILE);
+  } catch (e) { console.error('Resoconto non ruotato:', e.code || 'errore'); }
+}
+function readReport(since, limit) {
+  let lines = [];
+  try { lines = fs.readFileSync(REPORT_FILE, 'utf8').split('\n').filter(Boolean).map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean); } catch {}
+  return lines.filter((l) => (Number(l.at) || 0) >= since).slice(-limit);
+}
+
 // ---------- Chiamata vocale in tempo reale con Idea (xAI Voice Agent API) ----------
 // Il server crea solo un token effimero (5 min) con la propria chiave: la chiave non arriva mai al telefono.
 // Audio e risposte passano direttamente tra telefono e xAI; a fine chiamata il telefono manda la trascrizione e il server
@@ -364,7 +389,17 @@ app.post('/api/call/session', auth, express.json({ limit: '2kb' }), async (req, 
       } });
   } catch (e) { console.error('Errore chiamata:', e.message); res.status(502).json({ error: 'Servizio voce non raggiungibile' }); }
 });
-// fine chiamata: { turns: [{ role: 'user'|'assistant', text }], sec } -> messaggio in chat con riassunto + idee nel 💡
+// resoconto in diretta: { callId, kind: 'user'|'idea'|'event', text, at }
+app.post('/api/call/log', auth, limit(120, 60000), express.json({ limit: '8kb' }), (req, res) => {
+  const kind = req.body && req.body.kind;
+  if (kind !== 'user' && kind !== 'idea' && kind !== 'event') return res.status(400).json({ error: 'Tipo non valido' });
+  const text = String((req.body && req.body.text) || '').replace(/\s+/g, ' ').trim().slice(0, 1500);
+  if (!text) return res.status(400).json({ error: 'Testo vuoto' });
+  const callId = String((req.body && req.body.callId) || '').slice(0, 80);
+  appendReport({ at: Date.now(), clientAt: Number(req.body && req.body.at) || undefined, callId, kind, text, role: req.role, who: ROLES[req.role] || req.role });
+  res.json({ ok: true });
+});
+// fine chiamata: { turns: [{ role: 'user'|'assistant', text }], sec, callId } -> messaggio in chat con riassunto + idee nel 💡
 app.post('/api/call/end', auth, limit(10, 60000), express.json({ limit: '200kb' }), async (req, res) => {
   const turns = (Array.isArray(req.body?.turns) ? req.body.turns : []).slice(-200)
     .map((t) => ({ role: t && t.role === 'assistant' ? 'assistant' : 'user', text: String((t && t.text) || '').replace(/\s+/g, ' ').trim().slice(0, 1500) })).filter((t) => t.text);
@@ -386,7 +421,17 @@ app.post('/api/call/end', auth, limit(10, 60000), express.json({ limit: '200kb' 
   const content = turns.length ? (summary || `Chiamata con ${who}.`) : `Chiamata senza conversazione.`;
   const msg = addMsg({ role: 'assistant', author: 'nn', content, call: { with: req.role, sec, dur, transcript: transcript.slice(0, 8000) },
     idea: n ? ideas.map((i) => i.titolo).filter(Boolean).join(', ') : undefined });
+  const titles = ideas.map((i) => i.titolo).filter(Boolean);
+  appendReport({ at: Date.now(), callId: String((req.body && req.body.callId) || '').slice(0, 80), kind: 'summary', role: req.role, who,
+    text: (summary || content) + (n ? ' Idee: ' + titles.join(', ') : ''), summary: summary || content, ideas: titles, sec, dur });
   res.json({ message: msg, ideas: n });
+});
+app.get('/api/admin/report', auth, (req, res) => {
+  if (req.role !== 'nicola') return res.status(403).json({ error: 'Non autorizzato' });
+  res.setHeader('Cache-Control', 'no-store');
+  const since = Number(req.query.since) || 0;
+  const limitN = Math.min(1000, Math.max(1, Number(req.query.limit) || 200));
+  res.json({ lines: readReport(since, limitN) });
 });
 app.get('/api/stream', auth, (req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
