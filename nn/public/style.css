@@ -133,3 +133,12 @@ html, body { margin: 0; height: 100%; background: #0b141a; color: #e9edef; font:
 #user-once .once-row { display: flex; align-items: center; gap: 8px; }
 #user-once .once-row .pass-wrap { flex: 1; min-width: 0; width: auto; }
 #user-once-copy { flex: 0 0 auto; }
+
+#attach { background: none; border: 0; }
+#attach-menu { position: absolute; left: 8px; bottom: calc(100% + 6px); background: #1f2c33; color: #e9edef; border-radius: 14px; padding: 6px; min-width: 180px; box-shadow: 0 8px 24px rgba(0,0,0,.45); z-index: 5; }
+#attach-menu button { display: flex; align-items: center; width: 100%; background: none; border: 0; color: inherit; font: inherit; font-size: 15px; text-align: left; padding: 11px 12px; border-radius: 10px; }
+#attach-menu button:active { background: rgba(255,255,255,.08); }
+.msg a.doc { display: flex; align-items: center; gap: 10px; text-decoration: none; color: inherit; background: rgba(0,0,0,.18); border-radius: 8px; padding: 8px 10px; margin: 2px 0 6px; max-width: 260px; }
+.msg a.doc .doc-ico { width: 36px; height: 36px; border-radius: 8px; background: #53bdeb; color: #0b141a; display: grid; place-items: center; font-size: 18px; flex: 0 0 auto; }
+.msg a.doc b { display: block; font-size: 14px; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 180px; }
+.msg a.doc small { color: rgba(233,237,239,.7); font-size: 12px; }

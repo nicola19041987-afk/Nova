@@ -4,7 +4,19 @@
   "private": true,
   "description": "N&N: chat stile WhatsApp per raccogliere idee (Collaborazione NN)",
   "main": "server.js",
-  "scripts": { "start": "node server.js", "gen-tokens": "node scripts/gen-tokens.js" },
-  "engines": { "node": ">=18" },
-  "dependencies": { "express": "^4.21.0", "pg": "^8.13.0" }
+  "scripts": {
+    "start": "node server.js",
+    "gen-tokens": "node scripts/gen-tokens.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "jszip": "^3.10.1",
+    "mammoth": "^1.8.0",
+    "pdfjs-dist": "^4.10.38",
+    "pg": "^8.13.0",
+    "xlsx": "^0.18.5"
+  }
 }

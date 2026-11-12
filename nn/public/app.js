@@ -42,6 +42,12 @@
   let NAMES = { nico: 'Nicola', nicola: 'Nico', nn: 'Idea' };
   function setNames(map) { if (map && typeof map === 'object') NAMES = Object.assign({ nico: 'Nicola', nicola: 'Nico', nn: 'Idea' }, map); }
   const mediaUrl = (id) => '/api/media/' + encodeURIComponent(id) + '?k=' + encodeURIComponent(key()) + '&s=' + encodeURIComponent(sess());
+  function fileLabel(m) {
+    const ext = String((m && m.name) || '').split('.').pop().toUpperCase() || 'FILE';
+    const n = (m && m.size) || 0;
+    const size = n < 1024 ? n + ' B' : n < 1048576 ? Math.round(n / 1024) + ' KB' : (n / 1048576).toFixed(1) + ' MB';
+    return ext + ' · ' + size;
+  }
   let lastDay = '';
   function add(m) {
     if (seen.has(m.id)) return; seen.add(m.id); last = Math.max(last, m.id);
@@ -62,6 +68,7 @@
     el.innerHTML = (mine ? '' : `<span class="au ${esc(m.author)}">${esc(NAMES[m.author] || m.author)}</span>`)
       + (m.media && m.media.kind === 'image' ? `<img class="ph" src="${esc(mediaUrl(m.media.id))}" alt="Foto" loading="lazy">` : '')
       + (m.media && m.media.kind === 'video' ? `<video class="vd" src="${esc(mediaUrl(m.media.id))}" controls playsinline preload="metadata"></video>` : '')
+      + (m.media && m.media.kind === 'file' ? `<a class="doc" href="${esc(mediaUrl(m.media.id))}" download="${esc(m.media.name || 'documento')}" target="_blank" rel="noopener"><span class="doc-ico">📄</span><span><b>${esc(m.media.name || 'Documento')}</b><small>${esc(fileLabel(m.media))}</small></span></a>` : '')
       + (m.voice ? `<span class="vtag">🎤 Vocale · ${m.voice.sec || 1}s</span>` + (m.voice.audio ? `<audio class="au-pl" src="${esc(mediaUrl(m.voice.audio))}" controls preload="none"></audio>` : '') : '')
       + (m.call ? `<span class="ctag">📞 Chiamata vocale con ${esc(NAMES[m.call.with] || '')} · ${esc(m.call.dur || '')}</span>` : '')
       + (m.content ? `<span class="tx">${m.voice ? '<i>Trascrizione:</i> ' : ''}${esc(m.content)}</span>` : '')
@@ -94,23 +101,46 @@
 
   function typing(on) { $('#typing').hidden = !on; const s = $('#sub'); s.textContent = on ? 'Idea sta scrivendo…' : 'online'; s.classList.toggle('typing', !!on); }
 
-  // --- foto e video: "+" apre fotocamera o galleria del telefono
+  // --- "+": menu Fotocamera / Video / Galleria / Allega (documenti)
   const fileIn = $('#file');
+  const attachMenu = $('#attach-menu');
+  function closeAttach() { attachMenu.hidden = true; $('#attach').setAttribute('aria-expanded', 'false'); }
+  function openAttach() { attachMenu.hidden = false; $('#attach').setAttribute('aria-expanded', 'true'); }
   $('#attach').addEventListener('pointerdown', (e) => { if (document.activeElement === input) e.preventDefault(); });
-  fileIn.addEventListener('change', async () => {
-    const f = fileIn.files && fileIn.files[0]; fileIn.value = ''; if (!f) return;
+  $('#attach').addEventListener('click', (e) => { e.stopPropagation(); if (attachMenu.hidden) openAttach(); else closeAttach(); });
+  document.addEventListener('click', (e) => { if (!attachMenu.hidden && !attachMenu.contains(e.target) && e.target !== $('#attach') && !$('#attach').contains(e.target)) closeAttach(); });
+  attachMenu.addEventListener('click', (e) => {
+    const b = e.target.closest('button'); if (!b) return;
+    closeAttach();
+    const map = { camera: '#file-camera', video: '#file-video', gallery: '#file', file: '#file-doc' };
+    const el = $(map[b.dataset.kind] || '#file'); if (el) el.click();
+  });
+  async function sendMedia(f, asDoc) {
     if (f.size > 50 * 1024 * 1024) return status('File troppo grande (max 50 MB).');
     const isVideo = /^video\//.test(f.type);
     const caption = input.value.trim();
-    status(isVideo ? 'Invio il video…' : 'Invio la foto…');
+    status(asDoc ? 'Invio il documento…' : isVideo ? 'Invio il video…' : 'Invio la foto…');
     try {
+      if (asDoc) {
+        const ext = String(f.name || '').split('.').pop().toLowerCase();
+        const guess = { pdf:'application/pdf', txt:'text/plain', md:'text/markdown', csv:'text/csv', json:'application/json', docx:'application/vnd.openxmlformats-officedocument.wordprocessingml.document', xlsx:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', xls:'application/vnd.ms-excel', pptx:'application/vnd.openxmlformats-officedocument.presentationml.presentation', odt:'application/vnd.oasis.opendocument.text', ods:'application/vnd.oasis.opendocument.spreadsheet', rtf:'application/rtf' }[ext];
+        const type = f.type || guess || 'application/octet-stream';
+        const j = await api('/api/file', { method: 'POST', body: f, headers: { 'Content-Type': type, 'X-NN-Caption': encodeURIComponent(caption), 'X-NN-Filename': encodeURIComponent(f.name || 'documento') } });
+        if (caption) { input.value = ''; paint(); }
+        status(''); add(j.message);
+        return;
+      }
       let body = f, type = f.type || (isVideo ? 'video/mp4' : 'image/jpeg');
       if (!isVideo) { const small = await shrink(f).catch(() => null); if (small) { body = small; type = 'image/jpeg'; } }
       const j = await api('/api/media', { method: 'POST', body, headers: { 'Content-Type': type, 'X-NN-Caption': encodeURIComponent(caption) } });
       if (caption) { input.value = ''; paint(); }
       status(''); add(j.message);
     } catch (err) { status(err.message || 'Invio non riuscito.'); }
-  });
+  }
+  fileIn.addEventListener('change', async () => { const f = fileIn.files && fileIn.files[0]; fileIn.value = ''; if (f) sendMedia(f, false); });
+  $('#file-camera').addEventListener('change', async () => { const el = $('#file-camera'); const f = el.files && el.files[0]; el.value = ''; if (f) sendMedia(f, false); });
+  $('#file-video').addEventListener('change', async () => { const el = $('#file-video'); const f = el.files && el.files[0]; el.value = ''; if (f) sendMedia(f, false); });
+  $('#file-doc').addEventListener('change', async () => { const el = $('#file-doc'); const f = el.files && el.files[0]; el.value = ''; if (f) sendMedia(f, true); });
   // riduce le foto (max 1600 px, JPEG): più veloci da inviare e leggibili da Idea
   async function shrink(file) {
     const url = URL.createObjectURL(file);

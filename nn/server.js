@@ -6,6 +6,7 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const extract = require('./extract');
 
 const PORT = Number(process.env.PORT) || 3000;
 const AI_BASE_URL = (process.env.AI_BASE_URL || 'https://api.x.ai/v1').replace(/\/+$/, '');
@@ -144,7 +145,7 @@ async function load() {
     if (fs.existsSync(f)) db = JSON.parse(fs.readFileSync(f, 'utf8'));
     console.log('Archivio: file JSON');
   }
-  db.messages = db.messages || []; db.ideas = db.ideas || []; db.seq = db.seq || 0;
+  db.messages = db.messages || []; db.ideas = db.ideas || []; db.docs = db.docs || []; db.seq = db.seq || 0;
   if (!db.messages.length) {
     db.messages.push({ id: ++db.seq, at: new Date().toISOString(), role: 'assistant', author: 'nn', content: WELCOME });
     await save();
@@ -193,6 +194,33 @@ function ideasContext() {
   if (!db.ideas.length) return 'Nessuna idea salvata finora.';
   return 'Idee già salvate:\n' + db.ideas.slice(-40).map((i) => `- ${i.titolo} (${i.stato}, ${i.data}): ${i.descrizione}`).join('\n');
 }
+function docTextPath(id) {
+  if (!/^[a-f0-9]{24}\.[a-z0-9]{2,5}$/.test(String(id || ''))) return null;
+  return path.join(MEDIA_DIR, id + '.txt');
+}
+function readDocText(id) {
+  try { const p = docTextPath(id); return p && fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : ''; } catch { return ''; }
+}
+function docsContext(withFull) {
+  if (!db.docs || !db.docs.length) return '';
+  const list = db.docs.slice(-20).map((d) => `- ${d.title}${d.summary ? ': ' + d.summary : ''}`).join('\n');
+  let s = 'Documenti già condivisi in chat:\n' + list;
+  if (withFull) {
+    for (const d of db.docs.slice(-2)) {
+      const full = readDocText(d.id).slice(0, 12000);
+      if (full) s += '\n\nTesto di "' + d.title + '":\n' + full;
+    }
+  }
+  return s;
+}
+function rememberDoc(media, summary, autore) {
+  if (!media || !media.id) return;
+  db.docs = db.docs || [];
+  const rec = { id: media.id, title: media.name || 'documento', type: media.type || '', size: media.size || 0, summary: String(summary || '').replace(/\s+/g, ' ').trim().slice(0, 400), at: new Date().toISOString(), autore: autore || '' };
+  const i = db.docs.findIndex((d) => d.id === media.id);
+  if (i >= 0) db.docs[i] = Object.assign(db.docs[i], rec); else db.docs.push(rec);
+  save();
+}
 async function callModel(model, messages) {
   const r = await fetch(`${AI_BASE_URL}/chat/completions`, {
     method: 'POST', signal: AbortSignal.timeout(60000),
@@ -229,14 +257,18 @@ function reply() {
     const hist = recent.map((m) => {
       if (m.role === 'assistant') return { role: 'assistant', content: m.content };
       const who = ROLES[m.author] || m.author;
-      const kind = m.voice ? ' (vocale)' : m.media ? (m.media.kind === 'video' ? ' (video)' : ' (foto)') : '';
-      const text = `${who}${kind}: ${m.content || (m.media ? (m.media.kind === 'video' ? '[ha inviato un video]' : '[ha inviato una foto]') : '')}`;
+      const kind = m.voice ? ' (vocale)' : m.media ? (m.media.kind === 'video' ? ' (video)' : m.media.kind === 'file' ? ' (documento)' : ' (foto)') : '';
+      let text = `${who}${kind}: ${m.content || (m.media ? (m.media.kind === 'video' ? '[ha inviato un video]' : m.media.kind === 'file' ? '[ha inviato un documento: ' + (m.media.name || '') + ']' : '[ha inviato una foto]') : '')}`;
+      if (m.media && m.media.kind === 'file') {
+        const body = readDocText(m.media.id);
+        text += body ? '\nTesto estratto del documento:\n' + body.slice(0, 20000) : (m.media.scanned ? '\n(PDF scannerizzato: nessun testo estraibile.)' : '\n(Nessun testo estraibile da questo file.)');
+      }
       const img = withImg.has(m.id) ? imageDataUrl(m.media) : '';
       if (!img) return { role: 'user', content: text };
       vision = true;
       return { role: 'user', content: [{ type: 'text', text: text + (m.media.kind === 'video' ? ' (ti allego il primo fotogramma del video)' : '') }, { type: 'image_url', image_url: { url: img, detail: 'high' } }] };
     });
-    const messages = [{ role: 'system', content: SYSTEM + '\n\n' + ideasContext() + '\nOggi è ' + new Date().toLocaleDateString('it-IT', { timeZone: 'Europe/Rome' }) + '.' }, ...hist];
+    const messages = [{ role: 'system', content: SYSTEM + '\n\n' + ideasContext() + (docsContext(true) ? '\n\n' + docsContext(true) : '') + '\nOggi è ' + new Date().toLocaleDateString('it-IT', { timeZone: 'Europe/Rome' }) + '.' }, ...hist];
     broadcast('typing', { on: true });
     let text;
     try { text = await callModel(vision ? VISION_MODEL : CHAT_MODEL, messages); }
@@ -251,6 +283,11 @@ function reply() {
     const lastUser = [...db.messages].reverse().find((m) => m.role === 'user');
     storeIdeas(ideas, lastUser ? (ROLES[lastUser.author] || lastUser.author) : '');
     addMsg({ role: 'assistant', author: 'nn', content: text || '👍', idea: ideas.length ? ideas.map((i) => i.titolo).join(', ') : undefined });
+    if (lastUser && lastUser.media && lastUser.media.kind === 'file') {
+      const sum = (text || '').replace(/\s+/g, ' ').trim().slice(0, 400);
+      rememberDoc(lastUser.media, sum, ROLES[lastUser.author] || lastUser.author);
+      appendReport({ at: Date.now(), kind: 'file', role: lastUser.author, who: ROLES[lastUser.author] || lastUser.author, name: lastUser.media.name, type: lastUser.media.type, size: lastUser.media.size, text: sum, summary: sum });
+    }
   }).catch((e) => console.error('Risposta fallita:', e.message));
   return busy;
 }
@@ -258,7 +295,16 @@ function reply() {
 // ---------- Media (foto, video, vocali) sul disco dati ----------
 const MEDIA_TYPES = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif', 'image/heic': 'heic', 'image/heif': 'heif',
   'video/mp4': 'mp4', 'video/quicktime': 'mov', 'video/webm': 'webm', 'video/3gpp': '3gp',
-  'audio/wav': 'wav', 'audio/webm': 'webm', 'audio/mp4': 'm4a', 'audio/mpeg': 'mp3', 'audio/ogg': 'ogg' };
+  'audio/wav': 'wav', 'audio/webm': 'webm', 'audio/mp4': 'm4a', 'audio/mpeg': 'mp3', 'audio/ogg': 'ogg',
+  'application/pdf': 'pdf', 'text/plain': 'txt', 'text/markdown': 'md', 'text/csv': 'csv', 'application/json': 'json',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+  'application/vnd.ms-excel': 'xls',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
+  'application/vnd.oasis.opendocument.text': 'odt',
+  'application/vnd.oasis.opendocument.spreadsheet': 'ods',
+  'application/rtf': 'rtf', 'text/rtf': 'rtf',
+  'application/msword': 'doc', 'application/vnd.ms-powerpoint': 'ppt' };
 function saveMedia(buf, type) {
   const ext = MEDIA_TYPES[type]; if (!ext) return null;
   fs.mkdirSync(MEDIA_DIR, { recursive: true });
@@ -445,6 +491,38 @@ app.post('/api/media', auth, limit(20, 60000), express.raw({ type: ['image/*', '
   } catch (e) { console.error('Media non salvato:', e.code || e.message); res.status(500).json({ error: 'Salvataggio non riuscito' }); }
 });
 app.use('/api/media', (err, req, res, next) => { if (err && err.type === 'entity.too.large') return res.status(413).json({ error: 'File troppo grande (max 50 MB)' }); next(err); });
+// Documenti: stesso archivio media, testo estratto (mai eseguiti). Altri tipi: allegato senza lettura.
+const FILE_MIMES = new Set(['application/pdf','text/plain','text/markdown','text/csv','application/json',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'application/vnd.oasis.opendocument.text','application/vnd.oasis.opendocument.spreadsheet',
+  'application/rtf','text/rtf','application/msword','application/vnd.ms-powerpoint','application/octet-stream']);
+app.post('/api/file', auth, limit(20, 60000), express.raw({ type: () => true, limit: MAX_MEDIA }), async (req, res) => {
+  const buf = req.body;
+  if (!Buffer.isBuffer(buf) || buf.length < 8) return res.status(400).json({ error: 'File vuoto' });
+  let name = ''; try { name = decodeURIComponent(req.get('X-NN-Filename') || '').trim(); } catch {}
+  name = extract.safeName(name || 'documento');
+  let type = (req.get('Content-Type') || '').split(';')[0].trim().toLowerCase();
+  const ext = extract.extOf(name, type);
+  if (ext && extract.DOC_EXT[ext]) type = extract.DOC_EXT[ext];
+  if (!MEDIA_TYPES[type]) return res.status(415).json({ error: 'Formato non supportato' });
+  let caption = ''; try { caption = decodeURIComponent(req.get('X-NN-Caption') || '').trim().slice(0, 1000); } catch {}
+  try {
+    const id = saveMedia(buf, type);
+    const got = await extract.extract(buf, name, type);
+    const tp = docTextPath(id);
+    if (tp && got.text) { fs.writeFileSync(tp, got.text, { mode: 0o600 }); }
+    const media = { id, kind: 'file', type, size: buf.length, name, chars: (got.text || '').length, scanned: !!got.scanned, readable: !!got.readable };
+    if (!got.readable) media.note = got.scanned ? 'PDF senza testo estraibile (probabilmente scannerizzato).' : 'Nessun testo estraibile da questo file.';
+    const content = caption || (got.readable ? ('Documento: ' + name) : ('Documento: ' + name + (media.note ? ' — ' + media.note : '')));
+    const msg = addMsg({ role: 'user', author: req.role, content, media });
+    rememberDoc(media, got.readable ? '' : (media.note || ''), ROLES[req.role] || req.role);
+    reply();
+    res.json({ message: msg });
+  } catch (e) { console.error('Documento non salvato:', e.code || e.message); res.status(500).json({ error: 'Salvataggio non riuscito' }); }
+});
+app.use('/api/file', (err, req, res, next) => { if (err && err.type === 'entity.too.large') return res.status(413).json({ error: 'File troppo grande (max 50 MB)' }); next(err); });
 // Lettura media: solo con token valido (anche via ?k= per <img>/<video>/<audio>)
 app.get('/api/media/:id', auth, (req, res) => {
   const p = mediaPath(req.params.id);
@@ -492,6 +570,7 @@ function callInstructions(role) {
   const recent = db.messages.slice(-16).map((m) => `${m.role === 'assistant' ? BOT_NAME : (ROLES[m.author] || m.author)}: ${String(m.content || (m.media ? '[foto/video]' : '')).replace(/\s+/g, ' ').slice(0, 300)}`);
   return [SYSTEM.replace(/Quando nel messaggio c'è un'idea nuova[\s\S]*?Non mostrare mai questa riga come testo normale[^\n]*\n?/, '').replace(' Rispondi sempre e solo per iscritto.', '').replace(/Rispondi SEMPRE in italiano, breve \(1-4 frasi\)[^\n]*/, 'Parla SEMPRE in italiano.'),
     ideasContext(),
+    docsContext(false),
     recent.length && `ULTIMI MESSAGGI DELLA CHAT (contesto):\n${recent.join('\n')}`,
     `ORA SEI IN CHIAMATA VOCALE con ${ROLES[role]} (${FULL[role]}): lo senti dal vivo. Chiamalo per nome (${ROLES[role]}).`,
     'In chiamata: parla in italiano, frasi brevi e naturali (1-3 frasi), come al telefono con un amico. Niente elenchi, niente emoji, niente simboli o righe tecniche. Le idee che emergono le salverai tu a fine chiamata: non serve dettarle.',
