@@ -40,8 +40,8 @@
   const bottom = () => { box.scrollTop = box.scrollHeight; };
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   // ruoli interni -> nomi: 'nico' = Luisa (con password), 'nicola' = Nico Franchino (proprietario)
-  let NAMES = { nico: 'Luisa', nicola: 'Nico', nn: 'Idea' };
-  function setNames(map) { if (map && typeof map === 'object') NAMES = Object.assign({ nico: 'Luisa', nicola: 'Nico', nn: 'Idea' }, map); }
+  let NAMES = { nico: 'Luisa', nicola: 'Nico', nn: 'Ventuno' };
+  function setNames(map) { if (map && typeof map === 'object') NAMES = Object.assign({ nico: 'Luisa', nicola: 'Nico', nn: 'Ventuno' }, map); }
   const mediaUrl = (id) => '/api/media/' + encodeURIComponent(id) + '?k=' + encodeURIComponent(key()) + '&s=' + encodeURIComponent(sess());
   function fileLabel(m) {
     const ext = String((m && m.name) || '').split('.').pop().toUpperCase() || 'FILE';
@@ -54,7 +54,7 @@
   function draft(t) {
     if (!t) { if (draftEl) { draftEl.remove(); draftEl = null; } return; }
     const stick = nearBottom();
-    if (!draftEl) { draftEl = document.createElement('div'); draftEl.className = 'msg other draft'; draftEl.innerHTML = `<span class="au nn">${esc(NAMES.nn || 'Idea')}</span><span class="tx"></span>`; box.appendChild(draftEl); }
+    if (!draftEl) { draftEl = document.createElement('div'); draftEl.className = 'msg other draft'; draftEl.innerHTML = `<span class="au nn">${esc(NAMES.nn || 'Ventuno')}</span><span class="tx"></span>`; box.appendChild(draftEl); }
     draftEl.querySelector('.tx').textContent = t;
     if (stick) bottom();
   }
@@ -77,7 +77,7 @@
     const missed = isCall && m.call.kind === 'missed';
     el.className = 'msg ' + (isCall ? 'call-log' : (mine ? 'mine' : 'other'));
     const time = d.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
-    const callLabel = missed ? 'Chiamata persa da Idea' : (isCall ? ('Chiamata con Idea · ' + (m.call.dur || '')) : '');
+    const callLabel = missed ? 'Chiamata persa da Ventuno' : (isCall ? ('Chiamata con Ventuno · ' + (m.call.dur || '')) : '');
     el.innerHTML = (isCall ? '' : (mine ? '' : `<span class="au ${esc(m.author)}">${esc(NAMES[m.author] || m.author)}</span>`))
       + (m.media && m.media.kind === 'image' ? `<img class="ph" src="${esc(mediaUrl(m.media.id))}" alt="Foto" loading="lazy">` : '')
       + (m.media && m.media.kind === 'video' ? `<video class="vd" src="${esc(mediaUrl(m.media.id))}" controls playsinline preload="metadata"></video>` : '')
@@ -115,7 +115,7 @@
   }
   document.addEventListener('visibilitychange', () => { if (!document.hidden && me) { poll(); if (!es || es.readyState === 2) live(); } });
 
-  function typing(on) { $('#typing').hidden = !on; const s = $('#sub'); s.textContent = on ? 'Idea sta scrivendo…' : 'online'; s.classList.toggle('typing', !!on); }
+  function typing(on) { $('#typing').hidden = !on; const s = $('#sub'); s.textContent = on ? 'Ventuno sta scrivendo…' : 'online'; s.classList.toggle('typing', !!on); }
 
   // --- "+": menu Fotocamera / Video / Galleria / Allega (documenti)
   const fileIn = $('#file');
@@ -346,7 +346,7 @@
     $('#home-memory').hidden = page !== 'memory';
     $('#go-memory').hidden = !(me && me.admin);
     $('#home-back').hidden = !page;
-    $('#home-title').textContent = page === 'prefs' ? 'Personalizza' : page === 'users' ? 'Utenti' : page === 'memory' ? 'Memoria di Idea' : 'Impostazioni';
+    $('#home-title').textContent = page === 'prefs' ? 'Personalizza' : page === 'users' ? 'Utenti' : page === 'memory' ? 'Memoria di Ventuno' : 'Impostazioni';
     if (page === 'memory') loadMemory();
     if (page === 'prefs') { fillSwatches(); paintPrefs(); }
     if (page === 'users') loadUsers();
@@ -361,7 +361,7 @@
   $('#go-memory').addEventListener('click', () => homeOpen('memory'));
   async function loadMemory() {
     const ul = $('#memory-list'); ul.innerHTML = '<li>Carico…</li>';
-    try { const j = await api('/api/memory'); ul.innerHTML = (j.fatti || []).map((f) => `<li>${esc(f)}</li>`).join('') || '<li>Ancora niente: Idea impara man mano che parlate.</li>'; }
+    try { const j = await api('/api/memory'); ul.innerHTML = (j.fatti || []).map((f) => `<li>${esc(f)}</li>`).join('') || '<li>Ancora niente: Ventuno impara man mano che parlate.</li>'; }
     catch (e) { ul.innerHTML = `<li>${esc(e.message || 'Non disponibile')}</li>`; }
   }
 
@@ -553,7 +553,7 @@
     try {
       const perm = await Notification.requestPermission();
       if (perm !== 'granted') { status('Permesso notifiche non concesso.'); return false; }
-      const reg = await navigator.serviceWorker.register('/sw.js?v=14', { scope: '/' });
+      const reg = await navigator.serviceWorker.register('/sw.js?v=15', { scope: '/' });
       await navigator.serviceWorker.ready;
       const vapid = await api('/api/push/vapid');
       const key = vapid.publicKey;

@@ -1,11 +1,11 @@
-/* Ventuno — solo notifiche push, nessuna cache delle pagine. asset-v=14 */
+/* Ventuno — solo notifiche push, nessuna cache delle pagine. asset-v=15 */
 self.addEventListener('install', (e) => { self.skipWaiting(); });
 self.addEventListener('activate', (e) => { e.waitUntil(self.clients.claim()); });
 self.addEventListener('message', (e) => { if (e.data && e.data.type === 'skipWaiting') self.skipWaiting(); });
 self.addEventListener('push', (event) => {
   let data = {};
   try { data = event.data ? event.data.json() : {}; } catch {}
-  const title = data.title || 'Idea ti sta chiamando';
+  const title = data.title || 'Ventuno ti sta chiamando';
   const body = data.body || data.reason || '';
   const url = '/?incoming=' + encodeURIComponent(data.callId || '');
   event.waitUntil(self.registration.showNotification(title, {

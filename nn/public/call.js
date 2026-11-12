@@ -88,7 +88,7 @@
   function sessionFor(s) {
     const sess = { ...s.cfg.session };
     if (s.reconnects && s.turns.length) {
-      const recap = s.turns.slice(-12).map((t) => (t.role === 'assistant' ? 'Idea' : 'Lui') + ': ' + t.text.slice(0, 300)).join('\n');
+      const recap = s.turns.slice(-12).map((t) => (t.role === 'assistant' ? 'Ventuno' : 'Lui') + ': ' + t.text.slice(0, 300)).join('\n');
       sess.instructions = (sess.instructions || '') + '\n\nLA LINEA È CADUTA UN ATTIMO ED È TORNATA: continua la stessa chiamata senza risalutare e senza ricominciare da capo. Ultime battute:\n' + recap;
     }
     return sess;
@@ -198,7 +198,7 @@
   const fmt = (sec) => Math.floor(sec / 60) + ':' + String(Math.floor(sec % 60)).padStart(2, '0');
   function ui() {
     const s = S; if (!s) return;
-    $('#call-status').textContent = s.reconnecting ? 'Riconnessione…' : !s.ready ? 'Chiamata in corso…' : s.muted ? 'Microfono spento' : playing(s) ? 'Idea sta parlando…' : s.userSpeaking ? 'Ti ascolto…' : 'In linea';
+    $('#call-status').textContent = s.reconnecting ? 'Riconnessione…' : !s.ready ? 'Chiamata in corso…' : s.muted ? 'Microfono spento' : playing(s) ? 'Ventuno sta parlando…' : s.userSpeaking ? 'Ti ascolto…' : 'In linea';
     $('#call-time').textContent = s.t0 ? fmt((Date.now() - s.t0) / 1000) : '';
     $('#call-mute').classList.toggle('on', !!s.muted); $('#call-mute').setAttribute('aria-pressed', s.muted ? 'true' : 'false');
   }

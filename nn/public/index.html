@@ -10,16 +10,16 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="apple-mobile-web-app-title" content="Ventuno">
 <title>Ventuno</title>
-<link rel="manifest" href="/manifest.json?v=14">
-<link rel="icon" href="/icon.svg?v=14" type="image/svg+xml">
-<link rel="icon" href="/icons/icon-32.png?v=14" sizes="32x32" type="image/png">
-<link rel="apple-touch-icon" href="/icons/icon-180.png?v=14">
-<link rel="stylesheet" href="/style.css?v=14">
+<link rel="manifest" href="/manifest.json?v=15">
+<link rel="icon" href="/icon.svg?v=15" type="image/svg+xml">
+<link rel="icon" href="/icons/icon-32.png?v=15" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="/icons/icon-180.png?v=15">
+<link rel="stylesheet" href="/style.css?v=15">
 </head>
 <body>
 <div id="app">
   <header id="topbar">
-    <img class="pfp" src="/logo-ln-avatar.svg?v=14" alt="Ventuno">
+    <img class="pfp" src="/logo-ln-avatar.svg?v=15" alt="Ventuno">
     <button id="home-btn" type="button" hidden aria-label="Impostazioni">
       <svg viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M12 3.2 4 10h2v9h5v-6h2v6h5v-9h2L12 3.2z"/></svg>
       <span class="admin-tag">admin</span>
@@ -29,7 +29,7 @@
       <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true"><path d="M12 22a2.2 2.2 0 0 0 2.2-2.2h-4.4A2.2 2.2 0 0 0 12 22zm6-6.2V11a6 6 0 0 0-4.5-5.8V4.6a1.5 1.5 0 0 0-3 0v.6A6 6 0 0 0 6 11v4.8L4 18v1h16v-1l-2-2.2z"/></svg>
     </button>
     <button id="refresh-btn" type="button" aria-label="Aggiorna"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg></button>
-    <button id="call-btn" type="button" aria-label="Chiama Idea">
+    <button id="call-btn" type="button" aria-label="Chiama Ventuno">
       <svg viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M6.62 10.79a15.05 15.05 0 0 0 6.59 6.59l2.2-2.2a1 1 0 0 1 1.02-.24c1.12.37 2.33.57 3.57.57a1 1 0 0 1 1 1V20a1 1 0 0 1-1 1C10.61 21 3 13.39 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.45.57 3.57a1 1 0 0 1-.25 1.02l-2.2 2.2z"/></svg>
     </button>
     <button id="ideas-btn" type="button" aria-label="Blocco note" title="Blocco note">📝<b id="ideas-count"></b></button>
@@ -37,7 +37,7 @@
 
   <main id="messages" aria-live="polite"></main>
 
-  <div id="typing" hidden>Idea sta scrivendo…</div>
+  <div id="typing" hidden>Ventuno sta scrivendo…</div>
   <div id="status" hidden></div>
 
   <form id="bar" autocomplete="off">
@@ -74,10 +74,10 @@
 
 <div id="viewer" hidden><img alt=""><button type="button" id="viewer-close" aria-label="Chiudi">✕</button></div>
 
-<div id="call" hidden role="dialog" aria-label="Chiamata con Idea">
+<div id="call" hidden role="dialog" aria-label="Chiamata con Ventuno">
   <div class="call-top">
-    <img class="call-logo" src="/logo-ln.svg?v=14" alt="Ventuno">
-    <div class="call-name">Idea</div>
+    <img class="call-logo" src="/logo-ln.svg?v=15" alt="Ventuno">
+    <div class="call-name">Ventuno</div>
     <div id="call-status">Chiamata in corso…</div>
     <div id="call-time"></div>
   </div>
@@ -93,10 +93,10 @@
   </div>
 </div>
 
-<div id="incoming" hidden role="dialog" aria-label="Chiamata in arrivo da Idea">
-  <img class="call-logo" src="/logo-ln.svg?v=14" alt="Ventuno">
-  <div class="call-name">Idea</div>
-  <div id="incoming-title">Idea ti sta chiamando</div>
+<div id="incoming" hidden role="dialog" aria-label="Chiamata in arrivo da Ventuno">
+  <img class="call-logo" src="/logo-ln.svg?v=15" alt="Ventuno">
+  <div class="call-name">Ventuno</div>
+  <div id="incoming-title">Ventuno ti sta chiamando</div>
   <p id="incoming-reason"></p>
   <div class="incoming-bar">
     <button type="button" id="incoming-no">Rifiuta</button>
@@ -107,7 +107,7 @@
 <div id="push-prompt" hidden>
   <div class="push-card">
     <b>Attiva notifiche</b>
-    <p>Così Idea può avvisarti quando ti sta chiamando. Su iPhone: prima aggiungi Ventuno alla schermata Home (Condividi → Aggiungi a Home), poi tocca il tasto e consenti le notifiche (iOS 16.4 o successivo).</p>
+    <p>Così Ventuno può avvisarti quando ti sta chiamando. Su iPhone: prima aggiungi Ventuno alla schermata Home (Condividi → Aggiungi a Home), poi tocca il tasto e consenti le notifiche (iOS 16.4 o successivo).</p>
     <div class="push-actions">
       <button type="button" id="push-enable">Attiva notifiche</button>
       <button type="button" id="push-later">Più tardi</button>
@@ -125,9 +125,9 @@
     <div id="home-menu">
       <button type="button" class="set-row" id="go-prefs">Personalizza <span>›</span></button>
       <button type="button" class="set-row" id="go-users">Utenti <span>›</span></button>
-      <button type="button" class="set-row" id="go-memory" hidden>Memoria di Idea <span>›</span></button>
+      <button type="button" class="set-row" id="go-memory" hidden>Memoria di Ventuno <span>›</span></button>
       <button type="button" class="set-row" id="go-push">Attiva notifiche <span>›</span></button>
-      <p class="set-help" id="push-help">Per sentire quando Idea ti chiama, attiva le notifiche. Su iPhone: prima aggiungi Ventuno alla schermata Home (Condividi → Aggiungi a Home), poi tocca qui e consenti le notifiche (serve iOS 16.4 o successivo). Non è una telefonata sulla rete mobile: la chiamata avviene nell’app.</p>
+      <p class="set-help" id="push-help">Per sentire quando Ventuno ti chiama, attiva le notifiche. Su iPhone: prima aggiungi Ventuno alla schermata Home (Condividi → Aggiungi a Home), poi tocca qui e consenti le notifiche (serve iOS 16.4 o successivo). Non è una telefonata sulla rete mobile: la chiamata avviene nell’app.</p>
     </div>
     <div id="home-prefs" hidden>
       <p class="set-lab">Sfondo della chat</p>
@@ -148,7 +148,7 @@
       <button type="button" id="prefs-reset" class="set-reset">Ripristina</button>
     </div>
     <div id="home-memory" hidden>
-      <p class="set-help">Quello che Idea ha imparato su di voi parlando (si aggiorna da solo, al massimo 40 cose). Le note restano solo nel blocco note.</p>
+      <p class="set-help">Quello che Ventuno ha imparato su di voi parlando (si aggiorna da solo, al massimo 40 cose). Le note restano solo nel blocco note.</p>
       <ul id="memory-list"></ul>
     </div>
     <div id="home-users" hidden>
@@ -180,7 +180,7 @@
   <div class="welcome-card">
     <img id="welcome-photo" class="welcome-face" alt="" src="">
     <div class="welcome-bubble">
-      <p>Benvenuta in Ventuno! Qui ci siamo noi due e Idea.</p>
+      <p>Benvenuta in Ventuno! Qui ci siamo noi due e Ventuno.</p>
     </div>
     <button type="button" id="welcome-ok">Iniziamo</button>
   </div>
@@ -189,7 +189,7 @@
 <div id="gate" hidden>
 
   <div class="gate-box">
-    <img class="pfp big" src="/logo-ln.svg?v=14" alt="Ventuno">
+    <img class="pfp big" src="/logo-ln.svg?v=15" alt="Ventuno">
     <p id="gate-msg">Inserisci la password per entrare.</p>
     <form id="pass-form" autocomplete="on">
       <div class="pass-wrap"><input id="pass-input" type="password" inputmode="numeric" placeholder="Password" autocomplete="current-password" required><button type="button" id="pass-eye" aria-label="Mostra password" title="Mostra/nascondi">👁</button></div>
@@ -201,7 +201,7 @@
     </form>
   </div>
 </div>
-<script src="/app.js?v=14"></script>
-<script src="/call.js?v=14"></script>
+<script src="/app.js?v=15"></script>
+<script src="/call.js?v=15"></script>
 </body>
 </html>

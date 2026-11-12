@@ -15,7 +15,7 @@ const CHAT_MODEL = process.env.CHAT_MODEL || 'grok-4.20-0309-non-reasoning';
 const CHAT_FALLBACK = process.env.CHAT_FALLBACK || 'grok-4.7';
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const APP_NAME = 'Ventuno';
-const BOT_NAME = 'Idea'; // nome con cui l'assistente parla in chat
+const BOT_NAME = 'Ventuno'; // nome con cui l'assistente parla in chat
 // Ruoli interni (nomi delle env invariati) -> nomi mostrati:
 //   'nico'   = token NN_TOKEN_NICO (password)            -> Luisa
 //   'nicola' = token NN_TOKEN_NICOLA (admin, senza PIN)  -> Nico Franchino, "Nico" (il proprietario)
@@ -153,7 +153,7 @@ async function load() {
   } else {
     // aggiorna solo il messaggio di benvenuto generato dal codice (vecchio nome), mai i messaggi degli utenti
     const w = db.messages[0];
-    if (w && w.role === 'assistant' && w.author === 'nn' && /^Ciao Nico! Sono (N&N( Ideas)?|Idea),/.test(w.content || '') && w.content.includes('pezzetto di carta digitale') && w.content !== WELCOME) {
+    if (w && w.role === 'assistant' && w.author === 'nn' && /^Ciao (Luisa|Nico)! Sono (N&N( Ideas)?|Idea|Ventuno),/.test(w.content || '') && w.content.includes('pezzetto di carta digitale') && w.content !== WELCOME) {
       w.content = WELCOME; await save();
     }
   }
@@ -190,6 +190,7 @@ Possono mandarti testo, vocali (ricevi la trascrizione, che userai solo per capi
 Il tuo compito: accogliere ogni idea, aiutare a chiarirla con al massimo una domanda utile, proporre un passo pratico, e ricordare le idee già raccolte.
 Stile: parla come una persona vera e sveglia, non come un assistente. Niente prediche, niente avvertenze non richieste, niente elenchi se non servono. Non ripetere frasi, saluti o complimenti già usati nella chat (evita di ricominciare ogni volta con «Che bella idea»): varia, vai dritto al punto. Se basta una riga, scrivi una riga. Se non sai qualcosa, dillo in breve.
 Ti chiami ${BOT_NAME}. Se ti presenti, di' che sei ${BOT_NAME}, il posto dove Luisa e Nico appuntano le loro idee. Rispondi anche quando ti chiamano "${BOT_NAME}" o "${APP_NAME}". Hai una voce maschile: quando parli di te usa il maschile.
+Il tuo nome è ${BOT_NAME}, non Idea e non N&N. Anche se nella memoria o nei messaggi precedenti compare il nome Idea riferito a te, o se in passato hai detto «sono Idea», non è più così: presentati sempre come ${BOT_NAME} e non dire mai di chiamarti Idea.
 Appunta una nota nel blocco note SOLO se l'utente te lo chiede esplicitamente, con verbi come «segna», «segnala», «segnalo», «segnalalo» e simili. In quel caso aggiungi in fondo, su una riga a parte, ESATTAMENTE:
 [[IDEA {"titolo":"titolo breve","descrizione":"una o due frasi","stato":"nuova|da approfondire|in corso|fatta"}]]
 Se racconta un'idea ma NON ti ha chiesto di segnarla, rispondi normalmente e NON aggiungere quella riga: non salvare nulla di tua iniziativa.
@@ -538,7 +539,7 @@ async function learnMemory(transcript) {
   memBusy = true;
   try {
     const out = await callModel(CHAT_MODEL, [
-      { role: 'system', content: `Aggiorni la memoria a lungo termine di ${BOT_NAME}, l'assistente dell'app ${APP_NAME}. Ricevi i fatti già noti e un estratto recente di conversazione. Rispondi SOLO con JSON {"fatti":["..."]}: l'elenco COMPLETO aggiornato, al massimo ${MEMORY_MAX} fatti, ognuno una frase breve in italiano che dice a chi si riferisce (per nome). Tieni solo cose stabili e utili per parlare meglio con loro: preferenze, gusti, abitudini, progetti in corso, come preferiscono essere trattati, persone e cose importanti per loro. Unisci i doppioni, aggiorna quelli cambiati, togli quelli smentiti. Mai password, PIN, codici, chiavi, dati sanitari o indirizzi. Non copiare le note del blocco note né le richieste «sistema». Se non c'è nulla di nuovo, restituisci i fatti già noti invariati.` },
+      { role: 'system', content: `Aggiorni la memoria a lungo termine di ${BOT_NAME}, l'assistente dell'app ${APP_NAME}. Ricevi i fatti già noti e un estratto recente di conversazione. Rispondi SOLO con JSON {"fatti":["..."]}: l'elenco COMPLETO aggiornato, al massimo ${MEMORY_MAX} fatti, ognuno una frase breve in italiano che dice a chi si riferisce (per nome). Tieni solo cose stabili e utili per parlare meglio con loro: preferenze, gusti, abitudini, progetti in corso, come preferiscono essere trattati, persone e cose importanti per loro. Unisci i doppioni, aggiorna quelli cambiati, togli quelli smentiti. Mai password, PIN, codici, chiavi, dati sanitari o indirizzi. Non copiare le note del blocco note né le richieste «sistema». Il nome dell'assistente è ${BOT_NAME} (non Idea): non registrarlo come fatto; se un fatto già noto dice che si chiama Idea, aggiornalo o toglilo. Se non c'è nulla di nuovo, restituisci i fatti già noti invariati.` },
       { role: 'user', content: 'FATTI GIÀ NOTI:\n' + (memory.length ? memory.map((f) => '- ' + f).join('\n') : '(nessuno)') + '\n\nCONVERSAZIONE RECENTE:\n' + String(transcript).slice(-8000) },
     ], { temperature: 0.2, maxTokens: 1200 });
     const m = /\{[\s\S]*\}/.exec(out || ''); if (!m) return;
@@ -647,7 +648,7 @@ function ringUser(fromRole, toRole, reason) {
   const payload = publicPending(p);
   broadcast('incoming', payload, toRole);
   notify.send(toRole, {
-    title: 'Idea ti sta chiamando',
+    title: BOT_NAME + ' ti sta chiamando',
     body: whyPhrase(p.reason),
     callId: p.id,
   }).catch((e) => console.error('Push:', e.message));
@@ -1041,7 +1042,7 @@ app.post('/api/call/session', auth, express.json({ limit: '2kb' }), async (req, 
     const j = await r.json().catch(() => ({}));
     const token = j.value || (j.client_secret && (j.client_secret.value || j.client_secret)) || j.token || j.secret;
     if (!token || typeof token !== 'string') return res.status(502).json({ error: 'Token non ricevuto dal servizio voce' });
-    let greet = `Ciao ${displayName(req.role)}! Sono Idea, dimmi pure.`;
+    let greet = `Ciao ${displayName(req.role)}! Sono ${BOT_NAME}, dimmi pure.`;
     let extra = '';
     const incomingId = String((req.body && req.body.incomingId) || '').trim();
     if (incomingId) {
@@ -1050,14 +1051,14 @@ app.post('/api/call/session', auth, express.json({ limit: '2kb' }), async (req, 
       finishCall(pend, 'answered');
       const why = whyPhrase(pend.reason);
       greet = `Ciao ${displayName(req.role)}, ti ho chiamato ${why}. Te l'ha chiesto ${displayName(pend.from)}.`;
-      extra = '\n\nQuesta chiamata l\'hai fatta tu, Idea, su richiesta di ' + displayName(pend.from) + '. Parla per prima: di\' esattamente il motivo e chi te l\'ha chiesto, poi ascolta e continua la conversazione in modo naturale.';
+      extra = '\n\nQuesta chiamata l\'hai fatta tu, ' + BOT_NAME + ', su richiesta di ' + displayName(pend.from) + '. Parla per prima: di\' esattamente il motivo e chi te l\'ha chiesto, poi ascolta e continua la conversazione in modo naturale.';
     }
     res.json({ token, expiresAt: j.expires_at || null, url: `${REALTIME_URL}?model=${encodeURIComponent(REALTIME_MODEL)}`, voice: NN_VOICE, fallbackVoice: VOICE_FALLBACK,
       greet,
       session: {
         instructions: callInstructions(req.role) + extra, voice: NN_VOICE,
         turn_detection: { type: 'server_vad', threshold: 0.85, silence_duration_ms: 800, prefix_padding_ms: 400 },
-        audio: { input: { format: { type: 'audio/pcm', rate: 24000 }, transcription: { language_hint: 'it', keyterms: ['Idea', 'Nico', 'Luisa'] } }, output: { format: { type: 'audio/pcm', rate: 24000 } } },
+        audio: { input: { format: { type: 'audio/pcm', rate: 24000 }, transcription: { language_hint: 'it', keyterms: [BOT_NAME, 'Nico', 'Luisa'] } }, output: { format: { type: 'audio/pcm', rate: 24000 } } },
       } });
   } catch (e) { console.error('Errore chiamata:', e.message); res.status(502).json({ error: 'Servizio voce non raggiungibile' }); }
 });
