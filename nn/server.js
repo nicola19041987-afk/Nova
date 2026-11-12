@@ -558,9 +558,12 @@ async function learnMemory(transcript) {
 function bumpMemory() { if (++memTurns >= 6) { memTurns = 0; learnMemory(chatExcerpt(14)).catch(() => {}); } }
 
 // ---------- comando «sistema»: richiesta di modifica inoltrata a Nova (Grok Bot), mai alla chat AI e mai nel blocco note ----------
-// Env: SISTEMA_WEBHOOK_URL, SISTEMA_WEBHOOK_KEY (stesso formato degli Appunti di Nova: header Authorization, valore copiato così com'è;
-// se la chiave non contiene già uno schema tipo "Bearer ", viene aggiunto "Bearer "). SISTEMA_WEBHOOK_HEADER opzionale (predefinito Authorization).
+// Env: SISTEMA_WEBHOOK_URL, SISTEMA_WEBHOOK_KEY hanno la precedenza se impostate.
+// Altrimenti DATA_DIR/sistema-config.json (0600), impostato da Nicola via /api/admin/sistema-config.
+// Formato chiave: header Authorization, valore copiato così com'è; se non contiene già uno schema tipo "Bearer ", viene aggiunto "Bearer ".
+// SISTEMA_WEBHOOK_HEADER opzionale (predefinito Authorization).
 const SISTEMA_FILE = path.join(DATA_DIR, 'sistema.json');
+const SISTEMA_CONFIG_FILE = path.join(DATA_DIR, 'sistema-config.json');
 const SISTEMA_OK = "Richiesta inviata a Nova: ti chiederà l'ok prima di modificare qualcosa.";
 const SISTEMA_OFF = 'Comando sistema non ancora collegato: ho salvato la richiesta, la invio appena è collegato.';
 const SISTEMA_RETRY = 'Richiesta salvata: non sono riuscito a inviarla a Nova adesso, riprovo da solo tra poco.';
@@ -570,12 +573,26 @@ function sistemaText(text) {
   const m = /^\s*[«"“']?\s*sistema(?![a-zà-ù0-9])[\s:;,.!?\-–—»"”']*/i.exec(String(text || ''));
   return m ? String(text).slice(m[0].length).replace(/\s+/g, ' ').trim() : null;
 }
-function sistemaConfigured() { return !!(String(process.env.SISTEMA_WEBHOOK_URL || '').trim() && String(process.env.SISTEMA_WEBHOOK_KEY || '').trim()); }
+function readSistemaConfig() {
+  try {
+    const j = JSON.parse(fs.readFileSync(SISTEMA_CONFIG_FILE, 'utf8'));
+    return { url: String((j && j.url) || '').trim(), key: String((j && j.key) || '').trim() };
+  } catch { return { url: '', key: '' }; }
+}
+function sistemaWebhookUrl() { return String(process.env.SISTEMA_WEBHOOK_URL || '').trim() || readSistemaConfig().url; }
+function sistemaWebhookKey() { return String(process.env.SISTEMA_WEBHOOK_KEY || '').trim() || readSistemaConfig().key; }
+function sistemaConfigured() { return !!(sistemaWebhookUrl() && sistemaWebhookKey()); }
+function sistemaConfigPublic() {
+  const url = sistemaWebhookUrl(), key = sistemaWebhookKey();
+  let host = null;
+  if (url) { try { host = new URL(url).host || null; } catch { host = null; } }
+  return { ok: true, urlSet: !!url, keySet: !!key, host };
+}
 function loadSistema() { try { const j = JSON.parse(fs.readFileSync(SISTEMA_FILE, 'utf8')); return Array.isArray(j) ? j : []; } catch { return []; } }
 function saveSistema(list) { const tmp = SISTEMA_FILE + '.tmp'; fs.writeFileSync(tmp, JSON.stringify(list.slice(-500)), { mode: 0o600 }); fs.renameSync(tmp, SISTEMA_FILE); }
 async function deliverSistema(rec) {
-  const url = String(process.env.SISTEMA_WEBHOOK_URL || '').trim();
-  const key = String(process.env.SISTEMA_WEBHOOK_KEY || '').trim();
+  const url = sistemaWebhookUrl();
+  const key = sistemaWebhookKey();
   if (!url || !key) return false;
   const header = String(process.env.SISTEMA_WEBHOOK_HEADER || 'Authorization').trim() || 'Authorization';
   const value = header.toLowerCase() === 'authorization' && !/\s/.test(key) ? 'Bearer ' + key : key;
@@ -1186,6 +1203,8 @@ async function runAdminReset() {
   if (fs.existsSync(MEDIA_DIR)) fs.rmSync(MEDIA_DIR, { recursive: true, force: true });
   fs.mkdirSync(MEDIA_DIR, { recursive: true });
 
+  // Si conservano: users.json, users.secret, prefs.json, xai_key, vapid.json,
+  // push-subs.json, welcome-nova.jpg, memoria.json, sistema-config.json e la memoria in RAM.
   const delIfExists = (p, key) => { if (fs.existsSync(p)) { fs.rmSync(p, { force: true }); removed[key] = 1; } };
   delIfExists(WELCOME_SEEN, 'welcomeSeen');
   delIfExists(REPORT_FILE, 'ideaReport');
@@ -1221,6 +1240,27 @@ app.post('/api/admin/reset', auth, ownerOnly, express.json({ limit: '1kb' }), as
     console.error('Reset non riuscito:', e.status || e.code || 'errore');
     res.status(e.status || 500).json({ error: e.message === 'Backup non riuscito' ? 'Backup non riuscito' : 'Reset non riuscito' });
   }
+});
+
+app.get('/api/admin/sistema-config', auth, ownerOnly, (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.json(sistemaConfigPublic());
+});
+app.post('/api/admin/sistema-config', auth, ownerOnly, limit(5, 60000), express.json({ limit: '4kb' }), (req, res) => {
+  const url = typeof req.body?.url === 'string' ? req.body.url.trim() : '';
+  const key = typeof req.body?.key === 'string' ? req.body.key.trim() : '';
+  let parsed;
+  try { parsed = new URL(url); } catch { parsed = null; }
+  if (!parsed || parsed.protocol !== 'https:' || !parsed.host) return res.status(400).json({ error: 'URL non valido: serve https' });
+  if (!key || key.length > 2000 || /[\r\n]/.test(key)) return res.status(400).json({ error: 'Chiave non valida' });
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    const tmp = SISTEMA_CONFIG_FILE + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify({ url, key }), { mode: 0o600 });
+    fs.chmodSync(tmp, 0o600);
+    fs.renameSync(tmp, SISTEMA_CONFIG_FILE);
+    res.json({ ok: true, urlSet: true, keySet: true });
+  } catch (e) { console.error('Salvataggio sistema-config fallito:', e.code || 'errore'); res.status(500).json({ error: 'Salvataggio non riuscito' }); }
 });
 
 app.get('/api/stream', auth, (req, res) => {
