@@ -357,6 +357,14 @@ function limit(n, ms) {
     next();
   };
 }
+function readCookie(req, name) {
+  const h = req.get('Cookie') || '';
+  for (const p of h.split(';')) { const i = p.indexOf('='); if (i > 0 && p.slice(0, i).trim() === name) { try { return decodeURIComponent(p.slice(i + 1).trim()); } catch { return ''; } } }
+  return '';
+}
+// Resta collegato: dopo il primo accesso riuscito la chiave è ricordata anche in un cookie HttpOnly (400 giorni).
+function setKeyCookie(res, key) { if (key) res.append('Set-Cookie', 'nn_k=' + encodeURIComponent(key) + '; Max-Age=34560000; Path=/; HttpOnly; Secure; SameSite=Lax'); }
+function clearKeyCookie(res) { res.append('Set-Cookie', 'nn_k=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax'); }
 function auth(req, res, next) {
   const key = req.get('X-NN-Key') || req.query.k || '';
   const role = roleOf(key);
@@ -387,11 +395,17 @@ app.post('/api/admin/xai-key', limit(5, 60000), auth, express.json({ limit: '2kb
     res.json({ ok: true, len: key.length });
   } catch (e) { console.error('Salvataggio chiave fallito:', e.code || 'errore'); res.status(500).json({ error: 'Salvataggio non riuscito' }); }
 });
-app.get('/api/me', limit(10, 60000), (req, res, next) => {
+app.get('/api/me', limit(60, 60000), (req, res, next) => {
   const role = roleOf(req.get('X-NN-Key') || '');
   if (role && pinFor(role) && !safeEq(req.get('X-NN-Sess') || '', sessFor(role))) return res.json({ role, name: ROLES[role], pin: true, app: APP_NAME });
   next();
-}, auth, (req, res) => res.json({ role: req.role, name: ROLES[req.role], pin: false, app: APP_NAME, admin: req.role === 'nicola', names: namesMap(), welcome: req.role === 'nico' && !welcomeSeen() }));
+}, auth, (req, res) => { setKeyCookie(res, req.get('X-NN-Key') || ''); return res.json({ role: req.role, name: ROLES[req.role], pin: false, app: APP_NAME, admin: req.role === 'nicola', names: namesMap(), welcome: req.role === 'nico' && !welcomeSeen() }); });
+app.get('/api/restore', limit(20, 60000), (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const key = readCookie(req, 'nn_k');
+  if (!key || !roleOf(key)) { if (key) clearKeyCookie(res); return res.status(401).json({ error: 'Nessun accesso salvato' }); }
+  setKeyCookie(res, key); res.json({ key });
+});
 app.get('/api/messages', auth, (req, res) => {
   const since = Number(req.query.since) || 0;
   res.setHeader('Cache-Control', 'no-store');

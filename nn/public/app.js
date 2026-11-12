@@ -386,9 +386,16 @@
     LS.setItem('nn.k', p); LS.removeItem('nn.s'); $('#pass-input').value = ''; start(true);
   });
   async function start(fromForm) {
+    if (!key()) {
+      try { const r = await fetch('/api/restore', { cache: 'no-store' }); if (r.ok) { const j = await r.json(); if (j && j.key) LS.setItem('nn.k', j.key); } } catch {}
+    }
     if (!key()) { askPass(); return; }
     try { me = await api('/api/me'); }
-    catch { LS.removeItem('nn.k'); askPass(fromForm ? 'Password errata, riprova.' : ''); return; }
+    catch (err) {
+      // password sbagliata o tolta: si richiede. Rete lenta, server che si sveglia o troppi tentativi: si riprova senza chiedere la password.
+      if (err.status === 401 || err.status === 403) { LS.removeItem('nn.k'); askPass(fromForm ? 'Password errata, riprova.' : ''); return; }
+      $('#sub').textContent = 'connessione…'; setTimeout(() => start(false), 3000); return;
+    }
     if (me.pin) { $('#gate').hidden = false; $('#pass-form').hidden = true; $('#pin-form').hidden = false; $('#gate-msg').textContent = 'Ciao ' + me.name + '! Inserisci il PIN.'; setTimeout(() => $('#pin-input').focus(), 50); return; }
     $('#gate').hidden = true;
     $('#sub').textContent = 'online';
