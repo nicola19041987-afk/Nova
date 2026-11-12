@@ -244,6 +244,17 @@ function pruneSessions() { const now = Date.now(); for (const [k, s] of Object.e
 pruneSessions();
 setInterval(pruneSessions, 60 * 60 * 1000).unref();
 
+// ---------- profili sospesi (v2d-32) ----------
+// Solo Nicola (ADMIN_USER) può sospendere o riattivare un profilo con POST /api/admin/user-block.
+// Reversibile: chat, note, foto e PIN restano dove sono; si chiudono solo le sessioni aperte.
+const BLOCK_FILE = path.join(DATA_DIR, 'blocked-users.json');
+const BLOCKED_MSG = 'Accesso sospeso: per ora questo profilo non può entrare in Nova.';
+function loadBlocked() { const j = readJSON(BLOCK_FILE, {}); return j && typeof j === 'object' && !Array.isArray(j) ? j : {}; }
+let blockedUsers = loadBlocked();
+const isBlocked = (u) => !!(u && blockedUsers[u] && blockedUsers[u].blocked === true);
+function dropSessionsOf(u) { let n = 0; for (const [k, s] of Object.entries(sessions)) if (s && s.user === u) { delete sessions[k]; n++; } if (n) saveSessions(); return n; }
+for (const u of Object.keys(blockedUsers)) if (isBlocked(u)) dropSessionsOf(u);
+
 // ---------- consenso vocale (attivazione account, UNA sola volta) ----------
 const consentFile = (u) => path.join(userDir(u), 'consent.json');
 const getConsent = (u) => readJSON(consentFile(u), null);
@@ -266,6 +277,7 @@ app.use(express.json({ limit: '12mb' }));
 function auth(req, res, next) {
   const s = sessions[req.cookies[COOKIE]];
   if (!s || s.exp < Date.now()) return res.status(401).json({ error: 'Accesso richiesto' });
+  if (isBlocked(s.user)) { dropSessionsOf(s.user); res.clearCookie(COOKIE, { path: '/' }); return res.status(401).json({ error: BLOCKED_MSG, code: 'BLOCKED' }); }
   req.user = s.user;
   next();
 }
@@ -377,6 +389,7 @@ app.post('/api/pin/setup', loginLimiter, (req, res) => {
   const user = USER_ALIASES[String(req.body.user || '').toLowerCase()];
   const pin = String(req.body.pin || '');
   if (!user) return res.status(400).json({ error: 'Profilo non valido' });
+  if (isBlocked(user)) return res.status(403).json({ error: BLOCKED_MSG, code: 'BLOCKED' });
   if (!PIN_RE.test(pin)) return res.status(400).json({ error: 'Il PIN deve avere 4 cifre' });
   if (SETUP_CODE && req.body.setupCode !== SETUP_CODE) return res.status(403).json({ error: 'Codice di configurazione errato' });
   const pins = getPins();
@@ -390,6 +403,7 @@ app.post('/api/login', loginLimiter, async (req, res) => {
   const user = USER_ALIASES[String(req.body.user || '').toLowerCase()];
   const pin = String(req.body.pin || '');
   const rec = user && getPins()[user];
+  if (isBlocked(user)) return res.status(403).json({ error: BLOCKED_MSG, code: 'BLOCKED' });
   if (user) {
     const li = lockInfo(user);
     if (li.until > Date.now()) return res.status(429).json({ error: `Profilo bloccato per troppi PIN errati. Riprova tra ${Math.ceil((li.until - Date.now()) / 60000)} minuti.` });
@@ -3354,7 +3368,7 @@ async function flushAppReqs() {
   const cfg = webhookCfg(); if (!cfg.url || !cfg.value) return;
   const list = loadAppReqs(); let changed = false;
   for (const r of list) {
-    if (!r || r.delivered) continue;
+    if (!r || r.delivered || isBlocked(r.authorId)) continue;
     if (await postWebhook({ app: 'Nova', from: r.from, text: r.text, channel: r.channel, at: r.at }, 'Richiesta di modifica')) { r.delivered = true; r.deliveredAt = new Date().toISOString(); changed = true; }
   }
   if (changed) writePrivateJSON(APP_REQ_FILE(), list.slice(-500));
@@ -3362,6 +3376,7 @@ async function flushAppReqs() {
 setInterval(() => { withAppReqs(flushAppReqs).catch(() => {}); }, 5 * 60e3).unref();
 // inoltro in coda (mai bloccante per la risposta di Nova): { status: 'accepted', done } oppure { status: 'limited' }
 function forwardAppRequest(user, text, channel) {
+  if (isBlocked(user)) return { status: 'limited' };
   const now = Date.now(); const h = (appReqHits.get(user) || []).filter((t) => now - t < 3600e3);
   if (h.length >= APP_REQ_LIMIT) { appReqHits.set(user, h); return { status: 'limited' }; }
   h.push(now); appReqHits.set(user, h);
@@ -3379,6 +3394,7 @@ function forwardAppRequest(user, text, channel) {
 }
 // gestisce una frase di chi parla (chat, nota vocale, chiamata): salva la nota o inoltra la richiesta. Ritorna l'istruzione per Nova.
 async function handleAppIntent(user, text, channel, prevText) {
+  if (isBlocked(user)) return null; // v2d-32: niente note né inoltri da un profilo sospeso
   const it = appIntent(text);
   if (!it) return null;
   if (it.kind === 'note') {
@@ -3396,6 +3412,29 @@ app.get('/api/blocco-note', auth, (req, res) => {
   res.json({ notes: list, count: list.length });
 });
 const isOwner = (u) => u === ADMIN_USER;
+// v2d-32: sospendere / riattivare un profilo (solo Nicola). I dati restano tutti.
+app.get('/api/admin/user-block', auth, (req, res) => {
+  if (!isOwner(req.user)) return res.status(403).json({ error: 'Solo Nicola può vedere questa impostazione.', code: 'OWNER_ONLY' });
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ users: Object.keys(USERS).map((u) => ({ user: u, name: USERS[u].name, blocked: isBlocked(u), since: isBlocked(u) ? blockedUsers[u].at : null, sessions: Object.values(sessions).filter((s) => s && s.user === u && s.exp > Date.now()).length })) });
+});
+app.post('/api/admin/user-block', auth, (req, res) => {
+  if (!isOwner(req.user)) return res.status(403).json({ error: 'Solo Nicola può sospendere un profilo.', code: 'OWNER_ONLY' });
+  const user = USER_ALIASES[String((req.body && req.body.user) || '').toLowerCase()];
+  const blocked = req.body && req.body.blocked;
+  if (!user || !USERS[user]) return res.status(400).json({ error: 'Profilo non valido' });
+  if (typeof blocked !== 'boolean') return res.status(400).json({ error: 'Indica blocked: true oppure false' });
+  if (user === ADMIN_USER) return res.status(400).json({ error: 'Non puoi sospendere il tuo profilo.' });
+  const next = { ...blockedUsers };
+  if (blocked) next[user] = { blocked: true, at: new Date().toISOString(), by: req.user };
+  else delete next[user];
+  try { writePrivateJSON(BLOCK_FILE, next); } catch (e) { console.error('Sospensione non salvata:', e.code || 'errore'); return res.status(500).json({ error: 'Salvataggio non riuscito' }); }
+  blockedUsers = next;
+  const closed = blocked ? dropSessionsOf(user) : 0;
+  if (blocked) for (const [k, t] of typing) if (t && t.by === user) typing.delete(k);
+  console.log(`Profilo ${USERS[user].name} ${blocked ? 'sospeso' : 'riattivato'} da ${USERS[req.user].name}`);
+  res.json({ ok: true, user, name: USERS[user].name, blocked, sessionsClosed: closed });
+});
 app.get('/api/admin/appunti-webhook', auth, (req, res) => {
   if (!isOwner(req.user)) return res.status(403).json({ error: 'Solo Nicola può vedere questa impostazione.', code: 'OWNER_ONLY' });
   res.setHeader('Cache-Control', 'no-store');
@@ -4360,6 +4399,7 @@ function publicNote(n) {
 async function deliverSupportNote(note) {
   // v2d-30: stesso mittente e stesso header di sempre (NOTES_WEBHOOK_URL / NOTES_WEBHOOK_AUTH / NOTES_WEBHOOK_HEADER);
   // in più NOTES_WEBHOOK_KEY o la configurazione salvata sul disco da Nicola (vedi webhookCfg). Mai i valori nei log.
+  if (note && isBlocked(note.authorId)) return false; // v2d-32: un profilo sospeso non inoltra nulla
   const payload = { author: note.author, text: note.text, time: note.time || note.createdAt, app: 'Nova', version: APP_VERSION };
   return postWebhook(payload, 'Appunto assistenza');
 }
