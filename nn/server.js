@@ -188,6 +188,7 @@ In questa chat ci sono due persone: Nicola Fortunato ("Nicola"), l'amico pieno d
 Ogni messaggio arriva con il nome di chi scrive: rivolgiti a quella persona per nome (Nicola o Nico) e non confonderli.
 Possono mandarti testo, vocali (ricevi la trascrizione, che userai solo per capire) e foto o video: guarda le immagini e rispondi su cosa vedi, collegandolo all'idea. Rispondi SEMPRE in italiano, breve (1-4 frasi), caldo, diretto e concreto, come un amico sveglio su WhatsApp.
 Il tuo compito: accogliere ogni idea, aiutare a chiarirla con al massimo una domanda utile, proporre un passo pratico, e ricordare le idee già raccolte.
+Stile: parla come una persona vera e sveglia, non come un assistente. Niente prediche, niente avvertenze non richieste, niente elenchi se non servono. Non ripetere frasi, saluti o complimenti già usati nella chat (evita di ricominciare ogni volta con «Che bella idea»): varia, vai dritto al punto. Se basta una riga, scrivi una riga. Se non sai qualcosa, dillo in breve.
 Ti chiami ${BOT_NAME}. Se ti presenti, di' che sei ${BOT_NAME}, il posto dove Nicola appunta le sue idee. Rispondi anche quando ti chiamano "${BOT_NAME}" o "${APP_NAME}".
 Appunta una nota nel blocco note SOLO se l'utente te lo chiede esplicitamente, con verbi come «segna», «segnala», «segnalo», «segnalalo» e simili. In quel caso aggiungi in fondo, su una riga a parte, ESATTAMENTE:
 [[IDEA {"titolo":"titolo breve","descrizione":"una o due frasi","stato":"nuova|da approfondire|in corso|fatta"}]]
@@ -226,15 +227,37 @@ function rememberDoc(media, summary, autore) {
   if (i >= 0) db.docs[i] = Object.assign(db.docs[i], rec); else db.docs.push(rec);
   save();
 }
-async function callModel(model, messages) {
+async function callModel(model, messages, opt = {}) {
   const r = await fetch(`${AI_BASE_URL}/chat/completions`, {
     method: 'POST', signal: AbortSignal.timeout(60000),
     headers: { Authorization: `Bearer ${aiKey()}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model, messages, temperature: 0.7, max_tokens: 600 }),
+    body: JSON.stringify({ model, messages, temperature: opt.temperature != null ? opt.temperature : 0.7, max_tokens: opt.maxTokens || 600 }),
   });
   if (!r.ok) { const t = await r.text().catch(() => ''); const e = new Error('HTTP ' + r.status); e.status = r.status; e.detail = t.slice(0, 200); throw e; }
   const j = await r.json();
   return String(j.choices?.[0]?.message?.content || '').trim();
+}
+// Risposta in streaming (come Nova): onDelta(testoParziale) a ogni pezzo. Se il servizio risponde senza stream, legge il JSON intero.
+async function callModelStream(model, messages, onDelta) {
+  const r = await fetch(`${AI_BASE_URL}/chat/completions`, {
+    method: 'POST', signal: AbortSignal.timeout(60000),
+    headers: { Authorization: `Bearer ${aiKey()}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model, messages, temperature: 0.7, max_tokens: 600, stream: true }),
+  });
+  if (!r.ok) { const t = await r.text().catch(() => ''); const e = new Error('HTTP ' + r.status); e.status = r.status; e.detail = t.slice(0, 200); throw e; }
+  if (!/event-stream/i.test(r.headers.get('content-type') || '') || !r.body) { const j = await r.json(); return String(j.choices?.[0]?.message?.content || '').trim(); }
+  const dec = new TextDecoder(); let buf = '', out = '';
+  for await (const chunk of r.body) {
+    buf += dec.decode(chunk, { stream: true });
+    let i;
+    while ((i = buf.indexOf('\n')) >= 0) {
+      const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1);
+      if (!line.startsWith('data:')) continue;
+      const d = line.slice(5).trim(); if (!d || d === '[DONE]') continue;
+      try { const j = JSON.parse(d); const piece = j.choices?.[0]?.delta?.content || ''; if (piece) { out += piece; try { onDelta && onDelta(out); } catch {} } } catch {}
+    }
+  }
+  return out.trim();
 }
 function isNoteCommand(text) {
   return /\b(?:segna(?:lo|la|mi|melo|mela|telo|tela|tele|re|rlo|rla|rli|rle)?|segnala(?:lo|la|li|le|mi|melo|mela|telo|tela|tele)?|segnalo|segnal(?:are|arlo|arla|arli|arle|ate|iamo)|segn(?:are|iamo|ate))\b/i.test(String(text || ''));
@@ -284,18 +307,19 @@ function reply() {
     if (!lastMsg || lastMsg.role === 'assistant') return;
     if (lastMsg.role === 'user' && sistemaText(userTextOf(lastMsg)) !== null) return; // «sistema»: gestito a parte, niente risposta AI
     if (!aiKey()) { addMsg({ role: 'assistant', author: 'nn', content: 'Chiave AI non configurata sul server.' }); return; }
-    const recent = db.messages.slice(-30).filter((m) => !(m.role === 'user' && sistemaText(userTextOf(m)) !== null));
+    const recent = db.messages.slice(-24).filter((m) => !(m.role === 'user' && sistemaText(userTextOf(m)) !== null));
+    const lastDocId = (recent.filter((m) => m.role === 'user' && m.media && m.media.kind === 'file').slice(-1)[0] || {}).id; // testo completo solo dell'ultimo documento
     // allega le immagini solo degli ultimi messaggi con foto/video (max 2), per non appesantire
     const withImg = new Set(recent.filter((m) => m.role === 'user' && m.media && (m.media.kind === 'image' || m.media.frame)).slice(-2).map((m) => m.id));
     let vision = false;
     const hist = recent.map((m) => {
-      if (m.role === 'assistant') return { role: 'assistant', content: m.content };
+      if (m.role === 'assistant') return { role: 'assistant', content: String(m.content || (m.voice && m.voice.text) || '').slice(0, 1500) };
       const who = ROLES[m.author] || m.author;
       const kind = m.voice ? ' (vocale)' : m.media ? (m.media.kind === 'video' ? ' (video)' : m.media.kind === 'file' ? ' (documento)' : ' (foto)') : '';
       let text = `${who}${kind}: ${m.content || (m.voice && m.voice.text) || (m.media ? (m.media.kind === 'video' ? '[ha inviato un video]' : m.media.kind === 'file' ? '[ha inviato un documento: ' + (m.media.name || '') + ']' : '[ha inviato una foto]') : (m.call ? '[chiamata]' : ''))}`;
       if (m.media && m.media.kind === 'file') {
         const body = readDocText(m.media.id);
-        text += body ? '\nTesto estratto del documento:\n' + body.slice(0, 20000) : (m.media.scanned ? '\n(PDF scannerizzato: nessun testo estraibile.)' : '\n(Nessun testo estraibile da questo file.)');
+        text += body ? (m.id === lastDocId ? '\nTesto estratto del documento:\n' + body.slice(0, 20000) : '\n(Documento già letto: testo non ripetuto.)') : (m.media.scanned ? '\n(PDF scannerizzato: nessun testo estraibile.)' : '\n(Nessun testo estraibile da questo file.)');
       }
       const img = withImg.has(m.id) ? imageDataUrl(m.media) : '';
       if (!img) return { role: 'user', content: text };
@@ -303,16 +327,21 @@ function reply() {
       return { role: 'user', content: [{ type: 'text', text: text + (m.media.kind === 'video' ? ' (ti allego il primo fotogramma del video)' : '') }, { type: 'image_url', image_url: { url: img, detail: 'high' } }] };
     });
     const voiceHint = lastIsVoice() ? '\n\nStai rispondendo a un vocale: il tuo testo verrà letto ad alta voce da te (voce Luna) e inviato come vocale, non come messaggio scritto. Frasi brevi e naturali, niente emoji, elenchi o simboli.' : '';
-    const messages = [{ role: 'system', content: SYSTEM + '\n\n' + ideasContext() + (docsContext(true) ? '\n\n' + docsContext(true) : '') + '\nOggi è ' + new Date().toLocaleDateString('it-IT', { timeZone: 'Europe/Rome' }) + '.' + voiceHint }, ...hist];
+    const messages = [{ role: 'system', content: SYSTEM + (memoryContext() ? '\n\n' + memoryContext() : '') + '\n\n' + ideasContext() + (docsContext(true) ? '\n\n' + docsContext(true) : '') + '\nOggi è ' + new Date().toLocaleDateString('it-IT', { timeZone: 'Europe/Rome' }) + '.' + voiceHint }, ...hist];
     broadcast('typing', { on: true });
     let text;
-    try { text = await callModel(vision ? VISION_MODEL : CHAT_MODEL, messages); }
+    const lastU = [...db.messages].reverse().find((m) => m.role === 'user');
+    const live = !(lastU && lastU.voice); // ai vocali si risponde con un vocale: niente testo parziale
+    let sentAt = 0;
+    const onDelta = live ? (t) => { const now = Date.now(); if (now - sentAt < 120) return; sentAt = now; const shown = t.split('[[')[0].trim(); if (shown) broadcast('draft', { text: shown }); } : null;
+    try { text = await callModelStream(vision ? VISION_MODEL : CHAT_MODEL, messages, onDelta); if (!text) throw new Error('risposta vuota'); }
     catch (e) {
       console.error('Errore AI:', e.message, e.detail || '');
       try { text = await callModel(CHAT_FALLBACK, messages); }
       catch (e2) { console.error('Errore AI (riserva):', e2.message); text = 'Scusa, ora non riesco a rispondere. Il messaggio è salvato, riprova tra poco.'; }
     }
     broadcast('typing', { on: false });
+    bumpMemory();
     const ideas = [];
     text = text.replace(/\[\[IDEA\s*(\{[\s\S]*?\})\s*\]\]/g, (_, js) => { try { ideas.push(JSON.parse(js)); } catch {} return ''; }).trim();
     const lastUser = [...db.messages].reverse().find((m) => m.role === 'user');
@@ -488,6 +517,45 @@ function handleCallIntent(fromRole, text) {
   ringUser(fromRole, intent.to, intent.reason);
   return true;
 }
+
+// ---------- memoria a lungo termine (impara nel tempo): DATA_DIR/memoria.json, max 40 fatti, aggiornata ogni 6 messaggi e a fine chiamata ----------
+const MEMORY_FILE = path.join(DATA_DIR, 'memoria.json');
+const MEMORY_MAX = 40;
+let memory = [], memoryAt = null;
+try { const j = JSON.parse(fs.readFileSync(MEMORY_FILE, 'utf8')); if (Array.isArray(j.fatti)) memory = j.fatti.map(String).slice(0, MEMORY_MAX); memoryAt = j.aggiornata || null; } catch {}
+function memoryContext() {
+  if (!memory.length) return '';
+  return 'COSE CHE HAI IMPARATO NEL TEMPO su chi usa l\'app (usale con naturalezza quando servono, non elencarle e non dire che le hai memorizzate):\n' + memory.map((f) => '- ' + f).join('\n');
+}
+function saveMemory() { try { const tmp = MEMORY_FILE + '.tmp'; fs.writeFileSync(tmp, JSON.stringify({ fatti: memory, aggiornata: memoryAt }), { mode: 0o600 }); fs.renameSync(tmp, MEMORY_FILE); } catch (e) { console.error('Memoria non salvata:', e.code || e.message); } }
+let memTurns = 0, memBusy = false;
+function chatExcerpt(n) {
+  return db.messages.filter((m) => !(m.role === 'user' && sistemaText(userTextOf(m)) !== null) && (m.content || (m.voice && m.voice.text)))
+    .slice(-n).map((m) => `${m.role === 'assistant' ? BOT_NAME : displayName(m.author)}: ${String(m.content || (m.voice && m.voice.text) || '').replace(/\s+/g, ' ').slice(0, 300)}`).join('\n');
+}
+async function learnMemory(transcript) {
+  if (!aiKey() || memBusy || !String(transcript || '').trim()) return;
+  memBusy = true;
+  try {
+    const out = await callModel(CHAT_MODEL, [
+      { role: 'system', content: `Aggiorni la memoria a lungo termine di ${BOT_NAME}, l'assistente dell'app ${APP_NAME}. Ricevi i fatti già noti e un estratto recente di conversazione. Rispondi SOLO con JSON {"fatti":["..."]}: l'elenco COMPLETO aggiornato, al massimo ${MEMORY_MAX} fatti, ognuno una frase breve in italiano che dice a chi si riferisce (per nome). Tieni solo cose stabili e utili per parlare meglio con loro: preferenze, gusti, abitudini, progetti in corso, come preferiscono essere trattati, persone e cose importanti per loro. Unisci i doppioni, aggiorna quelli cambiati, togli quelli smentiti. Mai password, PIN, codici, chiavi, dati sanitari o indirizzi. Non copiare le note del blocco note né le richieste «sistema». Se non c'è nulla di nuovo, restituisci i fatti già noti invariati.` },
+      { role: 'user', content: 'FATTI GIÀ NOTI:\n' + (memory.length ? memory.map((f) => '- ' + f).join('\n') : '(nessuno)') + '\n\nCONVERSAZIONE RECENTE:\n' + String(transcript).slice(-8000) },
+    ], { temperature: 0.2, maxTokens: 1200 });
+    const m = /\{[\s\S]*\}/.exec(out || ''); if (!m) return;
+    const j = JSON.parse(m[0]); if (!Array.isArray(j.fatti)) return;
+    const seen = new Set(); const list = [];
+    for (const f of j.fatti) {
+      const t = String(f || '').replace(/\s+/g, ' ').trim().slice(0, 200);
+      if (!t || /password|\bpin\b|chiave|token|codice/i.test(t)) continue;
+      const k = t.toLowerCase(); if (seen.has(k)) continue; seen.add(k); list.push(t);
+      if (list.length >= MEMORY_MAX) break;
+    }
+    if (!list.length && memory.length) return; // risposta vuota: non cancellare la memoria
+    memory = list; memoryAt = new Date().toISOString(); saveMemory();
+  } catch (e) { console.error('Memoria non aggiornata:', e.message); }
+  finally { memBusy = false; }
+}
+function bumpMemory() { if (++memTurns >= 6) { memTurns = 0; learnMemory(chatExcerpt(14)).catch(() => {}); } }
 
 // ---------- comando «sistema»: richiesta di modifica inoltrata a Nova (Grok Bot), mai alla chat AI e mai nel blocco note ----------
 // Env: SISTEMA_WEBHOOK_URL, SISTEMA_WEBHOOK_KEY (stesso formato degli Appunti di Nova: header Authorization, valore copiato così com'è;
@@ -717,6 +785,11 @@ app.get('/api/messages', auth, (req, res) => {
   res.json({ messages: db.messages.filter((m) => m.id > since).slice(-500), ideas: db.ideas, names: namesMap() });
 });
 app.get('/api/ideas', auth, (req, res) => res.json({ ideas: db.ideas }));
+app.get('/api/memory', auth, (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  if (req.role !== 'nicola') return res.status(403).json({ error: 'Solo per Nico' });
+  res.json({ fatti: memory, aggiornata: memoryAt });
+});
 app.get('/api/prefs', auth, (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   res.json({ prefs: Object.assign(defaultPrefs(), prefsDb[req.role] || {}) });
@@ -928,11 +1001,12 @@ const VOICE_FALLBACK = 'eve';
 function callInstructions(role) {
   const recent = db.messages.slice(-16).map((m) => `${m.role === 'assistant' ? BOT_NAME : (ROLES[m.author] || m.author)}: ${String(m.content || (m.media ? '[foto/video]' : '')).replace(/\s+/g, ' ').slice(0, 300)}`);
   return [SYSTEM.replace(/Appunta una nota nel blocco note SOLO se[\s\S]*?Non mostrare mai questa riga come testo normale[^\n]*\n?/, '').replace(' Rispondi sempre e solo per iscritto.', '').replace(/Rispondi SEMPRE in italiano, breve \(1-4 frasi\)[^\n]*/, 'Parla SEMPRE in italiano.'),
+    memoryContext(),
     ideasContext(),
     docsContext(false),
     recent.length && `ULTIMI MESSAGGI DELLA CHAT (contesto):\n${recent.join('\n')}`,
     `ORA SEI IN CHIAMATA VOCALE con ${ROLES[role]} (${FULL[role]}): lo senti dal vivo. Chiamalo per nome (${ROLES[role]}).`,
-    'In chiamata: parla in italiano, frasi brevi e naturali (1-3 frasi), come al telefono con un amico. Niente elenchi, niente emoji, niente simboli o righe tecniche. Appunta una nota a fine chiamata solo se ti hanno chiesto esplicitamente di segnarla o segnalarla.',
+    'In chiamata: parla in italiano, frasi brevi e naturali (1-3 frasi), come al telefono con un amico. Niente prediche, non ripetere le stesse frasi, rispondi subito e lascia spazio all\'altro. Niente elenchi, niente emoji, niente simboli o righe tecniche. Appunta una nota a fine chiamata solo se ti hanno chiesto esplicitamente di segnarla o segnalarla.',
     `Se chi parla inizia una frase con la parola «sistema», è una richiesta di modifica dell'app che il server inoltra da solo: non commentarla, non segnarla come nota e rispondi soltanto: «${sistemaConfigured() ? SISTEMA_OK : 'Comando sistema non ancora collegato: ho salvato la richiesta.'}»`,
     'Oggi è ' + new Date().toLocaleDateString('it-IT', { timeZone: 'Europe/Rome' }) + '.'].filter(Boolean).join('\n\n');
 }
@@ -1030,6 +1104,7 @@ app.post('/api/call/end', auth, limit(10, 60000), express.json({ limit: '200kb' 
   const asked = noteTurns.some((t) => isNoteCommand(t.text));
   const notes = asked ? notesFromExplicit(ideas, noteTurns.map((t) => t.text).join('\n')) : [];
   const n = storeIdeas(notes, who);
+  if (noteTurns.length) learnMemory(turns.filter((t) => t.role === 'assistant' || sistemaText(t.text) === null).map((t) => `${t.role === 'assistant' ? BOT_NAME : who}: ${t.text}`).join('\n')).catch(() => {});
   const dur = `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
   const content = turns.length ? (summary || `Chiamata con ${who}.`) : `Chiamata senza conversazione.`;
   const msg = addMsg({ role: 'assistant', author: 'nn', content: '', call: { kind: 'done', with: req.role, sec, dur },

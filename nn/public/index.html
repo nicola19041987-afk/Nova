@@ -10,16 +10,16 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="apple-mobile-web-app-title" content="Ideas">
 <title>Ideas</title>
-<link rel="manifest" href="/manifest.json?v=9">
-<link rel="icon" href="/icon.svg?v=9" type="image/svg+xml">
-<link rel="icon" href="/icons/icon-32.png?v=9" sizes="32x32" type="image/png">
-<link rel="apple-touch-icon" href="/icons/icon-180.png?v=9">
-<link rel="stylesheet" href="/style.css?v=9">
+<link rel="manifest" href="/manifest.json?v=10">
+<link rel="icon" href="/icon.svg?v=10" type="image/svg+xml">
+<link rel="icon" href="/icons/icon-32.png?v=10" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="/icons/icon-180.png?v=10">
+<link rel="stylesheet" href="/style.css?v=10">
 </head>
 <body>
 <div id="app">
   <header id="topbar">
-    <img class="pfp" src="/logo-nn-avatar.svg?v=9" alt="Ideas">
+    <img class="pfp" src="/logo-nn-avatar.svg?v=10" alt="Ideas">
     <button id="home-btn" type="button" hidden aria-label="Impostazioni">
       <svg viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M12 3.2 4 10h2v9h5v-6h2v6h5v-9h2L12 3.2z"/></svg>
       <span class="admin-tag">admin</span>
@@ -76,7 +76,7 @@
 
 <div id="call" hidden role="dialog" aria-label="Chiamata con Idea">
   <div class="call-top">
-    <img class="call-logo" src="/logo-nn-avatar.svg?v=9" alt="Ideas">
+    <img class="call-logo" src="/logo-nn-avatar.svg?v=10" alt="Ideas">
     <div class="call-name">Idea</div>
     <div id="call-status">Chiamata in corso…</div>
     <div id="call-time"></div>
@@ -94,7 +94,7 @@
 </div>
 
 <div id="incoming" hidden role="dialog" aria-label="Chiamata in arrivo da Idea">
-  <img class="call-logo" src="/logo-nn-avatar.svg?v=9" alt="Ideas">
+  <img class="call-logo" src="/logo-nn-avatar.svg?v=10" alt="Ideas">
   <div class="call-name">Idea</div>
   <div id="incoming-title">Idea ti sta chiamando</div>
   <p id="incoming-reason"></p>
@@ -125,6 +125,7 @@
     <div id="home-menu">
       <button type="button" class="set-row" id="go-prefs">Personalizza <span>›</span></button>
       <button type="button" class="set-row" id="go-users">Utenti <span>›</span></button>
+      <button type="button" class="set-row" id="go-memory" hidden>Memoria di Idea <span>›</span></button>
       <button type="button" class="set-row" id="go-push">Attiva notifiche <span>›</span></button>
       <p class="set-help" id="push-help">Per sentire quando Idea ti chiama, attiva le notifiche. Su iPhone: prima aggiungi Ideas alla schermata Home (Condividi → Aggiungi a Home), poi tocca qui e consenti le notifiche (serve iOS 16.4 o successivo). Non è una telefonata sulla rete mobile: la chiamata avviene nell’app.</p>
     </div>
@@ -145,6 +146,10 @@
         <button type="button" data-size="large">Grande</button>
       </div>
       <button type="button" id="prefs-reset" class="set-reset">Ripristina</button>
+    </div>
+    <div id="home-memory" hidden>
+      <p class="set-help">Quello che Idea ha imparato su di voi parlando (si aggiorna da solo, al massimo 40 cose). Le note restano solo nel blocco note.</p>
+      <ul id="memory-list"></ul>
     </div>
     <div id="home-users" hidden>
       <ul id="users-list"></ul>
@@ -184,7 +189,7 @@
 <div id="gate" hidden>
 
   <div class="gate-box">
-    <img class="pfp big" src="/logo-nn-triangolo.svg?v=9" alt="Ideas">
+    <img class="pfp big" src="/logo-nn-triangolo.svg?v=10" alt="Ideas">
     <p id="gate-msg">Inserisci la password per entrare.</p>
     <form id="pass-form" autocomplete="on">
       <div class="pass-wrap"><input id="pass-input" type="password" inputmode="numeric" placeholder="Password" autocomplete="current-password" required><button type="button" id="pass-eye" aria-label="Mostra password" title="Mostra/nascondi">👁</button></div>
@@ -196,7 +201,7 @@
     </form>
   </div>
 </div>
-<script src="/app.js?v=9"></script>
-<script src="/call.js?v=9"></script>
+<script src="/app.js?v=10"></script>
+<script src="/call.js?v=10"></script>
 </body>
 </html>

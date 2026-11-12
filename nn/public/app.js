@@ -50,7 +50,16 @@
     return ext + ' · ' + size;
   }
   let lastDay = '';
+  let draftEl = null; // risposta di Idea mentre arriva (streaming)
+  function draft(t) {
+    if (!t) { if (draftEl) { draftEl.remove(); draftEl = null; } return; }
+    const stick = nearBottom();
+    if (!draftEl) { draftEl = document.createElement('div'); draftEl.className = 'msg other draft'; draftEl.innerHTML = `<span class="au nn">${esc(NAMES.nn || 'Idea')}</span><span class="tx"></span>`; box.appendChild(draftEl); }
+    draftEl.querySelector('.tx').textContent = t;
+    if (stick) bottom();
+  }
   function add(m) {
+    if (m && m.author === 'nn' && !seen.has(m.id)) draft('');
     if (seen.has(m.id)) return; seen.add(m.id); last = Math.max(last, m.id);
     const stick = nearBottom();
     const d = new Date(m.at);
@@ -95,7 +104,8 @@
     if (es) es.close();
     es = new EventSource('/api/stream?k=' + encodeURIComponent(key()) + '&s=' + encodeURIComponent(sess()));
     es.addEventListener('message', (ev) => { add(JSON.parse(ev.data)); typing(false); });
-    es.addEventListener('typing', (ev) => typing(JSON.parse(ev.data).on));
+    es.addEventListener('typing', (ev) => { const on = JSON.parse(ev.data).on; typing(on); if (!on) setTimeout(() => { if (draftEl && !$('#sub').classList.contains('typing')) draft(''); }, 4000); });
+    es.addEventListener('draft', (ev) => { try { draft(JSON.parse(ev.data).text); } catch {} });
     es.addEventListener('ideas', (ev) => ideas(JSON.parse(ev.data)));
     es.addEventListener('incoming', (ev) => { try { showIncoming(JSON.parse(ev.data)); } catch {} });
     es.addEventListener('incoming-end', (ev) => { try { const d = JSON.parse(ev.data); if (d && d.id && $('#incoming').dataset.id === d.id) hideIncoming(); } catch {} });
@@ -333,8 +343,11 @@
     $('#home-menu').hidden = !!page;
     $('#home-prefs').hidden = page !== 'prefs';
     $('#home-users').hidden = page !== 'users';
+    $('#home-memory').hidden = page !== 'memory';
+    $('#go-memory').hidden = !(me && me.admin);
     $('#home-back').hidden = !page;
-    $('#home-title').textContent = page === 'prefs' ? 'Personalizza' : page === 'users' ? 'Utenti' : 'Impostazioni';
+    $('#home-title').textContent = page === 'prefs' ? 'Personalizza' : page === 'users' ? 'Utenti' : page === 'memory' ? 'Memoria di Idea' : 'Impostazioni';
+    if (page === 'memory') loadMemory();
     if (page === 'prefs') { fillSwatches(); paintPrefs(); }
     if (page === 'users') loadUsers();
   }
@@ -345,6 +358,12 @@
   $('#home-panel').addEventListener('click', (e) => { if (e.target.id === 'home-panel') homeClose(); });
   $('#go-prefs').addEventListener('click', () => homeOpen('prefs'));
   $('#go-users').addEventListener('click', () => homeOpen('users'));
+  $('#go-memory').addEventListener('click', () => homeOpen('memory'));
+  async function loadMemory() {
+    const ul = $('#memory-list'); ul.innerHTML = '<li>Carico…</li>';
+    try { const j = await api('/api/memory'); ul.innerHTML = (j.fatti || []).map((f) => `<li>${esc(f)}</li>`).join('') || '<li>Ancora niente: Idea impara man mano che parlate.</li>'; }
+    catch (e) { ul.innerHTML = `<li>${esc(e.message || 'Non disponibile')}</li>`; }
+  }
 
   function toggleEye(input, btn) {
     const show = input.type === 'password';
@@ -534,7 +553,7 @@
     try {
       const perm = await Notification.requestPermission();
       if (perm !== 'granted') { status('Permesso notifiche non concesso.'); return false; }
-      const reg = await navigator.serviceWorker.register('/sw.js?v=9', { scope: '/' });
+      const reg = await navigator.serviceWorker.register('/sw.js?v=10', { scope: '/' });
       await navigator.serviceWorker.ready;
       const vapid = await api('/api/push/vapid');
       const key = vapid.publicKey;
