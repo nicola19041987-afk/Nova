@@ -93,8 +93,12 @@
     const ph = el.querySelector('img.ph'); if (ph) ph.addEventListener('click', () => { $('#viewer img').src = ph.src; $('#viewer').hidden = false; });
     if (stick || mine) bottom();
   }
+  function clearAppIconBadge() {
+    try { if (navigator.clearAppBadge) navigator.clearAppBadge(); } catch {}
+  }
   function ideas(list) {
-    $('#ideas-count').textContent = list && list.length ? list.length : '';
+    // Niente numerino sulla 📝 né sull'icona PWA: il blocco note resta, senza conteggio.
+    const c = $('#ideas-count'); if (c) c.textContent = '';
     $('#ideas-list').innerHTML = (list || []).slice().reverse().map((i) => `<li><b>📝 ${esc(i.titolo)}</b>${esc(i.descrizione)}<br><small>${esc(i.data)} · ${esc(i.stato)}${i.autore ? " · di " + esc(i.autore) : ""}</small></li>`).join('') || '<li>Ancora nessuna nota. Scrivi «segna» o «segnala» per appuntarne una.</li>';
   }
   async function poll() {
@@ -457,6 +461,7 @@
     if (me.names) setNames(me.names);
     $('#home-btn').hidden = me.role !== 'nicola';
     $('#push-btn').hidden = me.role === 'nicola';
+    clearAppIconBadge();
     if (me.welcome) {
       $('#welcome-photo').src = '/api/welcome/photo?k=' + encodeURIComponent(key()) + '&s=' + encodeURIComponent(sess());
       $('#welcome').hidden = false;
@@ -553,7 +558,7 @@
     try {
       const perm = await Notification.requestPermission();
       if (perm !== 'granted') { status('Permesso notifiche non concesso.'); return false; }
-      const reg = await navigator.serviceWorker.register('/sw.js?v=12', { scope: '/' });
+      const reg = await navigator.serviceWorker.register('/sw.js?v=13', { scope: '/' });
       await navigator.serviceWorker.ready;
       const vapid = await api('/api/push/vapid');
       const key = vapid.publicKey;
@@ -587,6 +592,8 @@
   $('#push-btn').addEventListener('click', () => enablePush());
   $('#go-push').addEventListener('click', () => enablePush());
 
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') clearAppIconBadge(); });
+  window.addEventListener('pageshow', clearAppIconBadge);
   window.NN = { api, key, sess, me: () => me, status, poll, showIncoming };
   start();
 })();
