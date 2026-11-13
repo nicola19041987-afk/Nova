@@ -123,7 +123,10 @@
       status(denied ? 'Microfono non consentito.' : 'Microfono non avviato.');
       pointer = null; stream = null; return;
     }
-    if (pointer == null) { stopStream(); return; }
+    // v2d-32: iPhone. Al primo uso dopo l'apertura/aggiornamento dell'app Safari chiede il permesso del microfono: per
+    // toccare «Consenti» si alza il dito, e prima la registrazione finiva qui senza dire nulla («il microfono non parte»).
+    // Ora il permesso resta dato e si avvisa: alla pressione successiva registra subito.
+    if (pointer == null) { stopStream(); status('🎙️ Microfono pronto: tieni premuto di nuovo per registrare.'); setTimeout(() => { const el = $('#vn-status'); if (el && /Microfono pronto/.test(el.textContent)) status(''); }, 4000); return; }
     let mime = '';
     for (const m of ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4']) {
       if (window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(m)) { mime = m; break; }

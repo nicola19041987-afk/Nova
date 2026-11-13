@@ -1028,8 +1028,12 @@
       // A riposo non si disegna nulla sulla bocca: i pixel restano quelli della foto.
       // Parlando, mascella e labbra si aprono in modo simmetrico attorno alla bocca vera, lungo la sua linea
       // (non la linea degli occhi). Nessuna rotazione solo della bocca: se la testa è inclinata, la bocca resta con il viso.
-      if (open > 0.02) paintMouth(ctx, img, lm, open, Math.max(0, Math.min(1, (this.wide ?? 0.5) + smile * 0.06)));
-      const gxp = mc.gx * EW * 0.1, gyp = mc.gy * Math.max(EH, EW * 0.2) * 0.14, bup = mc.brow * F * 0.007, px = F * 0.0006;
+      // v2d-32: con i clip di movimento (faceCalm) la foto si vede solo mentre parla: lì solo labiale e ammiccamenti
+      // naturali; niente sguardo che salta né sopracciglia. A riposo la foto resta com'è (si muove il video).
+      const calm = !!this.faceCalm, talk = this.speaking || open > 0.02;
+      if (calm && !talk) return;
+      if (open > 0.02) paintMouth(ctx, img, lm, open, Math.max(0, Math.min(1, (this.wide ?? 0.5) + (calm ? 0 : smile * 0.06))));
+      const gxp = calm ? 0 : mc.gx * EW * 0.1, gyp = calm ? 0 : mc.gy * Math.max(EH, EW * 0.2) * 0.14, bup = calm ? 0 : mc.brow * F * 0.007, px = F * 0.0006;
       const roll = Math.atan2(lm.eyeR.y - lm.eyeL.y, lm.eyeR.x - lm.eyeL.x);
       [lm.eyeL, lm.eyeR].forEach((e, ei) => {
         if ((Math.abs(gxp) > px || Math.abs(gyp) > px) && e) paintGaze(ctx, img, e.x * S, e.y * S, roll, EW * 0.55, Math.max(EH * 1.15, EW * 0.22), gxp, gyp);

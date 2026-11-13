@@ -719,7 +719,9 @@ body.solo-mode #legacy-tabbar{display:none!important}
 body.solo-mode #solo-dock{display:flex!important}
 body.solo-mode #solo-bar{display:none!important}
 body.solo-mode #wa-video,body.solo-mode #wa-home{display:inline-flex!important;align-items:center;justify-content:center}
-body.solo-mode #wa-voice,body.solo-mode #support-note-btn,body.solo-mode #app-refresh,body.solo-mode #who{display:none!important}
+body.solo-mode #wa-voice,body.solo-mode #support-note-btn,body.solo-mode #who{display:none!important}
+/* v2d-32: il pulsante Aggiorna (↻) torna nell'intestazione di Nova, piccolo, accanto al 📝; mai in videochiamata */
+body.solo-mode.in-call:not(.call-min) #app-refresh{display:none!important}
 body.solo-mode.solo-chat #solo-dock{display:none!important}
 #app-refresh{display:inline-flex!important;align-items:center;justify-content:center;width:36px;height:36px;border:0;border-radius:50%;background:#E8F1FC;color:#1E6FD9;font-size:18px;flex:0 0 auto}
 #support-form{position:relative;padding-top:8px}
@@ -1203,11 +1205,21 @@ body.solo-mode.in-call:not(.call-min) #stage.call:not(.voice) .call-btn.end{
 body.solo-mode.in-call:not(.call-min) #stage.call:not(.voice).has-motion #motion-video,
 body.solo-mode.solo-portrait:not(.in-call) #stage.has-motion #motion-video,
 body.solo-mode.in-call:not(.call-min) #stage.call:not(.voice).has-motion #motion-video-b,
-body.solo-mode.solo-portrait:not(.in-call) #stage.has-motion #motion-video-b{
+body.solo-mode.solo-portrait:not(.in-call) #stage.has-motion #motion-video-b,
+body.solo-mode.in-call:not(.call-min) #stage.call:not(.voice).motion-on #motion-video,
+body.solo-mode.solo-portrait:not(.in-call) #stage.motion-on #motion-video,
+body.solo-mode.in-call:not(.call-min) #stage.call:not(.voice).motion-on #motion-video-b,
+body.solo-mode.solo-portrait:not(.in-call) #stage.motion-on #motion-video-b{
   display:block!important;position:absolute!important;inset:0!important;z-index:3;
   width:100%!important;height:100%!important;max-width:none!important;max-height:none!important;
   object-fit:cover!important;object-position:center top!important;background:#000;pointer-events:none;
 }
+/* v2d-32: prima del primo clip i video ci sono ma trasparenti, senza fondo nero: si vede la foto sotto */
+#stage:not(.has-motion) #motion-video,#stage:not(.has-motion) #motion-video-b{background:transparent!important;opacity:0!important}
+/* v2d-32: foto piccole (intestazione, Home) che si muovono */
+.mini-box{position:relative}
+video.mini-motion{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:50% 18%;opacity:0;transition:opacity .35s linear;pointer-events:none;background:transparent;border-radius:inherit}
+video.mini-motion.on{opacity:1}
 body.solo-mode.in-call:not(.call-min) #stage.call:not(.voice).has-motion #avatar-canvas,
 body.solo-mode.solo-portrait:not(.in-call) #stage.has-motion #avatar-canvas{
   visibility:hidden!important;
@@ -1254,4 +1266,6 @@ body.solo-mode.solo-chat #tab-conv #chat-input{
   min-height:42px!important;max-height:calc(22px * 5 + 18px)!important;
   height:42px;padding:10px 12px!important;border-radius:21px!important;
 }
-
+/* v2d-32: Aggiorna nell'intestazione stile WhatsApp: stesso ingombro delle altre icone, senza spingere fuori il titolo */
+body.solo-mode #app-refresh{width:36px!important;height:36px!important;min-width:36px!important;min-height:36px!important;flex:0 0 36px!important;line-height:36px!important;padding:0!important;font-size:19px!important;background:transparent!important;color:inherit!important}
+body.solo-mode #app-refresh:active{background:#0000000f!important}

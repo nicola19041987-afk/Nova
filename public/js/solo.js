@@ -141,6 +141,7 @@
       wantHome: () => !!((App.chat && App.chat.busy) || talkingNow()),
       talkClips: () => talkClipsOn(),
       onClip: () => { const st = document.getElementById('stage'); if (st && motionOn()) st.classList.add('has-motion'); },
+      onFail: () => { const st = document.getElementById('stage'); if (st) setTimeout(() => st.classList.remove('has-motion'), window.MotionGraph.XFADE_MS + 30); }, // v2d-32: clip bloccati -> foto
     });
     return App.motionPlayer;
   }
@@ -160,19 +161,24 @@
       clearTimeout(v._offT); v._offT = setTimeout(() => { if (!P.on) stage.classList.remove('has-motion'); }, window.MotionGraph.XFADE_MS + 30);
     };
     if (!lib.length || !P) {
-      off();
+      if (App.avatarConv) App.avatarConv.faceCalm = false;
+      off(); stage.classList.remove('motion-on');
       for (const x of vids) { x.hidden = true; x.removeAttribute('src'); x.removeAttribute('poster'); x._clipId = null; }
       if (v._clipTimer) { clearInterval(v._clipTimer); v._clipTimer = 0; }
       return;
     }
-    for (const x of vids) { if (poster && x.getAttribute('poster') !== poster) x.poster = poster; }
+    if (poster && !P.playing && v.getAttribute('poster') !== poster) v.poster = poster; // solo il primo video, solo prima del primo clip
     P.setLibrary(lib);
     if (!v._motionBound) {
       v._motionBound = true;
       for (const x of vids) x.addEventListener('error', () => { if (P.playing && x === P.els[P.cur]) { P.playing = null; } });
     }
     const tick = () => {
-      if (!motionOn()) { off(); return; }
+      if (App.avatarConv) App.avatarConv.faceCalm = motionOn(); // v2d-32: occhi/bocca sulla foto solo mentre parla
+      if (!motionOn()) { off(); stage.classList.remove('motion-on'); return; }
+      // v2d-32: i due video restano «visibili» (trasparenti) per tutto il tempo del ritratto/chiamata: su iPhone
+      // Safari non carica e non fa partire video nascosti (display:none), e il primo clip restava fermo.
+      stage.classList.add('motion-on');
       const nowT = performance.now();
       if (talkingNow()) { v._quietAt = nowT; if (talkClipsOn()) { if (!P.on) P.start(window.MotionGraph.HOME); return; } if (P.on) off(); return; }
       if (v._quietAt && nowT - v._quietAt < CLIP_AFTER_TALK_MS) return;
@@ -181,6 +187,78 @@
     };
     tick();
     if (!v._clipTimer) v._clipTimer = setInterval(tick, 200);
+  }
+  // v2d-32: anche la foto piccola (intestazione della chat, scheda in Home) si muove: un video muto, piccolo, che
+  // alterna i clip «base» della posa della foto. Niente audio, niente labiale; si ferma quando l'app è in secondo piano.
+  const MINI = [
+    { sel: '#wa-photo .wa-av', on: (b) => b.contains('wa-conv') && !b.contains('solo-portrait') && !(b.contains('in-call') && !b.contains('call-min')) },
+    { sel: '#nh-avatar', on: (b) => b.contains('solo-home') && !b.contains('solo-portrait') && !b.contains('in-call') },
+  ];
+  function miniClips(ch) {
+    const G = window.MotionGraph; if (!G || !ch) return [];
+    const lib = G.libraryOf(ch);
+    const home = lib.filter((c) => c.kind === 'base' && c.from === G.HOME && c.to === G.HOME);
+    return home.length ? home : lib.filter((c) => c.kind !== 'event' && c.kind !== 'parla' && c.from === c.to).slice(0, 8);
+  }
+  function miniPlay(v) {
+    let pr; try { pr = v.play(); } catch { pr = null; }
+    if (pr && pr.catch) pr.catch(() => {});
+  }
+  async function miniNext(v) {
+    const list = v._mini || []; if (!list.length) return;
+    const G = window.MotionGraph;
+    let c = list[Math.floor(Math.random() * list.length)];
+    if (list.length > 1 && c.id === v._miniId) c = list[(list.indexOf(c) + 1) % list.length];
+    v._miniId = c.id;
+    const src = G && G.srcFor ? await G.srcFor(c.url) : c.url;
+    if (!v.isConnected || v._miniId !== c.id) return;
+    v.src = src;
+    miniPlay(v);
+  }
+  function miniVideo(m) {
+    if (m.v) return m.v;
+    const v = m.v = document.createElement('video');
+    v.className = 'mini-motion';
+    v.muted = true; v.defaultMuted = true; v.playsInline = true; v.loop = false; v.preload = 'auto';
+    v.setAttribute('muted', ''); v.setAttribute('playsinline', ''); v.setAttribute('webkit-playsinline', ''); v.setAttribute('aria-hidden', 'true');
+    v.addEventListener('playing', () => v.classList.add('on'));
+    v.addEventListener('ended', () => { miniNext(v).catch(() => {}); });
+    v.addEventListener('error', () => { if (!v.getAttribute('src')) return; v.classList.remove('on'); setTimeout(() => { if (v.isConnected) miniNext(v).catch(() => {}); }, 3000); });
+    return v;
+  }
+  function syncMini() {
+    const b = document.body.classList;
+    const ch = soloChar() || App.current || null;
+    const micLive = !!(App.micAnyLive && App.micAnyLive()); // mentre il microfono registra, le foto piccole stanno ferme
+    const clips = !document.hidden && !micLive ? miniClips(ch) : [];
+    const key = clips.map((c) => c.id).join('|');
+    for (const m of MINI) {
+      const box = document.querySelector(m.sel);
+      const v = miniVideo(m); // sempre lo stesso video per posto: sbloccato una volta dal tocco, resta sbloccato
+      const want = !!(box && clips.length && m.on(b));
+      if (!want) {
+        if (v.isConnected || v.getAttribute('src')) { try { v.pause(); } catch { /* */ } v.classList.remove('on'); v.removeAttribute('src'); try { v.load(); } catch { /* */ } v._miniKey = null; v._miniId = null; v.remove(); }
+        continue;
+      }
+      if (v.parentNode !== box) { box.classList.add('mini-box'); box.appendChild(v); }
+      if (v._miniKey !== key) { v._miniKey = key; v._mini = clips; miniNext(v).catch(() => {}); }
+      else if (v.paused && !v.ended && v.getAttribute('src')) miniPlay(v);
+    }
+  }
+  // Primo tocco nella pagina (e ogni tocco finché Safari blocca): sblocca i video muti per sempre.
+  function unlockVideos(e) {
+    // mai durante i tocchi sul microfono, sui comandi della chiamata o sul campo di testo: lì non si tocca nessun video
+    const t = e && e.target && e.target.closest ? e.target : null;
+    if (t && t.closest('#vn-mic, #mic-btn, #solo-rt, #call-ui, #chat-input, #pin-form, #view-login, dialog')) return;
+    if (App.motionPlayer && App.motionPlayer.unlock) App.motionPlayer.unlock();
+    for (const m of MINI) {
+      const v = miniVideo(m);
+      if (!v.paused) continue;
+      const use = v.isConnected && v.getAttribute('src');
+      if (use) { miniPlay(v); continue; }
+      if (v._unlocked) continue;
+      v._unlocked = true; miniPlay(v); try { v.pause(); } catch { /* */ }
+    }
   }
   function showStage(ch) {
     const v = document.getElementById('stage-video'); if (!v || !ch) return;
@@ -292,6 +370,10 @@
     },
     bindOnce() {
       if (this._bound) return; this._bound = true;
+      // v2d-32: tocchi -> sblocco dei video muti (iPhone); foto piccole che si muovono; pausa in secondo piano.
+      for (const ev of ['touchend', 'click']) document.addEventListener(ev, unlockVideos, { capture: true, passive: true });
+      document.addEventListener('visibilitychange', () => syncMini());
+      if (!this._miniT) this._miniT = setInterval(syncMini, 700);
       const dock = $('#solo-dock');
       if (dock) dock.addEventListener('click', (e) => {
         const b = e.target.closest('[data-dock]'); if (!b) return;
@@ -437,6 +519,7 @@
       if (!document.body.classList.contains('solo-portrait')) this.paintBack(page === 'list' ? 'list' : 'page');
     },
     openPortrait() {
+      const P = motionPlayer(); if (P && P.unlock) P.unlock(); // v2d-32: dentro il tocco, così Safari lascia partire i clip
       document.body.classList.add('solo-portrait');
       this.paintBack('page');
       syncMotion();
@@ -450,6 +533,7 @@
       requestAnimationFrame(fit);
     },
     syncMotion,
+    syncMini,
     showChat() {
       document.body.classList.add('solo-chat');
       document.body.classList.remove('solo-home', 'solo-portrait');

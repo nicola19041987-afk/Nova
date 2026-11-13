@@ -163,7 +163,7 @@
   // ---------- cache dei clip (disco del telefono) + URL locali pronti ----------
   const CACHE_NAME = 'nova-motion-v1';
   const blobs = new Map(); // url -> objectURL (LRU)
-  const BLOB_MAX = 24;
+  const BLOB_MAX = 6; // v2d-32: solo i clip vicini in memoria (prima 24: troppa RAM sul telefono)
   async function cached(url) {
     if (blobs.has(url)) { const u = blobs.get(url); blobs.delete(url); blobs.set(url, u); return u; }
     let res = null;
@@ -177,27 +177,35 @@
       return u;
     } catch { return url; }
   }
+  // v2d-32: se il telefono non riesce a riprodurre un clip da URL locale (blob), da lì in poi si usa l'indirizzo del server
+  // (cache HTTP del telefono, 30 giorni): Safari lo legge sempre, a pezzi (Range).
+  // Su iPhone/iPad si parte direttamente dall'indirizzo del server: niente copia intera del video in memoria.
+  const nav0 = root.navigator || {};
+  const IOS = /iPad|iPhone|iPod/.test(nav0.userAgent || '') || (/Macintosh/.test(nav0.userAgent || '') && (nav0.maxTouchPoints || 0) > 1);
+  const srcState = { net: IOS, ios: IOS };
+  async function srcFor(url) { return srcState.net ? url : cached(url); }
   const prefetchState = { running: false, done: new Set() };
-  async function prefetchAll(lib) {
-    if (!root.caches || prefetchState.running) return;
+  // v2d-32: scaricamento anticipato «pigro»: parte qualche secondo dopo il primo clip, uno alla volta, con pause,
+  // prima i clip della posa della foto; si ferma con l'app in secondo piano. Su iPhone non serve (si legge dal server).
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  async function prefetchAll(lib, opts = {}) {
+    if (!root.caches || prefetchState.running || srcState.net) return;
     const nav = root.navigator || {};
-    if (nav.connection && nav.connection.saveData) return;
+    if (nav.connection && (nav.connection.saveData || /(^|-)2g$/.test(nav.connection.effectiveType || ''))) return;
     prefetchState.running = true;
     try {
+      await sleep(opts.delay == null ? 4000 : opts.delay);
       const c = await caches.open(CACHE_NAME);
       const want = new Set(lib.map((x) => x.url));
       for (const req of await c.keys()) { const p = new URL(req.url).pathname; if (!want.has(p)) await c.delete(req); } // clip tolti dalla libreria
-      // prima le pose vicine alla foto, poi il resto; due alla volta
       const order = [...lib].sort((a, b) => (a.from === HOME ? 0 : 1) - (b.from === HOME ? 0 : 1));
-      let i = 0;
-      const worker = async () => {
-        while (i < order.length) {
-          const u = order[i++].url;
-          if (prefetchState.done.has(u)) continue;
-          try { if (!(await c.match(u))) { const r = await fetch(u, { credentials: 'same-origin' }); if (r.ok) await c.put(u, r); } prefetchState.done.add(u); } catch { /* rete: riprova la prossima volta */ }
-        }
-      };
-      await Promise.all([worker(), worker()]);
+      for (const x of order) {
+        if (srcState.net) break;
+        while (root.document && root.document.hidden) await sleep(2000);
+        const u = x.url;
+        if (prefetchState.done.has(u)) continue;
+        try { if (!(await c.match(u))) { const r = await fetch(u, { credentials: 'same-origin' }); if (r.ok) await c.put(u, r); await sleep(opts.gap == null ? 700 : opts.gap); } prefetchState.done.add(u); } catch { /* rete: riprova la prossima volta */ }
+      }
     } finally { prefetchState.running = false; }
   }
 
@@ -209,17 +217,63 @@
       v.muted = true; v.defaultMuted = true; v.loop = false; v.playsInline = true; v.autoplay = false; v.preload = 'auto';
       v.setAttribute('playsinline', ''); v.setAttribute('webkit-playsinline', ''); v.setAttribute('muted', ''); v.removeAttribute('loop');
       v.style.transition = `opacity ${XFADE_MS}ms linear`;
+      v.style.background = 'transparent'; // senza fotogramma pronto si vede il video sotto, non un riquadro nero
     }
     const front = () => P.els[P.cur], back = () => P.els[1 - P.cur];
+    function ready(v, ms) {
+      return new Promise((ok) => {
+        if (v.readyState >= 2) return ok();
+        let done = false; const f = () => { if (done) return; done = true; v.removeEventListener('loadeddata', f); v.removeEventListener('error', f); ok(); };
+        v.addEventListener('loadeddata', f); v.addEventListener('error', f); setTimeout(f, ms);
+      });
+    }
     async function load(v, clip) {
-      const src = await cached(clip.url);
-      if (v._clipId === clip.id && v.getAttribute('src')) { try { v.currentTime = 0; } catch { /* */ } return; }
+      const src = await srcFor(clip.url);
+      if (v._clipId === clip.id && v.getAttribute('src') && !v.error) { await rewind(v); return; } // stesso clip: aspettare il ritorno al primo fotogramma, non mostrare l'ultimo
       v._clipId = clip.id; v._url = clip.url;
+      if (P.playing) v.removeAttribute('poster'); // la foto di copertina serve solo al primo clip: dopo mostrerebbe la posa sbagliata
       v.src = src;
       try { v.load(); } catch { /* */ }
-      await new Promise((ok) => { if (v.readyState >= 2) return ok(); const f = () => { v.removeEventListener('loadeddata', f); v.removeEventListener('error', f); ok(); }; v.addEventListener('loadeddata', f); v.addEventListener('error', f); setTimeout(f, 4000); });
-      try { v.currentTime = 0; } catch { /* */ }
+      await ready(v, 1500);
+      if (!v.error && v.readyState < 2) { // iPhone: non scarica finché non si preme play. Play muto e invisibile, poi pausa.
+        try { const pr = v.play(); if (pr && pr.then) await Promise.race([pr.then(() => { try { v.pause(); } catch { /* */ } }, () => {}), sleep(1500)]); } catch { /* */ }
+        await ready(v, 3000);
+      }
+      if (v.error && src !== clip.url) { // v2d-32: blob non riproducibile -> indirizzo del server, da qui in poi per tutti i clip
+        srcState.net = true;
+        v.src = clip.url; try { v.load(); } catch { /* */ }
+        await ready(v, 4000);
+      }
+      await rewind(v);
     }
+    // Riporta il video al primo fotogramma e aspetta che sia davvero lì (niente fotogramma vecchio durante la dissolvenza).
+    function rewind(v) {
+      return new Promise((ok) => {
+        if (!(v.currentTime > 0.001)) return ok();
+        let done = false; const f = () => { if (done) return; done = true; v.removeEventListener('seeked', f); ok(); };
+        v.addEventListener('seeked', f); setTimeout(f, 1200);
+        try { v.currentTime = 0; } catch { f(); }
+      });
+    }
+    // v2d-32: iPhone. Senza un tocco (o con «Risparmio energetico») Safari può rifiutare play() anche ai video muti:
+    // si ricorda il blocco, si riprova con calma e al primo tocco nella pagina P.unlock() sblocca i due video per sempre.
+    function playSafe(v) {
+      let pr; try { pr = v.play(); } catch (err) { pr = Promise.reject(err); }
+      if (!(pr && pr.then)) return Promise.resolve();
+      return pr.then(() => { P.blocked = false; }, (err) => { if (err && err.name === 'NotAllowedError') P.blocked = true; });
+    }
+    P.unlock = () => {
+      for (const v of P.els) {
+        if (v._unlocked && !P.blocked) continue;
+        v._unlocked = true;
+        if (!v.paused) continue;
+        const live = P.on && P.playing && v === front();
+        let pr; try { pr = v.play(); } catch { pr = null; } // dentro il tocco: Safari toglie il blocco a questo video
+        if (pr && pr.catch) pr.catch(() => {});
+        if (!live) { try { v.pause(); if (v.getAttribute('src')) v.currentTime = 0; } catch { /* */ } }
+      }
+      P.blocked = false;
+    };
     async function prepareNext() {
       const opts = { now: performance.now(), home: !!(hooks.wantHome && hooks.wantHome()), talk: !!(hooks.talkClips && hooks.talkClips()) };
       const probe = Object.assign({}, P.st, { recent: P.st.recent.slice() });
@@ -236,20 +290,26 @@
         if (!P.nextClip || P.nextHome !== homeNow) await prepareNext();
         const clip = P.nextClip; if (!clip || !P.on) return;
         const nv = back(), ov = front();
+        const first = !P.playing && !(ov && !ov.paused && Number(ov.style.opacity) > 0);
         if (nv._clipId !== clip.id) await load(nv, clip);
         nv.hidden = false; nv.style.opacity = '0'; nv.style.zIndex = '4'; ov.style.zIndex = '3';
-        const pr = nv.play(); if (pr && pr.catch) pr.catch(() => {});
+        playSafe(nv).catch(() => {});
         // dissolvenza dopo il primo fotogramma vero, non prima
-        await new Promise((ok) => { let done = false; const f = () => { if (done) return; done = true; ok(); }; if (nv.requestVideoFrameCallback) nv.requestVideoFrameCallback(f); else nv.addEventListener('playing', f, { once: true }); setTimeout(f, 300); });
-        nv.style.opacity = '1';
+        await new Promise((ok) => { let done = false; const f = () => { if (done) return; done = true; ok(); }; if (nv.requestVideoFrameCallback) nv.requestVideoFrameCallback(f); else nv.addEventListener('playing', f, { once: true }); setTimeout(f, 600); });
+        if (first) { // primo clip: subito pieno (sotto la foto è già nascosta), niente dissolvenza su fondo vuoto
+          nv.style.transition = 'none'; nv.style.opacity = '1'; void nv.offsetWidth;
+          requestAnimationFrame(() => { nv.style.transition = `opacity ${XFADE_MS}ms linear`; });
+        } else nv.style.opacity = '1';
         P.cur = 1 - P.cur; P.playing = clip;
         commit(P.st, clip);
-        P.log.push({ at: Math.round(performance.now()), id: clip.id, from: clip.from, to: clip.to, why: P.nextWhy });
+        P.log.push({ at: Math.round(performance.now()), id: clip.id, from: clip.from, to: clip.to, why: P.nextWhy, t0: Math.round((nv.currentTime || 0) * 1000), poster: nv.hasAttribute('poster') });
         if (P.log.length > 60) P.log.shift();
         if (hooks.onClip) hooks.onClip(clip, P.nextWhy);
         P.nextClip = null;
-        setTimeout(() => { if (front() !== ov) { try { ov.pause(); } catch { /* */ } ov.style.opacity = '0'; } }, XFADE_MS + 40);
-        prepareNext().catch(() => {});
+        // Il video vecchio si tocca solo a dissolvenza finita: caricarci subito il clip seguente mostrava un fotogramma vuoto o sbagliato.
+        await new Promise((ok) => setTimeout(ok, XFADE_MS + 40));
+        if (front() !== ov) { try { ov.pause(); } catch { /* */ } ov.style.opacity = '0'; }
+        if (!P.nextClip) prepareNext().catch(() => {});
       } finally { P.swapping = false; }
     }
     function loop() {
@@ -257,9 +317,28 @@
       if (!P.on) return;
       const v = front();
       const d = v.duration;
-      if (!P.playing || !isFinite(d) || d <= 0) swap().catch(() => {});
+      const t = performance.now();
+      // v2d-32: guardiano. Se il video davanti non avanza per 1 s si riprova play(); dopo 2,5 s si passa al clip dopo.
+      // Tre blocchi di fila con i blob -> indirizzo del server; sei di fila -> si lascia la foto e si riprova tra 20 s.
+      if (P.playing && !P.swapping) {
+        if (v.currentTime !== P._wt) { P._wt = v.currentTime; P._wAt = t; if (v.currentTime > 0.3) P.stalls = 0; }
+        else if (!P.blocked && t - (P._wAt || t) > 1000 && t - (P._retry || 0) > 600) { P._retry = t; if (v.paused || v.readyState < 3) playSafe(v); }
+        if (!P.blocked && t - (P._wAt || t) > 2500) {
+          P.stalls = (P.stalls || 0) + 1; P._wAt = t; P.log.push({ at: Math.round(t), id: P.playing.id, stall: true });
+          if (P.stalls >= 3 && !srcState.net) srcState.net = true;
+          v._clipId = null; // la prossima volta si ricarica da capo (niente src tolto qui: sarebbe un fotogramma nero)
+          if (P.stalls >= 6) { P.stop(); P.pausedUntil = t + 20000; if (hooks.onFail) hooks.onFail(); return; }
+          P.playing = null;
+        }
+      } else { P._wAt = t; P._wt = -1; }
+      // v2d-32: un clip appena partito può non avere ancora la durata (iPhone carica solo al play): si aspetta, non si
+      // passa al clip dopo a ogni fotogramma. Se dopo 5 s non c'è ancora, si prova il successivo.
+      if (P.playing && !(isFinite(d) && d > 0)) { if (!P._waitAt) P._waitAt = t; if (t - P._waitAt > 5000) { P._waitAt = 0; P.playing = null; } }
+      else P._waitAt = 0;
+      if (!P.playing) swap().catch(() => {});
+      else if (!(isFinite(d) && d > 0)) { if (v.paused && !P.swapping && t - (P._retry || 0) > 1000) { P._retry = t; playSafe(v).catch(() => {}); } }
       else if (v.ended || v.currentTime >= d - (XFADE_MS / 1000) - 0.05) swap().catch(() => {});
-      else if (v.paused && !P.swapping) { const pr = v.play(); if (pr && pr.catch) pr.catch(() => {}); }
+      else if (v.paused && !P.swapping && (!P.blocked || t - (P._retry || 0) > 1000)) { P._retry = t; playSafe(v).catch(() => {}); }
       P.raf = requestAnimationFrame(loop);
     }
     P.setLibrary = (lib) => {
@@ -270,7 +349,8 @@
       prefetchAll(lib).catch(() => {});
     };
     P.start = (fromPose) => {
-      if (P.on) return;
+      if (P.on || performance.now() < (P.pausedUntil || 0)) return;
+      P.stalls = 0;
       if (fromPose) P.st.pose = fromPose;
       P.on = true; P.playing = null; P.nextClip = null; P.cur = 1; // il primo clip va nel primo video
       for (const v of P.els) v.style.opacity = '0';
@@ -286,7 +366,7 @@
     return P;
   }
 
-  const api = { HOME, MOOD_FAMILY, moodFromText, eventFromText, libraryOf, poses, pathStep, pickNext, commit, createState, createPlayer, prefetchAll, cached, CACHE_NAME, XFADE_MS };
+  const api = { IOS, HOME, MOOD_FAMILY, moodFromText, eventFromText, libraryOf, poses, pathStep, pickNext, commit, createState, createPlayer, prefetchAll, cached, srcFor, srcState, CACHE_NAME, XFADE_MS };
   if (typeof module === 'object' && module.exports) module.exports = api;
   root.MotionGraph = api;
 })(typeof window !== 'undefined' ? window : globalThis);
