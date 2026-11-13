@@ -151,7 +151,9 @@
     if (!v || !stage) return;
     const ch = soloChar() || (App.current || null);
     const G = window.MotionGraph;
-    const lib = motionOn() && ch && G ? G.libraryOf(ch) : [];
+    // v2d-33: si suonano solo i clip del look attuale (vestito/capelli/trucco); in cache restano tutti
+    const all = motionOn() && ch && G ? G.libraryOf(ch) : [];
+    const lib = all.length && App.outfits && App.outfits.key ? G.libraryOf(ch, App.outfits.key(ch)) : all;
     const P = motionPlayer();
     const vids = [v, document.getElementById('motion-video-b')].filter(Boolean);
     const poster = (App.faceSrc && App.faceSrc(ch)) || '';
@@ -168,7 +170,7 @@
       return;
     }
     if (poster && !P.playing && v.getAttribute('poster') !== poster) v.poster = poster; // solo il primo video, solo prima del primo clip
-    P.setLibrary(lib);
+    P.setLibrary(lib, all);
     if (!v._motionBound) {
       v._motionBound = true;
       for (const x of vids) x.addEventListener('error', () => { if (P.playing && x === P.els[P.cur]) { P.playing = null; } });
@@ -196,7 +198,7 @@
   ];
   function miniClips(ch) {
     const G = window.MotionGraph; if (!G || !ch) return [];
-    const lib = G.libraryOf(ch);
+    const lib = App.outfits && App.outfits.key ? G.libraryOf(ch, App.outfits.key(ch)) : G.libraryOf(ch); // v2d-33: clip del look attuale
     const home = lib.filter((c) => c.kind === 'base' && c.from === G.HOME && c.to === G.HOME);
     return home.length ? home : lib.filter((c) => c.kind !== 'event' && c.kind !== 'parla' && c.from === c.to).slice(0, 8);
   }

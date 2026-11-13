@@ -123,6 +123,13 @@
       const c = (App.chars || []).find((x) => x.avatar === src), f = !c && (App.chars || []).find((x) => x.frameFill && x.frameFill.url === src);
       if (c) { const r = await App.api(`/api/characters/${c.id}/landmarks`, { method: 'PUT', body: { avatar: src, landmarks: lm } }); if (r.applied) adopt(r.character); }
       else if (f) { await App.api(`/api/characters/${f.id}/frame-fill/landmarks`, { method: 'PUT', body: { url: src, landmarks: lm } }); f.frameFill = { ...f.frameFill, landmarks: { ...lm, auto: true, src } }; }
+      else { // v2d-33: foto di un look (vestito): i punti si salvano sul look, il labiale li usa da subito
+        const o = !c && !f && (App.chars || []).map((x) => [x, (x.outfits || []).find((y) => y && y.avatar === src)]).find((p) => p[1]);
+        if (o) {
+          const r = await App.api(`/api/characters/${o[0].id}/outfits/${o[1].key}/landmarks`, { method: 'PUT', body: { avatar: src, landmarks: lm } });
+          if (r && r.outfit) { const L = o[0].outfits; const i = L.findIndex((y) => y && y.key === r.outfit.key); if (i >= 0) L[i] = r.outfit; if (App.current && App.current.id === o[0].id && App.current !== o[0] && Array.isArray(App.current.outfits)) { const j = App.current.outfits.findIndex((y) => y && y.key === r.outfit.key); if (j >= 0) App.current.outfits[j] = r.outfit; } }
+        }
+      }
     } catch (e) { console.warn('Punti del viso non salvati:', e.message); }
   };
   App.faceMigrate = async function () {

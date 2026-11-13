@@ -165,6 +165,7 @@
   function save(s, role, text, extra = {}) {
     text = String(text || '').replace(/\s+/g, ' ').trim(); if (!text) return;
     if (App.chat && App.chat.motionHear) App.chat.motionHear(text, role === 'assistant'); // v2d-30: anche in chiamata
+    if (role === 'user' && App.outfits && App.outfits.hear && App.current) App.outfits.hear(App.current, text); // v2d-33: «mettiti la tuta» anche a voce
     s.saveQ = s.saveQ.then(async () => {
       if (role === 'assistant') { const t0 = performance.now(); while (s.waitUser && performance.now() - t0 < 2500) await new Promise((r) => setTimeout(r, 120)); }
       try {

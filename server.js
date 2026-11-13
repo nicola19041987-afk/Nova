@@ -1332,13 +1332,69 @@ app.post('/api/characters/:id/motion-clips', auth, express.raw({ type: ['video/m
   const event = motionTok(q.event);
   if (kind === 'event' && !event) return res.status(400).json({ error: 'Per un clip evento serve il nome dell\'evento' });
   const mood = String(q.mood || '').split(',').map((m) => motionTok(m)).filter(Boolean).slice(0, 6);
+  const outfit = motionTok(q.outfit); // v2d-33: look a cui appartiene il clip (vuoto = foto di base)
   const file = `${newId()}.mp4`;
   fs.writeFileSync(path.join(avatarDir(), file), buf);
-  const clip = { id: newId(), url: `/api/motion/${file}`, kind, from, to, mood, ...(event ? { event } : {}), weight: Math.max(0.05, Math.min(10, Number(q.weight) || 1)), label: String(q.label || '').slice(0, 60), bytes: buf.length, at: new Date().toISOString(), by: req.user };
+  const clip = { id: newId(), url: `/api/motion/${file}`, kind, from, to, mood, ...(event ? { event } : {}), ...(outfit ? { outfit } : {}), weight: Math.max(0.05, Math.min(10, Number(q.weight) || 1)), label: String(q.label || '').slice(0, 60), bytes: buf.length, at: new Date().toISOString(), by: req.user };
   try {
     const updated = await patchChar(ch.id, (c) => { c.motionClips = [...(Array.isArray(c.motionClips) ? c.motionClips : []), clip].slice(-MOTION_CLIPS_MAX); c.updatedAt = new Date().toISOString(); c.updatedBy = req.user; });
     res.json({ clip, count: updated.motionClips.length });
   } catch (e) { res.status(e.status || 500).json({ error: e.message || 'Salvataggio non riuscito' }); }
+});
+// v2d-33: guardaroba di Nova. Ogni look = foto (stesso viso e inquadratura, altro vestito/acconciatura/trucco) + suoi clip.
+// POST /api/characters/:id/outfits?key=sportiva_top&style=sportiva&label=...&words=coda,top  (corpo: JPEG/PNG) — solo proprietario.
+// Stessa chiave = foto sostituita. L'app sceglie il look da sola (ora del giorno) o su richiesta in chat.
+const OUTFITS_MAX = 40;
+const OUTFIT_STYLES = ['sportiva', 'comoda', 'elegante', 'sexy'];
+const isImg = (b) => Buffer.isBuffer(b) && b.length > 8 && ((b[0] === 0xff && b[1] === 0xd8) || (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47));
+app.get('/api/characters/:id/outfits', auth, (req, res) => {
+  if (!ID_RE.test(req.params.id)) return res.status(400).json({ error: 'ID non valido' });
+  let ch; try { ch = getChars(req.user).find((c) => c && c.id === req.params.id); } catch (e) { return res.status(e.status || 500).json({ error: e.message }); }
+  if (!ch) return res.status(404).json({ error: 'Personaggio non trovato' });
+  res.json({ outfits: Array.isArray(ch.outfits) ? ch.outfits : [] });
+});
+app.post('/api/characters/:id/outfits', auth, express.raw({ type: ['image/jpeg', 'image/png', 'application/octet-stream'], limit: 6 * 1024 * 1024 }), async (req, res) => {
+  const ch = motionOwner(req, res); if (!ch) return;
+  const buf = req.body;
+  if (!isImg(buf)) return res.status(400).json({ error: 'Serve una foto JPEG o PNG.' });
+  const q = req.query || {};
+  const key = motionTok(q.key);
+  if (!key) return res.status(400).json({ error: 'Serve la chiave del look (lettere minuscole e _)' });
+  const style = OUTFIT_STYLES.includes(q.style) ? q.style : 'comoda';
+  const words = String(q.words || '').toLowerCase().split(',').map((w) => w.trim()).filter((w) => /^[a-zà-ù]{3,20}$/.test(w)).slice(0, 8);
+  const prev = (ch.outfits || []).find((o) => o && o.key === key);
+  if (!prev && (ch.outfits || []).length >= OUTFITS_MAX) return res.status(409).json({ error: `Guardaroba pieno (max ${OUTFITS_MAX} look)` });
+  const avatar = saveAvatarBuffer(req.user, buf);
+  const outfit = { key, style, label: String(q.label || key).replace(/[\u0000-\u001f<>]/g, '').slice(0, 80), words, avatar, landmarks: null, at: new Date().toISOString(), by: req.user };
+  try {
+    const updated = await patchChar(ch.id, (c) => { const L = Array.isArray(c.outfits) ? c.outfits.filter((o) => o && o.key !== key) : []; c.outfits = [...L, outfit].slice(-OUTFITS_MAX); c.updatedAt = new Date().toISOString(); c.updatedBy = req.user; });
+    res.json({ outfit, count: updated.outfits.length });
+  } catch (e) { res.status(e.status || 500).json({ error: e.message || 'Salvataggio non riuscito' }); }
+});
+// Toglie un look (la foto resta sul disco). I suoi clip restano nella libreria ma non si suonano più.
+app.delete('/api/characters/:id/outfits/:key', auth, async (req, res) => {
+  const ch = motionOwner(req, res); if (!ch) return;
+  const key = motionTok(req.params.key);
+  if (!key || !(ch.outfits || []).some((o) => o && o.key === key)) return res.status(404).json({ error: 'Look non trovato' });
+  try {
+    const updated = await patchChar(ch.id, (c) => { c.outfits = (c.outfits || []).filter((o) => o && o.key !== key); c.updatedAt = new Date().toISOString(); c.updatedBy = req.user; });
+    res.json({ ok: true, count: updated.outfits.length });
+  } catch (e) { res.status(e.status || 500).json({ error: e.message || 'Salvataggio non riuscito' }); }
+});
+// Punti del viso misurati sul telefono sulla foto di un look (come /landmarks per la foto di base).
+app.put('/api/characters/:id/outfits/:key/landmarks', auth, async (req, res) => {
+  if (!ID_RE.test(req.params.id)) return res.status(400).json({ error: 'ID non valido' });
+  const ch = getChars(req.user).find((c) => c && c.id === req.params.id);
+  if (!ch) return res.status(404).json({ error: 'Personaggio non trovato' });
+  const key = motionTok(req.params.key), avatar = String(req.body.avatar || ''), lm = req.body.landmarks;
+  if (!lm || !lm.eyeL || !lm.eyeR || !lm.mouth) return res.status(400).json({ error: 'Punti del viso mancanti' });
+  let outfit = null;
+  await patchChar(ch.id, (c) => {
+    const o = (c.outfits || []).find((x) => x && x.key === key);
+    if (!o || o.avatar !== avatar) return false; // foto cambiata nel frattempo: ignora
+    o.landmarks = cleanLm({ ...lm, auto: true, src: avatar }, avatar); outfit = o;
+  });
+  res.json({ applied: !!outfit, outfit });
 });
 // Toglie un clip dalla libreria. Il file resta sul disco (si può rimettere senza ricaricarlo).
 app.delete('/api/characters/:id/motion-clips/:clipId', auth, async (req, res) => {
@@ -2048,6 +2104,9 @@ app.post('/api/chats/:id', auth, requireActivated, (req, res, next) => (req.body
       ...history.map((m) => (m.role === 'user' ? { role: 'user', content: `${authorLabel(m)}: ${m.voice ? '[nota vocale] ' : ''}${m.content}${m.photo ? `${m.content ? ' ' : ''}[ti ha mandato ${m.photo.kind === 'video' ? 'un video' : 'una foto'} dalla sua galleria: non puoi vederne il contenuto; reagisci con naturalezza e, se ti va, chiedi cosa c'è]` : ''}` } : { role: 'assistant', content: m.content }))];
   } finally { chatMemo = null; }
   if (intent && intent.hint && messages.length && messages[0].role === 'system') messages[0].content += '\n\n' + intent.hint;
+  // v2d-33: cosa indossa adesso (look scelto dall'app). Il testo è quello del guardaroba sul server, non quello del telefono.
+  const outfitNow = req.body.outfit && (ch.outfits || []).find((o) => o && o.key === motionTok(req.body.outfit));
+  if (outfitNow && messages.length && messages[0].role === 'system') messages[0].content += `\n\nIn questo momento indossi: ${outfitNow.label}.` + (req.body.outfitChanged === true ? ' Ti sei appena cambiata perché te l\'hanno chiesto: puoi dirlo in modo naturale e breve.' : '');
   if (intent) res.setHeader('X-App-Intent', intent.kind === 'note' ? 'nota' : 'richiesta');
   if (frame && messages.length) {
     const last = messages[messages.length - 1];

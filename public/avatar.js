@@ -99,7 +99,8 @@
     setCharacter(ch) {
       if (!ch) return;
       // v8.4.3: senza punti del viso propri NON si ereditano quelli del personaggio precedente (occhi/bocca storti): predefiniti «incerti»
-      this.lm = JSON.parse(JSON.stringify(ch.landmarks && ch.landmarks.eyeL ? ch.landmarks : DEF_LM));
+      const chLm = (window.App && App.faceLm) ? App.faceLm(ch) : ch.landmarks; // v2d-33: punti del viso del look attuale
+      this.lm = JSON.parse(JSON.stringify(chLm && chLm.eyeL ? chLm : DEF_LM));
       if (ch.appearance && ch.appearance.colors) this.setColors(ch.appearance.colors);
       this.framing = (ch.appearance && ch.appearance.framing) || 'ritratto';
       this.setDistance(ch.frameDist == null ? 0.75 : ch.frameDist, true);

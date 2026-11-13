@@ -59,12 +59,16 @@
 
   // Normalizza la libreria del personaggio. Compatibile con il vecchio campo motionVideo (un solo clip petto->petto).
   const URL_RE = /^\/api\/motion\/[a-f0-9]{16}\.mp4$/;
-  function libraryOf(ch) {
+  // v2d-33: outfit = chiave del look attuale (vestito, capelli, trucco). Ogni look ha i suoi clip (campo outfit del clip);
+  // i clip senza outfit sono quelli della foto di base. Senza secondo argomento: tutti i clip (come prima).
+  function libraryOf(ch, outfit) {
     const out = [];
+    const want = outfit === undefined ? null : tok(outfit, '');
     const seen = new Set();
     const list = (ch && Array.isArray(ch.motionClips)) ? ch.motionClips : [];
     for (const c of list) {
       if (!c || !URL_RE.test(String(c.url || ''))) continue;
+      if (want !== null && tok(c.outfit, '') !== want) continue;
       const key = [c.url, c.kind, c.event, c.from, c.to].join('|'); // lo stesso file può servire da base e da evento
       if (seen.has(key)) continue;
       seen.add(key);
@@ -72,9 +76,9 @@
       const from = tok(c.from, HOME), to = tok(c.to, from);
       out.push({ id: String(c.id || key), url: c.url, from, to, kind: kind === 'base' && from !== to ? 'move' : kind,
         mood: (Array.isArray(c.mood) ? c.mood : [c.mood]).map((m) => tok(m, '')).filter(Boolean),
-        event: tok(c.event, ''), weight: Math.max(0.05, Math.min(10, Number(c.weight) || 1)), label: String(c.label || '').slice(0, 60) });
+        event: tok(c.event, ''), outfit: tok(c.outfit, ''), weight: Math.max(0.05, Math.min(10, Number(c.weight) || 1)), label: String(c.label || '').slice(0, 60) });
     }
-    if (!out.length && ch && URL_RE.test(String(ch.motionVideo || ''))) {
+    if (!out.length && !want && ch && URL_RE.test(String(ch.motionVideo || ''))) {
       out.push({ id: 'legacy', url: ch.motionVideo, from: HOME, to: HOME, kind: 'base', mood: [], event: '', weight: 1, label: 'idle' });
     }
     return out;
@@ -198,7 +202,8 @@
       const c = await caches.open(CACHE_NAME);
       const want = new Set(lib.map((x) => x.url));
       for (const req of await c.keys()) { const p = new URL(req.url).pathname; if (!want.has(p)) await c.delete(req); } // clip tolti dalla libreria
-      const order = [...lib].sort((a, b) => (a.from === HOME ? 0 : 1) - (b.from === HOME ? 0 : 1));
+      const now = new Set((opts.first || []).map((x) => x.url)); // v2d-33: prima i clip del look attuale
+      const order = [...lib].sort((a, b) => (now.has(a.url) ? 0 : 2) + (a.from === HOME ? 0 : 1) - (now.has(b.url) ? 0 : 2) - (b.from === HOME ? 0 : 1));
       for (const x of order) {
         if (srcState.net) break;
         while (root.document && root.document.hidden) await sleep(2000);
@@ -341,12 +346,13 @@
       else if (v.paused && !P.swapping && (!P.blocked || t - (P._retry || 0) > 1000)) { P._retry = t; playSafe(v).catch(() => {}); }
       P.raf = requestAnimationFrame(loop);
     }
-    P.setLibrary = (lib) => {
+    // all = libreria completa (tutti i look): resta tutta in cache sul telefono, si suonano solo i clip di lib (look attuale).
+    P.setLibrary = (lib, all) => {
       const key = lib.map((c) => c.id + c.from + c.to + c.kind).join('|');
       if (key === P._libKey) return; P._libKey = key; P.lib = lib;
       if (!lib.some((c) => c.from === P.st.pose)) P.st.pose = HOME;
       P.nextClip = null;
-      prefetchAll(lib).catch(() => {});
+      prefetchAll(all && all.length ? all : lib, { first: lib }).catch(() => {});
     };
     P.start = (fromPose) => {
       if (P.on || performance.now() < (P.pausedUntil || 0)) return;

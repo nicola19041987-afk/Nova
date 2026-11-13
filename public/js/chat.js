@@ -161,6 +161,8 @@ App.chat = {
     // Bolla tua e «sta scrivendo…» subito. La parola chiave la controlla il server, senza un giro in più prima del disegno.
     this.busy = true; const ch = App.current;
     this.motionHear(text, false); // «etciù», «ahah», «ciao»… detto da voi: Nova reagisce con il corpo
+    const dressed = !noAI && App.outfits && App.outfits.hear ? App.outfits.hear(ch, text) : null; // v2d-33: «mettiti qualcosa di sportivo»
+    const outfitNow = App.outfits && App.outfits.key ? App.outfits.key(ch) : '';
     const meName = App.me.name;
     const tSend = performance.now();
     const local = this.addMsg({ role: 'user', author: App.me.user, authorName: meName, content: text, noAI, at: new Date().toISOString(), ...(photo ? { photo: { localSrc: photo.url, localThumb: photo.thumb, kind: photo.kind, w: photo.w, h: photo.h } } : {}), ...(voice ? { voice } : {}) });
@@ -187,7 +189,7 @@ App.chat = {
       if (stick) this.scroll();
     };
     try {
-      const r = await App.api(`/api/chats/${ch.id}`, { method: 'POST', body: { message: text, ...ph, ...voiceBody, ...(sight ? { sight } : {}), ...(App.call && App.call.active ? { call: true, callMode: App.call.mode || 'video' } : {}) }, ai: true, raw: true });
+      const r = await App.api(`/api/chats/${ch.id}`, { method: 'POST', body: { message: text, ...ph, ...voiceBody, ...(sight ? { sight } : {}), ...(outfitNow ? { outfit: outfitNow, ...(dressed ? { outfitChanged: true } : {}) } : {}), ...(App.call && App.call.active ? { call: true, callMode: App.call.mode || 'video' } : {}) }, ai: true, raw: true });
       if (!r.ok) {
         const j = await r.json().catch(() => ({}));
         if (j.message) this.claim(local, j.message.id); // il tuo messaggio è comunque salvato nella chat condivisa
