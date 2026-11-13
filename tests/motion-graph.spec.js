@@ -42,9 +42,34 @@ test('non ripete subito lo stesso clip e l\'umore sposta la scelta', () => {
     return { ...n, repeats };
   };
   const happy = count('allegra'), calm = count('calma');
-  expect(happy.e).toBeGreaterThan(happy.d);
-  expect(calm.d).toBeGreaterThan(calm.e);
-  expect(happy.repeats).toBeLessThan(150);
+  // v2d-34: mai lo stesso clip due volte di fila (con due clip si alternano)
+  expect(happy.repeats).toBe(0);
+  expect(calm.repeats).toBe(0);
+  // l'umore sposta comunque la scelta (prima scelta da stato nuovo)
+  const first = (mood) => {
+    const n = { e: 0, d: 0 }; let x = 7; const rand = () => { x = (x * 9301 + 49297) % 233280; return x / 233280; };
+    for (let i = 0; i < 300; i++) { const st = G.createState(); st.mood = mood; st.moodUntil = 1e12; n[G.pickNext(lib, st, { now: 0, rand }).clip.id]++; }
+    return n;
+  };
+  const h1 = first('allegra'), c1 = first('calma');
+  expect(h1.e).toBeGreaterThan(h1.d);
+  expect(c1.d).toBeGreaterThan(c1.e);
+});
+
+test('v2d-34: mai lo stesso clip di fila; con 5 clip mai uno tra gli ultimi 3; con 3 clip niente giro fisso', () => {
+  const mk = (n) => Array.from({ length: n }, (_, j) => ({ id: 'k' + j, url: '/api/motion/' + String(j + 1).repeat(16) + '.mp4', from: 'petto', to: 'petto', kind: 'base', mood: [], event: '', weight: 1 }));
+  const run = (lib) => { const st = G.createState(); const seq = []; for (let i = 0; i < 300; i++) { const { clip } = G.pickNext(lib, st, { now: i }); seq.push(clip.id); G.commit(st, clip); } return seq; };
+  const s5 = run(mk(5)); for (let i = 3; i < s5.length; i++) expect([s5[i - 1], s5[i - 2], s5[i - 3]]).not.toContain(s5[i]);
+  const s3 = run(mk(3)); for (let i = 1; i < s3.length; i++) expect(s3[i]).not.toBe(s3[i - 1]);
+  let cyc = 0; for (let i = 3; i < s3.length; i++) if (s3[i] === s3[i - 3]) cyc++;
+  expect(cyc).toBeLessThan(s3.length - 50); // non un giro fisso a-b-c-a-b-c
+});
+
+test('v2d-34: 3 clip, pesi diversi: mai lo stesso di fila', () => {
+  const lib = [1, 2, 3].map((k) => ({ id: 'c' + k, url: '/api/motion/' + String(k).repeat(16) + '.mp4', from: 'petto', to: 'petto', kind: 'base', mood: [], event: '', weight: k === 1 ? 5 : 1 }));
+  const st = G.createState(); const seq = [];
+  for (let i = 0; i < 200; i++) { const { clip } = G.pickNext(lib, st, { now: i }); seq.push(clip.id); G.commit(st, clip); }
+  for (let i = 1; i < seq.length; i++) expect(seq[i]).not.toBe(seq[i - 1]);
 });
 
 test('un evento parte appena possibile: prima il percorso fino alla sua posa, poi una volta sola', () => {

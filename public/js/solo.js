@@ -169,6 +169,9 @@
       if (v._clipTimer) { clearInterval(v._clipTimer); v._clipTimer = 0; }
       return;
     }
+    // v2d-34: sotto i video c'è sempre la foto del look (mai il fondo chiaro), anche se un clip tarda a caricare
+    const bgv = /^\/api\/avatars\/[a-f0-9]{16}\.(png|jpg)$/.test(poster) ? `url("${poster}")` : 'none';
+    if (stage.style.getPropertyValue('--nv-photo') !== bgv) stage.style.setProperty('--nv-photo', bgv);
     if (poster && !P.playing && v.getAttribute('poster') !== poster) v.poster = poster; // solo il primo video, solo prima del primo clip
     P.setLibrary(lib, all);
     if (!v._motionBound) {

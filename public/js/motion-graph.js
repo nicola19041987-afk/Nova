@@ -102,7 +102,19 @@
   }
 
   function rnd(r) { return typeof r === 'function' ? r() : Math.random(); }
-  function weighted(cands, wf, r) {
+  // v2d-34: mai lo stesso clip due volte di fila né tra gli ultimi scelti (niente «tic»): se ci sono alternative,
+  // i clip usati di recente sono esclusi (2-3 clip: mai lo stesso di fila; 4: mai tra gli ultimi 2; 5+: ultimi 3),
+  // lasciando sempre almeno due scelte quando ci sono: niente giro fisso sempre uguale.
+  function fresh(cands, st) {
+    const recent = (st && st.recent) || [];
+    const keep = cands.length < 2 ? 0 : Math.min(3, Math.max(1, cands.length - 2));
+    if (keep <= 0) return cands;
+    const ban = new Set(recent.slice(0, keep));
+    const ok = cands.filter((c) => !ban.has(c.id));
+    return ok.length ? ok : cands;
+  }
+  function weighted(cands, wf, r, pool) {
+    if (pool && pool.length) cands = pool;
     const ws = cands.map(wf); const sum = ws.reduce((a, b) => a + b, 0);
     if (!(sum > 0)) return cands[0] || null;
     let x = rnd(r) * sum;
@@ -153,7 +165,7 @@
       const k = st.recent.indexOf(c.id);
       if (k === 0) w *= cands.length > 1 ? 0.15 : 1; else if (k > 0) w *= 0.35;
       return w;
-    }, r);
+    }, r, fresh(cands, st));
     return { clip: pick, why: 'base:' + mood };
   }
   function commit(st, clip) {
@@ -288,8 +300,22 @@
       P.nextClip = clip; P.nextWhy = why; P.nextHome = opts.home;
       await load(back(), clip);
     }
+    // v2d-34: pronto = fotogramma decodificato, nessun errore, e il tempo del video avanza (non solo «play» chiamato)
+    function playable(v, ms) {
+      return new Promise((ok) => {
+        const t0 = performance.now(), c0 = v.currentTime;
+        const chk = () => {
+          if (v.error) return ok(false);
+          if (v.readyState >= 2 && !v.paused && v.currentTime > c0 + 0.02) return ok(true);
+          if (performance.now() - t0 > ms) return ok(false);
+          if (v.paused && performance.now() - t0 > 400) playSafe(v).catch(() => {});
+          setTimeout(chk, 50);
+        };
+        chk();
+      });
+    }
     async function swap() {
-      if (P.swapping) return; P.swapping = true;
+      if (P.swapping || performance.now() < (P._holdUntil || 0)) return; P.swapping = true;
       try {
         const homeNow = !!(hooks.wantHome && hooks.wantHome());
         if (!P.nextClip || P.nextHome !== homeNow) await prepareNext();
@@ -301,6 +327,20 @@
         playSafe(nv).catch(() => {});
         // dissolvenza dopo il primo fotogramma vero, non prima
         await new Promise((ok) => { let done = false; const f = () => { if (done) return; done = true; ok(); }; if (nv.requestVideoFrameCallback) nv.requestVideoFrameCallback(f); else nv.addEventListener('playing', f, { once: true }); setTimeout(f, 600); });
+        // v2d-34: il clip nuovo entra solo quando suona davvero (fotogramma pronto e tempo che avanza). Prima, su iPhone
+        // con la rete lenta, entrava un video ancora vuoto (trasparente) e si vedeva il fondo bianco, poi tutto fermo.
+        // Se non è pronto: resta l'immagine attuale, il clip viene ricaricato e si riprova tra poco.
+        if (!(await playable(nv, 2500)) || !P.on) {
+          try { nv.pause(); } catch { /* */ }
+          nv.style.opacity = '0'; nv.style.zIndex = '3'; ov.style.zIndex = '4';
+          nv._clipId = null; P.nextClip = null; P._holdUntil = performance.now() + 700;
+          P.notReady = (P.notReady || 0) + 1;
+          P.log.push({ at: Math.round(performance.now()), id: clip.id, notReady: true, rs: nv.readyState });
+          if (P.log.length > 60) P.log.shift();
+          if (P.notReady >= 3 && !srcState.net) srcState.net = true;
+          return;
+        }
+        P.notReady = 0;
         if (first) { // primo clip: subito pieno (sotto la foto è già nascosta), niente dissolvenza su fondo vuoto
           nv.style.transition = 'none'; nv.style.opacity = '1'; void nv.offsetWidth;
           requestAnimationFrame(() => { nv.style.transition = `opacity ${XFADE_MS}ms linear`; });

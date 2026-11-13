@@ -1214,6 +1214,11 @@ body.solo-mode.solo-portrait:not(.in-call) #stage.motion-on #motion-video-b{
   width:100%!important;height:100%!important;max-width:none!important;max-height:none!important;
   object-fit:cover!important;object-position:center top!important;background:#000;pointer-events:none;
 }
+/* v2d-34: mentre i clip girano, sotto c'è la foto del look (stessa inquadratura dei video): mai un fondo bianco */
+body.solo-mode.in-call:not(.call-min) #stage.call:not(.voice).has-motion,
+body.solo-mode.solo-portrait:not(.in-call) #stage.has-motion{
+  background:#000 var(--nv-photo,none) center top / cover no-repeat!important;
+}
 /* v2d-32: prima del primo clip i video ci sono ma trasparenti, senza fondo nero: si vede la foto sotto */
 #stage:not(.has-motion) #motion-video,#stage:not(.has-motion) #motion-video-b{background:transparent!important;opacity:0!important}
 /* v2d-32: foto piccole (intestazione, Home) che si muovono */
