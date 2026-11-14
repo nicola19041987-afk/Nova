@@ -48,7 +48,7 @@
     ['applaude', /👏|\bapplaus|\bbrav[ao]!/],
     ['spalle', /🤷|\balzo le spalle\b|\bchi lo sa\b|\bboh\b/],
   ];
-  const GESTURE_EVENT = { annuisce: 'annuisce', ride: 'ride', saluta: 'saluta', nega: 'nega', ammicca: 'occhiolino', pensa: 'pensa', sorride: null, inclina: null };
+  const GESTURE_EVENT = { spiega: 'spiega', annuisce: 'annuisce', ride: 'ride', saluta: 'saluta', nega: 'nega', ammicca: 'occhiolino', pensa: 'pensa', sorride: null, inclina: null };
   function eventFromText(text) {
     const t = String(text || '').toLowerCase();
     const g = /\[gesto:\s*([a-zà-ù_]+)\s*\]/i.exec(t);
@@ -81,6 +81,28 @@
     if (!out.length && !want && ch && URL_RE.test(String(ch.motionVideo || ''))) {
       out.push({ id: 'legacy', url: ch.motionVideo, from: HOME, to: HOME, kind: 'base', mood: [], event: '', weight: 1, label: 'idle' });
     }
+    return out;
+  }
+  // v2d-35: movimento «da videochiamata vera». Se il look ha almeno 2 clip calmi (respiro, cenni, testa inclinata) dalla
+  // posa della foto, a riposo suonano SOLO quelli; i gesti delle mani diventano eventi, legati al discorso (risata, saluto,
+  // «ci penso»…), al massimo uno ogni EVENT_GAP_MS. I clip che partono o finiscono in un'altra posa (braccia ai fianchi,
+  // conserte…) si tolgono: niente percorsi strani quando sta per parlare. Senza 2 clip calmi la libreria resta com'era.
+  const GESTURE_RE = /gesticol|mani avanti|palmi|braccia|braccio|mano tesa|fianch|conserte|\banca\b|capelli|starnut|saluta|risata|tempia|mento|invit|ciocca|\bdita\b/i;
+  const EVENT_OF = [[/risata|ride/i, 'ride'], [/saluta/i, 'saluta'], [/starnut/i, 'starnuto'], [/capelli|ciocca/i, 'capelli'], [/pensa|mento|tempia/i, 'pensa'], [/gesticol|mani avanti|palmi|mano tesa|invit|spiega/i, 'spiega']];
+  const EVENT_GAP_MS = 30000;
+  function isGesture(c) { return c.kind === 'event' || GESTURE_RE.test(c.label || ''); }
+  function calmLibrary(lib) {
+    const home = lib.filter((c) => c.from === HOME && c.to === HOME);
+    const calm = home.filter((c) => c.kind === 'base' && !isGesture(c));
+    if (calm.length < 2) return lib;
+    const out = calm.slice();
+    for (const c of home) {
+      if (c.kind === 'parla') { out.push(c); continue; }
+      if (!isGesture(c)) continue;
+      const ev = c.kind === 'event' && c.event ? c.event : (EVENT_OF.find(([re]) => re.test(c.label || '')) || [])[1];
+      if (ev) out.push({ ...c, kind: 'event', event: ev });
+    }
+    out.calm = true;
     return out;
   }
   function poses(lib) { const s = new Set([HOME]); for (const c of lib) { s.add(c.from); s.add(c.to); } return [...s]; }
@@ -173,6 +195,7 @@
     st.dwell = clip.to === st.pose ? st.dwell + 1 : 0;
     st.pose = clip.to;
     st.recent = [clip.id, ...st.recent.filter((x) => x !== clip.id)].slice(0, 4);
+    if (clip.kind === 'event') st.lastEventAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
     return st;
   }
 
@@ -408,11 +431,11 @@
       P.playing = null; P.nextClip = null;
     };
     P.mood = (m, ms = 60000) => { const f = MOOD_FAMILY[m] || (TOKEN.test(m || '') ? m : null); if (!f) return; if (f !== P.st.mood && !P.swapping) P.nextClip = null; /* il prossimo clip segue subito il nuovo umore */ P.st.mood = f; P.st.moodUntil = performance.now() + ms; };
-    P.event = (e, ms = 25000) => { if (!e) return; P.st.event = e; P.st.eventUntil = performance.now() + ms; P.nextClip = null; };
+    P.event = (e, ms = 25000) => { if (!e) return; if (P.lib && P.lib.calm && performance.now() - (P.st.lastEventAt || -1e9) < EVENT_GAP_MS) return; /* v2d-35: gesti rari */ P.st.event = e; P.st.eventUntil = performance.now() + ms; P.nextClip = null; };
     return P;
   }
 
-  const api = { IOS, HOME, MOOD_FAMILY, moodFromText, eventFromText, libraryOf, poses, pathStep, pickNext, commit, createState, createPlayer, prefetchAll, cached, srcFor, srcState, CACHE_NAME, XFADE_MS };
+  const api = { calmLibrary, isGesture, EVENT_GAP_MS, IOS, HOME, MOOD_FAMILY, moodFromText, eventFromText, libraryOf, poses, pathStep, pickNext, commit, createState, createPlayer, prefetchAll, cached, srcFor, srcState, CACHE_NAME, XFADE_MS };
   if (typeof module === 'object' && module.exports) module.exports = api;
   root.MotionGraph = api;
 })(typeof window !== 'undefined' ? window : globalThis);

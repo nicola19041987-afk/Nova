@@ -41,8 +41,11 @@
     hide(v);
     if (pending && !talking() && !simli()) { const id = pending; pending = null; play(id); }
   }
+  // v2d-35: in Nova con i suoi clip di movimento, niente gesti «di repertorio» sopra il video (venivano da un'altra foto)
+  const ownMotion = () => document.body.classList.contains('solo-mode') && !!(App.motionPlayer && App.motionPlayer.lib && App.motionPlayer.lib.length);
   function play(id) {
     const clip = byId(id); if (!clip) return false;
+    if (ownMotion()) { pending = null; return false; }
     if (simli()) { pending = null; return false; }
     if (talking()) { pending = id; return false; }
     const v = video(); if (!v) return false;

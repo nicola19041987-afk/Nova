@@ -153,7 +153,8 @@
     const G = window.MotionGraph;
     // v2d-33: si suonano solo i clip del look attuale (vestito/capelli/trucco); in cache restano tutti
     const all = motionOn() && ch && G ? G.libraryOf(ch) : [];
-    const lib = all.length && App.outfits && App.outfits.key ? G.libraryOf(ch, App.outfits.key(ch)) : all;
+    const lib0 = all.length && App.outfits && App.outfits.key ? G.libraryOf(ch, App.outfits.key(ch)) : all;
+    const lib = G && G.calmLibrary ? G.calmLibrary(lib0) : lib0; // v2d-35: a riposo solo movimenti calmi, gesti legati al discorso
     const P = motionPlayer();
     const vids = [v, document.getElementById('motion-video-b')].filter(Boolean);
     const poster = (App.faceSrc && App.faceSrc(ch)) || '';
@@ -202,7 +203,9 @@
   function miniClips(ch) {
     const G = window.MotionGraph; if (!G || !ch) return [];
     const lib = App.outfits && App.outfits.key ? G.libraryOf(ch, App.outfits.key(ch)) : G.libraryOf(ch); // v2d-33: clip del look attuale
-    const home = lib.filter((c) => c.kind === 'base' && c.from === G.HOME && c.to === G.HOME);
+    const home0 = lib.filter((c) => c.kind === 'base' && c.from === G.HOME && c.to === G.HOME);
+    const quiet = G.isGesture ? home0.filter((c) => !G.isGesture(c)) : home0; // v2d-35: anche la foto piccola solo calma
+    const home = quiet.length >= 2 ? quiet : home0;
     return home.length ? home : lib.filter((c) => c.kind !== 'event' && c.kind !== 'parla' && c.from === c.to).slice(0, 8);
   }
   function miniPlay(v) {

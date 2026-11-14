@@ -138,6 +138,8 @@
     refresh() { this.load(); },
     // riproduce un'azione pronta del personaggio aperto (mai durante la scena cinematografica o se ne sta già facendo una)
     async play(aid, why = 'manuale') {
+      // v2d-35: con i clip di movimento di Nova, le vecchie azioni automatiche (da un'altra foto) non partono più da sole
+      if (why !== 'manuale' && document.body.classList.contains('solo-mode') && App.motionPlayer && App.motionPlayer.lib && App.motionPlayer.lib.length) return false;
       if (App.gestures && App.gestures.has(aid)) return App.gestures.request(aid);
       const ch = App.current; if (!ch) return false;
       const A = av(); if (A.actionBusy()) return false;

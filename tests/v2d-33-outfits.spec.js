@@ -34,15 +34,8 @@ test('logica del guardaroba: fasce orarie, richieste in chat, clip per look', ()
   const ch = { id: CH, outfits: OUTFITS, motionClips: CLIPS };
   expect(O.list(ch).length).toBe(4);
   expect(O.list({ outfits: [{ key: '../x', avatar: BASE }, { key: 'ok', avatar: '/etc/passwd' }] })).toEqual([]);
-  const at = (h) => new Date(2026, 10, 13, h, 0, 0);
-  expect(O.slotOf(at(8)).style).toBe('sportiva');
-  expect(O.slotOf(at(13)).style).toBe('elegante');
-  expect(O.slotOf(at(16)).style).toBe('comoda');
-  expect(['elegante', 'sexy']).toContain(O.slotOf(at(21)).style);
-  expect(O.slotOf(at(2)).style).toBe('comoda');
-  expect(O.autoPick(ch, at(8)).key).toBe('sportiva_top');
-  expect(O.autoPick(ch, at(16)).key).toBe('comoda_felpa');
-  expect(O.autoPick(ch, at(9)).key).toBe(O.autoPick(ch, at(10)).key); // stabile nella fascia
+  // v2d-35: niente più look scelto dall'ora del giorno: senza scene resta la foto di base a ogni ora
+  for (const h of [2, 8, 13, 16, 21]) expect(O.current(ch, new Date(2026, 10, 13, h, 0, 0).getTime())).toBe(null);
   expect(O.fromText(ch, 'Mettiti qualcosa di sportivo').outfit.style).toBe('sportiva');
   expect(O.fromText(ch, 'stasera indossa il tubino').outfit.key).toBe('sexy_tubino');
   expect(O.fromText(ch, 'ti va di metterti la felpa?').outfit.key).toBe('comoda_felpa');
@@ -97,8 +90,9 @@ test('Nova indossa il look della fascia oraria, cambia su richiesta, suona solo 
   await page.clock.resume();
   await page.goto('/');
   await page.waitForFunction(() => document.body.classList.contains('solo-chat') && App.current && App.avatarConv && App.avatarConv.img && App.avatarConv.img.naturalWidth > 0);
-  expect(await page.evaluate(() => App.outfits.key(App.current))).toBe('sportiva_top');
-  expect(await page.evaluate(() => App.avatarConv.img._src)).toBe(OUTFITS[0].avatar);
+  expect(await page.evaluate(() => App.outfits.key(App.current))).toBe(''); // v2d-35: di mattina nessun cambio da solo
+  await page.evaluate(() => App.outfits.set(App.current, 'sportiva_top', 'chat'));
+  await page.waitForFunction((a) => App.avatarConv.img && App.avatarConv.img._src === a, OUTFITS[0].avatar, { timeout: 10000 });
   await page.locator('#wa-photo').click();
   await page.waitForFunction(() => document.getElementById('stage').classList.contains('has-motion') && App.motionPlayer && App.motionPlayer.playing, null, { timeout: 20000 });
   expect(await page.evaluate(() => App.motionPlayer.lib.map((c) => c.outfit))).toEqual(['sportiva_top', 'sportiva_top']);
@@ -135,15 +129,11 @@ test('Nova indossa il look della fascia oraria, cambia su richiesta, suona solo 
   await page.locator('#stage').screenshot({ path: path.join(dir, '03-parla-felpa.png') });
   await page.evaluate(() => App.avatarConv.stopAudio());
 
-  // sera: dopo le 3 ore della richiesta torna la scelta automatica (elegante o sexy)
+  // v2d-35: la sera non cambia da sola: resta il look chiesto
   await page.clock.setSystemTime(new Date(2026, 10, 13, 21, 30, 0));
   await page.evaluate(() => App.outfits.apply(false));
   const evening = await page.evaluate(() => App.outfits.key(App.current));
-  expect(['elegante_sera', 'sexy_tubino']).toContain(evening);
-  await page.waitForFunction((k) => App.motionPlayer.playing && App.motionPlayer.playing.outfit === k, evening, { timeout: 20000 });
-  await page.waitForTimeout(1500);
-  await page.locator('#stage').screenshot({ path: path.join(dir, '04-sera.png') });
-  // header e poster seguono il look
+  expect(evening).toBe('comoda_felpa');
   expect(await page.evaluate(() => document.getElementById('motion-video').getAttribute('poster'))).toBe(OUTFITS.find((o) => o.key === evening).avatar);
   fs.writeFileSync(path.join(dir, 'result.json'), JSON.stringify({ worstStillMs: Math.round(worst), evening, landmarksSaved: seen.lm, chatBody: seen.chat[0], log: await page.evaluate(() => App.motionPlayer.log.slice(-12)) }, null, 2));
 });
