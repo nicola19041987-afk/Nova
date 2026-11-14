@@ -1387,3 +1387,6 @@ body.solo-mode.in-call:not(.call-min) #stage.call:not(.voice) #call-self:not([hi
 body.solo-mode #nh-photo .nh-avatar > .nh-avatar-face{position:absolute;inset:0;width:100%;height:100%;margin:0;border-radius:0;overflow:hidden}
 body.solo-mode #nh-photo .nh-avatar > .nh-avatar-face > img{position:absolute;inset:0;display:block;width:100%;height:100%;margin:0;object-fit:cover;object-position:50% 22%}
 body.solo-mode #nh-photo .nh-avatar video.mini-motion{object-position:50% 22%}
+/* v2d-38: i messaggi di stato non sono controlli: non devono MAI mangiare i tocchi sui tasti sottostanti.
+   In particolare, un errore voce nascosto in chiamata riappariva sulla Home quando si riattaccava. */
+.toast{pointer-events:none!important}
