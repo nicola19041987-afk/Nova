@@ -415,6 +415,7 @@
       return S.userSpeaking ? 'Ti ascolto…' : 'Ti ascolto…';
     },
     speaking: () => !!(S && playing(S)),
+    level: () => (S ? level(S) : 0), // v2d-37: livello reale della sua voce in uscita (analizzatore + PCM), 0..1
     listening: () => !!(S && S.userSpeaking),
     refreshInstructions() { PRE = null; if (S && !S.closed) refresh(S); },
     lat: () => (S ? S.lat.slice() : []),

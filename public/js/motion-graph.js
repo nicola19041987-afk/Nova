@@ -260,6 +260,10 @@
       v.style.background = 'transparent'; // senza fotogramma pronto si vede il video sotto, non un riquadro nero
     }
     const front = () => P.els[P.cur], back = () => P.els[1 - P.cur];
+    // v2d-37: clip «parla» SOLO mentre parla davvero (hook speaking), e il cambio è immediato in entrambi i sensi:
+    // prima si aspettava la fine del clip in corso (fino a 8 s) e a riposo potevano uscire clip «parla» -> bocca in ritardo.
+    const talkNow = () => !!(hooks.talkClips && hooks.talkClips() && (!hooks.speaking || hooks.speaking()));
+    const FAST_MS = 140;
     function ready(v, ms) {
       return new Promise((ok) => {
         if (v.readyState >= 2) return ok();
@@ -315,7 +319,7 @@
       P.blocked = false;
     };
     async function prepareNext() {
-      const opts = { now: performance.now(), home: !!(hooks.wantHome && hooks.wantHome()), talk: !!(hooks.talkClips && hooks.talkClips()) };
+      const opts = { now: performance.now(), home: !!(hooks.wantHome && hooks.wantHome()), talk: talkNow() };
       const probe = Object.assign({}, P.st, { recent: P.st.recent.slice() });
       const { clip, why } = pickNext(P.lib, probe, opts);
       if (!clip) { P.nextClip = null; return; }
@@ -346,14 +350,16 @@
         const nv = back(), ov = front();
         const first = !P.playing && !(ov && !ov.paused && Number(ov.style.opacity) > 0);
         if (nv._clipId !== clip.id) await load(nv, clip);
+        const xf = P._fast ? FAST_MS : XFADE_MS; P._fast = false;
+        nv.style.transition = `opacity ${xf}ms linear`; ov.style.transition = `opacity ${xf}ms linear`;
         nv.hidden = false; nv.style.opacity = '0'; nv.style.zIndex = '4'; ov.style.zIndex = '3';
         playSafe(nv).catch(() => {});
         // dissolvenza dopo il primo fotogramma vero, non prima
-        await new Promise((ok) => { let done = false; const f = () => { if (done) return; done = true; ok(); }; if (nv.requestVideoFrameCallback) nv.requestVideoFrameCallback(f); else nv.addEventListener('playing', f, { once: true }); setTimeout(f, 600); });
+        await new Promise((ok) => { let done = false; const f = () => { if (done) return; done = true; ok(); }; if (nv.requestVideoFrameCallback) nv.requestVideoFrameCallback(f); else nv.addEventListener('playing', f, { once: true }); setTimeout(f, xf < XFADE_MS ? 250 : 600); });
         // v2d-34: il clip nuovo entra solo quando suona davvero (fotogramma pronto e tempo che avanza). Prima, su iPhone
         // con la rete lenta, entrava un video ancora vuoto (trasparente) e si vedeva il fondo bianco, poi tutto fermo.
         // Se non è pronto: resta l'immagine attuale, il clip viene ricaricato e si riprova tra poco.
-        if (!(await playable(nv, 2500)) || !P.on) {
+        if (!(await playable(nv, xf < XFADE_MS ? 1200 : 2500)) || !P.on) {
           try { nv.pause(); } catch { /* */ }
           nv.style.opacity = '0'; nv.style.zIndex = '3'; ov.style.zIndex = '4';
           nv._clipId = null; P.nextClip = null; P._holdUntil = performance.now() + 700;
@@ -366,7 +372,7 @@
         P.notReady = 0;
         if (first) { // primo clip: subito pieno (sotto la foto è già nascosta), niente dissolvenza su fondo vuoto
           nv.style.transition = 'none'; nv.style.opacity = '1'; void nv.offsetWidth;
-          requestAnimationFrame(() => { nv.style.transition = `opacity ${XFADE_MS}ms linear`; });
+          requestAnimationFrame(() => { nv.style.transition = `opacity ${xf}ms linear`; });
         } else nv.style.opacity = '1';
         P.cur = 1 - P.cur; P.playing = clip;
         commit(P.st, clip);
@@ -375,7 +381,8 @@
         if (hooks.onClip) hooks.onClip(clip, P.nextWhy);
         P.nextClip = null;
         // Il video vecchio si tocca solo a dissolvenza finita: caricarci subito il clip seguente mostrava un fotogramma vuoto o sbagliato.
-        await new Promise((ok) => setTimeout(ok, XFADE_MS + 40));
+        P.talkSwitchAt = P._talkAt ? Math.round(performance.now() - P._talkAt) : P.talkSwitchAt; P._talkAt = 0;
+        await new Promise((ok) => setTimeout(ok, xf + 40));
         if (front() !== ov) { try { ov.pause(); } catch { /* */ } ov.style.opacity = '0'; }
         if (!P.nextClip) prepareNext().catch(() => {});
       } finally { P.swapping = false; }
@@ -403,6 +410,15 @@
       // passa al clip dopo a ogni fotogramma. Se dopo 5 s non c'è ancora, si prova il successivo.
       if (P.playing && !(isFinite(d) && d > 0)) { if (!P._waitAt) P._waitAt = t; if (t - P._waitAt > 5000) { P._waitAt = 0; P.playing = null; } }
       else P._waitAt = 0;
+      // v2d-37: inizia o smette di parlare -> subito il clip giusto (parla <-> calmo), dissolvenza breve
+      if (hooks.speaking && P.playing && !P.swapping) {
+        const want = talkNow(), isTalk = P.playing.kind === 'parla';
+        if (want !== isTalk && (!want || P.lib.some((c) => c.kind === 'parla'))) {
+          if (!P._talkAt) { P._talkAt = t; P._holdUntil = 0; } // solo al cambio: se il clip non è pronto si riprova con calma
+          if (!P.nextClip || (P.nextClip.kind === 'parla') !== want) P.nextClip = null;
+          P._fast = true; swap().catch(() => {});
+        }
+      }
       if (!P.playing) swap().catch(() => {});
       else if (!(isFinite(d) && d > 0)) { if (v.paused && !P.swapping && t - (P._retry || 0) > 1000) { P._retry = t; playSafe(v).catch(() => {}); } }
       else if (v.ended || v.currentTime >= d - (XFADE_MS / 1000) - 0.05) swap().catch(() => {});

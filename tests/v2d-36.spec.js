@@ -456,7 +456,7 @@ test('comandi a voce in chiamata: «ricordati…» e «ho visto che ti sei compr
   expect(mem2).toContain(`${tag} mi piace il tè verde`);
 });
 
-test('videochiamata pulita: niente sottotitoli/trascrizione, niente sfumature, solo ✕ / microfono / chiudi', async ({ page }) => {
+test('videochiamata pulita: niente sottotitoli/trascrizione, niente sfumature, solo ✕ / microfono / camera / chiudi', async ({ page }) => {
   test.skip(!HAS_LIB, 'libreria v2d-36 solo in locale');
   const L = lib(); const seen = { chat: [] };
   await page.setViewportSize({ width: 390, height: 844 });
@@ -481,7 +481,7 @@ test('videochiamata pulita: niente sottotitoli/trascrizione, niente sfumature, s
   expect(r.cap).toBe('');
   expect(r.texts, 'testo visibile sopra la videochiamata').toEqual([]);
   expect(r.grad).toEqual([]);
-  expect(r.buttons.sort()).toEqual(['call-end', 'call-min', 'call-mute']);
+  expect(r.buttons.sort()).toEqual(['call-cam', 'call-end', 'call-min', 'call-mute']);
   fs.mkdirSync(OUT, { recursive: true });
   await page.screenshot({ path: path.join(OUT, `call-clean-${test.info().project.name}.png`) });
 });

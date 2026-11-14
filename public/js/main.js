@@ -8,6 +8,9 @@ App.applySessionDefaults = function () {
   if (App.ls.get('micPicked') !== true) App.ls.set('micOn', true);
   const engine = App.ls.get('callEngine', null);
   if (engine == null || engine === '') App.ls.set('callEngine', 'realtime');
+  // v2d-37: la voce in tempo reale è di serie a ogni chiamata. Una volta sola si riporta a «tempo reale» anche chi era
+  // rimasto su «classica» da prima; da qui in poi la scelta «classica» nelle Impostazioni resta rispettata (si spegne lì).
+  if (App.ls.get('rtDefault37', false) !== true) { App.ls.set('callEngine', 'realtime'); App.ls.set('rtDefault37', true); }
 };
 App.armMic = function (fromGesture) {
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {

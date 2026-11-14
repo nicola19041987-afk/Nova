@@ -1372,3 +1372,18 @@ body.solo-mode #nh-photo .nh-chev{display:none}
 .nh-quick button i{font-style:normal;font-size:22px;line-height:1}
 .nh-quick button:active{background:#EEF2F6!important}
 body.guest-mode .nh-quick #nh-q-voice{display:none}
+/* v2d-37: Home durante una chiamata ridotta: il vecchio stage «42dvh» copriva la metà alta della foto della Home,
+   con un altro taglio/scala = giunta orizzontale. In Home si mostra SOLO la sua foto; lo stage resta in chat/chiamata. */
+body.solo-mode.solo-home.in-call.call-min #stage{display:none!important}
+body.solo-mode #nh-photo .nh-avatar{position:relative;isolation:isolate;overflow:hidden;transform:translateZ(0)}
+body.solo-mode #nh-photo .nh-avatar > img,body.solo-mode #nh-photo .nh-avatar > video,body.solo-mode #nh-photo .nh-avatar > canvas{position:absolute;inset:0;display:block;box-sizing:border-box;width:100%;height:100%;margin:0;object-fit:cover;object-position:50% 22%}
+
+/* v2d-37: Camera della chiamata di nuovo accessibile (v36 clean-call la nascondeva).
+   Solo icona, mai testo/sottotitoli; anteprima locale muta, playsinline su Safari. */
+body.solo-mode.in-call:not(.call-min) #stage.call:not(.voice) #call-cam:not([hidden]){display:inline-flex!important;align-items:center;justify-content:center;width:48px;height:48px;padding:0;position:relative}
+body.solo-mode.in-call:not(.call-min) #stage.call:not(.voice) #call-self:not([hidden]){display:block!important;width:84px;height:112px;max-width:24vw;top:calc(env(safe-area-inset-top) + 64px);right:12px;object-fit:cover;border-radius:12px;z-index:8}
+/* v2d-37: la foto della Home (div.nh-avatar-face > img) riempie esattamente il riquadro, con lo stesso taglio del video piccolo
+   che le si sovrappone (prima l'immagine restava alta 636 px e il video 360: due tagli diversi = giunta su iPhone). */
+body.solo-mode #nh-photo .nh-avatar > .nh-avatar-face{position:absolute;inset:0;width:100%;height:100%;margin:0;border-radius:0;overflow:hidden}
+body.solo-mode #nh-photo .nh-avatar > .nh-avatar-face > img{position:absolute;inset:0;display:block;width:100%;height:100%;margin:0;object-fit:cover;object-position:50% 22%}
+body.solo-mode #nh-photo .nh-avatar video.mini-motion{object-position:50% 22%}

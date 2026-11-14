@@ -23,6 +23,23 @@
   const pickVoice = () => { if (!voices.length) loadVoices(); const v = voices.filter((x) => x.lang && x.lang.toLowerCase().replace('_', '-').startsWith('it')); return v.find((x) => /female|donna|alice|elsa|federica|paola/i.test(x.name)) || v[0] || null; };
   App.audio = {
     unlocked: false, ctx: null, inCall: false, _born: null,
+    // v2d-37: livello REALE della voce in uscita (non una stima dal testo): bus gain -> analizzatore -> altoparlante sullo stesso
+    // AudioContext della chiamata, più l'inviluppo del buffer che sta suonando (Safari spesso lascia l'analizzatore a zero).
+    _bus: null, _cur: null,
+    bus(c) {
+      if (this._bus && this._bus.c === c) return this._bus.g;
+      const g = c.createGain(), an = c.createAnalyser(); an.fftSize = 512; an.smoothingTimeConstant = 0.1; g.connect(an); an.connect(c.destination);
+      this._bus = { c, g, an, td: new Float32Array(an.fftSize) }; return g;
+    },
+    classicActive() { const k = this._cur, c = this.ctx; if (!k || !c || k.h.el.ended) return false; const n = c.currentTime; return n >= k.t0 - 0.005 && n <= k.end + 0.01; },
+    classicLevel() {
+      if (!this.classicActive()) return 0;
+      const k = this._cur, c = this.ctx, n = c.currentTime; if (n < k.t0) return 0;
+      let v = -1; if (k.env && k.env.length) { const i = Math.floor((n - k.t0) * 60); v = i >= 0 && i < k.env.length ? k.env[i] : 0; }
+      const b = this._bus; let r = 0;
+      if (b && b.c === c) { try { b.an.getFloatTimeDomainData(b.td); let e = 0; for (let i = 0; i < b.td.length; i++) e += b.td[i] * b.td[i]; r = Math.min(1, Math.sqrt(e / b.td.length) * 5); } catch {} }
+      return v < 0 ? (r > 0 ? r : 0.5) : Math.max(v, r);
+    },
     // v8.4.1: per tutta la chiamata una sola sessione audio iOS "play-and-record" (microfono + voce insieme): cambiarla a ogni frase
     // faceva sentire il "suono di attacco e stacco". A chiamata finita si torna a "playback" (suona anche col tasto silenzioso).
     callSession(on) { this.inCall = !!on; if (!on) this._reacq = false; try { if (navigator.audioSession) navigator.audioSession.type = (on || this.micLive() || this._micP || (App.micAnyLive && App.micAnyLive())) ? 'play-and-record' : 'playback'; } catch {} }, // v8.5.0: mai 'playback' col microfono aperto
@@ -126,13 +143,14 @@
   // v8.4.1: riproduzione in chiamata sull'AudioContext unico, con dissolvenza in entrata/uscita (niente click, niente cambi di sessione)
   function playBuffer(buf, vol) {
     const c = App.audio.ctx; if (c.state !== 'running') c.resume().catch(() => {});
-    const g = c.createGain(), src = c.createBufferSource(); src.buffer = buf; src.connect(g); g.connect(c.destination);
+    const g = c.createGain(), src = c.createBufferSource(); src.buffer = buf; src.connect(g); g.connect(App.audio.bus ? App.audio.bus(c) : c.destination); // v2d-37: voce della chiamata sul bus con analizzatore
     const t = c.currentTime + 0.02, end = t + buf.duration, gg = g.gain;
     gg.setValueAtTime(0, t); gg.linearRampToValueAtTime(vol, t + 0.012); gg.setValueAtTime(vol, Math.max(t + 0.013, end - 0.018)); gg.linearRampToValueAtTime(0, end);
     src.start(t);
     if (App.simli && App.simli.feedBuffer) App.simli.feedBuffer(buf);
     const el = { get currentTime() { return Math.max(0, c.currentTime - t); }, paused: false, ended: false }; // per il labiale (come un <audio>)
     const h = { src, g, el, t0: t, stop() { if (el.ended) return; el.ended = true; const n = c.currentTime; try { gg.cancelScheduledValues(n); gg.setValueAtTime(gg.value, n); gg.linearRampToValueAtTime(0, n + 0.03); src.onended = null; src.stop(n + 0.035); } catch {} } };
+    App.audio._cur = { t0: t, end, h, env: null }; // v2d-37: la frase che sta suonando davvero (orologio audio)
     return h;
   }
   const NX = {
@@ -194,6 +212,7 @@
       if (live() && res.buf) { if (!App.audio.ctx) { const AC = window.AudioContext || window.webkitAudioContext; App.audio.ctx = new AC(); }
         if (!this.lipsOn) { const avs = [App.avatarConv, App.avatarPresence].filter((x) => x && x.breathM); avs.forEach((x) => x.breathM.preInhale(performance.now())); if (avs.length) { await new Promise((r) => setTimeout(r, 60)); if (item.gen !== this.gen) return; } }
         const h = this.wa = playBuffer(res.buf, NX.volume == null ? 1 : NX.volume);
+        if (App.audio._cur && App.audio._cur.h === h) App.audio._cur.env = res.env || null;
         App.audio.unlocked = true; this.lips(h.el, res.env, item.text); pauseRec();
         if (App.latency && App.latency.mark) { const ms = performance.now() + (h.t0 - App.audio.ctx.currentTime) * 1000 - App.latency.mark; App.latency.mark = 0; if (ms > 0 && ms < 30000) App.latency.add('classica', ms); }
         h.src.onended = () => { h.el.ended = true; if (this.wa === h) this.wa = null; if (item.gen === this.gen) this.next(); };

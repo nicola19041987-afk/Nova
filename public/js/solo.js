@@ -132,6 +132,22 @@
       (window.speechSynthesis && window.speechSynthesis.speaking)
     );
   }
+  // v2d-37: «sta parlando» guidato dall'AUDIO che suona davvero (livello in uscita, orologio dell'AudioContext), non dalla coda del
+  // testo: la bocca parte quando parte la voce e si ferma quando tace (breve tenuta per non sfarfallare fra le parole).
+  const TALK_HOLD_MS = 420, TALK_ON = 0.05;
+  let lastLoud = 0;
+  App.voiceLevel = () => Math.max((App.rt && App.rt.level) ? App.rt.level() : 0, (App.audio && App.audio.classicLevel) ? App.audio.classicLevel() : 0);
+  function speakingAudio() {
+    const now = performance.now();
+    const rtP = !!(App.rt && typeof App.rt.speaking === 'function' && App.rt.speaking());
+    const cl = !!(App.audio && App.audio.classicActive && App.audio.classicActive());
+    if (rtP || cl) { if (App.voiceLevel() > TALK_ON) lastLoud = now; return now - lastLoud < TALK_HOLD_MS; }
+    if (now - lastLoud < TALK_HOLD_MS) return true;
+    // senza WebAudio (elemento <audio> o sintesi del telefono): quello che suona adesso
+    const el = App.tts && App.tts.el;
+    return !!((App.avatarConv && App.avatarConv.speaking) || (App.tts && App.tts.playing && el && !el.paused && el.currentTime > 0) || (window.speechSynthesis && window.speechSynthesis.speaking));
+  }
+  App.speakingAudio = speakingAudio;
   // v2d-30: movimento continuo. Libreria di clip collegati per posa (MotionGraph): uno finisce, il successivo
   // parte dalla stessa posa, senza fermo immagine. Mentre Nova parla resta la foto col labiale (come v2d-29);
   // quando sta per rispondere i clip la riportano verso la posa della foto, così il passaggio non salta.
@@ -163,6 +179,7 @@
     App.motionPlayer = G.createPlayer(a, b, {
       wantHome: () => !!((App.chat && App.chat.busy) || talkingNow()),
       talkClips: () => talkClipsOn(),
+      speaking: () => speakingAudio(), // v2d-37: i clip «parla» solo mentre parla, cambio immediato
       onStall: () => { if (App.net) App.net.stall(); }, // v2d-36: clip lenti -> qualità più leggera
       onClip: () => { const st = document.getElementById('stage'); if (st && motionOn()) st.classList.add('has-motion'); },
       onFail: () => { if (App.net) App.net.down('still', 'clip bloccati'); const st = document.getElementById('stage'); if (st) setTimeout(() => st.classList.remove('has-motion'), window.MotionGraph.XFADE_MS + 30); }, // v2d-32: clip bloccati -> foto; v2d-36: e qualità più leggera
@@ -220,7 +237,7 @@
       // v2d-36: mentre parla, prima i clip «parla» (bocca e viso veri, in catena finché parla). Senza clip «parla» si usa la
       // bocca disegnata sulla foto SOLO se i punti del viso sono di questa foto; altrimenti il video calmo continua (mai
       // una bocca storta e ferma).
-      if (talkingNow()) {
+      if (speakingAudio()) { // v2d-37: quando la voce SUONA davvero (non quando la frase è solo in coda)
         v._quietAt = nowT;
         if (talkClipsOn()) { stage.classList.remove('nv-lips'); if (!P.on) P.start(window.MotionGraph.HOME); return; }
         if (faceOk(ch)) { stage.classList.add('nv-lips'); if (P.on) off(); return; }
@@ -395,7 +412,12 @@
         if (status) status.textContent = '⚡ In ascolto';
       } catch (e) {
         off();
-        App.toast('⚡ Voce in tempo reale non disponibile' + (e && e.message ? ': ' + e.message : ''));
+        // v2d-37: niente silenzio: si passa alla chiamata vocale classica (che a sua volta riprova il tempo reale)
+        const why = (e && e.message) ? ': ' + e.message : '';
+        if (App.call && App.call.start && !App.call.active) {
+          App.toast('⚡ Voce in tempo reale non disponibile' + why + ' · uso la chiamata classica', 6000);
+          try { const p = App.call.start('voice'); if (p && p.catch) p.catch((err) => App.toast((err && err.message) || 'Chiamata vocale non avviata')); } catch (err) { App.toast((err && err.message) || 'Chiamata vocale non avviata'); }
+        } else App.toast('⚡ Voce in tempo reale non disponibile' + why);
       }
     },
     syncChar() {
@@ -507,10 +529,12 @@
       });
       // v2d-36: Home nuova: tre tasti rapidi (chat, videochiamata, voce) sotto la foto
       const qc = $('#nh-q-chat'); if (qc) qc.addEventListener('click', (e) => { e.preventDefault(); this.showChat(); });
-      const qv = $('#nh-q-video'); if (qv) qv.addEventListener('click', (e) => { e.preventDefault(); const go = $('#nh-video-go'); if (go) go.click(); });
-      const qa = $('#nh-q-voice'); if (qa) qa.addEventListener('click', (e) => { e.preventDefault(); this.toggleRt(); });
+      const qv = $('#nh-q-video'); if (qv) qv.addEventListener('click', (e) => { e.preventDefault(); if (App.call && App.call.minimized && document.body.classList.contains('call-min') && App.call.restore) { App.call.restore(); return; } const go = $('#nh-video-go'); if (go) go.click(); }); // v2d-37: chiamata ridotta -> si torna alla chiamata
+      // v2d-37: «Voce» dalla Home = chiamata vocale vera (tempo reale di serie, riserva classica), come «Video»
+      const voiceCall = () => { if (App.call && App.call.minimized && App.call.restore) { App.call.restore(); return; } try { const p = App.call.start('voice'); if (p && p.catch) p.catch((err) => App.toast((err && err.message) || 'Chiamata vocale non avviata')); } catch (err) { App.toast((err && err.message) || 'Chiamata vocale non avviata'); } };
+      const qa = $('#nh-q-voice'); if (qa) qa.addEventListener('click', (e) => { e.preventDefault(); voiceCall(); });
       const voice = $('#nh-voice');
-      if (voice) voice.addEventListener('click', (e) => { e.preventDefault(); this.toggleRt(); });
+      if (voice) voice.addEventListener('click', (e) => { e.preventDefault(); voiceCall(); });
       const back = $('#back-btn');
       if (back) back.addEventListener('click', (e) => {
         if (!document.body.classList.contains('solo-mode')) return;

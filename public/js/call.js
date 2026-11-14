@@ -111,9 +111,25 @@
       connecting = true; badge('conn'); state();
       const p = App.rt.start(ch, mode, greet);
       try { await p; if (!on) { App.rt.stop(); return; } rt = true; connecting = false; badge('rt'); state(); return; }
-      catch (e) { connecting = false; if (!on) return; console.warn('Tempo reale non disponibile:', e.message); App.toast('⚡ Tempo reale non disponibile: ' + e.message + ' · uso la chiamata classica (dettagli: Impostazioni → Diagnostica voce)', 6000); classic(greet, e.message); return; }
+      catch (e) { connecting = false; if (!on) return; console.warn('Tempo reale non disponibile:', e.message); retryRt(ch, mode); App.toast('⚡ Tempo reale non disponibile: ' + e.message + ' · uso la chiamata classica (dettagli: Impostazioni → Diagnostica voce)', 6000); classic(greet, e.message); return; }
     }
     classic(greet, !App.hasAi() ? 'manca la chiave xAI' : App.ls.get('callEngine', 'realtime') !== 'realtime' ? 'scelta nelle Impostazioni' : App.rt && !App.rt.supported() ? 'browser non compatibile con il tempo reale' : '');
+  }
+  // v2d-37: se il tempo reale non si collega all'avvio, si riprova da solo (poco dopo, due volte) e appena si collega
+  // la chiamata passa al tempo reale senza toccare nulla. Chi l'ha spento nelle Impostazioni resta sulla classica.
+  function retryRt(ch, m) {
+    let n = 0; const callAt = t0;
+    const go = async () => {
+      if (callAt !== t0 || !on || rt || connecting || !(App.rt && App.rt.enabled()) || n++ >= 2) return;
+      connecting = true;
+      try {
+        await App.rt.start(ch, mode || m, '');
+        if (callAt !== t0 || !on) { App.rt.stop(); connecting = false; return; }
+        if (App.callMic) App.callMic.stop(); App.voice.cancel(); micMode = '';
+        rt = true; connecting = false; badge('rt'); if (muted && App.rt.setMuted) App.rt.setMuted(true); state();
+      } catch (e) { connecting = false; console.warn('Tempo reale, nuovo tentativo:', e.message); setTimeout(go, 6000); }
+    };
+    setTimeout(go, 2500);
   }
   // chiamata classica: riconoscimento vocale del telefono + risposta in streaming + voce frase per frase
   // v8.4.1: microfono continuo + nostro rilevatore del parlato + trascrizione xAI (niente bip); riserva: riconoscimento continuo
@@ -204,7 +220,7 @@
       if (!App.audio.micLive()) App.audio.mic().catch(() => {});
     } catch (e) { cam = null; paintCam(); }
   }
-  function toggleCam() { if (cam) return; return startCam(); }
+  function toggleCam() { if (cam) return stopCam(); return startCam(); } // v2d-37: interruttore, mai avviare il video senza un tocco
   function stopCam() {
     if (App.sight && App.sight.active && App.sight.active() && App.sight.stop) App.sight.stop();
     if (cam) cam.getVideoTracks().forEach((t) => t.stop());

@@ -37,6 +37,17 @@
     }
     return out;
   }
+  // v2d-37: un look tenuto da PRIMA di v2d-37 (3 ore in memoria del telefono) che non si muove resta «ritirato»: si torna alla scena
+  // della visita. Vale per i look senza nessun clip (se il personaggio ha clip) e per gli 8 look vecchi senza clip «parla».
+  // Le richieste nuove (segnate v37) si rispettano sempre, come prima.
+  const OLD_STILL = new Set(['elegante_sera', 'elegante_camicetta', 'sexy_tubino', 'sexy_raso', 'comoda_maglione', 'comoda_felpa', 'sportiva_top', 'sportiva_tuta']);
+  function hasTalk(ch, key) { return !!(ch && Array.isArray(ch.motionClips) && ch.motionClips.some((c) => c && c.outfit === key && c.kind === 'parla')); }
+  function staleHold(ch, key) {
+    const any = !!(ch && Array.isArray(ch.motionClips) && ch.motionClips.length);
+    if (!any) return false;
+    if (!hasClips(ch, key)) return true;
+    return OLD_STILL.has(key) && !hasTalk(ch, key);
+  }
   function hasClips(ch, key) { return !!(ch && Array.isArray(ch.motionClips) && ch.motionClips.some((c) => c && c.outfit === key)); }
   function hash(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
   // scene a sorpresa: solo quelle con i loro clip (così si muove sempre); se nessuna ha clip, nessuna scena (foto di base)
@@ -67,7 +78,7 @@
       st = { ...st, scene: pickScene(ch, st.scene, rand) || '', visitAt: t };
       if ((st.by === 'chat' || st.by === 'lei') && !(st.until > t)) { delete st.by; delete st.key; delete st.until; }
       // v2d-36: a volte, tra una visita e l'altra, si è cambiata da sola (solo se nessuno le ha chiesto un look ancora valido)
-      if (st.by !== 'chat' && st.by !== 'base' && roll() < SPONT_VISIT) { const k = pickOwn(ch, st.key, spont.rand); if (k) Object.assign(st, { key: k, by: 'lei', until: t + HOLD_MS, spontAt: t, told: false }); }
+      if (st.by !== 'chat' && st.by !== 'base' && roll() < SPONT_VISIT) { const k = pickOwn(ch, st.key, spont.rand); if (k) Object.assign(st, { key: k, by: 'lei', until: t + HOLD_MS, spontAt: t, told: false, v37: true }); }
     }
     if (newVisit || t - (st.seen || 0) > 60e3) { st.seen = t; save(ch, st); }
     return st;
@@ -77,7 +88,7 @@
     const L = list(ch); if (!L.length) return null;
     const t = now ? new Date(now).getTime() : Date.now();
     const st = state(ch, t, rand);
-    if ((st.by === 'chat' || st.by === 'lei') && st.until > t) { const o = L.find((x) => x.key === st.key); if (o) return o; }
+    if ((st.by === 'chat' || st.by === 'lei') && st.until > t) { const o = L.find((x) => x.key === st.key); if (o && (st.v37 || !staleHold(ch, o.key))) return o; }
     if (st.by === 'base' && st.until > t) return null;
     return L.find((x) => x.key === st.scene) || null;
   }
@@ -134,7 +145,7 @@
       const L = list(ch);
       if (k && !L.some((o) => o.key === k)) return false;
       const st = state(ch, Date.now());
-      if (k) Object.assign(st, { key: k, by, until: Date.now() + HOLD_MS, changedAt: Date.now() }, by === 'lei' ? { spontAt: Date.now(), told: false } : { told: true });
+      if (k) Object.assign(st, { key: k, by, until: Date.now() + HOLD_MS, changedAt: Date.now(), v37: true }, by === 'lei' ? { spontAt: Date.now(), told: false } : { told: true });
       else if (by === 'scena') { delete st.key; delete st.by; delete st.until; } // «torna come prima»: la scena della visita
       else Object.assign(st, { key: '', by: 'base', until: Date.now() + HOLD_MS });
       save(ch, st);
