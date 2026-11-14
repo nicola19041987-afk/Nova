@@ -1394,3 +1394,12 @@ body.solo-mode #nh-photo .nh-avatar video.mini-motion{object-position:50% 22%}
    sopra testata e scrittura (copriva i tasti: niente rispondeva). L'anteprima della camera è chiusa e nascosta. */
 body.solo-mode.in-call.call-min #stage{position:relative!important;inset:auto!important;z-index:1!important;width:100%!important;min-height:0!important}
 body.in-call.call-min #call-self{display:none!important;pointer-events:none!important}
+/* v2d-40: chiamata vocale nell'app di Nova (tasto «Voce»): lo stage non prende più lo stile «voice» (sfondo scuro sfocato,
+   ritratto rotondo, altezza ridotta che lasciava vedere la Home) ma «nv-voicecall» e usa lo stesso schermo intero della
+   videochiamata. Il canvas è sempre lo strato visibile: compone clip, foto col labiale e inquadratura (avatar.js, vista voce);
+   i due video restano sotto, accesi (iPhone non fa partire video nascosti). 4 id: prevale sulle regole della videochiamata. */
+body.solo-mode.in-call:not(.call-min) #view-app #tab-conv #stage.call.nv-voicecall #avatar-canvas{
+  display:block!important;visibility:visible!important;opacity:1!important;z-index:4!important;filter:none!important;transform:none!important;
+}
+body.solo-mode.in-call:not(.call-min) #view-app #tab-conv #stage.call.nv-voicecall #motion-video,
+body.solo-mode.in-call:not(.call-min) #view-app #tab-conv #stage.call.nv-voicecall #motion-video-b{z-index:1!important} /* sotto il canvas (il lettore mette z-index 3/4 in linea) */

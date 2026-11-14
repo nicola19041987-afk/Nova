@@ -154,10 +154,10 @@ test('tempo reale di serie: chi era rimasto su «classica" passa una volta al te
   await page.waitForFunction(() => App.call.engine() === 'realtime', null, { timeout: 8000 });
   expect(await page.evaluate(() => window.__rt)).toBe(2);
   await page.evaluate(() => App.call.end());
-  // spento nelle Impostazioni (classica): resta spento, nessun avvio del tempo reale
-  await page.evaluate(() => { App.ls.set('callEngine', 'classic'); window.__rt = 0; App.call.start('video').catch(() => {}); });
-  await page.waitForTimeout(3500);
-  expect(await page.evaluate(() => [window.__rt, App.call.engine()])).toEqual([0, 'classic']);
+  // v2d-40: il tempo reale è sempre inserito: una vecchia scelta «classica» salvata NON lo spegne più
+  await page.evaluate(() => { App.ls.set('callEngine', 'classic'); window.__rt = 0; App.rt.start = async () => { window.__rt++; }; App.call.start('video').catch(() => {}); });
+  await page.waitForFunction(() => App.call.engine() === 'realtime', null, { timeout: 8000 });
+  expect(await page.evaluate(() => window.__rt)).toBe(1);
   await page.evaluate(() => App.call.end());
 });
 

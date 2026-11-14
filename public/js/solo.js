@@ -143,6 +143,9 @@
     const cl = !!(App.audio && App.audio.classicActive && App.audio.classicActive());
     if (rtP || cl) { if (App.voiceLevel() > TALK_ON) lastLoud = now; return now - lastLoud < TALK_HOLD_MS; }
     if (now - lastLoud < TALK_HOLD_MS) return true;
+    // v2d-40: in chiamata conta solo l'audio che suona: il labiale «stimato dal testo» (talkText dalla chat, sintesi senza
+    // audio) non deve far partire i clip «parla» né tenere la bocca aperta quando lei tace
+    if (App.call && App.call.active) { const el0 = App.tts && App.tts.el; return !!((App.tts && App.tts.playing && el0 && !el0.paused && el0.currentTime > 0) || (window.speechSynthesis && window.speechSynthesis.speaking)); }
     // senza WebAudio (elemento <audio> o sintesi del telefono): quello che suona adesso
     const el = App.tts && App.tts.el;
     return !!((App.avatarConv && App.avatarConv.speaking) || (App.tts && App.tts.playing && el && !el.paused && el.currentTime > 0) || (window.speechSynthesis && window.speechSynthesis.speaking));
@@ -154,6 +157,9 @@
   // Prova facoltativa (spenta): mentre parla, clip «parla» con corpo in movimento al posto della foto col labiale.
   function talkClipsOn() {
     // v2d-36: acceso di serie quando il look ha clip «parla» (bocca e viso naturali, niente bocca disegnata); 'motionTalk'='0' lo spegne
+    // v2d-40: in chiamata vocale (lei non ti vede la faccia, conta la voce) la bocca è quella disegnata sulla foto e guidata
+    // dall'audio che si sente: i clip «parla» hanno una bocca generata che non segue la voce. 'voiceLips'='0' torna ai clip.
+    try { const st = document.getElementById('stage'); if (st && st.classList.contains('nv-voicecall') && App.ls.get('voiceLips', '') !== '0' && faceOk(soloChar() || App.current)) return false; } catch { /* */ }
     try { return !!(App.ls && App.ls.get('motionTalk', '') !== '0' && (App.motionPlayer && App.motionPlayer.lib.some((c) => c.kind === 'parla'))); } catch { return false; }
   }
   // v2d-36: punti del viso misurati su QUESTA foto (look o base): solo allora la bocca si può disegnare sulla foto

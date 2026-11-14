@@ -144,7 +144,10 @@ App.chat = {
         if (!this.addMsg(m)) continue;
         added++;
         // risposta del personaggio arrivata col polling (es. chiesta dall'altro profilo): l'avatar "la dice" e reagisce
-        if (!full && !r.reset && m.role === 'assistant') { App.avatarConv.talkText(m.content.slice(0, 400)); if (m.gesture) App.avatarConv.react({ annuisce: 'nod', sorride: 'smile', ride: 'smile', inclina: 'tilt', nega: 'shake', pensa: 'tilt', ammicca: 'smile', saluta: 'wave' }[m.gesture] || 'nod'); else App.avatarConv.emote(m.content); if (m.action && App.actions) App.actions.play(m.action, 'chat'); }
+        // v2d-40: in chiamata (o a voce in tempo reale) le risposte arrivano già con la voce vera: niente labiale finto dal testo
+        // (partiva DOPO la voce, o dopo un'interruzione: bocca che si muoveva a vuoto)
+        const voiceNow = !!((App.call && App.call.active) || (App.rt && App.rt.active));
+        if (!full && !r.reset && m.role === 'assistant') { if (!voiceNow) App.avatarConv.talkText(m.content.slice(0, 400)); if (m.gesture) App.avatarConv.react({ annuisce: 'nod', sorride: 'smile', ride: 'smile', inclina: 'tilt', nega: 'shake', pensa: 'tilt', ammicca: 'smile', saluta: 'wave' }[m.gesture] || 'nod'); else App.avatarConv.emote(m.content); if (m.action && App.actions) App.actions.play(m.action, 'chat'); }
       }
       this.setTyping(this.busy ? null : r.typing && r.typing.by !== App.me.user ? r.typing : null);
       if (added && (stick || r.reset)) this.scroll();

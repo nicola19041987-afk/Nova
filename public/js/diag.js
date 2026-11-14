@@ -23,7 +23,7 @@
     const need = [['WebSocket', !!window.WebSocket], ['AudioContext', !!AC], ['AudioWorklet', !!(AC && AC.prototype && 'audioWorklet' in AC.prototype)], ['Microfono (getUserMedia)', !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)], ['Connessione sicura (HTTPS)', !!window.isSecureContext]];
     const miss = need.filter(([, v]) => !v).map(([k]) => k);
     row(miss.length ? 'err' : 'ok', 'Compatibilità', miss.length ? 'manca: ' + miss.join(', ') : 'WebSocket, AudioWorklet, microfono, HTTPS' + (navigator.audioSession ? ' · sessione audio iOS ' + navigator.audioSession.type : ''));
-    row('ok', 'Impostazione chiamate', App.ls.get('callEngine', 'realtime') === 'realtime' ? '⚡ tempo reale' : 'classica (scelta nelle Impostazioni)');
+    row('ok', 'Impostazione chiamate', App.rt && App.rt.enabled() ? '⚡ tempo reale (sempre inserito)' : 'tempo reale non disponibile su questo telefono o senza chiave');
     if (!App.hasAi()) { row('err', 'Chiave xAI', 'mancante: inseriscila sopra'); btn.disabled = false; btn.textContent = '🩺 Diagnostica voce'; draw(); return; }
     row('ok', 'Chiave xAI', 'presente su questo telefono');
     // 1) server -> xAI

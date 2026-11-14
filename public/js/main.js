@@ -11,6 +11,9 @@ App.applySessionDefaults = function () {
   // v2d-37: la voce in tempo reale è di serie a ogni chiamata. Una volta sola si riporta a «tempo reale» anche chi era
   // rimasto su «classica» da prima; da qui in poi la scelta «classica» nelle Impostazioni resta rispettata (si spegne lì).
   if (App.ls.get('rtDefault37', false) !== true) { App.ls.set('callEngine', 'realtime'); App.ls.set('rtDefault37', true); }
+  // v2d-40: il tempo reale è sempre inserito e non si toglie: a ogni accesso l'impostazione torna «tempo reale» (la vecchia
+  // scelta «classica» salvata non spegne più nulla; la classica resta solo come riserva temporanea dentro una chiamata).
+  if (App.ls.get('callEngine', 'realtime') !== 'realtime') App.ls.set('callEngine', 'realtime');
 };
 App.armMic = function (fromGesture) {
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {

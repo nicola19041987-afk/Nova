@@ -50,7 +50,7 @@ test('microfono e tempo reale sono i default, una scelta a mano resta', async ({
     return { defaults, kept, ok, gum, denied, toast };
   });
   expect(fresh.defaults).toEqual({ mic: true, engine: 'realtime', asked: true });
-  expect(fresh.kept).toEqual({ mic: false, engine: 'classic' });
+  expect(fresh.kept).toEqual({ mic: false, engine: 'realtime' }); // v2d-40: il microfono scelto a mano resta; il tempo reale è sempre inserito
   expect(fresh.ok).toBe(true);
   expect(fresh.gum).toBe(1);
   expect(fresh.denied).toBe(false);

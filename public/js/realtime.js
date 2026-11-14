@@ -80,11 +80,27 @@
     s.out = { c, g, an, td: new Float32Array(an.fftSize), fd: new Uint8Array(an.frequencyBinCount) }; return s.out;
   }
   const playing = (s) => s && s.playT > ctx().currentTime + 0.005;
+  // v2d-40: il tempo dell'audio che si SENTE adesso (non quello che il motore audio sta preparando): currentTime è avanti di
+  // baseLatency + outputLatency (iPhone ~10–40 ms, Bluetooth anche 150+ ms). getOutputTimestamp dà la corrispondenza esatta
+  // quando c'è; altrimenti si sottrae la latenza dichiarata. Il labiale legge l'inviluppo a questo istante.
+  const LIP_LEAD = 0.035; // anticipo che compensa la morbidezza della bocca (~2 fotogrammi) e la composizione dello schermo
+  function heard(c) {
+    const t = c.currentTime;
+    try {
+      if (c.getOutputTimestamp) {
+        const o = c.getOutputTimestamp();
+        if (o && o.contextTime > 0 && o.performanceTime > 0) { const h = o.contextTime + (performance.now() - o.performanceTime) / 1000; if (h <= t + 0.02 && h > t - 0.6) return h; }
+      }
+    } catch { /* */ }
+    const lat = (c.outputLatency || 0) + (c.baseLatency || 0);
+    return t - Math.min(0.5, Math.max(0, lat));
+  }
+  const ENV_STEP = 240; // v2d-40: inviluppo fine, una misura ogni 10 ms (a 24 kHz): la bocca segue le sillabe, anche su Safari
   function play(s, buf) {
     const c = ctx(), o = outChain(s), i16 = new Int16Array(buf), n = i16.length; if (!n) return;
-    let e2 = 0, zc = 0, prev = 0;
-    const ab = c.createBuffer(1, n, RATE), d = ab.getChannelData(0);
-    for (let i = 0; i < n; i++) { const v = i16[i] / 32768; d[i] = v; e2 += v * v; if ((v >= 0) !== (prev >= 0)) zc++; prev = v; }
+    let e2 = 0, zc = 0, prev = 0, w2 = 0;
+    const ab = c.createBuffer(1, n, RATE), d = ab.getChannelData(0), fine = new Float32Array(Math.ceil(n / ENV_STEP));
+    for (let i = 0; i < n; i++) { const v = i16[i] / 32768; d[i] = v; e2 += v * v; w2 += v * v; if ((v >= 0) !== (prev >= 0)) zc++; prev = v; if ((i + 1) % ENV_STEP === 0 || i === n - 1) { const k = Math.floor(i / ENV_STEP); fine[k] = Math.sqrt(w2 / ((i % ENV_STEP) + 1)); w2 = 0; } }
     const rms = Math.sqrt(e2 / n), shape = Math.max(0, Math.min(1, (zc / n) * 6));
     const src = c.createBufferSource(); src.buffer = ab; src.connect(o.g);
     const fresh = !(s.playT > c.currentTime + 0.002), t = Math.max(c.currentTime + 0.025, s.playT || 0);
@@ -92,8 +108,8 @@
     src.start(t); s.playT = t + n / RATE;
     if (App.simli && App.simli.feedPcm24) App.simli.feedPcm24(buf);
     if (!s.env) s.env = [];
-    s.env.push({ t0: t, t1: s.playT, rms, shape });
-    const cut = c.currentTime - 0.25;
+    s.env.push({ t0: t, t1: s.playT, rms, shape, fine });
+    const cut = c.currentTime - 0.8; // v2d-40: si tengono anche i pezzi appena suonati (l'audio si sente in ritardo di outputLatency)
     while (s.env.length > 6 && s.env[0].t1 < cut) s.env.shift();
     s.sources.push(src); src.onended = () => { s.sources = s.sources.filter((x) => x !== src); };
     if (s.resp && !s.resp.t0) s.resp.t0 = t; // v2d-39: inizio audio della risposta (per conversation.item.truncate)
@@ -104,24 +120,27 @@
     lips(s, true);
   }
   // livello della voce (0..1) e "apertura larga" (vocali chiare/sibilanti) per il labiale, letti a ogni fotogramma
-  function envNow(s) {
+  function envNow(s, at) {
     const list = s.env; if (!list || !list.length) return null;
-    const t = ctx().currentTime;
+    const t = at == null ? heard(ctx()) + LIP_LEAD : at;
     for (let i = list.length - 1; i >= 0; i--) if (t >= list[i].t0 && t <= list[i].t1) return list[i];
     return null;
   }
+  // v2d-40: livello della voce che si sente ADESSO, dall'inviluppo fine del PCM (10 ms) all'istante udibile (heard + anticipo).
+  // Prima: livello di tutto il pezzo ricevuto (anche 0,5 s uguali) o analizzatore (in anticipo di outputLatency, spesso a zero
+  // su Safari) e, se muto, 0,02 forzato = sillabe finte: la bocca andava fuori tempo e si muoveva anche senza voce.
+  // Niente audio udibile -> 0 (bocca chiusa).
   function level(s) {
-    if (!playing(s)) return 0;
-    let rms = 0;
-    const seg = envNow(s); if (seg) rms = seg.rms;
-    const o = s.out;
-    if (o) {
-      try {
-        o.an.getFloatTimeDomainData(o.td); let e = 0; for (let i = 0; i < o.td.length; i++) e += o.td[i] * o.td[i];
-        rms = Math.max(rms, Math.sqrt(e / o.td.length));
-      } catch { /* Safari: l'analizzatore spesso resta a zero; resta l'inviluppo del PCM */ }
+    if (!s.env || !s.env.length) return 0;
+    const t = heard(ctx()) + LIP_LEAD;
+    if (!(s.playT > t - LIP_LEAD)) return 0;
+    const seg = envNow(s, t); if (!seg) return 0;
+    let rms = seg.rms;
+    if (seg.fine && seg.fine.length) {
+      const x = (t - seg.t0) * RATE / ENV_STEP, i = Math.max(0, Math.min(seg.fine.length - 1, Math.floor(x))), j = Math.min(seg.fine.length - 1, i + 1), f = Math.max(0, Math.min(1, x - i));
+      rms = seg.fine[i] + (seg.fine[j] - seg.fine[i]) * f;
     }
-    if (rms <= 0) return 0.02; // in riproduzione ma misuratore muto (Safari): non è «audio finito»
+    if (!(rms > 0)) return 0;
     s.peak = Math.max(rms, (s.peak || 0.05) * 0.995);
     const v = rms / (s.peak * 0.75); return v < 0.04 ? 0 : Math.min(1, Math.pow(v, 0.8));
   }
@@ -140,7 +159,7 @@
     if (spec != null && vis != null) return spec * 0.4 + vis * 0.6;
     if (spec != null) return spec;
     if (vis != null) return vis;
-    const o = s.out; if (!o || !playing(s)) return 0.5;
+    const o = s.out; if (!o || !playing(s)) return 0.5; // (forma della bocca soltanto: l'apertura viene da level)
     try {
       o.an.getByteFrequencyData(o.fd); let lo = 0, hi = 0; const N = o.fd.length, k = Math.floor(N * 0.04), h = Math.floor(N * 0.12);
       for (let i = 1; i < k; i++) lo += o.fd[i]; for (let i = k; i < h; i++) hi += o.fd[i];
@@ -151,7 +170,20 @@
     const avs = [App.avatarConv, App.avatarPresence].filter(Boolean);
     if (on !== !!s.lipsOn) { const st = document.getElementById('stage'); if (st) st.classList.toggle('speaking', !!on); } // v8.4.5
     if (on && !s.lipsOn) { s.lipsOn = true; avs.forEach((a) => a.speakLive && a.speakLive(() => level(s), () => wide(s))); }
-    if (!on && s.lipsOn) { s.lipsOn = false; avs.forEach((a) => a.stopAudio && a.stopAudio()); }
+    if (!on && s.lipsOn) { s.lipsOn = false; s.drainAt = 0; avs.forEach((a) => a.stopAudio && a.stopAudio()); }
+  }
+  // v2d-40: fine naturale della risposta (nessuna interruzione): appena l'ultimo audio si è SENTITO, labiale spento e «parla»
+  // falso (prima restava acceso fino alla risposta successiva: bocca/clip «parla» a vuoto e chat che faceva ripartire la bocca).
+  function lipsWatch(s) {
+    clearInterval(s.lipT);
+    s.lipT = setInterval(() => {
+      if (s.closed) { clearInterval(s.lipT); return; }
+      if (!s.lipsOn) return;
+      const c = App.audio.ctx; if (!c) return;
+      if (s.playT > heard(c) - 0.01) { s.drainAt = 0; return; }
+      const now = performance.now(); if (!s.drainAt) { s.drainAt = now; return; }
+      if (now - s.drainAt > 120) lips(s, false);
+    }, 40);
   }
   function stopPlayback(s) { // dissolvenza in uscita di 30 ms, poi stop (niente "tac")
     const c = App.audio.ctx, o = s.out;
@@ -373,14 +405,17 @@
       const mk = (mode) => { const p = App.api('/api/realtime/session', { method: 'POST', body: { characterId: ch.id, mode, voice }, ai: true }); p.catch(() => {}); return { p }; };
       PRE = { ch: ch.id, vid: voice, at: Date.now(), modes: { voice: mk('voice'), video: mk('video') } };
     },
-    enabled: () => App.ls.get('callEngine', 'realtime') === 'realtime' && supported() && !!(App.hasAi && App.hasAi()),
+    // v2d-40: il tempo reale è sempre inserito: nessuna impostazione salvata lo spegne (la vecchia scelta «classica» è ignorata).
+    // classicOnly è solo in memoria (prove tecniche e test), si perde ricaricando la pagina.
+    classicOnly: false,
+    enabled: () => supported() && !!(App.hasAi && App.hasAi()) && !App.rt.classicOnly,
     get active() { return !!(S && !S.closed && S.isReady); },
     // da chiamare DENTRO il tocco che avvia la chiamata (sblocco audio + microfono in parallelo alla connessione)
     async start(ch, mode, greet) {
       if (S) App.rt.stop();
       const s = S = { ch, mode: mode === 'voice' ? 'voice' : 'video', voice: App.xaiVoice ? App.xaiVoice(ch) : 'eve', voiceExplicit: !!(App.xaiVoiceExplicit && App.xaiVoiceExplicit(ch)), early: [], sources: [], playT: 0, saveQ: Promise.resolve(), turns: 0, lat: [], volume: 1, muted: false, phase: 'connecting', closed: false };
       App.audio.callSession && App.audio.callSession(true); // iOS: registra+riproduce per tutta la chiamata (niente cambi di sessione)
-      ctx(); LOG.length = 0; App.rt.lastError = '';
+      ctx(); LOG.length = 0; App.rt.lastError = ''; lipsWatch(s);
       const mic = startMic(s); mic.catch(() => {});
       try { await Promise.all([mic, open(s)]); }
       catch (e) { App.rt.stop(); throw e; }
@@ -389,7 +424,7 @@
       s.phase = 'idle'; return true;
     },
     stop() {
-      const s = S; if (!s) return null; S = null; s.closed = true; s.ready = false;
+      const s = S; if (!s) return null; S = null; s.closed = true; s.ready = false; clearInterval(s.lipT);
       try { s.ws && s.ws.close(); } catch {}
       stopPlayback(s);
       try { s.node && s.node.disconnect(); s.src && s.src.disconnect(); } catch {}
@@ -428,6 +463,7 @@
       return S.userSpeaking ? 'Ti ascolto…' : 'Ti ascolto…';
     },
     speaking: () => !!(S && playing(S)),
+    heard: () => heard(ctx()), // v2d-40: istante dell'audio che si sente adesso
     level: () => (S ? level(S) : 0), // v2d-37: livello reale della sua voce in uscita (analizzatore + PCM), 0..1
     listening: () => !!(S && S.userSpeaking),
     refreshInstructions() { PRE = null; if (S && !S.closed) refresh(S); },

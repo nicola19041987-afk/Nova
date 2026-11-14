@@ -274,6 +274,7 @@
     speakAudio(el, env, text, rate = 60) {
       this.breathCue(text, this.speaking);
       this._env = env && env.length ? { el, env, rate } : null;
+      this._envMax = 0; if (this._env) for (let i = 0; i < env.length; i++) if (env[i] > this._envMax) this._envMax = env[i]; // v2d-40
       this.kf = []; this.simUntil = 0; this.speaking = true; this._spkText = text || ''; this._spkAt = performance.now(); this._openAt = 0; this._simFb = false; this._lipHeard = 0;
       if (!this._env && text) this.simulateText(text, 1); // inviluppo non disponibile: labiale stimato dal testo
     }
@@ -303,7 +304,9 @@
     }
     stopAudio() { this._live = null; this._env = null; this.speaking = false; this.kf = [{ t: performance.now() + 60, v: 0 }]; }
     target(now) {
-      if (this.breathM && this.breathM.inhaling(now)) return 0.12; // v8.1: bocca appena socchiusa mentre prende fiato prima di parlare
+      // v2d-40: in chiamata la bocca segue SOLO l'audio suonato (senza audio resta chiusa); fuori chiamata restano le riserve di sempre
+      const strict = !!(window.App && App.call && App.call.active);
+      if (this.breathM && this.breathM.inhaling(now) && !strict) return 0.12; // v8.1: bocca appena socchiusa mentre prende fiato prima di parlare
       let v = 0, fromAudio = false;
       if (this._live && this.speaking) {
         fromAudio = true;
@@ -318,7 +321,8 @@
           const syl = Math.floor(x / 8), h = Math.sin(syl * 12.9898 + 78.233) * 43758.5453; this.vWide = (h - Math.floor(h)) * (a > 0.15 ? 1 : 0.5);
           v = a + (b - a) * f;
         }
-        if (v <= 0.06) v = 0.02; // orologio fermo o inviluppo muto: la frase è comunque in corso
+        if (!strict && v <= 0.06) v = 0.02; // fuori chiamata: orologio fermo o inviluppo muto, la frase è comunque in corso
+        // v2d-40: in chiamata niente 0,02 forzato (= sillabe finte): orologio fermo o pausa vera nell'audio -> bocca chiusa
       } else if (this.analyser && this.speaking) {
         fromAudio = true;
         try {
@@ -339,7 +343,8 @@
       }
       if (v > 0.06) { this._lipHeard = now; return v; }
       // Misuratore muto ma la voce risulta in corso (0 < v ≤ 0.06): sillabe, così Safari non resta a bocca chiusa.
-      if (this.speaking && v > 0) return this.syllable(now);
+      // v2d-40: solo per il labiale stimato dal testo (mai con un audio misurato: lì un livello basso è una consonante o una pausa)
+      if (this.speaking && (!fromAudio || !strict) && v > 0) return this.syllable(now);
       // Testo senza inviluppo (sintesi del telefono, decode fallito): dopo un attimo, sillabe se i keyframe non aprono.
       if (this.speaking && !fromAudio && now - (this._lipHeard || this._spkAt || now) > 220) return this.syllable(now);
       return v;
@@ -438,7 +443,8 @@
       const kf = (a) => 1 - Math.pow(1 - a, dt / 16.67); // v8.4.1: smorzamenti indipendenti dal frame rate (uguali a 30, 60 o 120 Hz)
       { const tg = this.target(now); const raw = (tg - this.mouth) * kf(tg > this.mouth ? 0.36 : 0.2); const cap = 0.16; this.mouth += Math.max(-cap * 0.75, Math.min(cap, raw)); // apertura morbida, mai a scatti
         // v8.4.5: parla ma la bocca resta chiusa (audio non analizzabile, es. iOS): passa al labiale stimato dal testo
-        if (this.speaking && this._env) { if (tg > 0.05) this._openAt = now; else if (!this._simFb && this._spkText && now - Math.max(this._spkAt || 0, this._openAt || 0) > 900) { this._simFb = true; this._env = null; this.simulateText(this._spkText, 1); } } }
+        // v2d-40: solo se l'inviluppo è guasto (tutto a zero) e l'audio sta davvero avanzando; una pausa vera resta a bocca chiusa
+        if (this.speaking && this._env) { const el = this._env.el, adv = !!(el && !el.paused && !el.ended && el.currentTime > 0.15); if (tg > 0.05) this._openAt = now; else if (!this._simFb && (!(window.App && App.call && App.call.active) || (adv && (this._envMax || 0) < 0.03)) && this._spkText && now - Math.max(this._spkAt || 0, this._openAt || 0) > 900) { this._simFb = true; this._env = null; this.simulateText(this._spkText, 1); } } }
       { const tw = ((this.speaking ? this.vWide : 0.5) ?? 0.5); const rawW = (tw - (this.wide || 0.5)) * kf(0.18); this.wide = (this.wide || 0.5) + Math.max(-0.12, Math.min(0.12, rawW)); } // O/U e E/I cambiano forma senza scatti
       if (this === (window.App && App.avatarConv) && App.avatar3d && App.avatar3d.lips) App.avatar3d.lips(this.mouth, this.wide, !!this.speaking);
       this._dEff += (this.dist - this._dEff) * (1 - Math.exp(-dt / 260)); // distanza: avvicinamento/allontanamento morbido
@@ -571,6 +577,7 @@
         try { const r = this.paintAvatar(ctx, { x: 0, y: 0, w: CW, h: CH }, A, true); if (!this.soloFill()) this.featherEdges(ctx, r, CW, CH); }
         finally { this.img = sv[0]; this.lm = sv[1]; this.lidColor = sv[2]; }
       } else if (scn) this.paintScene(ctx, CW, CH, A, scn);
+      else if (this.voiceViewOn()) this.paintVoiceView(ctx, CW, CH, A, now, dt); // v2d-40: chiamata vocale a tutto schermo
       else {
         // con la foto: canvas trasparente intorno, sotto c'è lo sfondo sfocato CSS (syncBackdrop); senza foto (emoji): colore pieno
         if (!this.transparent && !this.img) { ctx.fillStyle = col.background; ctx.fillRect(0, 0, CW, CH); }
@@ -604,6 +611,123 @@
       if (this._needResize) { this._needResize = false; this.resize(); }
     }
 
+    // ---- v2d-40: vista della chiamata vocale (app di Nova) ----
+    // Il canvas diventa l'unico strato visibile: compone i clip del look (i due <video> restano sotto, accesi, per iPhone),
+    // la foto col labiale (quando parla) e un fondo sfocato della stessa scena. L'inquadratura è una trasformazione
+    // UNIFORME nel disegno (niente CSS transform): «passo indietro» di rado e lento, più un movimento leggero del corpo
+    // legato alla voce (respiro, piccoli cenni sulle sillabe accentate, peso che si sposta, cenni mentre ascolta).
+    setVoiceView(on) {
+      on = !!on;
+      const V = this.vv || (this.vv = { on: false, z: 1, z0: 1, z1: 1, t0: 0, ms: 0, next: 0, phase: 'near', alpha: [0, 0], m: { dy: 0, vy: 0, lean: 1, avg: 0, acc: 0, nod: 0, prevM: 0 }, tiny: null, mid: null, edge: null, tinyAt: 0 });
+      if (V.on === on) return;
+      V.on = on; V.z = V.z0 = V.z1 = 1; V.ms = 0; V.phase = 'near'; V.next = 0; V.alpha = [0, 0];
+      Object.assign(V.m, { dy: 0, vy: 0, lean: 1, avg: 0, acc: 0, nod: 0 });
+      this._vx = null;
+    }
+    voiceViewOn() {
+      return !!(this.vv && this.vv.on && this.c && this.c.parentElement && this.c.parentElement.id === 'stage' && this.soloFill());
+    }
+    // zoom: 1 = inquadratura di sempre, <1 = lei «si allontana» (si vede di più della scena del look); ms = durata del passaggio
+    setFrameZoom(z, ms) {
+      const V = this.vv; if (!V) return;
+      V.z0 = V.z; V.z1 = Math.max(0.7, Math.min(1, Number(z) || 1)); V.t0 = performance.now(); V.ms = Math.max(0, ms || 0);
+      if (!V.ms) V.z = V.z1;
+      V.phase = V.z1 < 0.999 ? 'far' : 'near';
+    }
+    voiceZoom(now, live) {
+      const V = this.vv, reduce = this.reducedMotion();
+      if (reduce) { V.z = 1; V.ms = 0; V.phase = 'near'; V.next = 0; return 1; }
+      if (V.ms) { const k = Math.min(1, (now - V.t0) / V.ms), e = 0.5 - 0.5 * Math.cos(Math.PI * k); V.z = V.z0 + (V.z1 - V.z0) * e; if (k >= 1) { V.ms = 0; V.z = V.z1; } }
+      if (!V.next) V.next = now + 10000 + Math.random() * 6000; // il primo passo indietro dopo 10–16 s
+      if (!V.ms && now >= V.next) {
+        if (V.phase === 'near') {
+          if (live) { this.setFrameZoom(VV_FAR, VV_MS); V.next = now + VV_MS + 6000 + Math.random() * 3000; } // resta lontana 6–9 s
+          else V.next = now + 1500; // mai mentre la scena è ferma o non pronta
+        } else { this.setFrameZoom(1, VV_MS); V.next = now + VV_MS + 14000 + Math.random() * 8000; } // poi vicina 14–22 s
+      }
+      return V.z;
+    }
+    voiceMotion(now, dt, CW, CH) {
+      const M = this.vv.m;
+      if (this.reducedMotion()) { M.dy = M.vy = 0; M.lean = 1; return { s: 1, dx: 0, dy: 0 }; }
+      const sd = Math.min(0.05, Math.max(0.001, dt / 1000));
+      const lv = Math.max(0, Math.min(1, this.mouth || 0)), talk = !!this.speaking;
+      // accento: la bocca si apre di colpo sopra la media recente -> piccolo cenno del capo (giù e su, molla smorzata)
+      M.avg += (lv - M.avg) * (1 - Math.exp(-dt / 380));
+      if (talk && lv > 0.42 && lv - M.avg > 0.2 && lv > M.prevM && now - M.acc > 300) { M.acc = now; M.vy += CH * (0.045 + Math.random() * 0.025); }
+      M.prevM = lv;
+      // ascolto: mentre parli, ogni 2,2–3,8 s un cenno lento («ti sto ascoltando»)
+      const lis = !!(window.App && App.rt && App.rt.listening && App.rt.listening());
+      if (lis && !talk && now > M.nod) { M.nod = now + 2200 + Math.random() * 1600; M.vy += CH * 0.04; }
+      const K = 36, D = 2 * Math.sqrt(K) * 0.88;
+      M.vy += (-M.dy * K - M.vy * D) * sd; M.dy += M.vy * sd;
+      M.dy = Math.max(-CH * 0.005, Math.min(CH * 0.005, M.dy));
+      // mentre parla si sporge appena verso di te; ascoltando torna composta (passaggio lento)
+      M.lean += ((talk ? 1.006 : 1) - M.lean) * (1 - Math.exp(-dt / 900));
+      const breath = Math.sin(now / 4400 * Math.PI * 2) * 0.0022 + Math.sin(now / 9700 + 1.3) * 0.0008; // ~13,6 respiri/min
+      const dx = this.wave(now, 8300, 13900, 21700) * CW * 0.0032;
+      const dyIdle = this.wave(now, 7100, 11900, 17300) * CH * 0.0018;
+      return { s: (1 + breath) * M.lean, dx, dy: M.dy + dyIdle };
+    }
+    paintVoiceView(ctx, CW, CH, A, now, dt) {
+      const V = this.vv, st = this.c.parentElement, cl = st.classList;
+      const vids = this._vvVids || (this._vvVids = ['motion-video', 'motion-video-b'].map((id) => document.getElementById(id)).filter(Boolean));
+      const motion = cl.contains('has-motion') && cl.contains('motion-on'), lipsUp = cl.contains('nv-lips');
+      // opacità dei clip come in pagina (dissolvenze del lettore), seguite nel disegno
+      const step = Math.min(1, dt / 320);
+      let front = null, frontA = 0;
+      vids.forEach((v, i) => {
+        const ready = !!(v.videoWidth && v.readyState >= 2 && !v.hidden);
+        const tg = motion && ready ? Math.max(0, Math.min(1, parseFloat(v.style.opacity === '' ? '1' : v.style.opacity) || 0)) : 0;
+        const a = V.alpha[i] || 0; V.alpha[i] = tg > a ? Math.min(tg, a + step) : Math.max(tg, a - step);
+        if (!ready) V.alpha[i] = 0;
+        if (V.alpha[i] > frontA) { frontA = V.alpha[i]; front = v; }
+      });
+      const photo = !!(this.img && this.img.naturalWidth && cl.contains('nv-img'));
+      const live = (front && !front.paused && frontA > 0.5) || (photo && lipsUp);
+      const z = this.voiceZoom(now, live), mo = this.voiceMotion(now, dt, CW, CH);
+      const ov = this.reducedMotion() ? 1 : VV_OVERSCAN; // margine minimo: il movimento non scopre mai i bordi
+      const G = this._vx = { s: z * mo.s * ov, px: CW * 0.5, py: CH * 0.42, dx: mo.dx * z, dy: mo.dy * z };
+      const map = (x, y, w, h) => ({ x: G.px + (x - G.px) * G.s + G.dx, y: G.py + (y - G.py) * G.s + G.dy, w: w * G.s, h: h * G.s });
+      const vrect = (v) => { const f = Math.max(CW / v.videoWidth, CH / v.videoHeight), w = v.videoWidth * f; return map((CW - w) / 2, 0, w, v.videoHeight * f); }; // come object-fit:cover, center top
+      // fondo: la stessa scena, piccolissima e ingrandita (sfocata), un po' più scura; si vede solo ai bordi quando si allontana
+      const src = front && frontA > 0.5 ? front : photo ? this.img : front;
+      if (!src) { this._vx = null; return; } // niente di pronto: sotto si vede la foto del look (sfondo dello stage)
+      if (!V.tiny) { V.tiny = document.createElement('canvas'); V.tiny.width = 18; V.tiny.height = 32; V.mid = document.createElement('canvas'); V.mid.width = 72; V.mid.height = 128; }
+      if (now - V.tinyAt > 120) {
+        V.tinyAt = now;
+        try {
+          const t = V.tiny.getContext('2d'), sw = src.videoWidth || src.naturalWidth, sh = src.videoHeight || src.naturalHeight, f = Math.max(18 / sw, 32 / sh);
+          t.globalAlpha = 1; t.drawImage(src, (18 - sw * f) / 2, 0, sw * f, sh * f); t.fillStyle = 'rgba(0,0,0,.18)'; t.fillRect(0, 0, 18, 32);
+          const m = V.mid.getContext('2d'); m.imageSmoothingEnabled = true; m.imageSmoothingQuality = 'high'; m.drawImage(V.tiny, 0, 0, 72, 128);
+        } catch { /* fotogramma non pronto */ }
+      }
+      ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(V.mid, 0, 0, CW, CH);
+      const drawVids = () => vids.forEach((v, i) => { const a = V.alpha[i]; if (a < 0.01) return; const r = vrect(v); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = a; try { ctx.drawImage(v, r.x, r.y, r.w, r.h); } catch { /* */ } ctx.globalAlpha = 1; });
+      const drawPhoto = () => { if (photo) { const r = this.paintAvatar(ctx, { x: 0, y: 0, w: CW, h: CH }, A, true); ctx.setTransform(1, 0, 0, 1, 0, 0); return r; } return null; };
+      // come in pagina: la foto col labiale sta sopra i clip; altrimenti i clip coprono la foto
+      if (lipsUp) { drawVids(); drawPhoto(); }
+      else { if (frontA < 0.999) drawPhoto(); drawVids(); }
+      // bordi morbidi della scena quando è rimpicciolita: cornice della scena sfocata con un foro sfumato
+      if (z < 0.995) {
+        const sr = front && frontA > 0.5 ? vrect(front) : (() => { const E = this.extent(this.img); const f = this.photoRect({ x: 0, y: 0, w: CW, h: CH }, E); return { x: f.ox + E.x0 * f.fit, y: f.oy + E.y0 * f.fit, w: E.w * f.fit, h: E.h * f.fit }; })();
+        const ew = 96, eh = Math.round(96 * CH / CW), k = ew / CW, e = V.edge || (V.edge = document.createElement('canvas'));
+        if (e.width !== ew || e.height !== eh) { e.width = ew; e.height = eh; }
+        const g = e.getContext('2d'); g.globalCompositeOperation = 'source-over'; g.clearRect(0, 0, ew, eh); g.drawImage(V.mid, 0, 0, ew, eh);
+        g.globalCompositeOperation = 'destination-out';
+        const x0 = sr.x * k, y0 = sr.y * k, x1 = (sr.x + sr.w) * k, y1 = (sr.y + sr.h) * k, fz = ew * 0.05;
+        g.fillStyle = '#000'; g.fillRect(x0 + fz, y0 + fz, Math.max(0, x1 - x0 - 2 * fz), Math.max(0, y1 - y0 - 2 * fz));
+        const lin = (ax, ay, bx, by) => { const gr = g.createLinearGradient(ax, ay, bx, by); gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(1, 'rgba(0,0,0,1)'); return gr; };
+        g.fillStyle = lin(0, y0, 0, y0 + fz); g.fillRect(x0 + fz, y0, Math.max(0, x1 - x0 - 2 * fz), fz);
+        g.fillStyle = lin(0, y1, 0, y1 - fz); g.fillRect(x0 + fz, y1 - fz, Math.max(0, x1 - x0 - 2 * fz), fz);
+        g.fillStyle = lin(x0, 0, x0 + fz, 0); g.fillRect(x0, y0 + fz, fz, Math.max(0, y1 - y0 - 2 * fz));
+        g.fillStyle = lin(x1, 0, x1 - fz, 0); g.fillRect(x1 - fz, y0 + fz, fz, Math.max(0, y1 - y0 - 2 * fz));
+        g.globalCompositeOperation = 'source-over';
+        ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = Math.min(1, (1 - z) / 0.04); ctx.drawImage(e, 0, 0, CW, CH); ctx.globalAlpha = 1;
+      }
+      this._vx = null;
+    }
     // Estensione dell'immagine intera nello spazio "quadrato S" dei punti del viso (il quadrato centrale = 0..S)
     extent(img) {
       const S = VS;
@@ -670,7 +794,10 @@
         const ovh = Math.max(0, H - box.h);
         const ct = Math.min(ovh, H * 0.02);
         this._headFrac = 0.22;
-        return { fit, ox: box.x - cl - E.x0 * fit, oy: box.y - ct - E.y0 * fit };
+        const ox0 = box.x - cl - E.x0 * fit, oy0 = box.y - ct - E.y0 * fit, G = this._vx;
+        // v2d-40: vista voce: stessa trasformazione uniforme dei clip (inquadratura + movimento), attorno allo stesso punto
+        if (G) return { fit: fit * G.s, ox: G.px + (ox0 - G.px) * G.s + G.dx, oy: G.py + (oy0 - G.py) * G.s + G.dy };
+        return { fit, ox: ox0, oy: oy0 };
       }
       const S = VS, lm = this.lm || {};
       const eL = lm.eyeL || { x: 0.42, y: 0.38 }, eR = lm.eyeR || { x: 0.58, y: 0.38 };
@@ -734,7 +861,7 @@
     }
     paintAvatar(ctx, box, A, top, alignBottom) {
       const S = VS, img = this.img, E = this.extent(img), col = this.colors;
-      if (top && this.c && this.c.parentElement && this.c.parentElement.id === 'stage') {
+      if (top && !this._vx && this.c && this.c.parentElement && this.c.parentElement.id === 'stage') { // v2d-40: in vista voce il fondo è la scena sfocata
         const ed = this.edgeColors();
         ctx.save();
         ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -1033,7 +1160,7 @@
       // naturali; niente sguardo che salta né sopracciglia. A riposo la foto resta com'è (si muove il video).
       const calm = !!this.faceCalm, talk = this.speaking || open > 0.02;
       if (calm && !talk) return;
-      if (open > 0.02) paintMouth(ctx, img, lm, open, Math.max(0, Math.min(1, (this.wide ?? 0.5) + (calm ? 0 : smile * 0.06))));
+      if (open > 0.02) paintMouth(ctx, img, lm, open, Math.max(0, Math.min(1, (this.wide ?? 0.5) + (calm ? 0 : smile * 0.06))), this._vx ? VV_MOUTH : 1); // v2d-40: in chiamata vocale la bocca si apre un po' di più (si vede da lontano)
       const gxp = calm ? 0 : mc.gx * EW * 0.1, gyp = calm ? 0 : mc.gy * Math.max(EH, EW * 0.2) * 0.14, bup = calm ? 0 : mc.brow * F * 0.007, px = F * 0.0006;
       const roll = Math.atan2(lm.eyeR.y - lm.eyeL.y, lm.eyeR.x - lm.eyeL.x);
       [lm.eyeL, lm.eyeR].forEach((e, ei) => {
@@ -1104,6 +1231,7 @@
   const GESTURE_REGIONS = false; // v7.1: niente rotazione di pezzi di braccio sulla foto: solo respiro e viso
   const WARP_MAX = 0.03, WARP_STRIPS = 40, EDGE_SIDE = 0.07, EDGE_TB = 0.1; // v7.1: deformazione interna max (frazione della larghezza) e bande sfumate
   const DEF_LM = { eyeL: { x: 0.38, y: 0.42 }, eyeR: { x: 0.62, y: 0.42 }, mouth: { x: 0.5, y: 0.7 } }; // v8.4.3: predefiniti (incerti)
+  const VV_FAR = 0.8, VV_MS = 2800, VV_OVERSCAN = 1.018, VV_MOUTH = 1.7; // v2d-40: «passo indietro» in chiamata vocale (scala della scena) e durata del passaggio
   const VS = 1000; // unità virtuale dello spazio del viso (il canvas reale scala con una trasformazione)
   const ROT_MAX = 0.075; const SHIFT_MAX = 0.042 * 1000; const SKEW_MAX = 0.018; // v7: movimenti più ampi (spalle comprese), sempre dentro il riquadro // rotazione massima della testa/busto (radianti): l'ingombro è calcolato su questo valore
   // Bordi sfumati (Presenza e scena senza immagine): ellisse sull'area dell'immagine
@@ -1244,7 +1372,7 @@
       ctx.save(); ctx.translate(ex, ey); ctx.rotate(roll); ctx.drawImage(buf, -ox, -oy); ctx.restore();
     });
   }
-  function paintMouth(ctx, img, lm, open, wide) {
+  function paintMouth(ctx, img, lm, open, wide, gain = 1) {
     const S = VS, L = lm && lm.mouthL, R = lm && lm.mouthR;
     if (!L || !R || !(open > 0.02) || !img.naturalWidth) return;
     const openAmt = Math.max(0, Math.min(1, open));
@@ -1261,7 +1389,7 @@
     const cx = ax + vx * along, cy = ay + vy * along;
     const half = len * (0.28 + w * 0.1);
     const heightK = 0.58 + aShape * 0.42 + round * 0.16;
-    const jaw = Math.min(openAmt * len * 0.1 * heightK, len * 0.13);
+    const jaw = Math.min(openAmt * len * 0.1 * heightK * gain, len * 0.13 * gain); // v2d-40: gain > 1 solo in chiamata vocale
     const lift = jaw * (0.26 + round * 0.1);
     if (jaw < 0.4) return;
     const above = len * 0.2, below = len * 0.36;

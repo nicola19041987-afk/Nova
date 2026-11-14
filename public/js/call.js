@@ -40,7 +40,13 @@
   // v8.2: modalità della chiamata (si può passare da vocale a video col tasto verde, il timer continua)
   function setMode(m) {
     mode = m === 'voice' ? 'voice' : 'video';
-    stage.classList.toggle('voice', mode === 'voice'); ui.classList.toggle('voice', mode === 'voice');
+    // v2d-40: nell'app di Nova (solo-mode) la chiamata vocale resta vocale (niente fotocamera), ma lei si vede viva a tutto
+    // schermo come in videochiamata: lo stage NON prende lo stile «voice» (sfondo scuro sfocato, ritratto rotondo, altezza
+    // ridotta) ma «nv-voicecall», e il disegno (avatar.js, vista voce) compone clip, foto col labiale e inquadratura.
+    const soloVoice = mode === 'voice' && document.body.classList.contains('solo-mode');
+    stage.classList.toggle('voice', mode === 'voice' && !soloVoice); ui.classList.toggle('voice', mode === 'voice');
+    stage.classList.toggle('nv-voicecall', soloVoice);
+    if (App.avatarConv && App.avatarConv.setVoiceView) App.avatarConv.setVoiceView(soloVoice && on && !minimized);
     $('#call-kind').textContent = mode === 'voice' ? 'Chiamata vocale' : 'Videochiamata';
     $('#call-portrait').hidden = mode !== 'voice';
     $('#call-tovideo').hidden = mode !== 'voice'; $('#call-speaker').hidden = mode !== 'voice';
@@ -49,7 +55,7 @@
     paintCam();
     App.call.mode = mode; if (mode === 'video') everVideo = true;
     if (on && rt) App.rt.setMode(mode);
-    cancelAnimationFrame(raf); if (mode === 'voice') raf = requestAnimationFrame(portrait);
+    cancelAnimationFrame(raf); if (mode === 'voice' && !soloVoice) raf = requestAnimationFrame(portrait);
     requestAnimationFrame(() => App.fitFrame && App.fitFrame());
     if (on) { state(); App.chat.header && App.chat.header(); }
     if (App.simli) App.simli.stop();
@@ -111,25 +117,32 @@
       connecting = true; badge('conn'); state();
       const p = App.rt.start(ch, mode, greet);
       try { await p; if (!on) { App.rt.stop(); return; } rt = true; connecting = false; badge('rt'); state(); return; }
-      catch (e) { connecting = false; if (!on) return; console.warn('Tempo reale non disponibile:', e.message); retryRt(ch, mode); App.toast('⚡ Tempo reale non disponibile: ' + e.message + ' · uso la chiamata classica (dettagli: Impostazioni → Diagnostica voce)', 6000); classic(greet, e.message); return; }
+      catch (e) { connecting = false; if (!on) return; console.warn('Tempo reale non disponibile:', e.message); retryRt(ch, mode); App.toast('⚡ Tempo reale non disponibile: ' + e.message + ' · per ora chiamata classica, riprovo da sola (dettagli: Impostazioni → Diagnostica voce)', 6000); classic(greet, e.message); return; }
     }
-    classic(greet, !App.hasAi() ? 'manca la chiave xAI' : App.ls.get('callEngine', 'realtime') !== 'realtime' ? 'scelta nelle Impostazioni' : App.rt && !App.rt.supported() ? 'browser non compatibile con il tempo reale' : '');
+    classic(greet, !App.hasAi() ? 'manca la chiave xAI' : App.rt && !App.rt.supported() ? 'browser non compatibile con il tempo reale' : App.rt && App.rt.classicOnly ? 'prova tecnica (solo in memoria)' : '');
   }
-  // v2d-37: se il tempo reale non si collega all'avvio, si riprova da solo (poco dopo, due volte) e appena si collega
-  // la chiamata passa al tempo reale senza toccare nulla. Chi l'ha spento nelle Impostazioni resta sulla classica.
+  // v2d-37: se il tempo reale non si collega all'avvio, si riprova da solo e appena si collega la chiamata passa al tempo
+  // reale senza toccare nulla. v2d-40: il tempo reale è SEMPRE inserito (nessuna impostazione lo spegne): la chiamata classica
+  // è solo una riserva temporanea dentro la chiamata, e si continua a riprovare (2,5 s, 6 s, 12 s, poi ogni 20 s) finché la
+  // chiamata è aperta, anche dopo una caduta a chiamata in corso (fallback). Un solo ciclo di tentativi per volta.
+  const RT_RETRY_MS = [2500, 6000, 12000, 20000];
+  let retryT = 0, retryAt = 0;
   function retryRt(ch, m) {
-    let n = 0; const callAt = t0;
+    const callAt = t0; let n = 0;
+    clearTimeout(retryT); retryAt = callAt;
     const go = async () => {
-      if (callAt !== t0 || !on || rt || connecting || !(App.rt && App.rt.enabled()) || n++ >= 2) return;
+      retryT = 0;
+      if (callAt !== t0 || retryAt !== callAt || !on || rt || !(App.rt && App.rt.enabled())) return;
+      if (connecting) { retryT = setTimeout(go, 2000); return; }
       connecting = true;
       try {
         await App.rt.start(ch, mode || m, '');
         if (callAt !== t0 || !on) { App.rt.stop(); connecting = false; return; }
-        if (App.callMic) App.callMic.stop(); App.voice.cancel(); micMode = '';
+        if (App.callMic) App.callMic.stop(); App.voice.cancel(); micMode = ''; clearInterval(warm);
         rt = true; connecting = false; badge('rt'); if (muted && App.rt.setMuted) App.rt.setMuted(true); state();
-      } catch (e) { connecting = false; console.warn('Tempo reale, nuovo tentativo:', e.message); setTimeout(go, 6000); }
+      } catch (e) { connecting = false; console.warn('Tempo reale, nuovo tentativo:', e.message); if (on && callAt === t0) retryT = setTimeout(go, RT_RETRY_MS[Math.min(++n, RT_RETRY_MS.length - 1)]); }
     };
-    setTimeout(go, 2500);
+    retryT = setTimeout(go, RT_RETRY_MS[0]);
   }
   // chiamata classica: riconoscimento vocale del telefono + risposta in streaming + voce frase per frase
   // v8.4.1: microfono continuo + nostro rilevatore del parlato + trascrizione xAI (niente bip); riserva: riconoscimento continuo
@@ -148,8 +161,9 @@
     } else useSR();
   }
   function end() {
-    if (!on) return; on = false; App.call.active = false; cancelAnimationFrame(raf);
-    stage.classList.remove('voice'); ui.classList.remove('voice'); App.call.mode = null;
+    if (!on) return; on = false; App.call.active = false; cancelAnimationFrame(raf); clearTimeout(retryT); retryT = 0; retryAt = 0;
+    stage.classList.remove('voice', 'nv-voicecall'); ui.classList.remove('voice'); App.call.mode = null;
+    if (App.avatarConv && App.avatarConv.setVoiceView) App.avatarConv.setVoiceView(false); // v2d-40: inquadratura normale
     if (App.tts) App.tts.volume = 1;
     clearInterval(tick); clearInterval(warm); App.voice.cancel(); if (App.callMic) App.callMic.stop(); micMode = ''; badge('');
     if (rt) { App.rt.stop(); rt = false; } connecting = false; ui.classList.remove('rt');
@@ -168,6 +182,7 @@
   function minimize() {
     if (!on) return;
     minimized = true;
+    if (App.avatarConv && App.avatarConv.setVoiceView) App.avatarConv.setVoiceView(false); // v2d-40: ridotta = vista normale
     stopCam(); // v2d-39: ✕ = camera spenta davvero (tracce fermate, anteprima tolta), si riaccende col tasto 📷
     ui.hidden = true;
     stage.classList.remove('fs');
@@ -183,6 +198,7 @@
     minimized = false;
     ui.hidden = false;
     document.body.classList.remove('call-min');
+    if (App.avatarConv && App.avatarConv.setVoiceView) App.avatarConv.setVoiceView(stage.classList.contains('nv-voicecall')); // v2d-40
     stage.classList.add('fs', 'call');
     document.body.classList.add('avatar-fs-on', 'in-call');
     if (App.fullscreenFix) App.fullscreenFix(); // v2d-36: a tutto schermo anche se la tastiera era aperta
@@ -244,7 +260,7 @@
     engine: () => (!on ? null : rt ? 'realtime' : connecting ? 'connecting' : 'classic'),
     why: () => why, micMode: () => micMode,
     // tempo reale caduto a chiamata in corso: si continua con la chiamata classica, senza chiudere
-    fallback(w) { if (!on || !rt) return; App.rt.stop(); rt = false; App.toast('⚡ ' + (w || 'Tempo reale interrotto') + ': continuo con la chiamata classica', 5000); App.audio.callSession(true); classic(null, w || 'tempo reale interrotto'); },
+    fallback(w) { if (!on || !rt) return; App.rt.stop(); rt = false; App.toast('⚡ ' + (w || 'Tempo reale interrotto') + ': per ora chiamata classica, riprovo da sola', 5000); App.audio.callSession(true); classic(null, w || 'tempo reale interrotto'); if (App.current) retryRt(App.current, mode); }, // v2d-40: si torna al tempo reale
     get minimized() { return minimized; },
     minimize, restore,
     // mentre parli: ogni tanto annuisce (ascolto attivo), mai a raffica

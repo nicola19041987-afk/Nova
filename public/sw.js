@@ -1,5 +1,5 @@
 // Service worker: mette in cache solo la "scocca" dell'app (nessun dato privato).
-const CACHE = 'app-privata-v2d-37';
+const CACHE = 'app-privata-v2d-40'; // v2d-40: scocca nuova (su rete lenta la copia in cache vecchia poteva restare)
 const SHELL = ['/', '/index.html', '/style.css', '/avatar.js', '/js/motion-lib.js', '/js/live-motion.js', '/js/motion-graph.js', '/js/net.js', '/js/presence.js', '/js/core.js', '/js/outfits.js', '/js/simli.js', '/js/auth.js', '/js/account.js', '/js/chat.js', '/js/voice-note.js', '/js/voice.js', '/js/editor.js', '/js/docs.js', '/js/media.js', '/js/feed.js', '/js/motion.js', '/js/stage.js', '/js/gestures.js', '/js/actions.js', '/js/realtime.js', '/js/rt-worklet.js', '/js/callmic.js', '/js/diag.js', '/js/call.js', '/js/ios.js', '/js/gallery.js', '/js/presets.js', '/js/sight.js', '/js/solo.js', '/js/mood.js', '/js/support.js', '/js/blocco.js', '/blocco.css', '/js/close.js', '/js/archive.js', '/js/frame.js', '/js/live.js', '/js/look-parse.js', '/js/avatar-look.js', '/js/main.js', '/manifest.json', '/icons/icon-192.png', '/icons/icon-512.png', '/icons/icon-180.png'];
 
 self.addEventListener('install', (e) => {

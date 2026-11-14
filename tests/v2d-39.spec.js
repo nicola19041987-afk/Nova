@@ -158,7 +158,7 @@ test('chiamata classica: voce sul microfono per ~300 ms mentre lei legge -> la v
   await page.route('**/api/tts', (r) => r.fulfill({ status: 200, contentType: 'audio/wav', body: b }));
   await page.route('**/api/stt', (r) => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ text: '' }) }));
   await open(page, 'nova_studio');
-  await page.evaluate(() => { App.ls.set('callEngine', 'classic'); App.ls.set('voiceEngine', 'xai'); App.hasAi = () => true; });
+  await page.evaluate(() => { App.rt.classicOnly = true; App.ls.set('voiceEngine', 'xai'); App.hasAi = () => true; }); // v2d-40: classica solo in memoria (l'impostazione salvata non spegne più il tempo reale)
   await page.mouse.click(200, 420);
   await page.evaluate(() => App.call.start('video').catch(() => {}));
   await page.waitForFunction(() => App.call.micMode && App.call.micMode() === 'vad', null, { timeout: 10000 });

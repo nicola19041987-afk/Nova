@@ -415,10 +415,10 @@
     };
     const ce = document.getElementById('call-engine'), li = document.getElementById('latency-info');
     const showLat = () => {
-      if (ce) { ce.value = App.ls.get('callEngine', 'realtime'); if (App.rt && !App.rt.supported()) { ce.value = 'classic'; ce.disabled = true; } }
+      if (ce) { ce.value = 'realtime'; ce.disabled = true; if (App.rt && !App.rt.supported()) ce.value = 'classic'; } // v2d-40: sempre tempo reale (non si sceglie più)
       if (li && App.latency) { const a = App.latency.median('tempo reale'), b = App.latency.median('classica'); li.textContent = a || b ? `Ritardo misurato su questo telefono (da quando smetti di parlare alla sua voce, mediana): ${a ? 'tempo reale ' + (a / 1000).toFixed(2) + ' s' : ''}${a && b ? ' · ' : ''}${b ? 'classica ' + (b / 1000).toFixed(2) + ' s' : ''}` : ''; }
     };
-    if (ce) ce.addEventListener('change', () => { App.ls.set('callEnginePick', true); App.ls.set('callEngine', ce.value); showLat(); });
+    if (ce) ce.addEventListener('change', () => { App.ls.set('callEngine', 'realtime'); showLat(); }); // v2d-40: mai «classica» salvata
     const tabA = document.querySelector('[data-tab="account"]'); if (tabA) tabA.addEventListener('click', showLat);
     setTimeout(showLat, 0);
     eng.addEventListener('change', () => { App.ls.set('voiceEngine', eng.value); NX.fails = 0; show(); loadVoices(); });

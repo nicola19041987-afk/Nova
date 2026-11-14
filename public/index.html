@@ -471,9 +471,9 @@
           <label>Chiamate e videochiamate
             <select id="call-engine">
               <option value="realtime">⚡ Conversazione in tempo reale (come Grok)</option>
-              <option value="classic">🎙️ Classica (microfono continuo + trascrizione xAI)</option>
+              <option value="classic" disabled>🎙️ Classica: solo riserva temporanea se il collegamento cade</option>
             </select></label>
-          <p id="call-engine-info" class="muted small">In tempo reale lei ti sente mentre parli, risponde appena finisci e si ferma se parli sopra di lei. Il telefono si collega direttamente a xAI con un token valido 5 minuti: la tua chiave resta sul telefono. Se il collegamento non riesce si passa da soli alla chiamata classica, e in alto nella chiamata vedi <b>⚡ Tempo reale</b> o <b>Classica</b> (toccalo per il motivo).</p>
+          <p id="call-engine-info" class="muted small">In tempo reale lei ti sente mentre parli, risponde appena finisci e si ferma se parli sopra di lei. Il telefono si collega direttamente a xAI con un token valido 5 minuti: la tua chiave resta sul telefono. Il tempo reale è sempre inserito. Se il collegamento non riesce si passa per poco alla chiamata classica e si torna da soli al tempo reale appena si ricollega, e in alto nella chiamata vedi <b>⚡ Tempo reale</b> o <b>Classica</b> (toccalo per il motivo).</p>
           <p id="latency-info" class="muted small"></p>
           <button id="voice-diag" type="button" class="block">🩺 Diagnostica voce</button>
           <div id="voice-diag-out" class="diag-out" hidden></div>
