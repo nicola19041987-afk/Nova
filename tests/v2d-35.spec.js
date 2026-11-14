@@ -142,7 +142,7 @@ test('memoria: il vecchio stato si carica con fatti, nomi, storia e diario intat
       expect(j[k]).toContain('Umore attuale: serena e contenta di sentirlo');
       expect(j[k]).not.toContain('offesa e gelosa');
       expect(j[k]).not.toContain('mi ha ignorata ieri');
-      expect(j[k]).not.toContain('permalosa');
+      expect(j[k].replace('Non è permalosa', '')).not.toContain('permalosa'); // v2d-41: «Non è permalosa» è nel carattere scritto da Nicola; il tratto vecchio non c'è
     }
     expect(fs.readFileSync(CHARS).equals(withOld)).toBe(true); // leggere non riscrive niente sul disco
     // relazione fredda: si torna alla base calda, ma i fatti restano
