@@ -23,7 +23,7 @@
   const note = (t, d) => { LOG.push({ at: Math.round(performance.now()), t, d: d == null ? undefined : String(d).slice(0, 200) }); if (LOG.length > 60) LOG.shift(); };
   const errText = (ev) => { const e = (ev && ev.error) || ev || {}; return [e.message || e.code || 'errore', e.param && `(${e.param})`].filter(Boolean).join(' '); };
   // xAI risponde così se response.cancel arriva senza una risposta aperta. Non è un guasto: non va in diagnostica né in console.
-  const benignCancel = (t) => /cancellation failed/i.test(t) && /no active response/i.test(t);
+  const benignCancel = (t) => (/cancellation failed/i.test(t) && /no active response/i.test(t)) || /truncat/i.test(t); // v2d-39: truncate non supportato = innocuo
 
   function ctx() { if (!App.audio.ctx) App.audio.ctx = new AC(); if (App.audio.ctx.state !== 'running') App.audio.ctx.resume().catch(() => {}); return App.audio.ctx; }
 
@@ -40,6 +40,10 @@
     s.src = c.createMediaStreamSource(s.stream);
     if (!s.offLost) s.offLost = App.audio.onMicLost(() => { if (!s.closed) startMic(s).catch((e) => console.warn('Microfono non riaperto', e)); });
     const onChunk = (pcm, rms) => {
+      // v2d-39: livello locale del microfono (con cancellazione dell'eco) per confermare subito un'interruzione vera
+      s.micLv = s.micLv || []; s.micLv.push(rms); if (s.micLv.length > 4) s.micLv.shift();
+      if (!s.userSpeaking && !playing(s) && rms < (s.floor || 0.008) * 2.5) s.floor = Math.max(0.003, (s.floor || 0.008) * 0.95 + rms * 0.05);
+      if (s.bargeTimer && localVoice(s)) { clearBarge(s); bargeIn(s, false); }
       if (rms > 0.012 && !playing(s)) s.lastVoiceAt = performance.now(); // fine del parlato (per misurare la latenza)
       if (rms > s.micPeak) s.micPeak = rms; // v8.4.7: microfono «muto» -> riaperto una volta
       if (!s.reacq && !App.audio._reacq) { const tr = s.stream && s.stream.getAudioTracks()[0], mt = !!(tr && (tr.muted || tr.readyState !== 'live')); if (mt || (performance.now() - s.micT0 > 4000 && s.micPeak < 0.0012)) { s.reacq = true; note('microfono muto: riapro', mt ? 'traccia muta' : 'livello ' + s.micPeak.toFixed(4)); App.audio.reacquire(mt ? 'traccia muta' : 'livello quasi zero').catch(() => {}); return; } }
@@ -92,6 +96,7 @@
     const cut = c.currentTime - 0.25;
     while (s.env.length > 6 && s.env[0].t1 < cut) s.env.shift();
     s.sources.push(src); src.onended = () => { s.sources = s.sources.filter((x) => x !== src); };
+    if (s.resp && !s.resp.t0) s.resp.t0 = t; // v2d-39: inizio audio della risposta (per conversation.item.truncate)
     if (s.resp && !s.resp.firstAt) { // primo audio della risposta: latenza fine-parlato -> primo suono
       s.resp.firstAt = performance.now() + (t - c.currentTime) * 1000;
       if (s.eosAt) { const ms = s.resp.firstAt - s.eosAt; if (ms > 0 && ms < 20000) { App.latency.add('tempo reale', ms); s.lat.push(Math.round(ms)); } s.eosAt = 0; }
@@ -197,7 +202,9 @@
         s.upd = (s.upd || 0) + 1; note('session.updated'); if (s.step) { const f = s.step; s.step = null; f(true); } break;
       case 'input_audio_buffer.speech_started':
         s.userSpeaking = true; s.phase = 'listening'; s.bargeSamples = 0; s.bargeVoiced = 0; s.live = '';
-        if (playing(s) || s.resp || s.responseActive) armBarge(s);
+        // v2d-39: barge-in immediato. Se il microfono locale conferma voce vera, lei si ferma SUBITO; altrimenti si
+        // aspetta la conferma (max 1,5 s): il residuo della sua eco non la interrompe.
+        if (playing(s) || s.resp || s.responseActive) { s.bargeEvAt = performance.now(); if (localVoice(s)) bargeIn(s, false); else armBarge(s); }
         if (App.call && App.call.onInterim) App.call.onInterim('…'); break;
       case 'input_audio_buffer.speech_stopped':
         s.userSpeaking = false; clearBarge(s);
@@ -210,6 +217,8 @@
         s.live = ev.transcript || ''; if (App.call && App.call.onInterim) App.call.onInterim(s.live); break;
       case 'conversation.item.input_audio_transcription.completed':
         s.waitUser = false; s.live = ''; save(s, 'user', ev.transcript); break;
+      case 'response.output_item.added':
+        if (s.resp && ev.item && ev.item.id) s.resp.itemId = ev.item.id; break;
       case 'response.created':
         s.responseActive = true;
         s.resp = { id: ev.response && ev.response.id, text: '', firstAt: 0 }; s.phase = 'replying'; break;
@@ -267,30 +276,34 @@
     if (s.isReady || s.closed) return; s.isReady = true; s.ready = true; s.ok();
     for (const pcm of s.early.splice(0)) if (!s.muted) s.ws.send(JSON.stringify({ type: 'input_audio_buffer.append', audio: b64(pcm) }));
   }
-  // Un rumore breve non la taglia. Si ferma solo se la voce resta sopra soglia ~700 ms e c'è già un po' di testo.
-  function clearBarge(s) { if (s.bargeTimer) { clearInterval(s.bargeTimer); s.bargeTimer = 0; } }
-  function bargeReady(s) {
-    const held = performance.now() - (s.bargeAt || 0);
-    const text = String(s.live || '').replace(/\s+/g, ' ').trim();
-    if (held < 700) return false;
-    if (text.length < 8) return false;
-    return true;
+  // v2d-39: voce dell'utente confermata dal microfono locale: almeno 2 degli ultimi 3 blocchi da 100 ms sopra il rumore di fondo
+  // (soglia più alta mentre lei suona: la cancellazione dell'eco lascia un residuo basso, la voce vera è più forte).
+  function localVoice(s) {
+    const L = (s.micLv || []).slice(-3); if (L.length < 2) return false;
+    const th = Math.max(playing(s) ? 0.03 : 0.02, (s.floor || 0.008) * (playing(s) ? 5 : 3.4));
+    return L.filter((v) => v >= th).length >= 2;
   }
+  function clearBarge(s) { if (s.bargeTimer) { clearInterval(s.bargeTimer); s.bargeTimer = 0; } }
   function armBarge(s) {
     if (s.bargeTimer) return;
     s.bargeAt = performance.now();
     s.bargeTimer = setInterval(() => {
       if (s.closed || !s.userSpeaking) { clearBarge(s); return; }
-      if (bargeReady(s)) { clearBarge(s); bargeIn(s, false); }
-      else if (performance.now() - s.bargeAt > 2200) clearBarge(s);
-    }, 80);
+      // conferma dal microfono locale (subito) oppure, come prima, ~700 ms di voce con già un po' di testo trascritto
+      const held = performance.now() - s.bargeAt, text = String(s.live || '').replace(/\s+/g, ' ').trim();
+      if (localVoice(s) || (held >= 700 && text.length >= 8)) { clearBarge(s); bargeIn(s, false); }
+      else if (held > 2200) clearBarge(s);
+    }, 40);
   }
   // interruzione: la sua voce si ferma subito; la risposta in corso viene annullata (e salvata fin dove è arrivata)
   function bargeIn(s, manual) {
     const r = s.resp;
     const active = !!s.responseActive;
     if (playing(s) || active) { App.rt.barges = (App.rt.barges || 0) + 1; App.rt.lastBargeAt = performance.now(); } // per diagnostica/test
-    stopPlayback(s);
+    // v2d-39: quanto di lei si è sentito davvero, PRIMA di fermare (per tagliare la risposta sul server allo stesso punto)
+    const c0 = App.audio.ctx, playedMs = r && r.t0 && c0 ? Math.max(0, Math.round((Math.min(c0.currentTime, s.playT || c0.currentTime) - r.t0) * 1000)) : 0;
+    stopPlayback(s); App.rt.lastStopAt = performance.now();
+    if (r && r.itemId && s.ws && s.ws.readyState === 1) { try { s.ws.send(JSON.stringify({ type: 'conversation.item.truncate', item_id: r.itemId, content_index: 0, audio_end_ms: playedMs })); } catch {} }
     if (active) {
       s.responseActive = false;
       s.cancelled = (r && r.id) || 'x';

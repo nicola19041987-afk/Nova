@@ -168,6 +168,7 @@
   function minimize() {
     if (!on) return;
     minimized = true;
+    stopCam(); // v2d-39: ✕ = camera spenta davvero (tracce fermate, anteprima tolta), si riaccende col tasto 📷
     ui.hidden = true;
     stage.classList.remove('fs');
     document.body.classList.remove('avatar-fs-on');
@@ -177,6 +178,8 @@
   }
   function restore() {
     if (!on) return;
+    // v2d-39: ripresa da Home/Impostazioni: prima si torna alla vista della chiamata (altrimenti restava dietro la Home, invisibile)
+    if (document.body.classList.contains('solo-mode') && !document.body.classList.contains('solo-chat') && App.solo && App.solo.showChat) { try { App.solo.showChat(); } catch { /* */ } }
     minimized = false;
     ui.hidden = false;
     document.body.classList.remove('call-min');

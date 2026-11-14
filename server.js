@@ -2525,7 +2525,7 @@ function rtSession(user, ch, mode, voice) {
   return {
     instructions: rtInstructions(user, ch, mode),
     voice: rtVoice(voice),
-    turn_detection: { type: 'server_vad', threshold: 0.9, silence_duration_ms: 900, prefix_padding_ms: 500 },
+    turn_detection: { type: 'server_vad', threshold: 0.7, silence_duration_ms: 900, prefix_padding_ms: 500 }, // v2d-39: 0.9 non sentiva chi la interrompe; l'eco resta filtrata dal controllo locale nel client
     tools: [{ type: 'web_search' }], // v8.6.0: attualità e fatti aggiornati in chiamata realtime
     audio: {
       input: { format: { type: 'audio/pcm', rate: 24000 }, transcription: { language_hint: 'it', keyterms: [ch.name, 'Nico', 'Luisa'].filter(Boolean).map((k) => String(k).slice(0, 50)).slice(0, 10) } },

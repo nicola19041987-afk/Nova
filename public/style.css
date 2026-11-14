@@ -1390,3 +1390,7 @@ body.solo-mode #nh-photo .nh-avatar video.mini-motion{object-position:50% 22%}
 /* v2d-38: i messaggi di stato non sono controlli: non devono MAI mangiare i tocchi sui tasti sottostanti.
    In particolare, un errore voce nascosto in chiamata riappariva sulla Home quando si riattaccava. */
 .toast{pointer-events:none!important}
+/* v2d-39: chiamata ridotta (✕): lo stage torna nel flusso della chat (42dvh) invece di restare «fixed» z-index 60
+   sopra testata e scrittura (copriva i tasti: niente rispondeva). L'anteprima della camera è chiusa e nascosta. */
+body.solo-mode.in-call.call-min #stage{position:relative!important;inset:auto!important;z-index:1!important;width:100%!important;min-height:0!important}
+body.in-call.call-min #call-self{display:none!important;pointer-events:none!important}
