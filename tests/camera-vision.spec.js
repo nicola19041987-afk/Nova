@@ -186,7 +186,7 @@ test('il tasto Camera invia un fotogramma e lo stop ferma la ripresa', async ({ 
   expect(await page.evaluate(() => document.getElementById('toast').hidden)).toBe(true);
 
   await page.locator('#back-btn').click();
-  await page.locator('#dock-chat').click();
+  await page.locator('#back-btn').click(); // v2d-36: niente barra in basso, «‹ Chat» in alto
   await page.locator('#chat-input').fill('Guarda il riquadro');
   await page.locator('#chat-form').locator('button[type="submit"]').click();
   await expect.poll(() => bag.posts.length).toBe(1);

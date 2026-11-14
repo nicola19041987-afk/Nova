@@ -76,7 +76,7 @@
       const from = tok(c.from, HOME), to = tok(c.to, from);
       out.push({ id: String(c.id || key), url: c.url, from, to, kind: kind === 'base' && from !== to ? 'move' : kind,
         mood: (Array.isArray(c.mood) ? c.mood : [c.mood]).map((m) => tok(m, '')).filter(Boolean),
-        event: tok(c.event, ''), outfit: tok(c.outfit, ''), weight: Math.max(0.05, Math.min(10, Number(c.weight) || 1)), label: String(c.label || '').slice(0, 60) });
+        event: tok(c.event, ''), outfit: tok(c.outfit, ''), quality: c.quality === 'lite' ? 'lite' : '', weight: Math.max(0.05, Math.min(10, Number(c.weight) || 1)), label: String(c.label || '').slice(0, 60) });
     }
     if (!out.length && !want && ch && URL_RE.test(String(ch.motionVideo || ''))) {
       out.push({ id: 'legacy', url: ch.motionVideo, from: HOME, to: HOME, kind: 'base', mood: [], event: '', weight: 1, label: 'idle' });
@@ -236,7 +236,7 @@
       await sleep(opts.delay == null ? 4000 : opts.delay);
       const c = await caches.open(CACHE_NAME);
       const want = new Set(lib.map((x) => x.url));
-      for (const req of await c.keys()) { const p = new URL(req.url).pathname; if (!want.has(p)) await c.delete(req); } // clip tolti dalla libreria
+      if (!opts.noPrune) for (const req of await c.keys()) { const p = new URL(req.url).pathname; if (!want.has(p)) await c.delete(req); } // clip tolti dalla libreria
       const now = new Set((opts.first || []).map((x) => x.url)); // v2d-33: prima i clip del look attuale
       const order = [...lib].sort((a, b) => (now.has(a.url) ? 0 : 2) + (a.from === HOME ? 0 : 1) - (now.has(b.url) ? 0 : 2) - (b.from === HOME ? 0 : 1));
       for (const x of order) {
@@ -357,7 +357,7 @@
           try { nv.pause(); } catch { /* */ }
           nv.style.opacity = '0'; nv.style.zIndex = '3'; ov.style.zIndex = '4';
           nv._clipId = null; P.nextClip = null; P._holdUntil = performance.now() + 700;
-          P.notReady = (P.notReady || 0) + 1;
+          P.notReady = (P.notReady || 0) + 1; if (hooks.onStall) hooks.onStall('notReady');
           P.log.push({ at: Math.round(performance.now()), id: clip.id, notReady: true, rs: nv.readyState });
           if (P.log.length > 60) P.log.shift();
           if (P.notReady >= 3 && !srcState.net) srcState.net = true;
@@ -392,7 +392,7 @@
         if (v.currentTime !== P._wt) { P._wt = v.currentTime; P._wAt = t; if (v.currentTime > 0.3) P.stalls = 0; }
         else if (!P.blocked && t - (P._wAt || t) > 1000 && t - (P._retry || 0) > 600) { P._retry = t; if (v.paused || v.readyState < 3) playSafe(v); }
         if (!P.blocked && t - (P._wAt || t) > 2500) {
-          P.stalls = (P.stalls || 0) + 1; P._wAt = t; P.log.push({ at: Math.round(t), id: P.playing.id, stall: true });
+          P.stalls = (P.stalls || 0) + 1; P._wAt = t; if (hooks.onStall) hooks.onStall('stall'); P.log.push({ at: Math.round(t), id: P.playing.id, stall: true });
           if (P.stalls >= 3 && !srcState.net) srcState.net = true;
           v._clipId = null; // la prossima volta si ricarica da capo (niente src tolto qui: sarebbe un fotogramma nero)
           if (P.stalls >= 6) { P.stop(); P.pausedUntil = t + 20000; if (hooks.onFail) hooks.onFail(); return; }
@@ -415,7 +415,7 @@
       if (key === P._libKey) return; P._libKey = key; P.lib = lib;
       if (!lib.some((c) => c.from === P.st.pose)) P.st.pose = HOME;
       P.nextClip = null;
-      prefetchAll(all && all.length ? all : lib, { first: lib }).catch(() => {});
+      prefetchAll(all && all.length ? all : lib, { first: lib, noPrune: P.noPrune }).catch(() => {});
     };
     P.start = (fromPose) => {
       if (P.on || performance.now() < (P.pausedUntil || 0)) return;

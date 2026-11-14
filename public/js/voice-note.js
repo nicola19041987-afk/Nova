@@ -85,13 +85,13 @@
     if (raf) cancelAnimationFrame(raf);
     stopRecog();
     const dur = (performance.now() - started) / 1000;
-    const mic = $('#vn-mic'); if (mic) mic.classList.remove('rec');
+    const mic = $('#vn-mic'); if (mic) { mic.classList.remove('rec'); mic.setAttribute('aria-pressed', 'false'); mic.setAttribute('aria-label', 'Tocca per un messaggio vocale'); }
     hud(false);
     const hint = $('#vn-hint'); if (hint) hint.textContent = '← annulla · ↑ blocca';
     if (!r) { stopStream(); return; }
     r.onstop = () => {
       stopStream();
-      if (discard || dur < 0.35) { if (!discard) status('Tieni premuto un attimo.'); return; }
+      if (discard || dur < 0.35) { if (!discard) status('Troppo corto: tocca 🎙️, parla, poi tocca di nuovo.'); return; }
       const blob = new Blob(chunks, { type: r.mimeType || 'audio/webm' });
       const localId = 'vn' + Date.now().toString(36);
       const url = URL.createObjectURL(blob);
@@ -107,9 +107,16 @@
     if (dx < -CANCEL_X) return 'cancel';
     return 'record';
   }
+  // v2d-36: interruttore. Un tocco avvia la registrazione, un secondo tocco la ferma e invia (niente «tieni premuto»).
+  let starting = false;
   async function down(e) {
     if (e.button != null && e.button !== 0) return;
-    if (rec && locked) { finish(false); return; }
+    if (rec) { e.preventDefault(); finish(false); return; }
+    if (starting) return;
+    starting = true;
+    try { await startRec(e); } finally { starting = false; }
+  }
+  async function startRec(e) {
     e.preventDefault();
     status(''); cancel = false; locked = false; said = ''; chunks = []; peaks = [];
     pointer = e.pointerId; ox = e.clientX; oy = e.clientY;
@@ -126,7 +133,7 @@
     // v2d-32: iPhone. Al primo uso dopo l'apertura/aggiornamento dell'app Safari chiede il permesso del microfono: per
     // toccare «Consenti» si alza il dito, e prima la registrazione finiva qui senza dire nulla («il microfono non parte»).
     // Ora il permesso resta dato e si avvisa: alla pressione successiva registra subito.
-    if (pointer == null) { stopStream(); status('🎙️ Microfono pronto: tieni premuto di nuovo per registrare.'); setTimeout(() => { const el = $('#vn-status'); if (el && /Microfono pronto/.test(el.textContent)) status(''); }, 4000); return; }
+    if (false && pointer == null) { stopStream(); status('🎙️ Microfono pronto: tieni premuto di nuovo per registrare.'); setTimeout(() => { const el = $('#vn-status'); if (el && /Microfono pronto/.test(el.textContent)) status(''); }, 4000); return; }
     let mime = '';
     for (const m of ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4']) {
       if (window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(m)) { mime = m; break; }
@@ -136,7 +143,7 @@
     try { rec.start(120); } catch { status('Registrazione non avviata.'); finish(true); return; }
     started = performance.now();
     hud(true);
-    const mic = $('#vn-mic'); if (mic) mic.classList.add('rec');
+    const mic = $('#vn-mic'); if (mic) { mic.classList.add('rec'); mic.setAttribute('aria-pressed', 'true'); mic.setAttribute('aria-label', 'Registrazione in corso: tocca per inviare'); }
     try {
       const AC = window.AudioContext || window.webkitAudioContext;
       const ctx = new AC();
@@ -176,11 +183,10 @@
     else if (g === 'cancel') { cancel = true; if (hint) hint.textContent = 'Rilascia per annullare'; }
     else if (!locked) { cancel = false; if (hint) hint.textContent = '← annulla · ↑ blocca'; }
   }
-  function up(e) {
+  function up(e) { // v2d-36: alzare il dito non ferma più la registrazione (interruttore)
     if (pointer == null || (e && e.pointerId != null && e.pointerId !== pointer)) return;
-    if (!rec) { pointer = null; return; }
-    if (locked) { pointer = null; return; }
-    finish(cancel);
+    locked = !!rec; pointer = null;
+    const hint = $('#vn-hint'); if (hint && rec) hint.textContent = 'Tocca 🎙️ per inviare · ← annulla';
   }
 
   const mic = $('#vn-mic');
@@ -188,7 +194,7 @@
     mic.addEventListener('pointerdown', down);
     mic.addEventListener('pointermove', move);
     mic.addEventListener('pointerup', up);
-    mic.addEventListener('pointercancel', () => { if (rec) finish(true); });
+    mic.addEventListener('pointercancel', () => { pointer = null; }); // v2d-36: interruttore: la registrazione continua finché non si tocca di nuovo
     mic.addEventListener('contextmenu', (e) => e.preventDefault());
   }
   const cancelBtn = $('#vn-cancel');

@@ -34,6 +34,7 @@ const BASECLIPS = [
 
 test('scene: una a sorpresa per visita, mai con l\'ora del giorno, solo tra quelle con i clip; vestiti solo su richiesta', () => {
   test.skip(!LIB.length, 'libreria v2d-35 solo in locale');
+  O.spont.on = false; // v2d-36: qui si prova solo la scelta su richiesta / scena (il cambio spontaneo ha la sua prova)
   const store = {};
   globalThis.App = { ls: { get: (k, d) => (k in store ? JSON.parse(store[k]) : d), set: (k, v) => { store[k] = JSON.stringify(v); }, del: (k) => { delete store[k]; } } };
   try {

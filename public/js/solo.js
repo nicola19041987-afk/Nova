@@ -12,6 +12,14 @@
     return list.find((c) => c.ready === 'nova-scelta') || list.find((c) => c.ready === 'nova-bionda') || list.find((c) => c.ready === 'nova-unico') || list.find((c) => c.ready === 'greta') || list.find((c) => /^nova$/i.test(String(c.name || '').trim())) || null;
   }
   function fit() { if (App.fitFrame) App.fitFrame(); }
+  // v2d-36: iPhone Safari. Se la videochiamata (o il ritratto) parte con la tastiera aperta, l'altezza della scocca restava
+  // quella di prima (un terzo dello schermo) e Nova si vedeva solo in alto, tagliata sul viso, con il grigio sotto.
+  // Si chiude la tastiera e si rimisura subito e dopo che la barra di Safari si è sistemata.
+  function fullscreenFix() {
+    try { const a = document.activeElement; if (a && /^(INPUT|TEXTAREA)$/.test(a.tagName)) a.blur(); } catch { /* */ }
+    for (const ms of [0, 120, 400, 900]) setTimeout(() => { try { if (App.applyViewport) App.applyViewport(); fit(); } catch { /* */ } }, ms);
+  }
+  App.fullscreenFix = fullscreenFix;
   function drop3d() {
     document.body.classList.remove('vrm-on');
     const c = document.getElementById('vrm-view');
@@ -129,8 +137,23 @@
   // quando sta per rispondere i clip la riportano verso la posa della foto, così il passaggio non salta.
   // Prova facoltativa (spenta): mentre parla, clip «parla» con corpo in movimento al posto della foto col labiale.
   function talkClipsOn() {
-    try { return !!(App.ls && App.ls.get('motionTalk', '') === '1' && (App.motionPlayer && App.motionPlayer.lib.some((c) => c.kind === 'parla'))); } catch { return false; }
+    // v2d-36: acceso di serie quando il look ha clip «parla» (bocca e viso naturali, niente bocca disegnata); 'motionTalk'='0' lo spegne
+    try { return !!(App.ls && App.ls.get('motionTalk', '') !== '0' && (App.motionPlayer && App.motionPlayer.lib.some((c) => c.kind === 'parla'))); } catch { return false; }
   }
+  // v2d-36: punti del viso misurati su QUESTA foto (look o base): solo allora la bocca si può disegnare sulla foto
+  function faceOk(ch) {
+    try { const lm = App.faceLm ? App.faceLm(ch) : ch && ch.landmarks; return !!(lm && lm.eyeL && lm.eyeR && lm.mouth); } catch { return false; }
+  }
+  // v2d-36: il disegno della foto (canvas) si mostra in chiamata/ritratto solo quando la foto giusta è caricata: prima si
+  // vede la foto del look sotto (mai il fondo chiaro del canvas = lampo bianco)
+  function syncCanvasReady() {
+    const stage = document.getElementById('stage'); if (!stage) return;
+    const A = App.avatarConv, ch = soloChar() || App.current || null;
+    const want = ch && App.faceSrc ? App.faceSrc(ch) : '';
+    const ok = !!(A && A.img && A.img.naturalWidth > 0 && (!want || A.img._src === want || (ch && ch.frameFill && A.img._src === ch.frameFill.url)));
+    stage.classList.toggle('nv-img', ok);
+  }
+  App.faceOk = faceOk;
   function motionPlayer() {
     if (App.motionPlayer) return App.motionPlayer;
     const G = window.MotionGraph;
@@ -140,9 +163,11 @@
     App.motionPlayer = G.createPlayer(a, b, {
       wantHome: () => !!((App.chat && App.chat.busy) || talkingNow()),
       talkClips: () => talkClipsOn(),
+      onStall: () => { if (App.net) App.net.stall(); }, // v2d-36: clip lenti -> qualità più leggera
       onClip: () => { const st = document.getElementById('stage'); if (st && motionOn()) st.classList.add('has-motion'); },
-      onFail: () => { const st = document.getElementById('stage'); if (st) setTimeout(() => st.classList.remove('has-motion'), window.MotionGraph.XFADE_MS + 30); }, // v2d-32: clip bloccati -> foto
+      onFail: () => { if (App.net) App.net.down('still', 'clip bloccati'); const st = document.getElementById('stage'); if (st) setTimeout(() => st.classList.remove('has-motion'), window.MotionGraph.XFADE_MS + 30); }, // v2d-32: clip bloccati -> foto; v2d-36: e qualità più leggera
     });
+    App.motionPlayer.noPrune = true; // v2d-36: si scaricano solo i clip del look attuale, gli altri restano in cache
     return App.motionPlayer;
   }
   function syncMotion() {
@@ -153,8 +178,13 @@
     const G = window.MotionGraph;
     // v2d-33: si suonano solo i clip del look attuale (vestito/capelli/trucco); in cache restano tutti
     const all = motionOn() && ch && G ? G.libraryOf(ch) : [];
-    const lib0 = all.length && App.outfits && App.outfits.key ? G.libraryOf(ch, App.outfits.key(ch)) : all;
-    const lib = G && G.calmLibrary ? G.calmLibrary(lib0) : lib0; // v2d-35: a riposo solo movimenti calmi, gesti legati al discorso
+    const look0 = all.length && App.outfits && App.outfits.key ? G.libraryOf(ch, App.outfits.key(ch)) : all;
+    // v2d-36: qualità secondo la connessione (std / lite / still). Con 'still' niente clip: la foto con un respiro leggero.
+    const net = App.net || window.NovaNet;
+    const lib0 = net ? net.pick(look0) : look0.filter((c) => c.quality !== 'lite');
+    const away = !!(App.presence && App.presence.away && App.presence.away());
+    const lib = away ? [] : (G && G.calmLibrary ? G.calmLibrary(lib0) : lib0); // v2d-35: a riposo solo movimenti calmi, gesti legati al discorso
+    stage.classList.toggle('nv-still', !!(motionOn() && !away && look0.length && !lib0.length));
     const P = motionPlayer();
     const vids = [v, document.getElementById('motion-video-b')].filter(Boolean);
     const poster = (App.faceSrc && App.faceSrc(ch)) || '';
@@ -163,9 +193,10 @@
       P.stop(); // dissolvenza verso la foto, poi il video sparisce
       clearTimeout(v._offT); v._offT = setTimeout(() => { if (!P.on) stage.classList.remove('has-motion'); }, window.MotionGraph.XFADE_MS + 30);
     };
+    { const bg0 = /^\/api\/avatars\/[a-f0-9]{16}\.(png|jpg)$/.test(poster) ? `url("${poster}")` : 'none'; if (stage.style.getPropertyValue('--nv-photo') !== bg0) stage.style.setProperty('--nv-photo', bg0); } // v2d-36: la foto sotto, sempre
     if (!lib.length || !P) {
       if (App.avatarConv) App.avatarConv.faceCalm = false;
-      off(); stage.classList.remove('motion-on');
+      off(); stage.classList.remove('motion-on', 'nv-wait');
       for (const x of vids) { x.hidden = true; x.removeAttribute('src'); x.removeAttribute('poster'); x._clipId = null; }
       if (v._clipTimer) { clearInterval(v._clipTimer); v._clipTimer = 0; }
       return;
@@ -174,22 +205,33 @@
     const bgv = /^\/api\/avatars\/[a-f0-9]{16}\.(png|jpg)$/.test(poster) ? `url("${poster}")` : 'none';
     if (stage.style.getPropertyValue('--nv-photo') !== bgv) stage.style.setProperty('--nv-photo', bgv);
     if (poster && !P.playing && v.getAttribute('poster') !== poster) v.poster = poster; // solo il primo video, solo prima del primo clip
-    P.setLibrary(lib, all);
+    P.setLibrary(lib, lib0); // v2d-36: in anticipo solo i clip del look attuale, nella qualità scelta (non tutta la libreria)
     if (!v._motionBound) {
       v._motionBound = true;
       for (const x of vids) x.addEventListener('error', () => { if (P.playing && x === P.els[P.cur]) { P.playing = null; } });
     }
     const tick = () => {
       if (App.avatarConv) App.avatarConv.faceCalm = motionOn(); // v2d-32: occhi/bocca sulla foto solo mentre parla
-      if (!motionOn()) { off(); stage.classList.remove('motion-on'); return; }
+      if (!motionOn()) { off(); stage.classList.remove('motion-on', 'nv-wait'); return; }
       // v2d-32: i due video restano «visibili» (trasparenti) per tutto il tempo del ritratto/chiamata: su iPhone
       // Safari non carica e non fa partire video nascosti (display:none), e il primo clip restava fermo.
       stage.classList.add('motion-on');
       const nowT = performance.now();
-      if (talkingNow()) { v._quietAt = nowT; if (talkClipsOn()) { if (!P.on) P.start(window.MotionGraph.HOME); return; } if (P.on) off(); return; }
-      if (v._quietAt && nowT - v._quietAt < CLIP_AFTER_TALK_MS) return;
+      // v2d-36: mentre parla, prima i clip «parla» (bocca e viso veri, in catena finché parla). Senza clip «parla» si usa la
+      // bocca disegnata sulla foto SOLO se i punti del viso sono di questa foto; altrimenti il video calmo continua (mai
+      // una bocca storta e ferma).
+      if (talkingNow()) {
+        v._quietAt = nowT;
+        if (talkClipsOn()) { stage.classList.remove('nv-lips'); if (!P.on) P.start(window.MotionGraph.HOME); return; }
+        if (faceOk(ch)) { stage.classList.add('nv-lips'); if (P.on) off(); return; }
+        stage.classList.remove('nv-lips'); if (!P.on) P.start(window.MotionGraph.HOME); return;
+      }
+      if (v._quietAt && nowT - v._quietAt < CLIP_AFTER_TALK_MS && stage.classList.contains('nv-lips')) return;
+      stage.classList.remove('nv-lips');
       // la foto (labiale) è nella posa di casa: si riparte da lì
       if (!P.on) P.start(window.MotionGraph.HOME);
+      // v2d-36: mai un fermo immagine. Se il video davanti è fermo (clip dopo non ancora pronto), respiro leggero sulla scena.
+      const fv = P.els[P.cur]; stage.classList.toggle('nv-wait', !!(P.on && (!P.playing || !fv || fv.paused || fv.ended)));
     };
     tick();
     if (!v._clipTimer) v._clipTimer = setInterval(tick, 200);
@@ -202,7 +244,10 @@
   ];
   function miniClips(ch) {
     const G = window.MotionGraph; if (!G || !ch) return [];
-    const lib = App.outfits && App.outfits.key ? G.libraryOf(ch, App.outfits.key(ch)) : G.libraryOf(ch); // v2d-33: clip del look attuale
+    const look = App.outfits && App.outfits.key ? G.libraryOf(ch, App.outfits.key(ch)) : G.libraryOf(ch); // v2d-33: clip del look attuale
+    if (App.net && App.net.mode() === 'still') return [];
+    const liteL = look.filter((c) => c.quality === 'lite'); // v2d-36: la foto piccola usa sempre i clip leggeri, se ci sono
+    const lib = liteL.length >= 2 ? liteL : look.filter((c) => c.quality !== 'lite');
     const home0 = lib.filter((c) => c.kind === 'base' && c.from === G.HOME && c.to === G.HOME);
     const quiet = G.isGesture ? home0.filter((c) => !G.isGesture(c)) : home0; // v2d-35: anche la foto piccola solo calma
     const home = quiet.length >= 2 ? quiet : home0;
@@ -382,6 +427,7 @@
       for (const ev of ['touchend', 'click']) document.addEventListener(ev, unlockVideos, { capture: true, passive: true });
       document.addEventListener('visibilitychange', () => syncMini());
       if (!this._miniT) this._miniT = setInterval(syncMini, 700);
+      if (!this._cvT) this._cvT = setInterval(syncCanvasReady, 120);
       const dock = $('#solo-dock');
       if (dock) dock.addEventListener('click', (e) => {
         const b = e.target.closest('[data-dock]'); if (!b) return;
@@ -459,6 +505,10 @@
         if (ch && App.current?.id !== ch.id && App.chat) App.chat.open(ch.id);
         try { App.call.start('video'); } catch (err) { App.toast((err && err.message) || 'Videochiamata non avviata'); }
       });
+      // v2d-36: Home nuova: tre tasti rapidi (chat, videochiamata, voce) sotto la foto
+      const qc = $('#nh-q-chat'); if (qc) qc.addEventListener('click', (e) => { e.preventDefault(); this.showChat(); });
+      const qv = $('#nh-q-video'); if (qv) qv.addEventListener('click', (e) => { e.preventDefault(); const go = $('#nh-video-go'); if (go) go.click(); });
+      const qa = $('#nh-q-voice'); if (qa) qa.addEventListener('click', (e) => { e.preventDefault(); this.toggleRt(); });
       const voice = $('#nh-voice');
       if (voice) voice.addEventListener('click', (e) => { e.preventDefault(); this.toggleRt(); });
       const back = $('#back-btn');
@@ -482,6 +532,7 @@
       const save = $('#set-requests-save'); if (save) save.onclick = () => this.saveRequests();
       const hot = $('#set-hot-btn'); if (hot) hot.onclick = () => { const h = $('#hot-btn'); if (h) h.click(); else if (App.actions && App.actions.openHot) App.actions.openHot(); };
       window.addEventListener('resize', () => { if (document.body.classList.contains('solo-mode')) fit(); });
+      window.addEventListener('nova-net', () => { try { syncMotion(); } catch { /* */ } }); // v2d-36: rete più lenta -> clip leggeri o foto
       document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && this.full) this.toggleFull(false); });
     },
     paintBack(mode) {
@@ -512,6 +563,8 @@
         if (App.paintAvatar) App.paintAvatar(slot, ch || { name: 'Nova', ready: 'nova-scelta' }, 'nh-avatar-face');
         else slot.textContent = ((ch && ch.name) || 'N').slice(0, 1);
       }
+      // v2d-36: il look di adesso, in parole (scena o vestito), sotto il nome
+      const lk = $('#nh-look'); if (lk) { let t = ''; try { const o = ch && App.outfits && App.outfits.current ? App.outfits.current(ch) : null; if (o && o.label) t = o.label.charAt(0).toUpperCase() + o.label.slice(1); } catch { /* */ } lk.textContent = t; lk.hidden = !t; }
       const count = window.MotionLib && MotionLib.count;
       const g = $('#nh-gesti-count'); if (g) g.textContent = count ? String(count) : '';
       this.showPage('list');
@@ -528,14 +581,17 @@
     },
     openPortrait() {
       const P = motionPlayer(); if (P && P.unlock) P.unlock(); // v2d-32: dentro il tocco, così Safari lascia partire i clip
+      this._ptFrom = document.body.classList.contains('solo-chat') ? 'chat' : 'home'; // v2d-36: si torna da dove si è venuti
       document.body.classList.add('solo-portrait');
       this.paintBack('page');
+      fullscreenFix();
       syncMotion();
       requestAnimationFrame(fit);
     },
     closePortrait() {
       document.body.classList.remove('solo-portrait');
       if (this.full) this.toggleFull(false);
+      if (this._ptFrom === 'chat') { this._ptFrom = ''; this.showChat(); return; }
       this.showPage(this._nh || 'list');
       syncMotion();
       requestAnimationFrame(fit);

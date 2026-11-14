@@ -1274,3 +1274,101 @@ body.solo-mode.solo-chat #tab-conv #chat-input{
 /* v2d-32: Aggiorna nell'intestazione stile WhatsApp: stesso ingombro delle altre icone, senza spingere fuori il titolo */
 body.solo-mode #app-refresh{width:36px!important;height:36px!important;min-width:36px!important;min-height:36px!important;flex:0 0 36px!important;line-height:36px!important;padding:0!important;font-size:19px!important;background:transparent!important;color:inherit!important}
 body.solo-mode #app-refresh:active{background:#0000000f!important}
+
+/* ===== v2d-36 ===== */
+/* Niente barra in basso (Chat / Video / Home): Home e Blocco note restano in alto (‹ Chat, 📝, 🏠); videochiamata da 📹 */
+body.solo-mode #solo-dock,body.solo-mode.solo-home #solo-dock{display:none!important}
+body.solo-mode #view-app{padding-bottom:0!important}
+/* Videochiamata e ritratto a tutto schermo anche su iPhone Safari (barra dinamica): la scocca non limita più il palco */
+body.solo-mode.in-call:not(.call-min) #app-shell,body.solo-mode.solo-portrait:not(.in-call) #app-shell{
+  top:0!important;height:100vh!important;height:100dvh!important;max-height:none!important;overflow:visible!important;transform:none!important;contain:none!important;
+}
+body.solo-mode.in-call:not(.call-min) #view-app,body.solo-mode.in-call:not(.call-min) main,body.solo-mode.in-call:not(.call-min) #tab-conv,
+body.solo-mode.solo-portrait:not(.in-call) #view-app,body.solo-mode.solo-portrait:not(.in-call) main,body.solo-mode.solo-portrait:not(.in-call) #tab-conv{overflow:visible!important;transform:none!important;contain:none!important}
+body.solo-mode.in-call:not(.call-min) #stage:not(.voice),body.solo-mode.solo-portrait:not(.in-call) #stage{
+  position:fixed!important;inset:0!important;width:100vw!important;
+  height:100vh!important;height:100dvh!important;min-height:100vh!important;min-height:100dvh!important;max-height:none!important;
+  flex:none!important;margin:0!important;background-color:#000!important;
+}
+body.solo-mode.in-call:not(.call-min) #stage:not(.voice){z-index:60}
+body.solo-mode.in-call:not(.call-min) #stage:not(.voice) #avatar-canvas,body.solo-mode.solo-portrait:not(.in-call) #stage #avatar-canvas{
+  position:absolute!important;inset:0!important;width:100%!important;height:100%!important;max-width:none!important;max-height:none!important;
+}
+@supports (height:100svh){
+  body.solo-mode.in-call:not(.call-min) #stage:not(.voice),body.solo-mode.solo-portrait:not(.in-call) #stage{min-height:100svh!important}
+}
+/* Ritratto (Nova a tutto schermo): i tasti restano sopra di lei. In alto ‹, ↻, 📝, 📹, 🏠; in basso il campo e il 🎙️; gli ultimi messaggi sfumati */
+body.solo-mode.solo-portrait:not(.in-call) .topbar{position:fixed!important;left:0;right:0;top:0;z-index:45;background:linear-gradient(to bottom,rgba(0,0,0,.42),rgba(0,0,0,0))!important;box-shadow:none!important;border:0!important;padding-top:env(safe-area-inset-top)}
+body.solo-mode.solo-portrait:not(.in-call) .topbar h2,body.solo-mode.solo-portrait:not(.in-call) .topbar .wa-status,body.solo-mode.solo-portrait:not(.in-call) .topbar button{color:#fff!important}
+body.solo-mode.solo-portrait:not(.in-call) .topbar #app-refresh{background:rgba(255,255,255,.22)!important;color:#fff!important}
+body.solo-mode.solo-portrait:not(.in-call) .topbar svg{filter:drop-shadow(0 1px 2px rgba(0,0,0,.5))}
+body.solo-mode.solo-portrait:not(.in-call) #look-bar{display:none!important}
+body.solo-mode.solo-portrait:not(.in-call) #chat-form.composer{
+  display:flex!important;visibility:visible!important;position:fixed!important;left:0;right:0;bottom:var(--vv-bottom,0px)!important;z-index:46;
+  background:linear-gradient(to top,rgba(0,0,0,.45),rgba(0,0,0,0))!important;padding-bottom:calc(8px + env(safe-area-inset-bottom))!important;border:0!important;
+}
+body.solo-mode.solo-portrait:not(.in-call) #chat-form.composer #chat-input{background:rgba(255,255,255,.88)!important}
+body.solo-mode.solo-portrait:not(.in-call) #chat-form.composer #vn-plus,body.solo-mode.solo-portrait:not(.in-call) #chat-form.composer #vn-cam{color:#fff!important}
+body.solo-mode.solo-portrait:not(.in-call) #messages{
+  display:flex!important;position:fixed!important;left:0;right:0;bottom:calc(var(--vv-bottom,0px) + 64px + env(safe-area-inset-bottom));z-index:44;
+  height:22vh!important;max-height:22vh!important;background:transparent!important;overflow-y:auto;padding:0 8px!important;
+  -webkit-mask-image:linear-gradient(to bottom,transparent,#000 45%);mask-image:linear-gradient(to bottom,transparent,#000 45%);
+}
+body.solo-mode.solo-portrait:not(.in-call) #messages .msg{opacity:.93}
+body.solo-mode.solo-portrait:not(.in-call) #messages .day-sep,body.solo-mode.solo-portrait:not(.in-call) #messages .date-chip{display:none!important}
+/* Rete lenta: niente clip, la foto con un respiro leggerissimo. Clip successivo in ritardo: stesso respiro (mai un fermo immagine) */
+@keyframes nvBreathe{0%,100%{transform:scale(1) translateY(0)}50%{transform:scale(1.012) translateY(-0.35%)}}
+#stage.nv-still #avatar-canvas,#stage.nv-wait #motion-video,#stage.nv-wait #motion-video-b{animation:nvBreathe 4.2s ease-in-out infinite;transform-origin:50% 85%}
+@media (prefers-reduced-motion:reduce){#stage.nv-still #avatar-canvas,#stage.nv-wait #motion-video,#stage.nv-wait #motion-video-b{animation:none}}
+/* Saluto: si gira e se ne va (clip «ciao») oppure la scena sfuma; poi «non in linea» finché non le riscrivi */
+#nv-walk{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center top;z-index:7;opacity:0;transition:opacity .25s linear;pointer-events:none;background:transparent}
+#nv-walk.on{opacity:1}
+#stage.nv-leaving #avatar-canvas,#stage.nv-leaving #motion-video,#stage.nv-leaving #motion-video-b,#stage.nv-leaving #nv-walk{opacity:0!important;transition:opacity 1.2s ease!important}
+#stage.nv-leaving{background-image:none!important}
+#stage.nv-away #avatar-canvas,#stage.nv-away #motion-video,#stage.nv-away #motion-video-b{opacity:0!important}
+#stage.nv-away{background:#111 linear-gradient(160deg,#1d2228,#0d0f12)!important}
+#nv-away-card{position:absolute;left:50%;top:44%;transform:translate(-50%,-50%);z-index:8;color:#e9edf1;font-size:16px;text-align:center;padding:12px 18px;border-radius:14px;background:rgba(255,255,255,.08);max-width:80vw;pointer-events:none}
+body.nova-away #wa-photo,body.nova-away #nh-avatar{filter:grayscale(1);opacity:.55}
+body.nova-away .wa-status,body.nova-away #nh-status{color:#8a96a3!important}
+/* Ospite: solo la chat con Nova (niente Home, Blocco note, appunti, impostazioni) */
+body.guest-mode #wa-home,body.guest-mode #blocco-btn,body.guest-mode #support-note-btn,body.guest-mode #look-bar,body.guest-mode .admin-ctl,body.guest-mode #back-btn{display:none!important}
+/* v2d-36: chiamata e ritratto senza lampi bianchi. Sotto c'è sempre la foto del look; il disegno della foto (canvas) appare
+   solo quando la sua foto è caricata, e durante i video solo se serve la bocca sulla foto (nv-lips). */
+body.solo-mode.in-call:not(.call-min) #stage.call:not(.voice),body.solo-mode.solo-portrait:not(.in-call) #stage{
+  background:#000 var(--nv-photo,none) center top / cover no-repeat!important;
+}
+body.solo-mode.in-call:not(.call-min) #stage.call:not(.voice) #avatar-canvas,body.solo-mode.in-call:not(.call-min) #stage.call:not(.voice) .av-backdrop,
+body.solo-mode.solo-portrait:not(.in-call) #stage #avatar-canvas,body.solo-mode.solo-portrait:not(.in-call) #stage .av-backdrop{background:transparent!important;box-shadow:none!important}
+body.solo-mode.in-call:not(.call-min) #stage.call:not(.voice):not(.nv-img) #avatar-canvas,body.solo-mode.solo-portrait:not(.in-call) #stage:not(.nv-img) #avatar-canvas,
+body.solo-mode.in-call:not(.call-min) #stage.call:not(.voice).motion-on:not(.nv-lips):not(.nv-still) #avatar-canvas,body.solo-mode.solo-portrait:not(.in-call) #stage.motion-on:not(.nv-lips):not(.nv-still) #avatar-canvas,
+body.solo-mode.in-call:not(.call-min) #stage.call:not(.voice) .av-backdrop,body.solo-mode.solo-portrait:not(.in-call) #stage .av-backdrop{visibility:hidden!important}
+body.solo-mode.in-call:not(.call-min) #stage.call:not(.voice).has-motion.nv-lips.nv-img #avatar-canvas,body.solo-mode.solo-portrait:not(.in-call) #stage.has-motion.nv-lips.nv-img #avatar-canvas{visibility:visible!important;z-index:4}
+/* Videochiamata pulita: solo il video. Niente sfumature, niente scritte (nome, timer, sottotitoli), niente chat sopra.
+   Restano solo ✕ (torna alla chat), 🎙️ (muto) e 📞 rosso (chiudi). */
+body.solo-mode.in-call:not(.call-min) #call-ui{background:none!important}
+body.solo-mode.in-call:not(.call-min) #stage::before,body.solo-mode.in-call:not(.call-min) #stage::after{display:none!important;background:none!important}
+body.solo-mode.in-call:not(.call-min) #call-kind,body.solo-mode.in-call:not(.call-min) #call-name,body.solo-mode.in-call:not(.call-min) #call-timer,
+body.solo-mode.in-call:not(.call-min) #call-badge,body.solo-mode.in-call:not(.call-min) .call-state,body.solo-mode.in-call:not(.call-min) #call-caption,
+body.solo-mode.in-call:not(.call-min) #call-text,body.solo-mode.in-call:not(.call-min) #call-cam,body.solo-mode.in-call:not(.call-min) #call-flip,
+body.solo-mode.in-call:not(.call-min) #call-self,body.solo-mode.in-call:not(.call-min) #call-hangup,body.solo-mode.in-call:not(.call-min) #nv-away-card,
+body.solo-mode.in-call:not(.call-min) #prova-toggle,body.solo-mode.in-call:not(.call-min) .stage-tools,body.solo-mode.in-call:not(.call-min) #messages,
+body.solo-mode.in-call:not(.call-min) #chat-form,body.solo-mode.in-call:not(.call-min) #typing,body.solo-mode.in-call:not(.call-min) .call-portrait{display:none!important}
+/* Messaggio vocale: un tocco avvia, un altro tocco invia (niente «tieni premuto"); acceso = rosso che pulsa, solo icona */
+#vn-mic.rec{background:#e0303f!important;color:#fff!important;animation:vnPulse 1.1s ease-in-out infinite}
+@keyframes vnPulse{0%,100%{box-shadow:0 0 0 0 rgba(224,48,63,.55)}50%{box-shadow:0 0 0 8px rgba(224,48,63,0)}}
+/* v2d-36: in videochiamata nessuna scritta sopra il video, nemmeno gli avvisi (si vedono riducendo la chiamata o dopo) */
+body.in-call:not(.call-min) .toast{display:none!important}
+
+/* v2d-36: Home nuova e pulita. Foto grande del look attuale, tre tasti rapidi, niente testi vecchi (nascosti, non tolti) */
+body.solo-mode #look-bar #look-msg,body.solo-mode #nh-gesti-count,body.solo-mode #look-bar [data-nh-page="look"] > p.muted{display:none!important}
+body.solo-mode #nh-photo{flex-direction:column;align-items:stretch;padding:0;gap:0}
+body.solo-mode #nh-photo .nh-avatar{width:100%;height:min(44vh,360px);border-radius:0;background:#1A1D21}
+body.solo-mode #nh-photo .nh-avatar img,body.solo-mode #nh-photo .nh-avatar video,body.solo-mode #nh-photo .nh-avatar canvas{width:100%;height:100%;object-fit:cover;object-position:50% 22%}
+body.solo-mode #nh-photo .nh-id{padding:12px 14px 14px}
+body.solo-mode #nh-photo .nh-chev{display:none}
+.nh-look{color:#475467!important;font-size:13px!important;line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.nh-quick{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:0 0 18px}
+.nh-quick button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-height:64px;padding:8px 4px;border:0!important;border-radius:12px!important;background:#fff!important;color:#1A1D21!important;font-size:13px;font-weight:600}
+.nh-quick button i{font-style:normal;font-size:22px;line-height:1}
+.nh-quick button:active{background:#EEF2F6!important}
+body.guest-mode .nh-quick #nh-q-voice{display:none}

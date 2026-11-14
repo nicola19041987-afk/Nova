@@ -118,7 +118,7 @@ App.chat = {
     const face = App.faceSrc ? App.faceSrc(ch) : (ch.avatar || '');
     if (ph.dataset.for !== ch.id + '|' + face) { ph.dataset.for = ch.id + '|' + face; if (App.paintAvatar) App.paintAvatar(ph, ch, 'wa-av'); }
     if (state !== undefined) this._hs = state;
-    st.textContent = App.call && App.call.active ? (App.call.mode === 'voice' ? 'in chiamata' : 'in videochiamata') : this.busy || this._hs ? (this._hs || 'sta scrivendo…') : 'online';
+    st.textContent = App.call && App.call.active ? (App.call.mode === 'voice' ? 'in chiamata' : 'in videochiamata') : this.busy || this._hs ? (this._hs || 'sta scrivendo…') : (App.presence && App.presence.away(ch) ? App.presence.label(ch) : 'online'); // v2d-36: «non in linea» dopo il saluto
     st.classList.toggle('typing', !!(this.busy || this._hs));
   },
   scroll() { const m = $('#messages'); m.scrollTop = m.scrollHeight; },
@@ -163,6 +163,7 @@ App.chat = {
     this.motionHear(text, false); // «etciù», «ahah», «ciao»… detto da voi: Nova reagisce con il corpo
     const dressed = !noAI && App.outfits && App.outfits.hear ? App.outfits.hear(ch, text) : null; // v2d-33: «mettiti qualcosa di sportivo»
     const outfitNow = App.outfits && App.outfits.key ? App.outfits.key(ch) : '';
+    const pres = !noAI && App.presence ? App.presence.hear(ch, text) : {}; // v2d-36: «ok ciao ciao» -> ti saluta e se ne va; «aspetta» -> resta
     const meName = App.me.name;
     const tSend = performance.now();
     const local = this.addMsg({ role: 'user', author: App.me.user, authorName: meName, content: text, noAI, at: new Date().toISOString(), ...(photo ? { photo: { localSrc: photo.url, localThumb: photo.thumb, kind: photo.kind, w: photo.w, h: photo.h } } : {}), ...(voice ? { voice } : {}) });
@@ -189,7 +190,7 @@ App.chat = {
       if (stick) this.scroll();
     };
     try {
-      const r = await App.api(`/api/chats/${ch.id}`, { method: 'POST', body: { message: text, ...ph, ...voiceBody, ...(sight ? { sight } : {}), ...(outfitNow ? { outfit: outfitNow, ...(dressed ? { outfitChanged: true } : {}) } : {}), ...(App.call && App.call.active ? { call: true, callMode: App.call.mode || 'video' } : {}) }, ai: true, raw: true });
+      const r = await App.api(`/api/chats/${ch.id}`, { method: 'POST', body: { message: text, ...ph, ...voiceBody, ...(sight ? { sight } : {}), ...(outfitNow ? { outfit: outfitNow, ...(dressed ? { outfitChanged: true } : (App.outfits.pendingNote && App.outfits.pendingNote(ch)) ? { outfitChanged: 'lei' } : {}) } : {}), ...(App.call && App.call.active ? { call: true, callMode: App.call.mode || 'video' } : {}), ...(pres.bye ? { bye: true } : {}), ...(pres.stay ? { stay: true } : {}) }, ai: true, raw: true });
       if (!r.ok) {
         const j = await r.json().catch(() => ({}));
         if (j.message) this.claim(local, j.message.id); // il tuo messaggio è comunque salvato nella chat condivisa
@@ -231,6 +232,9 @@ App.chat = {
     if (streamTTS) App.voice.streamEnd();
     else if (reply && App.voice) App.voice.speak(App.actions ? App.actions.strip(reply) : reply);
     if (reply) this.afterReply(ch);
+    if (reply && App.presence) App.presence.afterReply(ch, App.actions ? App.actions.strip(reply) : reply, pres);
+    // v2d-36: se si era cambiata da sola, l'ha appena detto; ogni tanto, in un momento tranquillo, si cambia da sola
+    if (reply && App.outfits && App.outfits.told) { if (!dressed) App.outfits.told(ch); setTimeout(() => { try { if (App.outfits.maybeSpontaneous) App.outfits.maybeSpontaneous(ch); } catch { /* */ } }, 4000); }
   },
   // v8: linguaggio del corpo contestuale. L'IA può iniziare la risposta con [gesto:…] e/o [umore:…]:
   // il gesto parte quando arriva (insieme alla voce), niente animazioni casuali.

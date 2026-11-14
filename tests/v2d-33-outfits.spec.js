@@ -31,6 +31,7 @@ LOOKS.forEach(([key], i) => ['A', 'B'].forEach((k, j) => {
 CLIPS.push({ id: 'base1', url: '/api/motion/b000000000000001.mp4', kind: 'base', from: 'petto', to: 'petto', mood: ['calma'] }); // foto di base
 
 test('logica del guardaroba: fasce orarie, richieste in chat, clip per look', () => {
+  O.spont.on = false; // v2d-36: qui si prova solo la scelta su richiesta / scena (il cambio spontaneo ha la sua prova)
   const ch = { id: CH, outfits: OUTFITS, motionClips: CLIPS };
   expect(O.list(ch).length).toBe(4);
   expect(O.list({ outfits: [{ key: '../x', avatar: BASE }, { key: 'ok', avatar: '/etc/passwd' }] })).toEqual([]);

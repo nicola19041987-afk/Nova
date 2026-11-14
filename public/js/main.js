@@ -49,6 +49,7 @@ App.startLiveDefaults = function () {
 };
 App.boot = async function () {
   try { App.me = await App.api('/api/me'); } catch { App.showLogin(); return; }
+  document.body.classList.toggle('guest-mode', !!App.me.guest); // v2d-36: ospite (amico di Nico e Luisa): solo la chat con Nova
   if (App.me.consent) App.ls.set('consent', { activatedAt: App.me.consent.activatedAt });
   App.applySessionDefaults();
   App.askConsentOnce();
@@ -196,7 +197,8 @@ App.boot();
 App.sizePortraitStage = function () {
   const st = document.getElementById('stage');
   if (!st || !document.body.classList.contains('solo-mode')) return;
-  if (document.body.classList.contains('av-full-on') || st.classList.contains('av-full')) {
+  const B = document.body.classList; // v2d-36: videochiamata e ritratto a tutto schermo: nessuna altezza scritta a mano sul palco
+  if (B.contains('av-full-on') || st.classList.contains('av-full') || (B.contains('in-call') && !B.contains('call-min')) || B.contains('solo-portrait')) {
     st.style.height = '';
     st.style.maxHeight = '';
     st.style.flex = '';

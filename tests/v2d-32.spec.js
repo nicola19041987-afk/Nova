@@ -194,7 +194,7 @@ test('Aggiorna (↻) è di nuovo nell\'intestazione di Nova; occhi e bocca sulla
   await page.locator('header.topbar').screenshot({ path: path.join(dir, 'intestazione.png') });
   await page.locator('#wa-home').tap();
   await expect(btn).toBeVisible();
-  await page.locator('[data-dock="chat"]').first().tap().catch(() => {});
+  await page.locator('#back-btn').tap(); // v2d-36: niente barra in basso, «‹ Chat» in alto
   // ritratto con i clip: a riposo la foto non ha sguardo/sopracciglia disegnati; il labiale c'è mentre parla
   await page.locator('#wa-photo').tap();
   await page.waitForFunction(() => App.avatarConv.faceCalm === true, null, { timeout: 5000 });
@@ -208,12 +208,16 @@ test('Aggiorna (↻) è di nuovo nell\'intestazione di Nova; occhi e bocca sulla
   expect(await page.evaluate(() => App.avatarConv.faceCalm)).toBe(false);
 });
 
-test('iPhone: se si alza il dito per consentire il microfono, avvisa e alla pressione dopo registra', async ({ page }) => {
-  // getUserMedia lento come il riquadro «Consenti microfono» di Safari la prima volta, poi immediato
+test('iPhone: il microfono è un interruttore anche col permesso lento: un tocco registra (dopo «Consenti»), un tocco ferma', async ({ page }) => {
+  // v2d-36: niente più «tieni premuto». getUserMedia lento come il riquadro «Consenti microfono» di Safari la prima volta
   await page.addInitScript(() => {
     let first = true;
     const fake = () => { const ac = new AudioContext(); const d = ac.createMediaStreamDestination(); const o = ac.createOscillator(); o.connect(d); o.start(); return d.stream; };
     navigator.mediaDevices.getUserMedia = () => new Promise((ok) => setTimeout(() => ok(fake()), first ? (first = false, 1200) : 20));
+    // WebKit di prova non registra da un flusso finto: registratore finto (la logica del tasto è quella vera)
+    if (typeof MediaRecorder === 'undefined' || !MediaRecorder.isTypeSupported || !['audio/webm', 'audio/mp4'].some((m) => MediaRecorder.isTypeSupported(m))) {
+      window.MediaRecorder = class { constructor() { this.state = 'inactive'; this.mimeType = 'audio/mp4'; } start() { this.state = 'recording'; } stop() { this.state = 'inactive'; setTimeout(() => this.onstop && this.onstop(), 10); } static isTypeSupported(m) { return m === 'audio/mp4'; } };
+    }
   });
   await mock(page, {});
   await page.goto('/');
@@ -221,11 +225,17 @@ test('iPhone: se si alza il dito per consentire il microfono, avvisa e alla pres
   const b = await page.locator('#vn-mic').boundingBox();
   const x = b.x + b.width / 2, y = b.y + b.height / 2;
   await page.mouse.move(x, y); await page.mouse.down(); await page.waitForTimeout(150); await page.mouse.up(); // dito alzato per «Consenti»
-  await expect(page.locator('#vn-status')).toContainText('Microfono pronto', { timeout: 3000 });
-  expect(await page.evaluate(() => document.getElementById('vn-hud').hidden)).toBe(true);
-  // seconda pressione: registra (HUD e tasto rosso), poi annullata scorrendo a sinistra: niente invio
-  await page.mouse.move(x, y); await page.mouse.down();
-  await page.waitForFunction(() => !document.getElementById('vn-hud').hidden && document.getElementById('vn-mic').classList.contains('rec'), null, { timeout: 3000 });
-  await page.mouse.move(x - 150, y, { steps: 5 }); await page.mouse.up();
-  await page.waitForFunction(() => document.getElementById('vn-hud').hidden, null, { timeout: 3000 });
+  // appena dato il permesso registra, e resta in registrazione anche col dito alzato
+  await page.waitForFunction(() => !document.getElementById('vn-hud').hidden && document.getElementById('vn-mic').classList.contains('rec'), null, { timeout: 4000 });
+  await page.waitForTimeout(600);
+  expect(await page.evaluate(() => document.getElementById('vn-mic').getAttribute('aria-pressed'))).toBe('true');
+  // Annulla: niente invio, si spegne
+  await page.click('#vn-cancel');
+  await page.waitForFunction(() => document.getElementById('vn-hud').hidden && !document.getElementById('vn-mic').classList.contains('rec'), null, { timeout: 3000 });
+  // secondo giro: tocco = parte subito, tocco = ferma
+  await page.mouse.click(x, y);
+  await page.waitForFunction(() => document.getElementById('vn-mic').classList.contains('rec'), null, { timeout: 3000 });
+  await page.waitForTimeout(500);
+  await page.mouse.click(x, y);
+  await page.waitForFunction(() => !document.getElementById('vn-mic').classList.contains('rec'), null, { timeout: 3000 });
 });

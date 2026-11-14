@@ -69,7 +69,7 @@ test('dopo l’accesso si apre la chat e dalla Home si torna alla chat', async (
   await expect(page.locator('#stage')).toBeVisible();
   await page.locator('#back-btn').click();
   await expect(page.locator('#stage')).toBeHidden();
-  await page.locator('#dock-chat').click();
+  await page.locator('#back-btn').click(); // v2d-36: niente barra in basso, «‹ Chat» in alto
   await expect(page.locator('#chat-form')).toBeVisible();
   await expect(page.locator('#stage')).toBeHidden();
 });

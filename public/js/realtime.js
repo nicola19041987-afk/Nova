@@ -165,20 +165,25 @@
   function save(s, role, text, extra = {}) {
     text = String(text || '').replace(/\s+/g, ' ').trim(); if (!text) return;
     if (App.chat && App.chat.motionHear) App.chat.motionHear(text, role === 'assistant'); // v2d-30: anche in chiamata
-    if (role === 'user' && App.outfits && App.outfits.hear && App.current) App.outfits.hear(App.current, text); // v2d-33: «mettiti la tuta» anche a voce
+    if (role === 'user' && App.outfits && App.outfits.hear && App.current && App.outfits.hear(App.current, text)) { s.dressed = true; refresh(s); } // v2d-36: lo sa subito
+    if (role === 'assistant' && App.outfits && App.outfits.maybeSpontaneous && App.current) setTimeout(() => { try { if (App.outfits.maybeSpontaneous(App.current)) refresh(s); } catch { /* */ } }, 4000); // v2d-36: ogni tanto si cambia da sola
+    if (App.presence && App.current) { if (role === 'user') App.presence.hear(App.current, text); else App.presence.afterReply(App.current, text, null); } // v2d-36: saluto anche a voce // v2d-33: «mettiti la tuta» anche a voce
     s.saveQ = s.saveQ.then(async () => {
       if (role === 'assistant') { const t0 = performance.now(); while (s.waitUser && performance.now() - t0 < 2500) await new Promise((r) => setTimeout(r, 120)); }
       try {
         const r = await App.api(`/api/chats/${s.ch.id}/voice-turn`, { method: 'POST', body: { role, text, callMode: s.mode, ...extra } });
         s.turns++;
-        if ((r && (r.adult !== s.adult || r.explicitTalk !== s.explicitTalk)) || s.turns % 8 === 0) refresh(s);
+        if ((r && (r.adult !== s.adult || r.explicitTalk !== s.explicitTalk || r.intent)) || s.turns % 8 === 0) refresh(s); // v2d-36: dopo «ricordati…» le istruzioni hanno subito il ricordo
         if (App.chat && App.chat.poll && App.current && App.current.id === s.ch.id) App.chat.poll();
       } catch (e) { console.warn('Trascrizione non salvata:', e.message); }
     });
   }
   async function refresh(s) { // istruzioni aggiornate (modalità adulti, ricordi, ultimi messaggi) senza interrompere la chiamata
     try {
-      const r = await App.api('/api/realtime/instructions', { method: 'POST', body: { characterId: s.ch.id, mode: s.mode } });
+      const ok = App.outfits && App.outfits.key ? App.outfits.key(s.ch) : ''; // v2d-36: cosa indossa (e se si è cambiata da sola)
+      const oc = ok && App.outfits.pendingNote && App.outfits.pendingNote(s.ch) ? 'lei' : (s.dressed ? true : undefined); s.dressed = false;
+      const r = await App.api('/api/realtime/instructions', { method: 'POST', body: { characterId: s.ch.id, mode: s.mode, ...(ok ? { outfit: ok, ...(oc !== undefined ? { outfitChanged: oc } : {}) } : {}) } });
+      if (oc === 'lei' && App.outfits.told) App.outfits.told(s.ch);
       s.adult = r.adult; s.explicitTalk = r.explicitTalk; if (s.ws && s.ws.readyState === 1) s.ws.send(JSON.stringify({ type: 'session.update', session: { instructions: r.instructions } }));
     } catch {}
   }

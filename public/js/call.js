@@ -95,7 +95,7 @@
     App.audio.unlock(); // dentro il tocco: sblocca l'AudioContext condiviso (in chiamata nessun <audio>/sintesi di "riscaldamento")
     App.audio.mic().catch(() => {}); // v8.4.4: il microfono si apre UNA volta, subito, dentro il tocco
     if (App.avatarConv) App.avatarConv.setCharacter(ch);
-    App.stageFs.exit(); stage.classList.add('fs', 'call'); document.body.classList.add('avatar-fs-on', 'in-call');
+    App.stageFs.exit(); stage.classList.add('fs', 'call'); document.body.classList.add('avatar-fs-on', 'in-call'); if (App.fullscreenFix) App.fullscreenFix();
     document.body.classList.remove('simli-on');
     ui.hidden = false; $('#call-name').textContent = ch.name; $('#call-caption').hidden = true;
     setMode(m || 'video'); speaker = true; $('#call-speaker').classList.add('on'); $('#call-speaker').textContent = '🔊'; if (App.tts) App.tts.volume = 1;
@@ -166,6 +166,7 @@
     document.body.classList.remove('call-min');
     stage.classList.add('fs', 'call');
     document.body.classList.add('avatar-fs-on', 'in-call');
+    if (App.fullscreenFix) App.fullscreenFix(); // v2d-36: a tutto schermo anche se la tastiera era aperta
     requestAnimationFrame(() => { App.fitFrame && App.fitFrame(); App.chat.scroll && App.chat.scroll(); });
     if (App.solo && App.solo.syncMotion) App.solo.syncMotion();
   }
@@ -230,7 +231,9 @@
     // mentre parli: ogni tanto annuisce (ascolto attivo), mai a raffica
     onInterim(text) { if (!on || !text) return; const now = Date.now(); if (now - lastNod > 2600 + Math.random() * 1500) { lastNod = now; App.avatarConv.react(Math.random() < 0.75 ? 'nod' : 'tilt'); } },
     // sottotitolo breve della sua risposta (utile anche ad audio spento)
-    caption(text) { if (!on || mode === 'voice') return; const c = $('#call-caption'); const t = String(text || '').replace(/\s+/g, ' ').trim(); c.hidden = !t || !App.ls.get('callCaptions', true); c.textContent = t.length > 160 ? '…' + t.slice(-158) : t; },
+    // v2d-36: Nicola: nessun sottotitolo o trascrizione sopra il video, mai. La voce resta solo audio.
+    caption() { const c = $('#call-caption'); if (c) { c.hidden = true; c.textContent = ''; } },
+    _captionOld(text) { if (!on || mode === 'voice') return; const c = $('#call-caption'); const t = String(text || '').replace(/\s+/g, ' ').trim(); c.hidden = !t || !App.ls.get('callCaptions', true); c.textContent = t.length > 160 ? '…' + t.slice(-158) : t; },
   };
   $('#call-btn').addEventListener('click', (e) => { e.stopPropagation(); start('video'); });
   $('#call-btn2').addEventListener('click', (e) => { e.stopPropagation(); start('video'); });
