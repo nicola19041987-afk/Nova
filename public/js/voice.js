@@ -48,25 +48,75 @@
     // del microfono è il "suono di attacco e stacco". Se il sistema lo chiude da solo (traccia «ended»), lo si riapre e si avvisa chi ascolta.
     _mic: null, _micP: null, _micL: new Set(), micStats: { gum: 0, stops: 0, lost: 0 },
     micLive() { const s = this._mic; return !!(s && s.getAudioTracks().some((t) => t.readyState === 'live')); },
+    // v2d-41 (Luisa: «il microfono non parte»): l'errore del microfono non si inghiotte più. Una richiesta di permesso rimasta
+    // appesa (nessuna risposta del sistema) non blocca per sempre i tentativi successivi (tempo massimo), i vincoli audio troppo
+    // stretti o il microfono occupato si riprovano con {audio:true} liberando il microfono «di prova» dell'avvio, e l'ultimo
+    // errore resta leggibile (micError) per il messaggio di aiuto e il tasto «Riprova» in chiamata.
+    micError: null,
+    micHelp(e) {
+      const n = (e && e.name) || '';
+      const ios = /iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+      const android = /Android/i.test(navigator.userAgent);
+      if (!window.isSecureContext) return 'Il microfono funziona solo con la connessione sicura (https).';
+      if (n === 'NotAllowedError' || n === 'SecurityError' || n === 'PermissionDeniedError') {
+        if (ios) return 'Microfono bloccato. Su iPhone: Impostazioni → Safari → Microfono → Consenti (o «aA» nella barra → Impostazioni sito → Microfono), poi tocca «Riprova».';
+        if (android) return 'Microfono bloccato. Su Android: tocca il lucchetto accanto all\'indirizzo → Autorizzazioni → Microfono → Consenti, poi tocca «Riprova».';
+        return 'Microfono bloccato. Consenti il microfono per questo sito, poi tocca «Riprova».';
+      }
+      if (n === 'NotFoundError' || n === 'DevicesNotFoundError') return 'Nessun microfono trovato su questo telefono.';
+      if (n === 'NotReadableError' || n === 'TrackStartError' || n === 'AbortError') return 'Il microfono è occupato da un\'altra app (chiamata, WhatsApp, registratore). Chiudila e tocca «Riprova».';
+      if (n === 'TimeoutError') return 'Il telefono non ha risposto alla richiesta del microfono. Tocca «Riprova» e, se compare, scegli «Consenti».';
+      return 'Microfono non avviato' + (e && e.message ? ' (' + e.message + ')' : '') + '. Tocca «Riprova».';
+    },
+    // «Consenti» toccato dopo il tempo massimo: il microfono arrivato in ritardo non si butta, diventa quello della chiamata
+    adoptLate(st) {
+      if (!st) return;
+      if (this.micLive() || !(this.inCall || (App.call && App.call.active))) { try { st.getTracks().forEach((x) => x.stop()); } catch { /* */ } return; }
+      this._mic = st; this.micError = null; this.micStats.late = (this.micStats.late || 0) + 1;
+      st.getAudioTracks().forEach((t) => { t.onended = () => { if (this._mic !== st) return; this._mic = null; this.micStats.lost++; if (this.inCall) this._micL.forEach((f) => { try { f(); } catch {} }); }; });
+      try { document.dispatchEvent(new CustomEvent('nova-mic-late')); } catch { /* */ }
+    },
+    micDenied(e) { const n = (e && e.name) || ''; return n === 'NotAllowedError' || n === 'SecurityError' || n === 'PermissionDeniedError'; },
     async mic() {
       if (this.micLive()) return this._mic;
-      if (this._micP) return this._micP;
+      if (this._micP) {
+        // una richiesta appesa da più di 15 s (permesso mai risposto) non deve bloccare il nuovo tentativo
+        if (this._micPAt && performance.now() - this._micPAt > 15000) { this._micP = null; this.micStats.stale = (this.micStats.stale || 0) + 1; }
+        else return this._micP;
+      }
       this.micStats.gum++;
       // v8.4.7 (iPhone): la sessione audio diventa 'play-and-record' UNA volta, PRIMA del microfono. Un AudioContext nato in
       // 'playback' (sblocco audio) dopo il cambio di sessione riceve solo silenzio (livello 0,1%): lo si ricrea DOPO getUserMedia.
       let prevType = null;
       try { if (navigator.audioSession) { prevType = navigator.audioSession.type; if (prevType !== 'play-and-record') navigator.audioSession.type = 'play-and-record'; } } catch { /* */ }
       this.micStats.session = prevType;
-      this._micP = navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } })
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { const e = new Error('microfono non disponibile su questo browser'); e.name = window.isSecureContext ? 'NotFoundError' : 'SecurityError'; this.micError = e; return Promise.reject(e); }
+      const md = navigator.mediaDevices;
+      const withTimeout = (p, ms) => new Promise((ok, ko) => { let done = false; const t = setTimeout(() => { if (done) return; done = true; const e = new Error('nessuna risposta dal microfono'); e.name = 'TimeoutError'; ko(e); }, ms); p.then((v) => { if (done) { this.adoptLate(v); return; } done = true; clearTimeout(t); ok(v); }, (e) => { if (done) return; done = true; clearTimeout(t); ko(e); }); });
+      const dropPrime = () => { const pr = App._micPrime; App._micPrime = null; if (pr && pr !== this._mic) try { pr.getTracks().forEach((t) => t.stop()); } catch { /* */ } };
+      const ask = async () => {
+        try { return await withTimeout(md.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } }), 9000); }
+        catch (e) {
+          if (this.micDenied(e)) throw e; // permesso negato: un nuovo tentativo senza tocco non servirebbe
+          // microfono occupato (anche dal microfono «di prova» dell'avvio), vincoli non accettati o richiesta appesa: un secondo tentativo semplice
+          this.micStats.retry = (this.micStats.retry || 0) + 1; this.micStats.firstErr = (e && e.name) || 'errore';
+          dropPrime();
+          return await withTimeout(md.getUserMedia({ audio: true }), 6000);
+        }
+      };
+      this._micPAt = performance.now();
+      const P = this._micP = ask()
         .then((st) => {
+          this.micError = null;
           // Il contesto nato in 'playback' (lo sblocco del tocco arriva prima della sessione) su iPhone riceve solo silenzio.
           if (navigator.audioSession && this.ctx && (prevType !== 'play-and-record' || this._born !== 'play-and-record')) this.renewCtx(prevType !== 'play-and-record' ? 'sessione cambiata' : 'contesto nato prima del microfono');
           this._mic = st;
           st.getAudioTracks().forEach((t) => { t.onmute = () => { this.micStats.muted = (this.micStats.muted || 0) + 1; }; });
           st.getAudioTracks().forEach((t) => { t.onended = () => { if (this._mic !== st) return; this._mic = null; this.micStats.lost++; if (this.inCall) this._micL.forEach((f) => { try { f(); } catch {} }); }; });
           return st;
-        }).finally(() => { this._micP = null; });
-      return this._micP;
+        }, (e) => { this.micError = e || new Error('microfono non avviato'); this.micStats.lastErr = (e && e.name) || 'errore'; throw this.micError; })
+        .finally(() => { if (this._micP === P) { this._micP = null; this._micPAt = 0; } });
+      return P;
     },
     // v8.4.7: nuovo AudioContext (dopo il microfono, con la sessione giusta); chi lo usa lo rilegge da App.audio.ctx
     renewCtx(why) {
@@ -337,7 +387,7 @@
   App.voice = {
     start(opts = {}) {
       composerOnly = !!(opts && opts.composer);
-      const allow = composerOnly || App.ls.get('micOn', false);
+      const allow = composerOnly || App.ls.get('micOn', true);
       // v8.4.5: con la chiave xAI la modalità voce (fuori chiamata) usa il NOSTRO microfono + trascrizione xAI in italiano
       // (stesso rilevatore del parlato della chiamata): niente riconoscimento di Safari, che su iPhone capiva parole a caso
       // ("Foglia", "Gatto") e faceva il "bip" a ogni riavvio. Il riconoscimento del telefono resta solo come riserva.

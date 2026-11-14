@@ -84,8 +84,9 @@ App.boot = async function () {
   else if (document.body.dataset.tab !== 'account') document.body.dataset.tab = 'conv';
   if (App.roles) App.roles.apply(); if (App.home) App.home.boot();
   try { if (App.archive && App.archive.wanted()) await App.archive.open(); } catch (e) { console.warn(e); }
-  // Dopo il PIN (e a ogni avvio) la prima schermata è la chat, non i comandi.
-  if (document.body.classList.contains('solo-mode') && !document.body.classList.contains('archive-on') && App.solo && App.solo.showChat) App.solo.showChat();
+  // v2d-41: dopo il PIN (e a ogni avvio) la prima schermata è la Home di Nova; la chat è a un tocco (Chat).
+  if (document.body.classList.contains('solo-mode') && !document.body.classList.contains('archive-on') && App.solo && App.solo.showHome && App.solo.char && App.solo.char()) { if (!document.body.classList.contains('solo-chat')) App.solo.showHome(); } // se nel frattempo si è già aperta la chat, si resta lì
+  else if (document.body.classList.contains('solo-mode') && !document.body.classList.contains('archive-on') && App.solo && App.solo.showChat) App.solo.showChat();
   App._fromPin = false;
 };
 // Modalità adulti (per utente): solo effetti locali sull'avatar (espressioni/movimenti più sensuali, canvas).

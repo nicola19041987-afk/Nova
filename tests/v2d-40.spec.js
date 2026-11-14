@@ -56,7 +56,7 @@ async function mock(page, L, seen, opts = {}) {
 }
 async function open(page, scene) {
   await page.goto('/');
-  await page.waitForFunction(() => document.body.classList.contains('solo-chat') && App.current && App.avatarConv && App.avatarConv.img && App.avatarConv.img.naturalWidth > 0, null, { timeout: 30000 });
+  await page.waitForFunction(() => (!(App.solo && App.solo._bound && App.current && document.body.classList.contains('solo-home')) || (App.solo.showChat(), 1)) && document.body.classList.contains('solo-chat') && App.current && App.avatarConv && App.avatarConv.img && App.avatarConv.img.naturalWidth > 0, null, { timeout: 30000 });
   await page.evaluate((key) => { App.ls.set('outfit:' + App.current.id, { scene: key, seen: Date.now(), visitAt: Date.now() }); App.ls.set('away:' + App.current.id, null); App.outfits.apply(true); }, scene);
   await page.waitForTimeout(3000); // l avvio finisce (apre la chat) prima di aprire il ritratto
 }
@@ -135,7 +135,7 @@ test('chiamata vocale dalla Home: lei viva a tutto schermo (niente sfondo scuro 
   expect(s.cvZ).toBeGreaterThan(s.vidZ); // il disegno sopra i video (che restano accesi sotto)
   expect(s.vidTransform).toBe('none'); // nessuna scala CSS
   expect(s.portrait).toBe(0); expect(s.backdrop).toBe('hidden');
-  expect(s.buttons.sort()).toEqual(['call-end', 'call-min', 'call-mute'].sort());
+  expect(s.buttons.sort()).toEqual(['call-badge', 'call-end', 'call-min', 'call-mute'].sort()); // v2d-41: ⚡/Classica visibile in alto
   expect(s.on).toBe(true);
   expect(await canvasLuma(page)).toBeGreaterThan(70);
   fs.mkdirSync(OUT, { recursive: true }); await page.screenshot({ path: path.join(OUT, `voce-${test.info().project.name}.png`) });

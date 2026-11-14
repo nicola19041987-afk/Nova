@@ -124,10 +124,19 @@
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || typeof MediaRecorder === 'undefined') {
       status('Registrazione non disponibile su questo browser.'); pointer = null; return;
     }
-    try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
-    catch (err) {
+    // v2d-41: una richiesta di permesso senza risposta non blocca più il tasto (tempo massimo); microfono occupato -> si libera
+    // il microfono «di prova» e si riprova una volta; messaggio chiaro con cosa fare.
+    const gum = (c) => new Promise((ok, ko) => { let done = false; const t = setTimeout(() => { if (done) return; done = true; const e = new Error('nessuna risposta dal microfono'); e.name = 'TimeoutError'; ko(e); }, 12000); navigator.mediaDevices.getUserMedia(c).then((st) => { if (done) { st.getTracks().forEach((x) => x.stop()); return; } done = true; clearTimeout(t); ok(st); }, (e) => { if (done) return; done = true; clearTimeout(t); ko(e); }); });
+    try {
+      try { stream = await gum({ audio: true }); }
+      catch (err) {
+        if (App.audio && App.audio.micDenied && App.audio.micDenied(err)) throw err;
+        const pr = App._micPrime; App._micPrime = null; if (pr) try { pr.getTracks().forEach((t) => t.stop()); } catch { /* */ }
+        stream = await gum({ audio: true });
+      }
+    } catch (err) {
       const denied = !err || err.name === 'NotAllowedError' || err.name === 'SecurityError' || err.name === 'PermissionDeniedError';
-      status(denied ? 'Microfono non consentito.' : 'Microfono non avviato.');
+      status(App.audio && App.audio.micHelp ? App.audio.micHelp(err) : (denied ? 'Microfono non consentito.' : 'Microfono non avviato.'));
       pointer = null; stream = null; return;
     }
     // v2d-32: iPhone. Al primo uso dopo l'apertura/aggiornamento dell'app Safari chiede il permesso del microfono: per

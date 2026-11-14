@@ -47,11 +47,15 @@ test('login resta visibile e non si blocca', async ({ page }) => {
   expect(errors).toEqual([]);
 });
 
-test('dopo l’accesso si apre la chat e dalla Home si torna alla chat', async ({ page, browserName }) => {
+test('dopo l’accesso si apre la Home (v2d-41), da lì la chat, e dalla Home si torna alla chat', async ({ page, browserName }) => {
   test.skip(browserName === 'webkit', 'Questo WebKit chiude il processo aprendo la Home. Il percorso è verificato su Chromium.');
   await mockApp(page);
   await page.goto('/');
-  await page.waitForFunction(() => document.body.classList.contains('solo-chat') && document.getElementById('title').textContent === 'Nova');
+  await page.waitForFunction(() => document.body.classList.contains('solo-home') && document.getElementById('title').textContent === 'Nova');
+  await expect(page.locator('#nh-list')).toBeVisible();
+  await expect(page.locator('#chat-form')).toBeHidden();
+  await page.locator('#nh-q-chat').click();
+  await page.waitForFunction(() => document.body.classList.contains('solo-chat'));
   await expect(page.locator('#chat-form')).toBeVisible();
   await expect(page.locator('#stage')).toBeHidden();
   await expect(page.locator('#back-btn')).toBeVisible();
@@ -109,6 +113,7 @@ test('la home è solo Nova (id greta), non la lista e non Chiara', async ({ page
       dock: document.body.classList.contains('solo-chat') ? true : shown('solo-dock'),
       canvas: document.body.classList.contains('solo-chat') ? true : shown('avatar-canvas'),
       form: shown('chat-form'),
+      home: document.body.classList.contains('solo-home'),
       mic: shown('dock-mic'),
       list: shown('tab-chat'),
       w: r.width,
@@ -121,7 +126,8 @@ test('la home è solo Nova (id greta), non la lista e non Chiara', async ({ page
   expect(snap.loginHidden).toBe(true);
   expect(snap.title).toBe('Nova');
   expect(snap.tab).toBe('conv');
-  expect(snap.conv && snap.form).toBe(true);
+  expect(snap.conv).toBe(true); // v2d-41: dopo l'avvio si è sulla Home (la chat si apre da lì)
+  expect(snap.home).toBe(true);
   expect(snap.list).toBe(false);
   expect(snap.current.id).toBeTruthy();
   expect(snap.current).toEqual({ id: NOVA, ready: 'greta', name: 'Nova' });
@@ -333,6 +339,7 @@ test('labiale e movimento della sessione ⚡ seguono l’audio, senza coprire la
   }));
   await page.goto('/');
   await page.waitForFunction(() => document.body.classList.contains('solo-mode') && document.getElementById('title').textContent === 'Nova');
+  await page.evaluate(() => App.solo.showChat()); // v2d-41: si parte dalla Home
   const snap = await page.evaluate(async () => {
     const corr = (xs, ys) => {
       const n = xs.length, mx = xs.reduce((a, b) => a + b, 0) / n, my = ys.reduce((a, b) => a + b, 0) / n;
@@ -423,6 +430,7 @@ test('il PCM della sessione ⚡ apre e chiude la bocca', async ({ page, browserN
   }));
   await page.goto('/');
   await page.waitForFunction(() => document.body.classList.contains('solo-mode'));
+  await page.evaluate(() => App.solo.showChat()); // v2d-41: si parte dalla Home
   const live = await page.evaluate(async () => {
     App.ls.set('key', 'sk-test');
     App.ls.set('callEngine', 'realtime');

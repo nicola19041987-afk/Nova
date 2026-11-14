@@ -40,6 +40,7 @@
         DUR.forEach((d) => {
           PRESETS.push({
             id: b.id + '-' + i[0] + '-' + s[0] + '-' + d[0],
+            base: b.id,
             name: b.name + ' · ' + i[0] + ' · ' + s[0] + ' · ' + d[0],
             groups: b.groups,
             sway: b.sway * i[1],
@@ -216,7 +217,20 @@
     s.on = true; s.from = from; s.until = t + Math.min(CLIP_PLAY_MS, dur || CLIP_PLAY_MS);
     return { play: true, seek: from };
   }
-  const api = { PRESETS, count: PRESETS.length, pick, get: (id) => byId.get(id) || null, HAND_3D, createDrive, drive, cssPose, cssTransform, DRIVES, createHand, stepHand, HAND_PLAY_MS, createClipPlay, stepClipPlay, CLIP_PLAY_MS };
+  // v2d-41: contatore d'uso dei gesti (per gesto di base, solo su questo telefono) per la pagina Gesti della Home
+  const USE_KEY = 'nova:gestiUso';
+  let use = null, useT = 0;
+  function loadUse() { if (use) return use; use = {}; try { const o = JSON.parse(root.localStorage.getItem(USE_KEY) || '{}'); if (o && typeof o === 'object') for (const k of Object.keys(o)) if (Number.isFinite(+o[k])) use[k] = +o[k]; } catch { /* */ } return use; }
+  function saveUse() { useT = 0; try { root.localStorage.setItem(USE_KEY, JSON.stringify(use || {})); } catch { /* */ } }
+  function noteUse(p) {
+    const id = p && (p.base || String(p.id || '').replace(/-(lieve|media|marcata)-.*$/, '')); if (!id) return;
+    const u = loadUse(); u[id] = (u[id] || 0) + 1;
+    if (!useT) useT = setTimeout(saveUse, 4000);
+  }
+  function usage() { return Object.assign({}, loadUse()); }
+  const GROUP_IT = { idle: 'a riposo', listen: 'mentre ascolta', speak: 'mentre parla', greet: 'saluto', think: 'quando pensa', sad: 'malinconica', happy: 'allegra', surprise: 'sorpresa', laugh: 'risata' };
+  const BASE_LIST = BASES.map((b) => ({ id: b.id, name: b.name, groups: b.groups.map((g) => GROUP_IT[g] || g), variants: INT.length * SPEED.length * DUR.length }));
+  const api = { PRESETS, BASES: BASE_LIST, noteUse, usage, count: PRESETS.length, pick, get: (id) => byId.get(id) || null, HAND_3D, createDrive, drive, cssPose, cssTransform, DRIVES, createHand, stepHand, HAND_PLAY_MS, createClipPlay, stepClipPlay, CLIP_PLAY_MS };
   if (typeof module === 'object' && module.exports) module.exports = api;
   root.MotionLib = api;
   function paintCount() {
@@ -225,7 +239,24 @@
     const b = document.getElementById('motion-lib-menu');
     if (a) a.textContent = t;
     if (b) b.textContent = t;
+    paintList();
   }
+  // v2d-41: elenco dei gesti nella pagina Gesti (nome, quando li usa, varianti, quante volte li ha fatti su questo telefono)
+  function paintList() {
+    const ul = typeof document !== 'undefined' && document.getElementById('motion-lib-list'); if (!ul) return;
+    const u = usage();
+    const items = BASE_LIST.map((b) => {
+      const li = document.createElement('li');
+      const top = document.createElement('div'); top.className = 'ml-top';
+      const n = document.createElement('b'); n.textContent = b.name;
+      const c = document.createElement('span'); c.className = 'ml-use'; const k = u[b.id] || 0; c.textContent = k === 1 ? 'usato 1 volta' : 'usato ' + k + ' volte';
+      top.append(n, c);
+      const d = document.createElement('small'); d.textContent = b.groups.join(', ') + ' · ' + b.variants + ' varianti';
+      li.dataset.gesto = b.id; li.append(top, d); return li;
+    });
+    ul.replaceChildren(...items);
+  }
+  api.paintList = paintList;
   if (typeof document !== 'undefined') {
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', paintCount);
     else paintCount();

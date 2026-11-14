@@ -39,7 +39,7 @@ async function startCamera() {
 function stopCamera() { if (stream) stream.getTracks().forEach((t) => t.stop()); stream = null; video.srcObject = null; }
 
 async function open() {
-  if (!App.ls.get('camOn', false)) return App.toast('Attiva la fotocamera in Impostazioni');
+  if (!App.ls.get('camOn', true)) return App.toast('Attiva la fotocamera in Impostazioni');
   $('#presence').hidden = false;
   if (!(await startCamera())) { close(); return; }
   if (App.current) App.avatarPresence.setCharacter(App.previews[App.current.id] ? { ...App.current, avatar: App.previews[App.current.id].dataUrl } : App.current);

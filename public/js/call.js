@@ -52,6 +52,7 @@
     $('#call-tovideo').hidden = mode !== 'voice'; $('#call-speaker').hidden = mode !== 'voice';
     $('#call-cam').hidden = mode === 'voice'; $('#call-cc').hidden = mode === 'voice'; $('#call-hot').hidden = mode === 'voice';
     if (mode === 'voice') { stopCam(); $('#call-caption').hidden = true; }
+    else if (on && !cam && App.call && App.call.active) startCam(); // v2d-41: passando al video la fotocamera parte subito
     paintCam();
     App.call.mode = mode; if (mode === 'video') everVideo = true;
     if (on && rt) App.rt.setMode(mode);
@@ -95,11 +96,16 @@
     if (!App.hasAi()) return App.toast('🔑 Per la videochiamata serve la chiave xAI (Impostazioni)');
     const useRt = App.rt && App.rt.enabled();
     App.ls.set('micOn', true);
+    App.audio._autoRetried = false; App.audio.micError = null;
     on = true; t0 = Date.now(); muted = false; everVideo = false; rt = false; camAsked = false;
     App.call.active = true; if (App.voice.isListening && App.voice.isListening()) App.voice.stop(); // v8.4.4: niente riconoscimento vocale del telefono in chiamata (suoni di attacco/stacco)
     App.audio.callSession(true); // v8.4.1: una sola sessione audio (registra + riproduce) per tutta la chiamata
     App.audio.unlock(); // dentro il tocco: sblocca l'AudioContext condiviso (in chiamata nessun <audio>/sintesi di "riscaldamento")
-    App.audio.mic().catch(() => {}); // v8.4.4: il microfono si apre UNA volta, subito, dentro il tocco
+    // v8.4.4: il microfono si apre UNA volta, subito, dentro il tocco. v2d-41: in videochiamata la fotocamera si apre da sola
+    // subito dopo il microfono (niente secondo tocco su 📷; si spegne con 📷)
+    // v2d-41: se il microfono non parte non si tace più: avviso chiaro con «Riprova» (nuova richiesta di permesso dentro il tocco)
+    App.audio.mic().then(() => { micOk(); }, (e) => { micFail(e); }).then(() => { if (on && mode === 'video' && !cam) startCam(); });
+    micWatchStart();
     if (App.avatarConv) App.avatarConv.setCharacter(ch);
     App.stageFs.exit(); stage.classList.add('fs', 'call'); document.body.classList.add('avatar-fs-on', 'in-call'); if (App.fullscreenFix) App.fullscreenFix();
     document.body.classList.remove('simli-on');
@@ -117,7 +123,7 @@
       connecting = true; badge('conn'); state();
       const p = App.rt.start(ch, mode, greet);
       try { await p; if (!on) { App.rt.stop(); return; } rt = true; connecting = false; badge('rt'); state(); return; }
-      catch (e) { connecting = false; if (!on) return; console.warn('Tempo reale non disponibile:', e.message); retryRt(ch, mode); App.toast('⚡ Tempo reale non disponibile: ' + e.message + ' · per ora chiamata classica, riprovo da sola (dettagli: Impostazioni → Diagnostica voce)', 6000); classic(greet, e.message); return; }
+      catch (e) { connecting = false; if (!on) return; console.warn('Tempo reale non disponibile:', e.message); retryRt(ch, mode); if (App.audio.micError && !App.audio.micLive()) { micFail(App.audio.micError); classic(greet, 'microfono non avviato'); return; } App.toast('⚡ Tempo reale non disponibile: ' + e.message + ' · per ora chiamata classica, riprovo da sola (dettagli: Impostazioni → Diagnostica voce)', 6000); classic(greet, e.message); return; }
     }
     classic(greet, !App.hasAi() ? 'manca la chiave xAI' : App.rt && !App.rt.supported() ? 'browser non compatibile con il tempo reale' : App.rt && App.rt.classicOnly ? 'prova tecnica (solo in memoria)' : '');
   }
@@ -127,7 +133,7 @@
   // chiamata è aperta, anche dopo una caduta a chiamata in corso (fallback). Un solo ciclo di tentativi per volta.
   const RT_RETRY_MS = [2500, 6000, 12000, 20000];
   let retryT = 0, retryAt = 0;
-  function retryRt(ch, m) {
+  function retryRt(ch, m, firstMs) {
     const callAt = t0; let n = 0;
     clearTimeout(retryT); retryAt = callAt;
     const go = async () => {
@@ -139,10 +145,10 @@
         await App.rt.start(ch, mode || m, '');
         if (callAt !== t0 || !on) { App.rt.stop(); connecting = false; return; }
         if (App.callMic) App.callMic.stop(); App.voice.cancel(); micMode = ''; clearInterval(warm);
-        rt = true; connecting = false; badge('rt'); if (muted && App.rt.setMuted) App.rt.setMuted(true); state();
-      } catch (e) { connecting = false; console.warn('Tempo reale, nuovo tentativo:', e.message); if (on && callAt === t0) retryT = setTimeout(go, RT_RETRY_MS[Math.min(++n, RT_RETRY_MS.length - 1)]); }
+        rt = true; connecting = false; badge('rt'); micBanner(''); if (muted && App.rt.setMuted) App.rt.setMuted(true); state();
+      } catch (e) { if (on && callAt === t0 && App.audio.micError && !App.audio.micLive()) micFail(App.audio.micError); connecting = false; console.warn('Tempo reale, nuovo tentativo:', e.message); if (on && callAt === t0) retryT = setTimeout(go, RT_RETRY_MS[Math.min(++n, RT_RETRY_MS.length - 1)]); }
     };
-    retryT = setTimeout(go, RT_RETRY_MS[0]);
+    retryT = setTimeout(go, firstMs != null ? firstMs : RT_RETRY_MS[0]);
   }
   // chiamata classica: riconoscimento vocale del telefono + risposta in streaming + voce frase per frase
   // v8.4.1: microfono continuo + nostro rilevatore del parlato + trascrizione xAI (niente bip); riserva: riconoscimento continuo
@@ -160,8 +166,75 @@
         .catch((e) => { console.warn('Microfono continuo non disponibile:', e.message); if (on && !rt) useSR(); });
     } else useSR();
   }
+  // ---------- v2d-41: microfono che parte sempre ----------
+  // Prima (v2d-40) un errore del microfono veniva inghiottito: niente messaggio, nessun modo di riprovare, e il tempo reale
+  // ritentava senza microfono. Ora: avviso con il motivo e cosa fare, tasto «Riprova» (nuova richiesta di permesso DENTRO il
+  // tocco, audio sbloccato), e appena il microfono c'è si torna SUBITO al tempo reale. Nessuna impostazione salvata lo spegne.
+  let micWatchT = 0, ctxSusp = 0;
+  function micBanner(text, btn) {
+    let b = $('#call-micfix');
+    if (!text) { if (b) b.hidden = true; return; }
+    if (!b) {
+      b = document.createElement('div'); b.id = 'call-micfix'; b.className = 'call-micfix'; b.setAttribute('role', 'alert');
+      b.innerHTML = '<p class="cmf-text"></p><button type="button" class="cmf-btn">Riprova</button>';
+      b.querySelector('.cmf-btn').addEventListener('click', (e) => { e.stopPropagation(); micRetry(); });
+      ['pointerdown', 'pointerup', 'touchstart'].forEach((k) => b.addEventListener(k, (e) => e.stopPropagation()));
+      ui.appendChild(b);
+    }
+    b.querySelector('.cmf-text').textContent = text;
+    b.querySelector('.cmf-btn').textContent = btn || 'Riprova';
+    b.hidden = false;
+  }
+  function micFail(e) {
+    if (!on) return;
+    console.warn('Microfono non avviato:', e && (e.name || e.message));
+    micBanner('🎙️ ' + App.audio.micHelp(e));
+  }
+  function micOk(after) {
+    if (!on) return;
+    micBanner('');
+    if (after !== true) return; // all'avvio ci pensano già il tempo reale e la classica
+    // il microfono c'è: se la chiamata è in classica (o senza microfono) si torna SUBITO al tempo reale
+    if (!rt && !connecting && App.rt && App.rt.enabled() && App.current) { clearTimeout(retryT); retryAt = 0; retryNow(App.current); }
+    else if (!rt && micMode !== 'vad' && App.callMic && App.callMic.supported()) {
+      App.callMic.start({ onFail: () => {} }).then(() => { if (!on || rt) { App.callMic.stop(); return; } micMode = 'vad'; if (muted) App.callMic.setMuted(true); state(); }).catch(() => {});
+    }
+  }
+  async function micRetry() {
+    if (!on) return;
+    App.audio.unlock(); // dentro il tocco: audio sbloccato
+    try { if (App.audio.ctx && App.audio.ctx.state !== 'running') App.audio.ctx.resume().catch(() => {}); } catch { /* */ } // senza attendere: il microfono si chiede subito, dentro il tocco (Safari)
+    micBanner('🎙️ Attivo il microfono…', 'Attendi');
+    try {
+      App.audio._micP = null; // nuova richiesta di permesso vera, dentro il tocco
+      if (!App.audio.micLive()) await App.audio.mic();
+      micOk(true);
+    } catch (e) { micFail(e); }
+  }
+  // tempo reale subito (stesso ciclo di tentativi di retryRt, primo tentativo senza attesa)
+  function retryNow(ch) { retryRt(ch, mode, 0); }
+  // audio del telefono rimasto in pausa (contesto nato fuori dal tocco): il microfono è «aperto» ma non sente niente
+  function micWatchStart() {
+    clearInterval(micWatchT); ctxSusp = 0;
+    micWatchT = setInterval(() => {
+      if (!on) { clearInterval(micWatchT); micWatchT = 0; return; }
+      const c = App.audio.ctx;
+      if (c && c.state === 'suspended') { c.resume().catch(() => {}); if (++ctxSusp === 3) micBanner('🔈 Tocca «Attiva» per far partire microfono e audio.', 'Attiva'); }
+      else if (ctxSusp) { if (ctxSusp >= 3 && !App.audio.micError) micBanner(''); ctxSusp = 0; }
+      // microfono perso o mai partito a chiamata in corso: lo si richiede una volta da solo, poi resta il tasto
+      if (!App.audio.micLive() && !App.audio._micP && App.audio.micError && !App.audio.micDenied(App.audio.micError) && !App.audio._autoRetried) {
+        App.audio._autoRetried = true; App.audio.mic().then(() => micOk(true), micFail);
+      }
+    }, 1000);
+  }
+  document.addEventListener('nova-mic-late', () => { if (on) micOk(true); });
+  // ogni tocco durante la chiamata riprende l'audio se il telefono l'ha messo in pausa
+  ['pointerdown', 'touchend'].forEach((k) => document.addEventListener(k, () => {
+    if (!on) return; const c = App.audio.ctx; if (c && c.state !== 'running') c.resume().catch(() => {});
+  }, { capture: true, passive: true }));
   function end() {
     if (!on) return; on = false; App.call.active = false; cancelAnimationFrame(raf); clearTimeout(retryT); retryT = 0; retryAt = 0;
+    micBanner(''); clearInterval(micWatchT); micWatchT = 0;
     stage.classList.remove('voice', 'nv-voicecall'); ui.classList.remove('voice'); App.call.mode = null;
     if (App.avatarConv && App.avatarConv.setVoiceView) App.avatarConv.setVoiceView(false); // v2d-40: inquadratura normale
     if (App.tts) App.tts.volume = 1;
@@ -223,6 +296,7 @@
     const onCam = !!cam;
     b.classList.toggle('on', onCam);
     b.setAttribute('aria-pressed', onCam ? 'true' : 'false');
+    const f = $('#call-flip'); if (f) f.hidden = !onCam || mode !== 'video'; // v2d-41: cambia fotocamera sempre a portata
   }
   async function startCam() {
     if (cam || !on || mode !== 'video') return;
@@ -239,7 +313,7 @@
       if (!App.audio.micLive()) App.audio.mic().catch(() => {});
     } catch (e) { cam = null; paintCam(); }
   }
-  function toggleCam() { if (cam) return stopCam(); return startCam(); } // v2d-37: interruttore, mai avviare il video senza un tocco
+  function toggleCam() { if (cam) return stopCam(); return startCam(); } // v2d-41: interruttore; in videochiamata parte accesa
   function stopCam() {
     if (App.sight && App.sight.active && App.sight.active() && App.sight.stop) App.sight.stop();
     if (cam) cam.getVideoTracks().forEach((t) => t.stop());

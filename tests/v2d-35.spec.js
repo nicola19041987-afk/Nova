@@ -183,7 +183,7 @@ test('app: scena a sorpresa inquadrata all\'ombelico, si muove con i suoi clip c
   const seen = { chat: [] };
   await mock(page, seen);
   await page.goto('/');
-  await page.waitForFunction(() => document.body.classList.contains('solo-chat') && App.current && App.avatarConv && App.avatarConv.img && App.avatarConv.img.naturalWidth > 0, null, { timeout: 30000 });
+  await page.waitForFunction(() => (!(App.solo && App.solo._bound && App.current && document.body.classList.contains('solo-home')) || (App.solo.showChat(), 1)) && document.body.classList.contains('solo-chat') && App.current && App.avatarConv && App.avatarConv.img && App.avatarConv.img.naturalWidth > 0, null, { timeout: 30000 });
   const shots = [];
   for (const k of ['nova_auto', 'nova_parco', 'nova_tavola', 'nova_maldive', 'nova_ospedale']) {
     // nuova visita simulata: la scena viene scelta dall'app (qui forzata per avere le schermate di ognuna)

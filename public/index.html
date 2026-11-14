@@ -271,7 +271,8 @@
           </div>
           <div class="nh-page" data-nh-page="gesti" hidden>
             <p id="motion-lib-menu" class="nh-count"></p>
-            <p class="muted small">Si scelgono da soli, in base a quello che state facendo, senza ripetere subito lo stesso movimento.</p>
+            <p class="muted small">Si scelgono da soli, in base a quello che state facendo, senza ripetere subito lo stesso movimento. Ogni gesto ha 27 varianti (intensità, velocità, durata); il conteggio è di questo telefono.</p>
+            <ul id="motion-lib-list" class="ml-list"></ul>
           </div>
           <div class="nh-page" data-nh-page="video" hidden>
             <p class="muted small">La videochiamata parte con Nova. La tua fotocamera resta spenta finché non la accendi.</p>
@@ -298,6 +299,7 @@
         <div id="messages" class="messages"></div>
         <p id="typing" class="typing-line muted small" hidden></p>
         <form id="chat-form" class="composer">
+          <div class="cb-pill" id="cb-pill">
           <button type="button" id="vn-plus" aria-label="Allega una foto">+</button>
           <textarea id="chat-input" rows="1" placeholder="Messaggio" required></textarea>
           <button type="button" id="vn-cam" aria-label="Fotocamera" aria-pressed="false"><span class="cam-off-line" aria-hidden="true"></span><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M4 8.5h3l1.2-2h7.6L17 8.5h3v10H4z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><circle cx="12" cy="13" r="2.6" fill="none" stroke="currentColor" stroke-width="1.7"/></svg></button>
@@ -312,6 +314,9 @@
           <button type="button" id="chat-only" title="Solo messaggio: lo vede l'altra persona, l'IA non risponde" aria-label="Solo messaggio">💬</button>
           <button type="button" id="vn-mic" aria-label="Tocca per un messaggio vocale" aria-pressed="false">🎙️</button>
           <button class="primary" type="submit" aria-label="Invia (risponde il personaggio)">➤</button>
+          </div>
+          <button type="button" id="cb-video" class="cb-side" aria-label="Videochiamata" title="Videochiamata"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><rect x="3" y="6.5" width="12.5" height="11" rx="2.2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M15.5 10.5l5-3v9l-5-3z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg></button>
+          <button type="button" id="cb-home" class="cb-side" aria-label="Home" title="Home"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M4 11l8-6.5 8 6.5M6.5 9.5V19h4.2v-5h2.6v5h4.2V9.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/></svg></button>
         </form>
       </div>
 

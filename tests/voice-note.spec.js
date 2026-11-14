@@ -54,7 +54,7 @@ test('permesso microfono negato non invia un vocale', async ({ page, browserName
     return json({});
   });
   await page.goto('/');
-  await page.waitForFunction(() => document.body.classList.contains('solo-chat') && document.getElementById('vn-mic'));
+  await page.waitForFunction(() => (!(App.solo && App.solo._bound && App.current && document.body.classList.contains('solo-home')) || (App.solo.showChat(), 1)) && document.body.classList.contains('solo-chat') && document.getElementById('vn-mic'));
   const g = await page.evaluate(() => ({
     cancel: App.voiceNote.gesture(-90, 0, false),
     lock: App.voiceNote.gesture(0, -90, false),
@@ -115,6 +115,6 @@ test('permesso microfono negato non invia un vocale', async ({ page, browserName
   await page.locator('#back-btn').click(); // v2d-36: niente barra in basso, «‹ Chat» in alto
   const voices = await page.locator('.has-voice').count();
   await page.locator('#vn-mic').dispatchEvent('pointerdown', { pointerId: 1, clientX: 300, clientY: 700, button: 0 });
-  await expect(page.locator('#vn-status')).toHaveText(browserName === 'webkit' ? /non disponibile|non consentito/ : 'Microfono non consentito.');
+  await expect(page.locator('#vn-status')).toHaveText(browserName === 'webkit' ? /non disponibile|non consentito|bloccato/ : /Microfono (non consentito|bloccato)/);
   await expect(page.locator('.has-voice')).toHaveCount(voices);
 });

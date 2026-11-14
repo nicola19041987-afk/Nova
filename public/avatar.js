@@ -773,6 +773,7 @@
       if (!next) return;
       this._libRecent = recent.concat(next.id).slice(-16);
       this._lib = Object.assign({ t0: now, until: now + next.ms }, next);
+      if (Lib.noteUse) Lib.noteUse(next); // v2d-41: contatore d'uso per la pagina Gesti
       const mc = this.micro;
       if (mc) {
         mc.gtx = next.gazeX || 0;

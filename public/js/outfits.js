@@ -33,9 +33,23 @@
     for (const o of (ch && Array.isArray(ch.outfits) ? ch.outfits : [])) {
       if (!o || !TOKEN.test(String(o.key || '')) || !AV.test(String(o.avatar || ''))) continue;
       if (o.disabled) continue; // v2d-36: look ritirati (es. ospedale: Nova non ha un lavoro) restano sul server ma non si usano
-      out.push({ key: o.key, style: STYLES.includes(o.style) ? o.style : 'comoda', label: String(o.label || o.key).slice(0, 80), avatar: o.avatar, landmarks: o.landmarks || null, disabled: !!o.disabled, words: Array.isArray(o.words) ? o.words.filter((w) => /^[a-zà-ù]{3,20}$/.test(w)) : [] });
+      out.push({ key: o.key, style: STYLES.includes(o.style) ? o.style : 'comoda', label: String(o.label || o.key).slice(0, 160), avatar: o.avatar, landmarks: o.landmarks || null, disabled: !!o.disabled, words: Array.isArray(o.words) ? o.words.filter((w) => /^[a-zà-ù]{3,20}$/.test(w)) : [] });
+    }
+    // v2d-41: il look «al volo» (generato su richiesta sulla foto principale) vale 3 ore, come un look chiesto
+    const n = ch && ch.lookNow;
+    if (n && AV.test(String(n.url || '')) && Date.now() - new Date(n.at).getTime() < HOLD_MS) {
+      let lm = n.landmarks || null; try { if (!lm && root.App && root.App.ls) lm = root.App.ls.get('lookNowLm:' + n.url, null); } catch { /* */ }
+      out.push({ key: 'al_volo', style: 'comoda', label: String(n.label || 'look al volo').slice(0, 160), avatar: n.url, landmarks: lm, disabled: false, words: [] });
     }
     return out;
+  }
+  // v2d-41: «fammi vedere la maglietta che avevi preso», «mettiti la felpa»: capo o stile chiesto a lei
+  const GARMENT = /\b(magli\w*|t-?shirt|felp\w*|vestit\w*|abit\w*|gonn\w*|minigonn\w*|jeans|pantalon\w*|shorts|top|camic\w*|giacc\w*|giubbott\w*|cappott\w*|tut\w*|leggings|pigiam\w*|vestaglia|maglion\w*|cardigan|blazer|canott\w*|costume|bikini|body|scarp\w*|tacchi|stival\w*|sneakers|cappell\w*|occhiali|sciarp\w*|cuffi\w*|berretto|look|outfit|divisa|grembiul\w*)\b/;
+  function wantNow(text) {
+    const t = String(text || '').toLowerCase();
+    if (!t || /^\s*(sistema|segna|segnala)\b/.test(t)) return false;
+    if (!(ASK.test(t) || ANY.test(t))) return false;
+    return GARMENT.test(t) || ASKABLE.some((s) => STYLE_WORDS[s].test(t)) || ANY.test(t);
   }
   // v2d-37: un look tenuto da PRIMA di v2d-37 (3 ore in memoria del telefono) che non si muove resta «ritirato»: si torna alla scena
   // della visita. Vale per i look senza nessun clip (se il personaggio ha clip) e per gli 8 look vecchi senza clip «parla».
@@ -51,7 +65,9 @@
   function hasClips(ch, key) { return !!(ch && Array.isArray(ch.motionClips) && ch.motionClips.some((c) => c && c.outfit === key)); }
   function hash(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
   // scene a sorpresa: solo quelle con i loro clip (così si muove sempre); se nessuna ha clip, nessuna scena (foto di base)
-  function scenes(ch) { return list(ch).filter((o) => o.style === 'scena' && hasClips(ch, o.key)); }
+  // v2d-41: con il nuovo look principale (lookAuto:false) nessuna scena e nessun cambio da sola: resta la foto principale
+  const autoOff = (ch) => !!(ch && ch.lookAuto === false);
+  function scenes(ch) { if (autoOff(ch)) return []; return list(ch).filter((o) => o.style === 'scena' && hasClips(ch, o.key)); }
   // nuova scena per una nuova visita: diversa dall'ultima, casuale ma riproducibile in prova (rand)
   function pickScene(ch, prevKey, rand) {
     const S = scenes(ch); if (!S.length) return null;
@@ -60,7 +76,7 @@
     return pool[Math.min(pool.length - 1, Math.floor(r * pool.length))].key;
   }
   // look che può scegliersi da sola: vestiti/capelli che si muovono (con clip), non scene né ritirati
-  function ownPicks(ch) { return list(ch).filter((o) => o.style !== 'scena' && o.style !== 'costume' && hasClips(ch, o.key)); }
+  function ownPicks(ch) { if (autoOff(ch)) return []; return list(ch).filter((o) => o.style !== 'scena' && o.style !== 'costume' && hasClips(ch, o.key)); }
   function pickOwn(ch, curKey, rand) {
     const P = ownPicks(ch).filter((o) => o.key !== curKey); if (!P.length) return null;
     const r = typeof rand === 'function' ? rand() : Math.random();
@@ -129,7 +145,7 @@
     const cur = current(ch, t, rand);
     return pickOwn(ch, cur ? cur.key : '', spont.rand);
   }
-  const api = { STYLES, list, ownPicks, midChange, spont, SPONT_VISIT, SPONT_MID, SPONT_GAP_MS, scenes, pickScene, current, key, fromText, HOLD_MS, VISIT_GAP_MS };
+  const api = { wantNow, STYLES, list, ownPicks, midChange, spont, SPONT_VISIT, SPONT_MID, SPONT_GAP_MS, scenes, pickScene, current, key, fromText, HOLD_MS, VISIT_GAP_MS };
   if (typeof module === 'object' && module.exports) { module.exports = api; return; }
   root.Outfits = api;
   if (!root.App) return;
@@ -154,10 +170,48 @@
     },
     // chiamato prima di mandare un messaggio: se è una richiesta di vestiti, lei si cambia. Ritorna il look nuovo o null.
     hear(ch, text) {
-      const r = fromText(ch, text); if (!r) return null;
+      // v2d-41: con la foto principale nuova (lookAuto:false) i vestiti si fanno «al volo» su quella foto, non con i look vecchi
+      if (autoOff(ch)) {
+        const t = String(text || '').toLowerCase();
+        if (BACK.test(t)) { this.set(ch, '', 'base'); return { key: '', label: 'come prima' }; }
+        if (wantNow(t)) this.lookNow(ch, text);
+        return null;
+      }
+      const r = fromText(ch, text);
+      // v2d-41: «fammi vedere la maglietta che avevi preso»: se non è un look salvato, «dammi un minuto» e si cambia al volo
+      // sulla foto principale (dissolvenza al nero). La foto principale e i look salvati non cambiano.
+      if (!r) { if (wantNow(String(text || '').toLowerCase())) this.lookNow(ch, text); return null; }
       if (!r.outfit) { this.set(ch, '', 'scena'); return current(ch) || { key: '', label: 'come prima' }; }
       this.set(ch, r.outfit.key, 'chat');
       return r.outfit;
+    },
+    // v2d-41: «dammi un minuto» -> il telefono chiede la foto con il capo, poi breve dissolvenza al nero e torna vestita così.
+    // Solo dissolvenza (niente animazione del cambio). Se non si può (rifiuto, rete), resta com'è.
+    async lookNow(ch, text) {
+      if (!ch || this._nowBusy || (App.me && App.me.guest)) return false;
+      this._nowBusy = true;
+      try {
+        const r = await App.api(`/api/characters/${ch.id}/look-now`, { method: 'POST', body: { text: String(text || '').slice(0, 200) }, ai: true });
+        if (!r || !AV.test(String(r.url || ''))) return false;
+        let lm = null;
+        try { if (App.autoFace) lm = await App.autoFace(r.url); } catch { /* il labiale resta spento su questa foto */ }
+        if (lm && lm.eyeL) { lm = { ...lm, src: r.url }; try { App.ls.set('lookNowLm:' + r.url, lm); } catch { /* */ } } else lm = null;
+        const now = { url: r.url, label: r.label || String(text).slice(0, 120), at: new Date().toISOString(), landmarks: lm };
+        for (const c of [ch, App.current, ...((App.chars || []).filter((x) => x && x.id === ch.id))]) if (c && c.id === ch.id) c.lookNow = now;
+        await this.fade(() => this.set(App.current && App.current.id === ch.id ? App.current : ch, 'al_volo', 'chat'));
+        this._nowDone = Date.now();
+        try { if (App.rt && App.rt.refreshInstructions) App.rt.refreshInstructions(); } catch { /* */ } // in chiamata sa subito com'è vestita
+        return true;
+      } catch (e) { console.warn('Look al volo non riuscito:', e && e.message); return false; }
+      finally { this._nowBusy = false; }
+    },
+    fade(swap) {
+      return new Promise((done) => {
+        let el = document.getElementById('look-fade');
+        if (!el) { el = document.createElement('div'); el.id = 'look-fade'; el.setAttribute('aria-hidden', 'true'); document.body.appendChild(el); }
+        el.classList.remove('on'); void el.offsetWidth; el.classList.add('on');
+        setTimeout(() => { try { swap(); } catch (e) { console.warn(e); } setTimeout(() => { el.classList.remove('on'); setTimeout(done, 700); }, 450); }, 650);
+      });
     },
     // v2d-36: si è cambiata da sola e non l'ha ancora detto? -> 'lei' (il server le fa accennare «ho voluto cambiare…»)
     pendingNote(ch) { const st = ch && load(ch); return !!(st && st.by === 'lei' && st.told === false && st.until > Date.now()); },

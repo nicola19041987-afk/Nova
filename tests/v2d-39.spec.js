@@ -56,7 +56,7 @@ async function mock(page, L, seen, opts = {}) {
 }
 async function open(page, scene) {
   await page.goto('/');
-  await page.waitForFunction(() => document.body.classList.contains('solo-chat') && App.current && App.avatarConv && App.avatarConv.img && App.avatarConv.img.naturalWidth > 0, null, { timeout: 30000 });
+  await page.waitForFunction(() => (!(App.solo && App.solo._bound && App.current && document.body.classList.contains('solo-home')) || (App.solo.showChat(), 1)) && document.body.classList.contains('solo-chat') && App.current && App.avatarConv && App.avatarConv.img && App.avatarConv.img.naturalWidth > 0, null, { timeout: 30000 });
   await page.evaluate((key) => { App.ls.set('outfit:' + App.current.id, { scene: key, seen: Date.now(), visitAt: Date.now() }); App.ls.set('away:' + App.current.id, null); App.outfits.apply(true); }, scene);
   await page.waitForTimeout(3000); // l avvio finisce (apre la chat) prima di aprire il ritratto
 }
@@ -69,7 +69,8 @@ const visible = (page, sel) => page.evaluate((s) => { const e = document.querySe
 async function rtSetup(page, opts = {}) {
   await page.addInitScript(() => {
     // microfono finto con livello regolabile (window.__micGain: 0 = silenzio/eco filtrata, 0.4 = voce vera)
-    navigator.mediaDevices.getUserMedia = async () => {
+    navigator.mediaDevices.getUserMedia = async (cn) => {
+      if (cn && cn.video && !cn.audio) { const cv = document.createElement('canvas'); cv.width = 8; cv.height = 8; return cv.captureStream(1); } // v2d-41: in videochiamata la camera parte da sola
       const c = new (window.AudioContext || window.webkitAudioContext)(); const o = c.createOscillator(); o.frequency.value = 220; const g = c.createGain(); g.gain.value = 0; window.__micG = g;
       const d = c.createMediaStreamDestination(); o.connect(g); g.connect(d); o.start(); return d.stream;
     };
@@ -197,7 +198,7 @@ test.describe('camera e ✕', () => {
     await page.evaluate(() => { App.ls.set('callEngine', 'classic'); App.call.start('video').catch(() => {}); });
     await page.waitForFunction(() => document.body.classList.contains('in-call'), null, { timeout: 10000 });
     await page.waitForTimeout(1200);
-await page.tap('#call-cam');
+    if (!(await page.evaluate(() => { const v = document.getElementById('call-self'); return v && !v.hidden && v.srcObject; }))) await page.tap('#call-cam'); // v2d-41: la camera parte già accesa
     await page.waitForFunction(() => { const v = document.getElementById('call-self'); return v && !v.hidden && v.srcObject; }, null, { timeout: 5000 });
     await page.tap('#call-min');
     await page.waitForTimeout(800);

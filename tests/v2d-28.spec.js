@@ -48,7 +48,7 @@ test('bolla e sta scrivendo prima del token, senza un giro in più per la parola
   await page.setViewportSize({ width: 390, height: 844 });
   await mockApp(page, 400);
   await page.goto('/');
-  await page.waitForFunction(() => document.body.classList.contains('solo-chat') && App.chat && App.current && (App.kwSet === true || App.kwSet === false));
+  await page.waitForFunction(() => (!(App.solo && App.solo._bound && App.current && document.body.classList.contains('solo-home')) || (App.solo.showChat(), 1)) && document.body.classList.contains('solo-chat') && App.chat && App.current && (App.kwSet === true || App.kwSet === false));
   const snap = await page.evaluate(async () => {
     const calls = [];
     const orig = App.api;
@@ -87,7 +87,7 @@ test('sul ritratto la foto resta ferma: niente toppa della mano né respiro', as
   await mockApp(page, 0);
   await page.goto('/');
   await page.waitForFunction(() => document.body.classList.contains('solo-mode') && App.avatarConv && App.avatarConv.img && App.avatarConv.img.naturalWidth > 0);
-  await page.locator('#back-btn').click();
+  await page.waitForFunction(() => document.body.classList.contains('solo-home')); // v2d-41: dopo l'avvio si è già sulla Home
   await page.locator('#nh-photo').click();
   await page.waitForFunction(() => document.body.classList.contains('solo-portrait') && App.avatarConv && App.avatarConv._drawn !== undefined);
   const samples = [];

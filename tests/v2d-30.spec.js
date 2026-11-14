@@ -47,7 +47,7 @@ test('i clip si incatenano senza buchi, umore ed eventi scelgono il successivo, 
   fs.mkdirSync(dir, { recursive: true });
   await mock(page);
   await page.goto('/');
-  await page.waitForFunction(() => document.body.classList.contains('solo-chat') && App.current && App.avatarConv && App.avatarConv.img && App.avatarConv.img.naturalWidth > 0);
+  await page.waitForFunction(() => (!(App.solo && App.solo._bound && App.current && document.body.classList.contains('solo-home')) || (App.solo.showChat(), 1)) && document.body.classList.contains('solo-chat') && App.current && App.avatarConv && App.avatarConv.img && App.avatarConv.img.naturalWidth > 0);
   await page.locator('#wa-photo').click();
   await page.waitForFunction(() => document.getElementById('stage').classList.contains('has-motion') && App.motionPlayer && App.motionPlayer.playing, null, { timeout: 15000 });
   await page.evaluate(() => App.motionPlayer.mood('allegra'));

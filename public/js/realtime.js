@@ -473,4 +473,10 @@
     lastError: '',
     info: () => (S ? { tokenMs: S.tokenMs, openMs: S.openMs, cfgMs: S.cfgMs, partial: !!S.partial, lastError: S.lastError || '' } : null),
   };
+  // v2d-41: token del tempo reale sempre pronti mentre l'app è aperta (anche dalla Home, non solo dalla chat): la chiamata
+  // parte subito in tempo reale, senza attese. Solo token (nessuna sessione e nessun microfono aperti prima della chiamata).
+  function warmNow() { try { if (document.visibilityState === 'visible' && App.current && !S && App.rt.enabled()) App.rt.prewarm(App.current); } catch { /* */ } }
+  setInterval(warmNow, 140e3);
+  document.addEventListener('visibilitychange', warmNow);
+  App.rt.warmNow = warmNow;
 })();

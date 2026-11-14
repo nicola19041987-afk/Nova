@@ -80,7 +80,7 @@
 
   // ---- fotocamera (solo se attivata in Account; permesso chiesto solo all'uso) ----
   async function capture() {
-    if (!App.ls.get('camOn', false)) { App.toast('Attiva la fotocamera in Impostazioni'); return null; }
+    if (!App.ls.get('camOn', true)) { App.toast('Attiva la fotocamera in Impostazioni'); return null; }
     const v = $('#cam-video');
     try {
       if (!camStream) camStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false });

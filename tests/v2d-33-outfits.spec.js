@@ -90,7 +90,7 @@ test('Nova indossa il look della fascia oraria, cambia su richiesta, suona solo 
   await page.clock.install({ time: new Date(2026, 10, 13, 8, 30, 0) }); // mattina: sportiva
   await page.clock.resume();
   await page.goto('/');
-  await page.waitForFunction(() => document.body.classList.contains('solo-chat') && App.current && App.avatarConv && App.avatarConv.img && App.avatarConv.img.naturalWidth > 0);
+  await page.waitForFunction(() => (!(App.solo && App.solo._bound && App.current && document.body.classList.contains('solo-home')) || (App.solo.showChat(), 1)) && document.body.classList.contains('solo-chat') && App.current && App.avatarConv && App.avatarConv.img && App.avatarConv.img.naturalWidth > 0);
   expect(await page.evaluate(() => App.outfits.key(App.current))).toBe(''); // v2d-35: di mattina nessun cambio da solo
   await page.evaluate(() => App.outfits.set(App.current, 'sportiva_top', 'chat'));
   await page.waitForFunction((a) => App.avatarConv.img && App.avatarConv.img._src === a, OUTFITS[0].avatar, { timeout: 10000 });

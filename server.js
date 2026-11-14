@@ -663,7 +663,8 @@ app.post('/api/avatar-looks', auth, (req, res) => {
   const parsed = lookParse.parse(text, cur.current && cur.current.look);
   if (!parsed.ok) return res.status(422).json({ error: parsed.error, refused: !!parsed.refused });
   const entry = { id: newId(), at: new Date().toISOString(), user: req.user, characterId: ID_RE.test(id) ? id : 'profilo', text, summary: parsed.summary, look: parsed.look };
-  cur.entries.push(entry);
+  // v2d-41: niente più «memoria visiva» (storico di descrizioni di aspetto/età): si tiene solo il testo attuale
+  cur.entries = [];
   cur.current = entry;
   writeJSON(looksPath(req.user, id), cur);
   res.json({ ok: true, entry, entries: cur.entries });
@@ -713,7 +714,7 @@ app.post('/api/avatar-looks/restore', auth, (req, res) => {
   const entry = cur.entries.find((e) => e.id === eid);
   if (!entry) return res.status(404).json({ error: 'Aspetto non trovato' });
   const note = { id: newId(), at: new Date().toISOString(), user: req.user, characterId: entry.characterId, text: entry.text && entry.text !== 'ripristino' ? entry.text : (entry.summary || ''), summary: 'Ripristinato: ' + (entry.summary || entry.text || ''), look: entry.look, restoreOf: entry.id };
-  cur.entries.push(note);
+  cur.entries = []; // v2d-41: niente storico
   cur.current = note;
   writeJSON(looksPath(req.user, id), cur);
   res.json({ ok: true, entry: note, entries: cur.entries });
@@ -1206,9 +1207,9 @@ app.get('/api/characters', auth, (req, res) => {
     const nova = getChars(req.user).filter(liveChar).filter((c) => isNovaCard(c) || c.ready === 'nova-scelta');
     // look di casa (vestaglia, pigiama…) mai per un ospite: solo scene «fuori» e la foto di base
     const okOut = (o) => o && !o.disabled && o.style === 'scena' && !GUEST_HIDDEN_LOOKS.has(o.key);
-    return res.json(nova.slice(0, 1).map((c) => { const outs = outfitsView(c.outfits).filter(okOut); const keys = new Set(outs.map((o) => o.key)); return { id: c.id, name: c.name, ready: c.ready, avatar: c.avatar, voice: c.voice, landmarks: c.landmarks, motionClips: (c.motionClips || []).filter((m) => !m.outfit || keys.has(m.outfit)), outfits: outs, personality: '', style: '', requests: '', look: c.look, appearance: c.appearance }; }));
+    return res.json(nova.slice(0, 1).map((c) => { const outs = outfitsView(c.outfits).filter(okOut); const keys = new Set(outs.map((o) => o.key)); return { id: c.id, name: c.name, ready: c.ready, avatar: c.avatar, voice: c.voice, landmarks: c.landmarks, motionClips: clipsForView(c).filter((m) => !m.outfit || keys.has(m.outfit)), baseLabel: c.baseLabel, lookAuto: c.lookAuto, outfits: outs, personality: '', style: '', requests: '', look: c.look, appearance: c.appearance }; }));
   }
-  const list = getChars(req.user).filter(liveChar).map(({ drawer, ...c }) => ({ ...c, outfits: outfitsView(c.outfits), ...chatCounts(c.id), scenes: cleanScenes(c.scenes), actions: visibleActions(c), seated: visibleSeated(c), adultActionsOk: aiFace(c) })); // il vecchio campo del comodino non viene esposto; i conteggi non si scrivono sul disco. Gli archiviati restano nel file ma non si scelgono.
+  const list = getChars(req.user).filter(liveChar).map(({ drawer, ...c }) => ({ ...c, motionClips: clipsForView(c), outfits: outfitsView(c.outfits), ...chatCounts(c.id), scenes: cleanScenes(c.scenes), actions: visibleActions(c), seated: visibleSeated(c), adultActionsOk: aiFace(c) })); // il vecchio campo del comodino non viene esposto; i conteggi non si scrivono sul disco. Gli archiviati restano nel file ma non si scelgono.
   res.setHeader('X-Version', fileRev(CHARS_FILE())); res.json(list);
 });
 app.get('/api/characters/archived', auth, (req, res) => {
@@ -1605,6 +1606,40 @@ app.post('/api/characters/:id/regenerate', auth, requireActivated, requireKey, a
     if (updated.ready === SOLO_KEY || ch.ready === SOLO_KEY) setImmediate(() => prepSoloMotions(req.aiKey).catch((e) => console.error('Prep dopo look:', e.message)));
     res.json({ character: updated });
   } catch (e) { res.status(502).json({ error: e.message || 'Servizio AI non raggiungibile' }); }
+});
+
+// v2d-41: «fammi vedere la maglietta che avevi preso»: look AL VOLO sulla foto principale (xAI /images/edits), stessa
+// persona, posa e sfondo. Non è una libreria: restano solo gli ultimi 3 file generati così (a1f0…), i più vecchi si tolgono.
+// Mai nudo o intimo (rifiuto prima della chiamata a xAI). La foto principale e i look salvati non cambiano.
+const LOOKNOW_RE = /^a1f0[a-f0-9]{12}\.jpg$/;
+const LOOKNOW_FILE = () => path.join(DATA_DIR, 'look-now.json');
+const LOOKNOW_BLOCK = /\b(nud[aoei]|svestit|spogliat|lingerie|intimo|mutandin|perizoma|tanga|reggiseno|reggicalze|topless|seno nudo|trasparent|sexy|calze a rete|guepi[eè]re|babydoll|sottoveste)\b/i;
+app.post('/api/characters/:id/look-now', auth, requireActivated, requireKey, async (req, res) => {
+  const want = String((req.body && req.body.text) || '').replace(/[\u0000-\u001f<>]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200);
+  if (isGuest(req.user)) return res.status(403).json({ error: 'Non disponibile' });
+  if (!want) return res.status(400).json({ error: 'Cosa deve mettersi?' });
+  if (hasYouth(want) || LOOKNOW_BLOCK.test(want)) return res.status(422).json({ error: 'Questo non lo mostra.', refused: true });
+  const ch = getChars(req.user).find((c) => c.id === req.params.id);
+  if (!ch) return res.status(404).json({ error: 'Personaggio non trovato' });
+  const m = AV_RE.exec(String(ch.avatar || ''));
+  const file = m && avatarPath(m[1]);
+  if (!file || !fs.existsSync(file)) return res.status(400).json({ error: 'Serve la foto principale.' });
+  try {
+    const prompt = `Edit this photo of the same adult woman. Keep exactly the same person: same face and identity, same hair, same body and build, same tattoos, same pose and hands, same framing, same background and light. She is at home and has just changed clothes: replace only her outfit with what is asked (Italian request): «${want}». Everyday clothing, fully clothed, no nudity, no lingerie, realistic photo, no text.`;
+    const gen = await editImage(req.aiKey, prompt, [fileToDataUrl(file)], false);
+    if (!gen.jpg) throw new Error('Formato immagine non previsto');
+    const name = 'a1f0' + crypto.randomBytes(6).toString('hex') + '.jpg';
+    fs.writeFileSync(path.join(avatarDir(), name), gen.buf);
+    const st = readJSON(LOOKNOW_FILE(), { files: [] }) || { files: [] };
+    const files = (Array.isArray(st.files) ? st.files : []).filter((f) => LOOKNOW_RE.test(f)).concat(name);
+    while (files.length > 3) { const old = files.shift(); try { fs.unlinkSync(path.join(avatarDir(), old)); } catch { /* già tolto */ } }
+    writeJSON(LOOKNOW_FILE(), { files });
+    const label = want.slice(0, 120);
+    await patchChar(ch.id, (c) => { c.lookNow = { url: `/api/avatars/${name}`, label, at: new Date().toISOString(), by: req.user }; });
+    res.json({ url: `/api/avatars/${name}`, label });
+  } catch (e) {
+    res.status(502).json({ error: e.message || 'Servizio AI non raggiungibile' });
+  }
 });
 
 // Modifica la foto attiva con il testo dell'utente (xAI /images/edits). La foto precedente resta in lookHistory.
@@ -2057,6 +2092,9 @@ In voce parla in italiano con tono caldo e naturale, come in una telefonata: asc
 <<<FINE CARATTERE NICOLA>>>`;
 // v2d-41: anti-ripetizione chiesta da Nicola (chat, chiamata classica e tempo reale; anche con gli ospiti).
 const NOVA_NO_REPEAT = `NON RIPETERTI (v2d-41, chiesto da Nicola): ogni risposta deve suonare nuova. Varia aperture, saluti, nomignoli e vezzeggiativi, giri di frase e domande. Non riusare la stessa frase, la stessa battuta o la stessa domanda dei turni recenti (guarda le tue ultime risposte e le domande già fatte elencate in queste istruzioni e nella chat), e non ripetere né riassumere quello che è appena stato detto, da te o dall'altra persona: vai avanti nel discorso. Se una domanda l'hai già fatta e non ti hanno risposto, non rifarla uguale: lasciala o cambia argomento.`;
+// v2d-41 (chiesto da Nicola): Nova più attiva e naturale, fa domande di sua iniziativa. E i vestiti «al volo».
+const NOVA_ACTIVE_V41 = `NOVA PRENDE L'INIZIATIVA (v2d-41, chiesto da Nicola): non limitarti a rispondere. Sei curiosa e partecipe: spesso (non sempre) chiudi con una tua domanda vera o una proposta, su di lui o lei, sulla giornata, su cosa state facendo, su qualcosa che ricordi o che ti viene in mente. Ogni tanto cambia tu argomento, racconta qualcosa di tuo o proponi qualcosa da fare insieme. Domande brevi e naturali, una alla volta, mai un interrogatorio e mai la stessa domanda due volte.
+VESTITI AL VOLO: sei a casa con le tue cose. Se ti chiedono di farti vedere con un capo o di metterti qualcosa (es. «fammi vedere la maglietta che avevi preso», «mettiti la felpa»), rispondi in modo breve e complice tipo «dammi un minuto…» (variando le parole) e non descrivere il cambio: l'app ti mostra cambiata poco dopo. Mai nuda, mai intimo.`;
 function usesNovaTone(ch) {
   if (!ch) return false;
   const ready = String(ch.ready || '');
@@ -2186,6 +2224,7 @@ function buildSystem(user, ch, opts = {}) {
     novaToneText(ch),
     usesNovaTone(ch) && NOVA_PERSONA_V41,
     usesNovaTone(ch) && NOVA_NO_REPEAT,
+    usesNovaTone(ch) && NOVA_ACTIVE_V41,
     opts.call && callText(user, opts.callMode),
     opts.realtime && REALTIME_TEXT(user),
     opts.chat && !opts.realtime && BODY_TEXT,
@@ -2636,6 +2675,7 @@ app.post('/api/simli/session', auth, requireActivated, async (req, res) => {
 // v2d-33/36: cosa indossa adesso (look scelto dall'app). Il testo è quello del guardaroba sul server, non quello del telefono.
 // changed: true = cambiata perché gliel'hanno chiesto; 'lei' = v2d-36, si è cambiata da sola (look o capelli) e lo dice lei.
 function outfitNote(ch, key, changed) {
+  if (key === 'al_volo' && ch && ch.lookNow && ch.lookNow.label) return `\n\nTi sei appena cambiata perché te l'hanno chiesto: ora indossi «${String(ch.lookNow.label).slice(0, 120)}» (così ti vedono adesso). Se viene a proposito dillo in modo naturale e breve (es. «eccomi… ti piace?»), senza descriverlo troppo.`;
   const o = key && outfitsView(ch.outfits).find((x) => x && !x.disabled && x.key === motionTok(key));
   if (!o) return '';
   if (o.style === 'scena' && changed !== 'lei') return `\n\nDove sei adesso (lo vede in video): ${o.label}. È la tua giornata: se viene a proposito puoi accennarlo con naturalezza, senza annunciarlo e senza descriverlo ogni volta.`;
@@ -4626,6 +4666,42 @@ function seedReadyChars() {
   seedDarkArchived();
   ensureOnlyNovaVisible();
   if (id) preferUnico(id);
+  dropLookHistoryOnce();
+}
+// v2d-41: la «memoria visiva» (storico delle descrizioni di aspetto/età in Vestiti e fisico, es. «25 anni», «26 anni») occupa
+// spazio e non serve: copia di sicurezza completa in backups/memoria-visiva-v41/, poi resta solo il testo attuale.
+// Chat, ricordi su Nicola e Luisa, PIN e chiavi non si toccano.
+const LOOKS_DROP_KEY = 'avatar_looks_history_drop_v41';
+function dropLookHistoryOnce() {
+  const done = readJSON(MIGRATIONS_FILE, {}) || {};
+  if (done[LOOKS_DROP_KEY]) return;
+  const dst = path.join(DATA_DIR, 'backups', 'memoria-visiva-v41');
+  let files = 0, dropped = 0;
+  for (const u of Object.keys(USERS)) {
+    const dir = path.join(DATA_DIR, 'users', u, 'avatar-looks');
+    if (!fs.existsSync(dir)) continue;
+    for (const name of fs.readdirSync(dir)) {
+      if (!/\.json$/.test(name)) continue;
+      const f = path.join(dir, name);
+      const j = readJSON(f, null);
+      if (!j || !Array.isArray(j.entries) || !j.entries.length) continue;
+      fs.mkdirSync(path.join(dst, u), { recursive: true });
+      fs.copyFileSync(f, path.join(dst, u, name));
+      if (readJSON(path.join(dst, u, name), null) === null) throw new Error('copia di sicurezza della memoria visiva non leggibile');
+      dropped += j.entries.length; files++;
+      writeJSON(f, { current: j.current || null, entries: [] });
+    }
+  }
+  done[LOOKS_DROP_KEY] = { at: new Date().toISOString(), files, dropped, backup: files ? 'backups/memoria-visiva-v41' : '' };
+  writeJSON(MIGRATIONS_FILE, done);
+  if (files) console.log('Memoria visiva tolta (copia in backups/memoria-visiva-v41):', files, 'file,', dropped, 'voci');
+}
+// clip senza look (quelli «di base») fatti su una foto di prima: restano salvati ma non si mostrano sopra la foto nuova
+function clipsForView(c) {
+  const all = Array.isArray(c && c.motionClips) ? c.motionClips : [];
+  if (!c || !c.baseClipsFor || c.baseClipsFor === c.avatar) return all;
+  if (Array.isArray(c.baseClipsHidden)) { const hide = new Set(c.baseClipsHidden); return all.filter((m) => m && (m.outfit || !hide.has(String(m.id || m.url || '')))); }
+  return all.filter((m) => m && m.outfit);
 }
 // v8.6.1: il nome visibile del seed (ready='greta') diventa Nova. Id, foto, voce e movimenti restano quelli già salvati.
 async function renameSeededSoloToNova() {

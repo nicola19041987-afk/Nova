@@ -79,7 +79,7 @@ test('v2d-34: un clip che non parte non sfuma mai nel bianco, resta l immagine e
   test.setTimeout(60000);
   await mock(page, { stallId: 'motion-video-b', stallN: 4 });
   await page.goto('/');
-  await page.waitForFunction(() => document.body.classList.contains('solo-chat') && App.current && App.avatarConv && App.avatarConv.img && App.avatarConv.img.naturalWidth > 0);
+  await page.waitForFunction(() => (!(App.solo && App.solo._bound && App.current && document.body.classList.contains('solo-home')) || (App.solo.showChat(), 1)) && document.body.classList.contains('solo-chat') && App.current && App.avatarConv && App.avatarConv.img && App.avatarConv.img.naturalWidth > 0);
   await page.locator('#wa-photo').tap();
   await page.waitForFunction(() => document.getElementById('stage').classList.contains('has-motion') && App.motionPlayer && App.motionPlayer.playing, null, { timeout: 15000 });
   const r = await page.evaluate(async () => {

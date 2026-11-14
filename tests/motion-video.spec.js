@@ -84,7 +84,7 @@ test('in chiamata e nel ritratto il video gira, la testata resta la foto', async
   });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/');
-  await page.waitForFunction(() => document.body.classList.contains('solo-chat') && App.current);
+  await page.waitForFunction(() => (!(App.solo && App.solo._bound && App.current && document.body.classList.contains('solo-home')) || (App.solo.showChat(), 1)) && document.body.classList.contains('solo-chat') && App.current);
   const chat = await page.evaluate(() => {
     const v = document.getElementById('motion-video');
     const face = document.querySelector('#wa-photo img');

@@ -80,7 +80,7 @@ test('iPhone in Risparmio energetico: aprendo la foto con un tocco Nova si muove
   const dir = path.join(OUT, 'v2d-32-' + testInfo.project.name); fs.mkdirSync(dir, { recursive: true });
   await mock(page, { lowPower: true });
   await page.goto('/');
-  await page.waitForFunction(() => document.body.classList.contains('solo-chat') && App.current && App.avatarConv && App.avatarConv.img && App.avatarConv.img.naturalWidth > 0);
+  await page.waitForFunction(() => (!(App.solo && App.solo._bound && App.current && document.body.classList.contains('solo-home')) || (App.solo.showChat(), 1)) && document.body.classList.contains('solo-chat') && App.current && App.avatarConv && App.avatarConv.img && App.avatarConv.img.naturalWidth > 0);
   await page.locator('#wa-photo').tap();
   await page.waitForFunction(() => document.getElementById('stage').classList.contains('has-motion') && App.motionPlayer && App.motionPlayer.playing, null, { timeout: 15000 });
   const m = await moving(page);
@@ -94,7 +94,7 @@ test('iPhone: il primo clip parte anche se Safari rifiuta i video nascosti', asy
   test.setTimeout(60000);
   await mock(page, { lowPower: false });
   await page.goto('/');
-  await page.waitForFunction(() => document.body.classList.contains('solo-chat') && App.current && App.avatarConv && App.avatarConv.img && App.avatarConv.img.naturalWidth > 0);
+  await page.waitForFunction(() => (!(App.solo && App.solo._bound && App.current && document.body.classList.contains('solo-home')) || (App.solo.showChat(), 1)) && document.body.classList.contains('solo-chat') && App.current && App.avatarConv && App.avatarConv.img && App.avatarConv.img.naturalWidth > 0);
   await page.waitForTimeout(2500); // l'avvio finisce di sistemare la chat
   await page.evaluate(() => App.solo.openPortrait()); // senza tocco: come all'avvio o dopo una chiamata
   expect(await page.evaluate(() => document.body.classList.contains('solo-portrait'))).toBe(true);
@@ -110,7 +110,7 @@ test('se il telefono non legge i clip dalla memoria locale (blob) usa l\'indiriz
   test.setTimeout(60000);
   await mock(page, { blobFail: true });
   await page.goto('/');
-  await page.waitForFunction(() => document.body.classList.contains('solo-chat') && App.current && App.avatarConv && App.avatarConv.img && App.avatarConv.img.naturalWidth > 0);
+  await page.waitForFunction(() => (!(App.solo && App.solo._bound && App.current && document.body.classList.contains('solo-home')) || (App.solo.showChat(), 1)) && document.body.classList.contains('solo-chat') && App.current && App.avatarConv && App.avatarConv.img && App.avatarConv.img.naturalWidth > 0);
   await page.locator('#wa-photo').tap();
   await page.waitForFunction(() => document.getElementById('stage').classList.contains('has-motion') && App.motionPlayer && App.motionPlayer.playing, null, { timeout: 20000 });
   const m = await moving(page);
@@ -125,7 +125,7 @@ test('anteprima: la foto piccola in chat e in Home si muove, nel ritratto lascia
   const dir = path.join(OUT, 'v2d-32-' + testInfo.project.name); fs.mkdirSync(dir, { recursive: true });
   await mock(page, { lowPower: true });
   await page.goto('/');
-  await page.waitForFunction(() => document.body.classList.contains('solo-chat') && App.current && document.querySelector('#wa-photo video.mini-motion'));
+  await page.waitForFunction(() => (!(App.solo && App.solo._bound && App.current && document.body.classList.contains('solo-home')) || (App.solo.showChat(), 1)) && document.body.classList.contains('solo-chat') && App.current && document.querySelector('#wa-photo video.mini-motion'));
   // Risparmio energetico: ferma finché non si tocca lo schermo (si vede la foto), poi parte
   await page.waitForTimeout(1200);
   expect(await page.evaluate(() => document.querySelector('#wa-photo video.mini-motion').paused)).toBe(true);
@@ -158,7 +158,7 @@ test('il secondo video non parte (iPhone): il guardiano passa al clip dopo e Nov
   test.setTimeout(60000);
   await mock(page, { stallId: 'motion-video-b', stallN: 3 });
   await page.goto('/');
-  await page.waitForFunction(() => document.body.classList.contains('solo-chat') && App.current && App.avatarConv && App.avatarConv.img && App.avatarConv.img.naturalWidth > 0);
+  await page.waitForFunction(() => (!(App.solo && App.solo._bound && App.current && document.body.classList.contains('solo-home')) || (App.solo.showChat(), 1)) && document.body.classList.contains('solo-chat') && App.current && App.avatarConv && App.avatarConv.img && App.avatarConv.img.naturalWidth > 0);
   await page.locator('#wa-photo').tap();
   await page.waitForFunction(() => document.getElementById('stage').classList.contains('has-motion') && App.motionPlayer && App.motionPlayer.playing, null, { timeout: 15000 });
   // 10 s di campioni: tempo totale riprodotto e fermo immagine più lungo
@@ -183,7 +183,7 @@ test('Aggiorna (↻) è di nuovo nell\'intestazione di Nova; occhi e bocca sulla
   const dir = path.join(OUT, 'v2d-32-' + testInfo.project.name); fs.mkdirSync(dir, { recursive: true });
   await mock(page, {});
   await page.goto('/');
-  await page.waitForFunction(() => document.body.classList.contains('solo-chat') && App.current && App.avatarConv && App.avatarConv.img && App.avatarConv.img.naturalWidth > 0);
+  await page.waitForFunction(() => (!(App.solo && App.solo._bound && App.current && document.body.classList.contains('solo-home')) || (App.solo.showChat(), 1)) && document.body.classList.contains('solo-chat') && App.current && App.avatarConv && App.avatarConv.img && App.avatarConv.img.naturalWidth > 0);
   const btn = page.locator('#app-refresh');
   await expect(btn).toBeVisible();
   const box = await btn.boundingBox();
@@ -221,7 +221,7 @@ test('iPhone: il microfono è un interruttore anche col permesso lento: un tocco
   });
   await mock(page, {});
   await page.goto('/');
-  await page.waitForFunction(() => document.body.classList.contains('solo-chat') && document.getElementById('vn-mic') && !document.getElementById('vn-mic').hidden);
+  await page.waitForFunction(() => (!(App.solo && App.solo._bound && App.current && document.body.classList.contains('solo-home')) || (App.solo.showChat(), 1)) && document.body.classList.contains('solo-chat') && document.getElementById('vn-mic') && !document.getElementById('vn-mic').hidden);
   const b = await page.locator('#vn-mic').boundingBox();
   const x = b.x + b.width / 2, y = b.y + b.height / 2;
   await page.mouse.move(x, y); await page.mouse.down(); await page.waitForTimeout(150); await page.mouse.up(); // dito alzato per «Consenti»

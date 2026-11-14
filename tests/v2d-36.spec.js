@@ -224,7 +224,7 @@ async function mock(page, L, seen, opts = {}) {
 }
 async function open(page, scene) {
   await page.goto('/');
-  await page.waitForFunction(() => document.body.classList.contains('solo-chat') && App.current && App.avatarConv && App.avatarConv.img && App.avatarConv.img.naturalWidth > 0, null, { timeout: 30000 });
+  await page.waitForFunction(() => (!(App.solo && App.solo._bound && App.current && document.body.classList.contains('solo-home')) || (App.solo.showChat(), 1)) && document.body.classList.contains('solo-chat') && App.current && App.avatarConv && App.avatarConv.img && App.avatarConv.img.naturalWidth > 0, null, { timeout: 30000 });
   await page.evaluate((key) => { App.ls.set('outfit:' + App.current.id, { scene: key, seen: Date.now(), visitAt: Date.now() }); App.ls.set('away:' + App.current.id, null); App.outfits.apply(true); }, scene);
   await page.waitForTimeout(3000); // l avvio finisce (apre la chat) prima di aprire il ritratto
 }
@@ -460,6 +460,7 @@ test('videochiamata pulita: niente sottotitoli/trascrizione, niente sfumature, s
   test.skip(!HAS_LIB, 'libreria v2d-36 solo in locale');
   const L = lib(); const seen = { chat: [] };
   await page.setViewportSize({ width: 390, height: 844 });
+  await page.addInitScript(() => { navigator.mediaDevices.getUserMedia = async (c) => { if (c && c.video) { const cv = document.createElement('canvas'); cv.width = 8; cv.height = 8; return cv.captureStream(1); } const a = new AudioContext(); return a.createMediaStreamDestination().stream; }; }); // v2d-41: microfono che parte (senza, compare l'avviso «Riprova»)
   await mock(page, L, seen);
   await open(page, 'nova_pigiama');
   await page.evaluate(() => { App.call.start('video').catch(() => {}); });
@@ -474,14 +475,14 @@ test('videochiamata pulita: niente sottotitoli/trascrizione, niente sfumature, s
     const buttons = [...ui.querySelectorAll('button')].filter(vis).map((b) => b.id);
     const texts = [];
     const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-    while (w.nextNode()) { const n = w.currentNode; const t = n.textContent.trim(); const e = n.parentElement; if (!t || !e || e.closest('button,script,style,template')) continue; if (vis(e)) texts.push((e.id || e.className || e.tagName) + ': ' + t.slice(0, 60)); }
+    while (w.nextNode()) { const n = w.currentNode; const t = n.textContent.trim(); const e = n.parentElement; if (!t || !e || e.closest('button,script,style,template')) continue; if (/^call-(timer|state)$/.test(e.id)) continue; /* v2d-41: stato e tempo della chiamata richiesti da Nicola (non sono sottotitoli) */ if (vis(e)) texts.push((e.id || e.className || e.tagName) + ': ' + t.slice(0, 60)); }
     const grad = [ui, ...ui.querySelectorAll('*'), document.getElementById('stage')].filter(vis).filter((e) => /gradient/.test(getComputedStyle(e).backgroundImage) || /gradient/.test(getComputedStyle(e, '::before').backgroundImage) || /gradient/.test(getComputedStyle(e, '::after').backgroundImage)).map((e) => e.id || e.className);
     return { buttons, texts, grad, cap: document.getElementById('call-caption').textContent };
   });
   expect(r.cap).toBe('');
   expect(r.texts, 'testo visibile sopra la videochiamata').toEqual([]);
   expect(r.grad).toEqual([]);
-  expect(r.buttons.sort()).toEqual(['call-cam', 'call-end', 'call-min', 'call-mute']);
+  expect(r.buttons.filter((b) => b !== 'call-flip' && b !== 'call-badge').sort()).toEqual(['call-cam', 'call-end', 'call-min', 'call-mute']); // v2d-41: con la camera accesa c'è anche «gira», e l'etichetta del collegamento
   fs.mkdirSync(OUT, { recursive: true });
   await page.screenshot({ path: path.join(OUT, `call-clean-${test.info().project.name}.png`) });
 });
@@ -564,7 +565,7 @@ test('Home pulita: niente testi vecchi (nascosti, non tolti), foto grande del lo
   await expect(page.locator('#nh-look')).toContainText('palestra');
   for (const s of ['#nh-photo', '#nh-q-chat', '#nh-q-video', '#nh-q-voice']) expect(await visible(page, s), s).toBe(true);
   const ph = await page.evaluate(() => document.querySelector('#nh-photo .nh-avatar').getBoundingClientRect().height);
-  expect(ph).toBeGreaterThan(250);
+  expect(ph).toBeGreaterThan(200); // v2d-41: foto della Home un po' più bassa perché tutto il menu entri nello schermo
   // in fondo si arriva (Impostazioni), senza tasti tagliati ai lati
   await page.locator('#dock-settings').scrollIntoViewIfNeeded();
   expect(await visible(page, '#dock-settings')).toBe(true);

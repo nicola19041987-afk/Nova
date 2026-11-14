@@ -24,7 +24,7 @@ async function openChat(page) {
   });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/');
-  await page.waitForFunction(() => document.body.classList.contains('solo-chat') && App.current);
+  await page.waitForFunction(() => (!(App.solo && App.solo._bound && App.current && document.body.classList.contains('solo-home')) || (App.solo.showChat(), 1)) && document.body.classList.contains('solo-chat') && App.current);
 }
 
 test('il campo torna a una riga e il microfono non ascolta da solo', async ({ page }) => {

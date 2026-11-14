@@ -1403,3 +1403,94 @@ body.solo-mode.in-call:not(.call-min) #view-app #tab-conv #stage.call.nv-voiceca
 }
 body.solo-mode.in-call:not(.call-min) #view-app #tab-conv #stage.call.nv-voicecall #motion-video,
 body.solo-mode.in-call:not(.call-min) #view-app #tab-conv #stage.call.nv-voicecall #motion-video-b{z-index:1!important} /* sotto il canvas (il lettore mette z-index 3/4 in linea) */
+
+/* v2d-41: Home che entra nello schermo dell'iPhone senza scorrere (foto più bassa, righe più compatte),
+   descrizione del look intera (va a capo), elenco dei Gesti, stato della chiamata visibile (Ti ascolto, tempo, ⚡). */
+body.solo-mode #nh-photo .nh-avatar{height:clamp(150px,27vh,300px)}
+body.solo-mode #nh-photo .nh-id{padding:8px 14px 10px}
+body.solo-mode #nh-photo .nh-id b{font-size:18px}
+body.solo-mode #nh-photo .nh-id small{font-size:13px}
+.nh-look{white-space:normal!important;text-overflow:clip!important;overflow:visible!important;display:block}
+body.solo-mode .nova-home .nh-profile,body.solo-mode .nova-home .nh-group{margin-bottom:10px}
+body.solo-mode .nova-home .nh-quick{margin-bottom:10px;gap:8px}
+body.solo-mode .nova-home .nh-quick button{min-height:52px;padding:6px 4px}
+body.solo-mode .nova-home .nh-quick button i{font-size:19px}
+body.solo-mode .nova-home .nh-group button{min-height:42px;padding:5px 12px}
+body.solo-mode .nova-home .nh-ic{width:27px;height:27px}
+@media (max-height:740px){
+  body.solo-mode #nh-photo .nh-avatar{height:clamp(120px,22vh,200px)}
+  body.solo-mode .nova-home .nh-group button{min-height:38px;padding:3px 12px}
+  body.solo-mode .nova-home .nh-quick button{min-height:46px}
+  body.solo-mode .nova-home .nh-profile,body.solo-mode .nova-home .nh-group,body.solo-mode .nova-home .nh-quick{margin-bottom:8px}
+}
+.ml-list{list-style:none;margin:8px 0 16px;padding:0;background:#fff;border-radius:12px;overflow:hidden}
+.ml-list li{padding:9px 12px;display:flex;flex-direction:column;gap:2px}
+.ml-list li + li{box-shadow:inset 0 1px 0 #E4E7EB}
+.ml-list .ml-top{display:flex;align-items:baseline;gap:8px}
+.ml-list .ml-top b{font-weight:600;font-size:15px;color:#1A1D21}
+.ml-list .ml-use{margin-left:auto;color:#475467;font-size:13px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.ml-list small{color:#667085;font-size:12.5px}
+/* stato della chiamata: piccola etichetta in alto a sinistra (non sono sottotitoli: niente testo di quello che dice) */
+body.solo-mode.in-call:not(.call-min) #call-ui .call-top{
+  position:fixed!important;top:calc(env(safe-area-inset-top) + 12px)!important;left:calc(env(safe-area-inset-left) + 12px)!important;
+  right:auto!important;bottom:auto!important;width:auto!important;max-width:calc(100vw - 90px)!important;
+  display:flex!important;flex-direction:row!important;flex-wrap:wrap;align-items:center!important;gap:6px!important;
+  padding:0!important;margin:0!important;background:none!important;z-index:7!important;pointer-events:none
+}
+body.solo-mode.in-call:not(.call-min) #call-ui .call-top > #call-timer,
+body.solo-mode.in-call:not(.call-min) #call-ui .call-top > #call-state,
+body.solo-mode.in-call:not(.call-min) #call-ui .call-top > #call-badge:not([hidden]){
+  display:inline-flex!important;align-items:center;height:24px;padding:0 9px!important;margin:0!important;border-radius:12px;border:0;
+  background:rgba(0,0,0,.42)!important;color:#fff!important;font-size:12px!important;line-height:1!important;font-weight:600;opacity:1!important;
+  -webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);white-space:nowrap;max-width:62vw;overflow:hidden;text-overflow:ellipsis
+}
+body.solo-mode.in-call:not(.call-min) #call-ui .call-top > #call-badge:not([hidden]){pointer-events:auto}
+body.solo-mode.in-call:not(.call-min) #call-ui .call-top > #call-state{order:1}
+body.solo-mode.in-call:not(.call-min) #call-ui .call-top > #call-timer{order:2;font-variant-numeric:tabular-nums}
+body.solo-mode.in-call:not(.call-min) #call-ui .call-top > #call-badge{order:3}
+body.solo-mode.in-call:not(.call-min) #call-ui .call-top > .call-head-actions{pointer-events:auto}
+@media (max-height:740px){
+  body.solo-mode #nh-photo .nh-avatar{height:clamp(120px,21vh,180px)}
+  body.solo-mode #nh-photo #nh-status{display:none}
+  body.solo-mode #nh-photo .nh-id{padding:6px 14px 8px}
+  body.solo-mode .nova-home .nh-group button{min-height:37px}
+}
+@media (max-height:740px){
+  body.solo-mode #nh-photo .nh-avatar{height:clamp(110px,18vh,170px)}
+  body.solo-mode .nova-home .nh-quick button{min-height:44px;padding:4px}
+  body.solo-mode .nova-home .nh-quick button i{font-size:17px}
+}
+@media (max-height:600px){
+  body.solo-mode #nh-photo .nh-avatar{height:84px}
+  body.solo-mode #nh-photo .nh-id{padding:4px 14px 6px}
+  body.solo-mode .nova-home .nh-group button{min-height:34px;padding:2px 12px}
+  body.solo-mode .nova-home .nh-ic{width:24px;height:24px;font-size:13px}
+  body.solo-mode .nova-home .nh-quick button{min-height:36px;flex-direction:row;gap:6px}
+  body.solo-mode .nova-home .nh-profile,body.solo-mode .nova-home .nh-group,body.solo-mode .nova-home .nh-quick{margin-bottom:6px}
+}
+@media (max-height:600px){ body.solo-mode #nh-photo .nh-avatar{height:68px} body.solo-mode #nh-photo .nh-id b{font-size:16px} }
+/* v2d-41: cambia fotocamera visibile accanto a 📷 quando la fotocamera è accesa */
+body.solo-mode.in-call:not(.call-min) #stage.call:not(.voice) #call-flip:not([hidden]){display:inline-flex!important;align-items:center;justify-content:center;width:48px;height:48px;padding:0}
+/* v2d-41: barra in basso: campo con 📎/foto, 🎙️ vocale e invio DENTRO; poi videochiamata e Home */
+#chat-form .cb-pill{display:flex;align-items:flex-end;flex:1 1 auto;min-width:0;background:#fff;border-radius:22px;padding:0 2px;gap:0}
+#chat-form .cb-pill #chat-input{background:transparent!important;border:0!important;flex:1 1 auto!important;min-width:0}
+body.solo-mode #tab-conv #chat-form .cb-pill > button{width:38px!important;height:40px!important;min-width:38px!important;flex:0 0 38px!important;background:transparent!important;border-radius:50%}
+body.solo-mode #tab-conv #chat-form .cb-pill > #vn-mic{color:#00a884!important;background:transparent!important;font-size:20px}
+body.solo-mode #tab-conv #chat-form .cb-pill > #vn-mic.rec{background:#e0303f!important;color:#fff!important}
+body.solo-mode #tab-conv #chat-form .cb-pill > button[type="submit"]{color:#fff!important;background:#00a884!important;width:34px!important;height:34px!important;min-width:34px!important;flex-basis:34px!important;margin:3px 3px 3px 0}
+body.solo-mode #tab-conv #chat-form > .cb-side{width:42px!important;height:42px!important;min-width:42px!important;flex:0 0 42px!important;border-radius:50%!important;background:transparent!important;color:#3b4a54!important;display:inline-flex;align-items:center;justify-content:center;padding:0}
+#chat-form > .cb-side{display:none}
+body.solo-mode #chat-form > .cb-side{display:inline-flex}
+body.solo-mode.in-call #chat-form > .cb-side{display:none!important}
+#look-bar #look-history{display:none!important} /* v2d-41: niente memoria visiva */
+/* v2d-41: cambio vestiti «al volo»: breve dissolvenza al nero sopra tutto */
+#look-fade{position:fixed;inset:0;background:#000;opacity:0;pointer-events:none;z-index:9999;transition:opacity .6s ease}
+#look-fade.on{opacity:1;pointer-events:auto}
+/* v2d-41: avviso del microfono in chiamata (solo quando non parte), con «Riprova» */
+.call-micfix { position: absolute; left: 12px; right: 12px; bottom: calc(118px + env(safe-area-inset-bottom, 0px)); z-index: 60; display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 14px; background: rgba(20, 20, 20, 0.88); color: #fff; font-size: 14px; line-height: 1.3; box-shadow: 0 4px 18px rgba(0,0,0,.35); pointer-events: auto; }
+.call-micfix[hidden] { display: none; }
+.call-micfix .cmf-text { margin: 0; flex: 1; }
+.call-micfix .cmf-btn { flex: none; border: 0; border-radius: 999px; padding: 8px 14px; background: #25d366; color: #062; font-weight: 700; font-size: 14px; }
+/* v2d-41: la barra di registrazione resta dentro il campo e non copre 🎙️ (secondo tocco = invia) né ➤ */
+#chat-form .cb-pill{position:relative}
+#chat-form .cb-pill > .vn-hud{left:4px;right:80px;bottom:2px;padding:6px 10px}

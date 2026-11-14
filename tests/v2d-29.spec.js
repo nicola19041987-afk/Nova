@@ -45,7 +45,7 @@ test('mentre parla la bocca si muove sulla foto ferma, il video idle torna dopo'
   fs.mkdirSync(dir, { recursive: true });
   await mock(page);
   await page.goto('/');
-  await page.waitForFunction(() => document.body.classList.contains('solo-chat') && App.current && App.avatarConv && App.avatarConv.img && App.avatarConv.img.naturalWidth > 0);
+  await page.waitForFunction(() => (!(App.solo && App.solo._bound && App.current && document.body.classList.contains('solo-home')) || (App.solo.showChat(), 1)) && document.body.classList.contains('solo-chat') && App.current && App.avatarConv && App.avatarConv.img && App.avatarConv.img.naturalWidth > 0);
   await page.locator('#wa-photo').click();
   await page.waitForFunction(() => {
     const v = document.getElementById('motion-video');

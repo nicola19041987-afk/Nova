@@ -15,7 +15,7 @@ App.account = {
     $('#set-autosave').checked = App.settings.autoSave; $('#set-export').checked = App.settings.allowExport;
     $('#set-video-model').value = App.settings.videoModel || ''; $('#set-video-duration').value = App.settings.videoDuration || 6;
     $('#video-info').textContent = App.me.videoEnabled ? `Modello predefinito del server: ${App.me.videoModel}` : 'Video non configurato sul server (VIDEO_PATH vuoto).';
-    $('#set-mic').checked = App.ls.get('micOn', false); $('#set-cam').checked = App.ls.get('camOn', false);
+    $('#set-mic').checked = App.ls.get('micOn', true); $('#set-cam').checked = App.ls.get('camOn', true);
     $('#set-gestures').checked = App.ls.get('gestures', true); $('#set-learn-gestures').checked = App.ls.get('handGestures', false); $('#set-mirror-moves').checked = App.ls.get('mirrorMoves', false);
     App.applyDevicePrefs();
     // modalità adulti (per utente, solo dopo il consenso vocale). v8.3.1: subito dopo le impostazioni, così un errore
@@ -76,7 +76,9 @@ App.account = {
 };
 // Applica le preferenze dispositivo (fotocamera/microfono spenti di default)
 App.applyDevicePrefs = () => {
-  const cam = App.ls.get('camOn', false), mic = App.ls.get('micOn', false);
+  // v2d-41 (Nicola: «tutte le telecamere aperte e tutto aperto»): fotocamera e microfono attivi, una volta sola anche dove erano spenti
+  if (!App.ls.get('v41open', false)) { App.ls.set('camOn', true); App.ls.set('micOn', true); App.ls.set('v41open', true); }
+  const cam = App.ls.get('camOn', true), mic = App.ls.get('micOn', true);
   $$('.cam-only').forEach((el) => { el.hidden = !cam; });
   $('#mic-btn').hidden = !mic;
   if (App.avatarConv) App.avatarConv.gesturesOn = App.ls.get('gestures', true);
@@ -132,7 +134,7 @@ $('#set-gestures').addEventListener('change', (e) => { App.ls.set('gestures', e.
 // Gesti delle mani / imitazione: MediaPipe locale (public/js/motion.js), attivi nella modalità Presenza. Servono anche "Usa la fotocamera".
 $('#set-learn-gestures').addEventListener('change', (e) => {
   App.ls.set('handGestures', e.target.checked);
-  $('#learn-gestures-info').textContent = e.target.checked ? (App.ls.get('camOn', false) ? 'Attivo: apri una chat e tocca 📷 Presenza. Tutto sul telefono, nessun video inviato.' : 'Attiva anche "Usa la fotocamera" qui sopra, poi apri 📷 Presenza in chat.') : 'Disattivato.';
+  $('#learn-gestures-info').textContent = e.target.checked ? (App.ls.get('camOn', true) ? 'Attivo: apri una chat e tocca 📷 Presenza. Tutto sul telefono, nessun video inviato.' : 'Attiva anche "Usa la fotocamera" qui sopra, poi apri 📷 Presenza in chat.') : 'Disattivato.';
 });
 $('#set-mirror-moves').addEventListener('change', (e) => { App.ls.set('mirrorMoves', e.target.checked); });
 $('#motion-style-reset').addEventListener('click', () => { if (!App.motionStyle) return; App.motionStyle.reset(); App.applyStyle(); App.toast('Stile di movimento dimenticato (solo su questo telefono)'); });

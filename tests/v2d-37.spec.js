@@ -56,7 +56,7 @@ async function mock(page, L, seen, opts = {}) {
 }
 async function open(page, scene) {
   await page.goto('/');
-  await page.waitForFunction(() => document.body.classList.contains('solo-chat') && App.current && App.avatarConv && App.avatarConv.img && App.avatarConv.img.naturalWidth > 0, null, { timeout: 30000 });
+  await page.waitForFunction(() => (!(App.solo && App.solo._bound && App.current && document.body.classList.contains('solo-home')) || (App.solo.showChat(), 1)) && document.body.classList.contains('solo-chat') && App.current && App.avatarConv && App.avatarConv.img && App.avatarConv.img.naturalWidth > 0, null, { timeout: 30000 });
   await page.evaluate((key) => { App.ls.set('outfit:' + App.current.id, { scene: key, seen: Date.now(), visitAt: Date.now() }); App.ls.set('away:' + App.current.id, null); App.outfits.apply(true); }, scene);
   await page.waitForTimeout(3000); // l avvio finisce (apre la chat) prima di aprire il ritratto
 }
@@ -161,7 +161,7 @@ test('tempo reale di serie: chi era rimasto su «classica" passa una volta al te
   await page.evaluate(() => App.call.end());
 });
 
-test('camera nella videochiamata: tasto solo icona, anteprima piccola di sé, un tocco accende, un altro spegne', async ({ page }) => {
+test('camera nella videochiamata: tasto solo icona, anteprima piccola di sé, parte accesa (v2d-41), un tocco spegne, uno riaccende', async ({ page }) => {
   test.skip(!HAS_LIB, 'libreria v2d-36 solo in locale');
   const L = lib(); const seen = { chat: [] };
   await page.addInitScript(() => {
@@ -175,7 +175,11 @@ test('camera nella videochiamata: tasto solo icona, anteprima piccola di sé, un
   await page.waitForTimeout(1200);
   expect(await visible(page, '#call-cam')).toBe(true);
   expect(await page.evaluate(() => document.getElementById('call-cam').textContent.replace(/\s/g, '').replace(/\uFE0F/g, ''))).toBe('📷'); // solo icona
-  expect(await visible(page, '#call-self')).toBe(false); // camera spenta all inizio
+  // v2d-41 (Nicola: «tutte le telecamere aperte»): in videochiamata la camera parte già accesa; un tocco spegne, uno riaccende
+  await page.waitForFunction(() => { const v = document.getElementById('call-self'); return v && !v.hidden && v.srcObject; }, null, { timeout: 5000 });
+  await page.click('#call-cam');
+  await page.waitForTimeout(400);
+  expect(await visible(page, '#call-self')).toBe(false);
   await page.click('#call-cam');
   await page.waitForFunction(() => { const v = document.getElementById('call-self'); return v && !v.hidden && v.srcObject; }, null, { timeout: 5000 });
   expect(await visible(page, '#call-self')).toBe(true);

@@ -28,7 +28,7 @@ async function boot(page) {
 }
 
 async function fill(page) {
-  await page.waitForFunction(() => document.body.classList.contains('solo-chat') && document.getElementById('title').textContent === 'Nova' && document.getElementById('chat-form'));
+  await page.waitForFunction(() => (!(App.solo && App.solo._bound && App.current && document.body.classList.contains('solo-home')) || (App.solo.showChat(), 1)) && document.body.classList.contains('solo-chat') && document.getElementById('title').textContent === 'Nova' && document.getElementById('chat-form'));
   await page.evaluate(() => {
     const stop = (av) => { if (!av) return; try { cancelAnimationFrame(av._raf); } catch (e) {} av._raf = 0; av.breathOn = false; };
     if (window.App) { stop(App.avatarConv); stop(App.avatarEditor); stop(App.avatarPresence); }

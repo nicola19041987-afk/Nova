@@ -31,7 +31,7 @@ test('il parser rifiuta il suggerito e accetta genere, corpo e abiti ripetuti', 
   expect(cur.height).toBeGreaterThan(1);
 });
 
-test('lo storico per personaggio si accumula, si ripristina e non cancella un rifiuto', async ({ request }) => {
+test('v2d-41: niente storico (memoria visiva): resta solo il testo attuale e un rifiuto non lo cancella', async ({ request }) => {
   let r = await request.post('/api/pin/setup', { data: { user: 'nicola', pin: '1357' }, headers: HEAD });
   if (r.status() === 409) r = await request.post('/api/login', { data: { user: 'nicola', pin: '1357' }, headers: HEAD });
   expect(r.ok(), await r.text()).toBeTruthy();
@@ -40,17 +40,12 @@ test('lo storico per personaggio si accumula, si ripristina e non cancella un ri
   const b = await request.post('/api/avatar-looks', { data: { characterId: CID, text: 'maglione verde' }, headers: HEAD });
   expect(b.ok()).toBeTruthy();
   const body = await b.json();
-  expect(body.entries.length).toBeGreaterThanOrEqual(2);
+  expect(body.entries.length).toBe(0);
   expect(body.entry.look.top).toEqual([46, 110, 72]);
   expect(body.entry.look.bottom).toEqual([36, 74, 140]);
   const no = await request.post('/api/avatar-looks', { data: { characterId: CID, text: 'lingerie nera' }, headers: HEAD });
   expect(no.status()).toBe(422);
   const kept = await (await request.get('/api/avatar-looks?character=' + CID)).json();
-  expect(kept.entries.length).toBe(body.entries.length);
+  expect(kept.entries.length).toBe(0);
   expect(kept.current.look.top).toEqual([46, 110, 72]);
-  const back = await request.post('/api/avatar-looks/restore', { data: { characterId: CID, id: body.entries[0].id }, headers: HEAD });
-  expect(back.ok(), await back.text()).toBeTruthy();
-  const restored = await back.json();
-  expect(restored.entry.look.top).toEqual([22, 22, 24]);
-  expect(restored.entries.length).toBe(body.entries.length + 1);
 });

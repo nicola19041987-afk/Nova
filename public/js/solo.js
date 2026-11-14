@@ -354,7 +354,7 @@
     full: false,
     async boot() {
       document.body.classList.add('solo-mode');
-      if (!document.body.classList.contains('solo-home')) document.body.classList.add('solo-chat');
+      if (!document.body.classList.contains('solo-chat')) document.body.classList.add('solo-home'); // v2d-41: si parte dalla Home
       drop3d();
       this.bindOnce();
       const dock = $('#solo-dock'); if (dock) dock.hidden = false;
@@ -382,7 +382,7 @@
       if (App.isAdmin && App.isAdmin() && App.key() && !(App.me && App.me.serverKey)) {
         App.api('/api/solo/prep', { method: 'POST', ai: true, body: { store: true } }).catch(() => {});
       }
-      this.showChat();
+      if (!document.body.classList.contains('solo-chat')) this.showHome(); // v2d-41: all'avvio e dopo il PIN si arriva sulla Home (se nel frattempo si è aperta la chat, si resta lì)
       showStage(ch);
       const rt = $('#solo-rt'); if (rt) rt.hidden = false;
       if (App.looks && App.looks.boot) App.looks.boot();
@@ -535,6 +535,9 @@
       });
       // v2d-36: Home nuova: tre tasti rapidi (chat, videochiamata, voce) sotto la foto
       const qc = $('#nh-q-chat'); if (qc) qc.addEventListener('click', (e) => { e.preventDefault(); this.showChat(); });
+      // v2d-41: barra in basso della chat: videochiamata e Home in fondo, dopo il campo
+      const cv = $('#cb-video'); if (cv) cv.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); if (App.call && App.call.minimized && document.body.classList.contains('call-min') && App.call.restore) { App.call.restore(); return; } if (App.call && App.call.start) App.call.start('video'); });
+      const chm = $('#cb-home'); if (chm) chm.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); this.showHome(); });
       const qv = $('#nh-q-video'); if (qv) qv.addEventListener('click', (e) => { e.preventDefault(); if (App.call && App.call.minimized && document.body.classList.contains('call-min') && App.call.restore) { App.call.restore(); return; } const go = $('#nh-video-go'); if (go) go.click(); }); // v2d-37: chiamata ridotta -> si torna alla chiamata
       // v2d-37: «Voce» dalla Home = chiamata vocale vera (tempo reale di serie, riserva classica), come «Video»
       const voiceCall = () => { if (App.call && App.call.minimized && App.call.restore) { App.call.restore(); return; } try { const p = App.call.start('voice'); if (p && p.catch) p.catch((err) => App.toast((err && err.message) || 'Chiamata vocale non avviata')); } catch (err) { App.toast((err && err.message) || 'Chiamata vocale non avviata'); } };
@@ -594,7 +597,7 @@
         else slot.textContent = ((ch && ch.name) || 'N').slice(0, 1);
       }
       // v2d-36: il look di adesso, in parole (scena o vestito), sotto il nome
-      const lk = $('#nh-look'); if (lk) { let t = ''; try { const o = ch && App.outfits && App.outfits.current ? App.outfits.current(ch) : null; if (o && o.label) t = o.label.charAt(0).toUpperCase() + o.label.slice(1); } catch { /* */ } lk.textContent = t; lk.hidden = !t; }
+      const lk = $('#nh-look'); if (lk) { let t = ''; try { const o = ch && App.outfits && App.outfits.current ? App.outfits.current(ch) : null; if (o && o.label) { t = o.label.charAt(0).toUpperCase() + o.label.slice(1); if (t.length >= 80) { if (/\s$/.test(t)) t = t.trimEnd(); else { const c = t.lastIndexOf(', '); t = c > 30 ? t.slice(0, c) : t.slice(0, t.lastIndexOf(' ')); } t = t.replace(/(\s+(di|e|a|da|in|con|su|per|il|la|lo|le|i|gli|un|una|del|della|dei))+\s*$/i, '').replace(/[\s,:;]+$/, ''); } } /* v2d-41: le descrizioni salvate tagliate a 80 caratteri finiscono sull'ultima parte intera */ else if (!o && ch && ch.baseLabel) t = String(ch.baseLabel); } catch { /* */ } lk.textContent = t; lk.hidden = !t; }
       const count = window.MotionLib && MotionLib.count;
       const g = $('#nh-gesti-count'); if (g) g.textContent = count ? String(count) : '';
       this.showPage('list');
@@ -603,6 +606,7 @@
       const page = name || 'list';
       this._nh = page;
       document.querySelectorAll('#look-bar [data-nh-page]').forEach((el) => { el.hidden = el.dataset.nhPage !== page; });
+      if (page === 'gesti' && window.MotionLib && MotionLib.paintList) MotionLib.paintList(); // v2d-41: elenco aggiornato
       const titles = { carattere: 'Carattere', look: 'Vestiti e fisico', richieste: 'Richieste libere', gesti: 'Gesti', video: 'Videochiamata', cam: 'Fotocamera', voce: 'Voce' };
       const title = $('#title');
       const ch = soloChar();
@@ -646,6 +650,7 @@
     showHome() {
       document.body.classList.add('solo-home');
       document.body.classList.remove('solo-chat', 'solo-portrait');
+      if (App.rt && App.rt.warmNow) setTimeout(App.rt.warmNow, 300); // v2d-41: chiamata in tempo reale pronta anche dalla Home
       if (this.full) this.toggleFull(false);
       const conv = $('#tab-conv'); if (conv) conv.hidden = false;
       const acc = $('#tab-account'); if (acc) acc.hidden = true;
