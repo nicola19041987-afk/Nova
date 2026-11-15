@@ -248,8 +248,18 @@ const MIGRATION_MARK = () => path.join(sharedDir(), 'migration.json');
 const SESS_FILE = path.join(DATA_DIR, 'sessions.json');
 let sessions = readJSON(SESS_FILE, {});
 const saveSessions = () => writeJSON(SESS_FILE, sessions);
+// v2d-44: al massimo MAX_SESSIONS_PER_USER sessioni per profilo; si tolgono le più vecchie, mai quella appena aperta (il telefono)
+const MAX_SESSIONS_PER_USER = 20;
+function trimSessionsOf(user, keep) {
+  const mine = Object.entries(sessions).filter(([k, s]) => s && s.user === user && k !== keep)
+    .sort((a, b) => String(b[1].created || '').localeCompare(String(a[1].created || '')));
+  let n = 0;
+  for (const [k] of mine.slice(keep ? MAX_SESSIONS_PER_USER - 1 : MAX_SESSIONS_PER_USER)) { delete sessions[k]; n++; }
+  return n;
+}
 function pruneSessions() { const now = Date.now(); for (const [k, s] of Object.entries(sessions)) if (s.exp < now) delete sessions[k]; saveSessions(); }
 pruneSessions();
+{ let n = 0; for (const u of new Set(Object.values(sessions).map((s) => s && s.user).filter(Boolean))) n += trimSessionsOf(u, null); if (n) { saveSessions(); console.log(`Sessioni vecchie chiuse all'avvio: ${n} (max ${MAX_SESSIONS_PER_USER} per profilo)`); } }
 setInterval(pruneSessions, 60 * 60 * 1000).unref();
 
 // ---------- profili sospesi (v2d-32) ----------
@@ -271,6 +281,8 @@ const isActivated = (u) => !!(getConsent(u) || {}).activatedAt;
 const app = express();
 app.disable('x-powered-by');
 app.set('trust proxy', 1);
+// v2d-44: controllo di salute leggero per Render (niente login, niente dati, niente chiamate esterne)
+app.get('/healthz', (req, res) => { res.setHeader('Cache-Control', 'no-store'); res.json({ ok: true }); });
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Referrer-Policy', 'no-referrer');
@@ -402,6 +414,7 @@ if (E2E_HARNESS) {
 function startSession(res, user) {
   const token = crypto.randomBytes(32).toString('hex');
   sessions[token] = { user, exp: Date.now() + SESSION_DAYS * 864e5, created: new Date().toISOString() };
+  trimSessionsOf(user, token);
   saveSessions();
   res.cookie(COOKIE, token, { httpOnly: true, secure: COOKIE_SECURE, sameSite: 'strict', maxAge: SESSION_DAYS * 864e5, path: '/' });
 }

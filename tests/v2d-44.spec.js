@@ -300,3 +300,52 @@ test('v2d-44: la foto di Eris diventa la canotta azzurra, con bocca e occhi pron
     expect(s.log()).not.toContain('Foto principale di Eris: canotta azzurra');
   } finally { s.child.kill(); ai.close(); }
 });
+
+// v2d-44: /healthz leggero per Render, e al massimo 20 sessioni per profilo senza buttare fuori l'ultima (il telefono)
+test('v2d-44: /healthz risponde {ok:true} senza login; le sessioni per profilo restano al massimo 20 e l\'ultima resta dentro', async ({ playwright }) => {
+  test.setTimeout(120000);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nova-v2d44-sess-'));
+  const ai = await startMockAI([]);
+  let s = startServer(dir, ai.address().port);
+  const ctxs = [];
+  try {
+    await waitUp(s);
+    const base = `http://127.0.0.1:${s.port}`;
+    const anon = await playwright.request.newContext();
+    ctxs.push(anon);
+    const h = await anon.get(base + '/healthz');
+    expect(h.status()).toBe(200);
+    expect(await h.json()).toEqual({ ok: true });
+    expect(h.headers()['set-cookie']).toBeFalsy();
+    const first = await playwright.request.newContext(); ctxs.push(first);
+    await pinLogin(first, base);
+    const others = [];
+    for (let i = 0; i < 21; i++) {
+      const c = await playwright.request.newContext(); ctxs.push(c); others.push(c);
+      const l = await c.post(base + '/api/login', { data: { user: 'nicola', pin: '1357' }, headers: { ...HEAD, 'X-Forwarded-For': `10.44.0.${i + 1}` } }); // un dispositivo diverso per accesso (limite 10 tentativi per dispositivo)
+      expect(l.ok(), await l.text()).toBeTruthy();
+      await new Promise((ok) => setTimeout(ok, 5));
+    }
+    const mine = () => Object.values(JSON.parse(fs.readFileSync(path.join(dir, 'sessions.json'), 'utf8'))).filter((x) => x.user === 'nicola').length;
+    expect(mine()).toBe(20);
+    expect((await first.get(base + '/api/me', { headers: HEAD })).status()).toBe(401); // la più vecchia è uscita
+    expect((await others[others.length - 1].get(base + '/api/me', { headers: HEAD })).ok()).toBe(true); // l'ultima (telefono) resta
+    expect((await others[1].get(base + '/api/me', { headers: HEAD })).ok()).toBe(true);
+    // uscita pulita a fine prova
+    const lo = await others[others.length - 1].post(base + '/api/logout', { headers: HEAD });
+    expect(lo.ok()).toBe(true);
+    expect(mine()).toBe(19);
+    // all'avvio: un file con 30 sessioni vecchie viene ridotto a 20 (le più recenti)
+    s.child.kill();
+    const sess = {};
+    for (let i = 0; i < 30; i++) sess['t'.repeat(10) + String(i).padStart(2, '0')] = { user: 'nicola', exp: Date.now() + 864e5, created: new Date(Date.now() - (30 - i) * 60000).toISOString() };
+    sess.luisaone = { user: 'luisa', exp: Date.now() + 864e5, created: new Date().toISOString() };
+    fs.writeFileSync(path.join(dir, 'sessions.json'), JSON.stringify(sess));
+    s = startServer(dir, ai.address().port); await waitUp(s);
+    const after = JSON.parse(fs.readFileSync(path.join(dir, 'sessions.json'), 'utf8'));
+    const keys = Object.keys(after).filter((k) => after[k].user === 'nicola').sort();
+    expect(keys.length).toBe(20);
+    expect(keys[0]).toBe('t'.repeat(10) + '10'); // tolte le 10 più vecchie
+    expect(after.luisaone).toBeTruthy();
+  } finally { for (const c of ctxs) await c.dispose().catch(() => {}); s.child.kill(); ai.close(); }
+});
