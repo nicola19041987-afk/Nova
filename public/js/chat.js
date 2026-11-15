@@ -212,7 +212,7 @@ App.chat = {
       if (stick) this.scroll();
     };
     try {
-      const r = await App.api(`/api/chats/${ch.id}`, { method: 'POST', body: { message: text, ...ph, ...voiceBody, ...(sight ? { sight } : {}), ...(outfitNow ? { outfit: outfitNow, ...(dressed ? { outfitChanged: true } : (App.outfits.pendingNote && App.outfits.pendingNote(ch)) ? { outfitChanged: 'lei' } : {}) } : {}), ...(App.call && App.call.active ? { call: true, callMode: App.call.mode || 'video' } : {}), ...(pres.bye ? { bye: true } : {}), ...(pres.stay ? { stay: true } : {}) }, ai: true, raw: true });
+      const r = await App.api(`/api/chats/${ch.id}`, { method: 'POST', body: { message: text, ...ph, ...voiceBody, ...(sight ? { sight } : {}), ...(outfitNow ? { outfit: outfitNow, ...(dressed ? { outfitChanged: true } : (App.outfits.pendingNote && App.outfits.pendingNote(ch)) ? { outfitChanged: 'lei' } : {}) } : {}), ...(App.call && App.call.active ? { call: true, callMode: App.call.mode || 'video' } : {}), ...(pres.bye ? { bye: true } : {}), ...(pres.stay ? { stay: true } : {}), ...(App.faceLocked && !App.faceLocked() ? { faceLock: false } : {}) }, ai: true, raw: true }); // v2d-49: foto fissa (di serie) -> lei non promette cambi d'abito
       if (!r.ok) {
         const j = await r.json().catch(() => ({}));
         if (j.message) this.claim(local, j.message.id); // il tuo messaggio è comunque salvato nella chat condivisa

@@ -221,7 +221,7 @@
     try {
       const ok = App.outfits && App.outfits.key ? App.outfits.key(s.ch) : ''; // v2d-36: cosa indossa (e se si è cambiata da sola)
       const oc = ok && App.outfits.pendingNote && App.outfits.pendingNote(s.ch) ? 'lei' : (s.dressed ? true : undefined); s.dressed = false;
-      const r = await App.api('/api/realtime/instructions', { method: 'POST', body: { characterId: s.ch.id, mode: s.mode, ...(ok ? { outfit: ok, ...(oc !== undefined ? { outfitChanged: oc } : {}) } : {}) } });
+      const r = await App.api('/api/realtime/instructions', { method: 'POST', body: { characterId: s.ch.id, mode: s.mode, ...(ok ? { outfit: ok, ...(oc !== undefined ? { outfitChanged: oc } : {}) } : {}), ...(App.faceLocked && !App.faceLocked() ? { faceLock: false } : {}) } });
       if (oc === 'lei' && App.outfits.told) App.outfits.told(s.ch);
       s.adult = r.adult; s.explicitTalk = r.explicitTalk; if (s.ws && s.ws.readyState === 1) s.ws.send(JSON.stringify({ type: 'session.update', session: { instructions: r.instructions } }));
     } catch {}
@@ -389,7 +389,7 @@
         const t = performance.now();
         // v8.5.0: token già pronto (preparato all'apertura della chat) -> la chiamata si collega subito
         const w = PRE && PRE.ch === s.ch.id && PRE.vid === s.voice && Date.now() - PRE.at < 200e3 ? PRE.modes[s.mode] : null; PRE = null;
-        s.cfg = (w && await w.p.catch(() => null)) || await App.api('/api/realtime/session', { method: 'POST', body: { characterId: s.ch.id, mode: s.mode, voice: s.voice, voiceExplicit: s.voiceExplicit === true }, ai: true });
+        s.cfg = (w && await w.p.catch(() => null)) || await App.api('/api/realtime/session', { method: 'POST', body: { characterId: s.ch.id, mode: s.mode, voice: s.voice, voiceExplicit: s.voiceExplicit === true, ...(App.faceLocked && !App.faceLocked() ? { faceLock: false } : {}) }, ai: true });
         if (w) note('token pronto in anticipo');
         s.tokenMs = Math.round(performance.now() - t); note('token', s.tokenMs + ' ms');
         s.adult = s.cfg.adult; s.explicitTalk = s.cfg.explicitTalk; await connect(s); return;
@@ -404,7 +404,7 @@
     prewarm(ch) {
       if (!ch || !App.rt.enabled() || S) return; const voice = App.xaiVoice ? App.xaiVoice(ch) : 'eve';
       if (PRE && PRE.ch === ch.id && Date.now() - PRE.at < 150e3) return;
-      const mk = (mode) => { const p = App.api('/api/realtime/session', { method: 'POST', body: { characterId: ch.id, mode, voice }, ai: true }); p.catch(() => {}); return { p }; };
+      const mk = (mode) => { const p = App.api('/api/realtime/session', { method: 'POST', body: { characterId: ch.id, mode, voice, ...(App.faceLocked && !App.faceLocked() ? { faceLock: false } : {}) }, ai: true }); p.catch(() => {}); return { p }; };
       PRE = { ch: ch.id, vid: voice, at: Date.now(), modes: { voice: mk('voice'), video: mk('video') } };
     },
     // v2d-40: il tempo reale è sempre inserito: nessuna impostazione salvata lo spegne (la vecchia scelta «classica» è ignorata).

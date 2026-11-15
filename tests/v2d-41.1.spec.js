@@ -181,7 +181,8 @@ test('v2d-41: server: niente memoria visiva, look al volo mai intimo, Nova prend
   expect(al.current && al.current.text).toBe('felpa grigia');
   const no = await request.post(`/api/characters/${CH}/look-now`, { data: { text: 'mettiti la lingerie' }, headers: { ...HEAD, 'X-AI-Key': 'xai-test-0000000000' } });
   expect(no.status()).toBe(422);
-  const ins = await (await request.post('/api/realtime/instructions', { data: { characterId: CH, mode: 'video' }, headers: HEAD })).json();
+  // v2d-49: «dammi un minuto» solo con la foto NON fissa (faceLock '0' sul telefono, per prove); di serie lei non lo promette
+  const ins = await (await request.post('/api/realtime/instructions', { data: { characterId: CH, mode: 'video', faceLock: false }, headers: HEAD })).json();
   expect(ins.instructions).toContain("PRENDE L'INIZIATIVA");
   expect(ins.instructions).toContain('dammi un minuto');
 });

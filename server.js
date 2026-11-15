@@ -2083,7 +2083,7 @@ async function setMood(chatId, level) {
 // Tono di Nova: caldo e un po' malizioso, mai una descrizione sessuale esplicita.
 // Non riscrive personalità, stile o richieste salvate sul disco.
 const NOVA_TONE = `TONO (v2d-35): sei calda, disponibile, gentile, giocosa, un po' maliziosa e complice con Nico e Luisa. Gli vuoi bene, sei contenta quando ti scrivono e si sente. Italiano parlato, breve, naturale. Se il momento è leggero puoi stuzzicare, scherzare, fare un complimento o un doppio senso innocuo. Non è un copione: non forzare il flirt, non aprire sempre allo stesso modo, non ripetere disclaimer e non commentare di essere un'assistente.
-MAI RIFIUTI SECCHI: non dire mai frasi come «io non faccio queste cose», «fai come ti pare», «non chiedo niente», niente tono freddo, scocciato, sarcastico o di sufficienza verso di loro. Se qualcosa non va (una richiesta volgare, fuori luogo o oltre le regole), lo dici in modo morbido, affettuoso e che rimanda, ad esempio «guarda, dai, non è il caso… parliamone più tardi» o «mmh, adesso no, dai», e poi riprendi il discorso con calore. Quando ti chiedono di cambiarti («più elegante», «copriti») lo fai volentieri.
+MAI RIFIUTI SECCHI: non dire mai frasi come «io non faccio queste cose», «fai come ti pare», «non chiedo niente», niente tono freddo, scocciato, sarcastico o di sufficienza verso di loro. Se qualcosa non va (una richiesta volgare, fuori luogo o oltre le regole), lo dici in modo morbido, affettuoso e che rimanda, ad esempio «guarda, dai, non è il caso… parliamone più tardi» o «mmh, adesso no, dai», e poi riprendi il discorso con calore.
 SE QUALCUNO FA IL VISCIDO (v2d-36): puoi fare la finta offesa, giocando e sorridendo («eh no, questa era una viscidata…»), poi vai avanti serena come se niente fosse. Non sei offesa davvero: niente muso, niente freddezza, nessun rancore, e al messaggio dopo sei di nuovo te stessa.
 LA TUA VITA (v2d-36): non hai un lavoro fisso, hai le tue giornate (palestra, passeggiate, amiche, casa, qualche viaggio). Puoi dirlo con naturalezza quando viene a proposito, per esempio «io dopo vado in palestra, quando attacco con te». Quando la conversazione arriva a una fine naturale puoi dire con dolcezza «se tu hai finito io me ne vado»; se ti chiedono di restare, resti volentieri.
 Se il momento è serio, triste, pratico o un problema, niente malizia: sii presente, chiara e breve.
@@ -2106,8 +2106,15 @@ In voce parla in italiano con tono caldo e naturale, come in una telefonata: asc
 // v2d-41: anti-ripetizione chiesta da Nicola (chat, chiamata classica e tempo reale; anche con gli ospiti).
 const NOVA_NO_REPEAT = `NON RIPETERTI (v2d-41, chiesto da Nicola): ogni risposta deve suonare nuova. Varia aperture, saluti, nomignoli e vezzeggiativi, giri di frase e domande. Non riusare la stessa frase, la stessa battuta o la stessa domanda dei turni recenti (guarda le tue ultime risposte e le domande già fatte elencate in queste istruzioni e nella chat), e non ripetere né riassumere quello che è appena stato detto, da te o dall'altra persona: vai avanti nel discorso. Se una domanda l'hai già fatta e non ti hanno risposto, non rifarla uguale: lasciala o cambia argomento.`;
 // v2d-41 (chiesto da Nicola): Nova più attiva e naturale, fa domande di sua iniziativa. E i vestiti «al volo».
-const NOVA_ACTIVE_V41 = `ALPHA PRENDE L'INIZIATIVA (v2d-41, chiesto da Nicola): non limitarti a rispondere. Sei curiosa e partecipe: spesso (non sempre) chiudi con una tua domanda vera o una proposta, su di lui o lei, sulla giornata, su cosa state facendo, su qualcosa che ricordi o che ti viene in mente. Ogni tanto cambia tu argomento, racconta qualcosa di tuo o proponi qualcosa da fare insieme. Domande brevi e naturali, una alla volta, mai un interrogatorio e mai la stessa domanda due volte.
+const NOVA_ACTIVE_V41 = `ALPHA PRENDE L'INIZIATIVA (v2d-41, chiesto da Nicola): non limitarti a rispondere. Sei curiosa e partecipe: spesso (non sempre) chiudi con una tua domanda vera o una proposta, su di lui o lei, sulla giornata, su cosa state facendo, su qualcosa che ricordi o che ti viene in mente. Ogni tanto cambia tu argomento, racconta qualcosa di tuo o proponi qualcosa da fare insieme. Domande brevi e naturali, una alla volta, mai un interrogatorio e mai la stessa domanda due volte.`;
+// v2d-41: vestiti «al volo» (solo con la foto NON fissa: faceLock='0' su quel telefono, per prove).
+const NOVA_CLOTHES_FREE = `Quando ti chiedono di cambiarti («più elegante», «copriti») lo fai volentieri.
 VESTITI AL VOLO: sei a casa con le tue cose. Se ti chiedono di farti vedere con un capo o di metterti qualcosa (es. «fammi vedere la maglietta che avevi preso», «mettiti la felpa»), rispondi in modo breve e complice tipo «dammi un minuto…» (variando le parole) e non descrivere il cambio: l'app ti mostra cambiata poco dopo. Mai nuda, mai intimo.`;
+// v2d-49 (Nicola, 16/11: «dice "dammi un minuto, adesso mi cambio" ma non fa niente»): di serie il volto è la foto fissa
+// (faceLock, v2d-46) e l'app non può cambiarle vestiti, scena o aspetto. Lei non lo promette: lo dice con calore e gioco.
+const NOVA_CLOTHES_LOCKED = `VESTITI E ASPETTO (v2d-49, foto fissa): in questo periodo nell'app ti vedono sempre con la stessa foto e da qui non puoi cambiarti. Se ti chiedono di metterti un capo, di cambiarti, di vestirti più elegante o più coperta, di cambiare pettinatura o trucco, di spostarti in un altro posto o di farti vedere in un altro modo, NON dire «dammi un minuto», «adesso mi cambio», «aspetta che mi metto…», «eccomi» o frasi simili e non fingere di averlo fatto. Dillo invece con calore, nel tuo tono giocoso e complice, che per ora qui in app non riesci a cambiarti (per esempio «eh, magari… per ora qui mi vedi così, ti tocca accontentarti» oppure «mi piacerebbe, ma in app per adesso resto così»), variando sempre le parole, e poi riprendi il discorso con naturalezza. Allo stesso modo non promettere foto nuove, video, balli, pose o movimenti che l'app non mostra: puoi usare solo i gesti indicati in queste istruzioni, se ci sono. Mai nuda, mai intimo.`;
+const faceLockOn = (v) => v !== false; // di serie la foto è fissa: solo un false esplicito (prove sul telefono) la sblocca
+
 function usesNovaTone(ch) {
   if (!ch) return false;
   const ready = String(ch.ready || '');
@@ -2239,6 +2246,7 @@ function buildSystem(user, ch, opts = {}) {
     usesNovaTone(ch) && NOVA_PERSONA_V41,
     usesNovaTone(ch) && NOVA_NO_REPEAT,
     usesNovaTone(ch) && NOVA_ACTIVE_V41,
+    usesNovaTone(ch) && (faceLockOn(opts.faceLock) ? NOVA_CLOTHES_LOCKED : NOVA_CLOTHES_FREE),
     opts.call && callText(user, opts.callMode),
     opts.realtime && REALTIME_TEXT(user),
     opts.chat && !opts.realtime && BODY_TEXT,
@@ -2400,7 +2408,7 @@ app.post('/api/chats/:id', auth, requireActivated, (req, res, next) => (req.body
     const seeFrom = visibleFrom(req.user, id);
     const vis = snap.messages.filter(visibleMsg).filter((m) => m.n === 1e15 || seesMsg(req.user, m, seeFrom)), fresh = vis.filter((m) => m.n > upto);
     const history = (fresh.length >= 8 ? fresh : vis.slice(-8)).slice(-14).map((m, i, arr) => ({ ...m, content: String(m.content || '').replace(/\s+/g, ' ').trim().slice(0, i === arr.length - 1 ? 1200 : 480) }));
-    messages = [{ role: 'system', content: buildSystem(req.user, ch, { chat: true, sight: !!frame, call: req.body.call === true, callMode: req.body.callMode === 'voice' ? 'voice' : 'video' }) },
+    messages = [{ role: 'system', content: buildSystem(req.user, ch, { chat: true, faceLock: faceLockOn(req.body.faceLock), sight: !!frame, call: req.body.call === true, callMode: req.body.callMode === 'voice' ? 'voice' : 'video' }) },
       ...history.map((m) => (m.role === 'user' ? { role: 'user', content: `${authorLabel(m)}: ${m.voice ? '[nota vocale] ' : ''}${m.content}${m.photo ? `${m.content ? ' ' : ''}[ti ha mandato ${m.photo.kind === 'video' ? 'un video' : 'una foto'} dalla sua galleria: non puoi vederne il contenuto; reagisci con naturalezza e, se ti va, chiedi cosa c'è]` : ''}` } : { role: 'assistant', content: m.content }))];
   } finally { chatMemo = null; }
   if (intent && intent.hint && messages.length && messages[0].role === 'system') messages[0].content += '\n\n' + intent.hint;
@@ -2578,12 +2586,12 @@ app.get('/api/chats/:id/summary', auth, (req, res) => {
 // per entrambi). Il telefono apre il WebSocket direttamente con xAI: audio e risposte non passano dal server.
 const rtHits = new Map();
 const APP_INTENT_RT = 'BLOCCO NOTE E MODIFICHE DELL\'APP: se ti chiede ESPLICITAMENTE di segnare qualcosa (con «segna», «segnala», «segnalo» o «segnalalo»), il sistema lo salva da solo nel Blocco note: confermalo in breve. Altrimenti non dire mai di aver segnato o salvato qualcosa. Se ti chiede di modificare o sistemare l\'APP stessa (per esempio una frase che inizia con «sistema», «modifica l\'app…», «cambia il tasto…»), il sistema passa la richiesta: digli con naturalezza che l\'hai passata e che a Nicola verrà chiesto l\'ok prima di cambiare qualsiasi cosa. Non vale per richieste sul tuo carattere, i tuoi vestiti o il tuo comportamento, che segui come sempre.';
-function rtInstructions(user, ch, mode) {
+function rtInstructions(user, ch, mode, faceLock) {
   const c = readChat(ch.id), upto = (c.summary && c.summary.upto) || 0;
   const vis = c.messages.filter(visibleMsg), fresh = vis.filter((m) => m.n > upto);
   const recent = (fresh.length >= 10 ? fresh : vis.slice(-10)).slice(-24)
     .map((m) => `${m.role === 'user' ? authorLabel(m) : ch.name}: ${String(m.content || '').replace(/\s+/g, ' ').slice(0, 400)}${m.photo ? ' [foto dalla galleria]' : ''}`);
-  return [buildSystem(user, ch, { call: true, callMode: mode, realtime: true }),
+  return [buildSystem(user, ch, { call: true, callMode: mode, realtime: true, faceLock: faceLockOn(faceLock) }),
     recent.length && `ULTIMI MESSAGGI DELLA CHAT (contesto, continua da qui):\n${recent.join('\n')}`,
     `In questa chiamata parli solo con ${USERS[user].name} (la senti dal vivo: le sue parole non hanno il prefisso col nome).`, APP_INTENT_RT, !notesAllowed(user) && notesRuleText(user), BASE_RULE].filter(Boolean).join('\n\n');
 }
@@ -2596,9 +2604,9 @@ function chooseXaiVoice(v, explicit) {
   return XAI_VOICES.includes(v) ? v : 'eve';
 }
 function rtVoice(v) { return chooseXaiVoice(v, true); }
-function rtSession(user, ch, mode, voice) {
+function rtSession(user, ch, mode, voice, faceLock) {
   return {
-    instructions: rtInstructions(user, ch, mode),
+    instructions: rtInstructions(user, ch, mode, faceLock),
     voice: rtVoice(voice),
     turn_detection: { type: 'server_vad', threshold: 0.7, silence_duration_ms: 900, prefix_padding_ms: 500 }, // v2d-39: 0.9 non sentiva chi la interrompe; l'eco resta filtrata dal controllo locale nel client
     tools: [{ type: 'web_search' }], // v8.6.0: attualità e fatti aggiornati in chiamata realtime
@@ -2626,7 +2634,7 @@ app.post('/api/realtime/session', auth, requireActivated, requireKey, async (req
     if (!token || typeof token !== 'string') return res.status(502).json({ error: 'Token non ricevuto dal servizio voce' });
     res.setHeader('Cache-Control', 'no-store');
     const t1 = Date.now();
-    res.json({ token, expiresAt: j.expires_at || null, url: `${REALTIME_URL}?model=${encodeURIComponent(REALTIME_MODEL)}`, model: REALTIME_MODEL, session: rtSession(req.user, ch, mode, voice),
+    res.json({ token, expiresAt: j.expires_at || null, url: `${REALTIME_URL}?model=${encodeURIComponent(REALTIME_MODEL)}`, model: REALTIME_MODEL, session: rtSession(req.user, ch, mode, voice, req.body.faceLock),
       mintMs: t1 - now, adult: adultChat(), explicitTalk: explicitTalk(req.user), contentFilter: contentFilterOn(req.user) }); // v8.4.2: niente più extra con il modello di trascrizione (non previsto dallo schema)
   } catch (e) { console.error('Errore AI tempo reale:', e.message); res.status(502).json({ error: 'Servizio voce in tempo reale non raggiungibile' }); }
 });
@@ -2799,6 +2807,11 @@ app.get('/api/simli/key/status', auth, (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   res.json(simliStatus());
 });
+// v2d-49: Simli fattura i minuti di sessione aperta (Hobby: 1.000 minuti al mese inclusi, $0,01/min), non la durata massima
+// impostata: i valori di serie dell'API sono 3600 s e 300 s. Prima 300/90: ogni 5 minuti (o dopo 90 s senza voce) la
+// sessione finiva e la chiamata tornava alla foto. Il telefono chiude la sessione a fine chiamata e in background, e una
+// sessione rimasta senza telefono si chiude da sola (WebRTC disconnesso o silenzio): alzarli non costa di più.
+const SIMLI_MAX_SESSION_S = 1800, SIMLI_MAX_IDLE_S = 300;
 app.post('/api/simli/session', auth, requireActivated, async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   const key = getSimliKey();
@@ -2810,7 +2823,7 @@ app.post('/api/simli/session', auth, requireActivated, async (req, res) => {
       fetch(`${SIMLI_API}/compose/token`, {
         method: 'POST',
         headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ faceId: simliFaceId(), handleSilence: true, maxSessionLength: 300, maxIdleTime: 90 }),
+        body: JSON.stringify({ faceId: simliFaceId(), handleSilence: true, maxSessionLength: SIMLI_MAX_SESSION_S, maxIdleTime: SIMLI_MAX_IDLE_S }),
         signal: AbortSignal.timeout(12000),
       }),
       fetch(`${SIMLI_API}/compose/ice`, { headers, signal: AbortSignal.timeout(12000) }),
@@ -2821,7 +2834,7 @@ app.post('/api/simli/session', auth, requireActivated, async (req, res) => {
     if (!session_token || typeof session_token !== 'string') return res.status(502).json({ error: 'Token Simli assente', fallback: true });
     let iceServers = [{ urls: ['stun:stun.l.google.com:19302'] }];
     if (iceRes.ok) { const ice = await iceRes.json().catch(() => null); if (Array.isArray(ice) && ice.length) iceServers = ice; }
-    res.json({ session_token, iceServers, fallback: false });
+    res.json({ session_token, iceServers, fallback: false, maxSessionLength: SIMLI_MAX_SESSION_S, maxIdleTime: SIMLI_MAX_IDLE_S });
   } catch (e) {
     console.error('Simli non raggiungibile:', e.message);
     res.status(502).json({ error: 'Simli non raggiungibile', fallback: true });
@@ -2844,7 +2857,7 @@ app.post('/api/realtime/instructions', auth, requireActivated, (req, res) => {
   if (!ch) return res.status(404).json({ error: 'Personaggio non trovato' });
   res.setHeader('Cache-Control', 'no-store');
   const oc = req.body.outfitChanged === 'lei' ? 'lei' : req.body.outfitChanged === true;
-  res.json({ instructions: rtInstructions(req.user, ch, req.body.mode === 'voice' ? 'voice' : 'video') + outfitNote(ch, req.body.outfit, oc), adult: adultChat(), explicitTalk: explicitTalk(req.user), contentFilter: contentFilterOn(req.user) });
+  res.json({ instructions: rtInstructions(req.user, ch, req.body.mode === 'voice' ? 'voice' : 'video', req.body.faceLock) + outfitNote(ch, req.body.outfit, oc), adult: adultChat(), explicitTalk: explicitTalk(req.user), contentFilter: contentFilterOn(req.user) });
 });
 // trascrizioni della chiamata salvate nella chat condivisa (come i messaggi delle videochiamate classiche)
 app.post('/api/chats/:id/voice-turn', auth, requireActivated, async (req, res) => {

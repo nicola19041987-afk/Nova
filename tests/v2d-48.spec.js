@@ -36,7 +36,7 @@ async function openApp(page) {
 
 test('v2d-48: cache del service worker app-privata-v2d-48', async ({ request }) => {
   const sw = await (await request.get('/sw.js')).text();
-  expect(sw).toContain("const CACHE = 'app-privata-v2d-48'");
+  expect(sw).toMatch(/const CACHE = 'app-privata-v2d-(4[89]|[5-9]\d)'/); // v2d-49 alza la cache
 });
 
 test('v2d-48: chat di 527 messaggi: subito gli ultimi 120, i precedenti in cima scorrendo, ordine e testo intatti', async ({ page, browserName }) => {

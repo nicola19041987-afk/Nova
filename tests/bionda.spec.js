@@ -124,9 +124,11 @@ test('la bionda nuova apre la bocca dritta e il movimento di base c’è', async
   expect(snap.breath).toBeLessThan(0.4);
   expect(snap.blink).toBeGreaterThan(0.4);
   expect(Math.abs(snap.gx)).toBeGreaterThan(0.05);
-  expect(snap.gaze).toBeGreaterThan(0.15);
+  // v2d-49 (Nicola, 16/11: «occhio storto/girato»): lo stato di sguardo e sopracciglia c'è ancora, ma sulla foto non si
+  // disegnano più toppe (si vedeva il bordo della zona spostata con la testa inclinata). Qui i pixel attorno a occhi e
+  // sopracciglia cambiano solo per il movimento lento del capo (tempo diverso dalla foto «rest»), quindi non si misurano:
+  // l'assenza delle toppe è verificata a parità di fotogramma in tests/v2d-49.spec.js.
   expect(snap.browV).toBeGreaterThan(0.2);
-  expect(snap.brow).toBeGreaterThan(0.15);
   expect(Math.abs(snap.pitch)).toBeGreaterThan(0.001);
-  expect(snap.pitchDiff).toBeGreaterThan(0.15);
+  // v2d-49: sopra gli occhi i pixel cambiavano soprattutto per la toppa delle sopracciglia (ora spenta); il cenno resta nello stato (pitch)
 });

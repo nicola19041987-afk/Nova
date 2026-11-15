@@ -1174,7 +1174,10 @@
       const calm = !!this.faceCalm, talk = this.speaking || open > 0.02;
       if (calm && !talk) return;
       if (open > 0.02) paintMouth(ctx, img, lm, open, Math.max(0, Math.min(1, (this.wide ?? 0.5) + (calm ? 0 : smile * 0.06))), this._vx ? VV_MOUTH : 1); // v2d-40: in chiamata vocale la bocca si apre un po' di più (si vede da lontano)
-      const gxp = calm ? 0 : mc.gx * EW * 0.1, gyp = calm ? 0 : mc.gy * Math.max(EH, EW * 0.2) * 0.14, bup = calm ? 0 : mc.brow * F * 0.007, px = F * 0.0006;
+      // v2d-49 (Nicola, 16/11: «l'occhio appare storto/girato»): niente toppe per lo sguardo né per le sopracciglia sulla foto.
+      // Con la testa inclinata (~13°) il bordo della zona spostata si vedeva. Restano solo bocca e ammiccamenti.
+      const eyePatch = EYE_PATCHES && !calm;
+      const gxp = eyePatch ? mc.gx * EW * 0.1 : 0, gyp = eyePatch ? mc.gy * Math.max(EH, EW * 0.2) * 0.14 : 0, bup = eyePatch ? mc.brow * F * 0.007 : 0, px = F * 0.0006;
       const roll = Math.atan2(lm.eyeR.y - lm.eyeL.y, lm.eyeR.x - lm.eyeL.x);
       [lm.eyeL, lm.eyeR].forEach((e, ei) => {
         if ((Math.abs(gxp) > px || Math.abs(gyp) > px) && e) paintGaze(ctx, img, e.x * S, e.y * S, roll, EW * 0.55, Math.max(EH * 1.15, EW * 0.22), gxp, gyp);
@@ -1240,6 +1243,8 @@
   }
 
   // scala del viso: 1 = primo piano (occhi distanti ~0,24 del quadrato centrale); figura intera ≈ 0,3–0,5
+  // v2d-49: toppe di sguardo e sopracciglia spente (si vedeva il bordo della zona spostata, occhio «girato»)
+  const EYE_PATCHES = false;
   function faceScale(lm) { try { const ed = Math.hypot(lm.eyeR.x - lm.eyeL.x, lm.eyeR.y - lm.eyeL.y); return Math.max(0.12, Math.min(1.6, ed / 0.24)); } catch { return 1; } }
   const GESTURE_REGIONS = false; // v7.1: niente rotazione di pezzi di braccio sulla foto: solo respiro e viso
   const WARP_MAX = 0.03, WARP_STRIPS = 40, EDGE_SIDE = 0.07, EDGE_TB = 0.1; // v7.1: deformazione interna max (frazione della larghezza) e bande sfumate
@@ -1385,6 +1390,13 @@
       ctx.save(); ctx.translate(ex, ey); ctx.rotate(roll); ctx.drawImage(buf, -ox, -oy); ctx.restore();
     });
   }
+  // v2d-49 (Nicola, 16/11: «la bocca si storce all'improvviso»): la bocca si apre come una deformazione continua, senza tagli.
+  // Prima la riga delle labbra (in questa foto: i denti) veniva stirata in una striscia chiara e il labbro inferiore spostato
+  // di colpo: riga bianca e labbro doppio, soprattutto agli angoli. Ora, colonna per colonna lungo la linea della bocca (che
+  // segue l'inclinazione della testa), il labbro superiore sale e quello inferiore scende comprimendo la pelle vicina: lo
+  // spostamento è zero ai bordi della toppa (sopra, sotto, agli angoli), quindi nessun bordo visibile e nessuna doppia riga.
+  // Nessun dente dipinto: si allarga solo la fessura vera della foto, con un'ombra morbida. Apertura massima più contenuta.
+  const MOUTH_MAX = 0.11; // apertura massima rispetto alla larghezza della bocca (prima 0.13)
   function paintMouth(ctx, img, lm, open, wide, gain = 1) {
     const S = VS, L = lm && lm.mouthL, R = lm && lm.mouthR;
     if (!L || !R || !(open > 0.02) || !img.naturalWidth) return;
@@ -1394,27 +1406,31 @@
     const aShape = 1 - Math.min(1, Math.abs(w - 0.55) / 0.55);
     const vx = (R.x - L.x) * S, vy = (R.y - L.y) * S;
     const len = Math.max(S * 0.04, Math.hypot(vx, vy));
-    const lip = Math.atan2(vy, vx);
+    // asse della bocca: quello degli angoli, ma mai più di ~6° lontano dalla linea degli occhi (testa inclinata)
+    let lip = Math.atan2(vy, vx);
+    if (lm.eyeL && lm.eyeR) {
+      const roll = Math.atan2(lm.eyeR.y - lm.eyeL.y, lm.eyeR.x - lm.eyeL.x), d = Math.atan2(Math.sin(lip - roll), Math.cos(lip - roll));
+      lip = roll + Math.max(-0.1, Math.min(0.1, d));
+    }
     const ax = L.x * S, ay = L.y * S;
     const px = (lm.mouth && lm.mouth.x != null ? lm.mouth.x : (L.x + R.x) / 2) * S;
     const py = (lm.mouth && lm.mouth.y != null ? lm.mouth.y : (L.y + R.y) / 2) * S;
     const along = Math.max(0.35, Math.min(0.65, ((px - ax) * vx + (py - ay) * vy) / (len * len)));
     const cx = ax + vx * along, cy = ay + vy * along;
-    const half = len * (0.28 + w * 0.1);
+    const half = len * (0.3 + w * 0.1);
     const heightK = 0.58 + aShape * 0.42 + round * 0.16;
-    const jaw = Math.min(openAmt * len * 0.1 * heightK * gain, len * 0.13 * gain); // v2d-40: gain > 1 solo in chiamata vocale
-    const lift = jaw * (0.26 + round * 0.1);
+    const jaw = Math.min(openAmt * len * 0.1 * heightK * gain, len * MOUTH_MAX * gain); // v2d-40: gain > 1 solo in chiamata vocale
+    const lift = jaw * (0.22 + round * 0.08);
     if (jaw < 0.4) return;
-    const above = len * 0.2, below = len * 0.36;
-    const cols = 40, colW = (half * 2) / cols, pad = 4;
+    const above = len * 0.24, below = len * 0.42, core = Math.max(0.6, len * 0.006); // fessura sorgente sottile: si allarga una riga sola (niente denti stirati a strisce)
+    const cols = 48, colW = (half * 2) / cols, pad = 4;
     const tw = Math.max(8, Math.ceil(half * 2 + pad * 2));
     const th = Math.max(8, Math.ceil(above + below + pad * 2));
-    const oh = Math.ceil(th + jaw + 8);
     if (!mouthBuf.src || mouthBuf.src.width !== tw || mouthBuf.src.height !== th) {
       mouthBuf.src = document.createElement('canvas'); mouthBuf.src.width = tw; mouthBuf.src.height = th;
     }
-    if (!mouthBuf.out || mouthBuf.out.width !== tw || mouthBuf.out.height !== oh) {
-      mouthBuf.out = document.createElement('canvas'); mouthBuf.out.width = tw; mouthBuf.out.height = oh;
+    if (!mouthBuf.out || mouthBuf.out.width !== tw || mouthBuf.out.height !== th) {
+      mouthBuf.out = document.createElement('canvas'); mouthBuf.out.width = tw; mouthBuf.out.height = th;
     }
     const side = Math.min(img.naturalWidth, img.naturalHeight);
     const iox = (img.naturalWidth - side) / 2, ioy = (img.naturalHeight - side) / 2;
@@ -1423,59 +1439,61 @@
     ts.save(); ts.translate(tw / 2, pad + above); ts.rotate(-lip); ts.translate(-cx, -cy);
     ts.drawImage(img, iox, ioy, side, side, 0, 0, S, S); ts.restore();
     const o = mouthBuf.out.getContext('2d');
-    o.setTransform(1, 0, 0, 1, 0, 0); o.clearRect(0, 0, tw, oh);
-    const mx = tw / 2, my = pad + above;
-    const ink = ts.getImageData(Math.max(0, Math.min(tw - 1, Math.round(mx))), Math.max(0, Math.min(th - 1, Math.round(my - 1))), 1, 1).data;
-    const tooth = [Math.round(ink[0] * 0.28 + 228), Math.round(ink[1] * 0.28 + 210), Math.round(ink[2] * 0.28 + 196)];
-    const cave = [Math.round(ink[0] * 0.22 + 64), Math.round(ink[1] * 0.16 + 26), Math.round(ink[2] * 0.16 + 32)];
-    const lipc = [ink[0], ink[1], ink[2]];
+    o.setTransform(1, 0, 0, 1, 0, 0); o.clearRect(0, 0, tw, th);
+    const mx = tw / 2, top = pad, bot = pad + above + below;
+    // dove si apre: appena sopra il bordo interno del labbro inferiore (punto lipL). A labbra chiuse coincide con la linea tra
+    // le labbra; nel sorriso coi denti è la fessura tra denti e labbro inferiore: non si stirano né i denti né il labbro.
+    let split = 0;
+    if (lm.lipL && lm.lipL.x != null) {
+      const dx = lm.lipL.x * S - cx, dy = lm.lipL.y * S - cy;
+      split = Math.max(-len * 0.06, Math.min(len * 0.12, -Math.sin(lip) * dx + Math.cos(lip) * dy - len * 0.012));
+    }
+    mouthBuf.split = split;
+    const my = pad + above + (mouthBuf.split || 0);
+    const ink = ts.getImageData(Math.max(0, Math.min(tw - 1, Math.round(mx))), Math.max(0, Math.min(th - 1, Math.round(my))), 1, 1).data;
+    // ombra dell'interno: un rosso scuro caldo, mai bianco né nero pieno
+    const cave = [Math.round(ink[0] * 0.18 + 70), Math.round(ink[1] * 0.12 + 30), Math.round(ink[2] * 0.12 + 34)];
+    const x0 = mx - half;
+    // tutta la fascia, intatta, sotto: le colonne la deformano sopra senza lasciare buchi tra una colonna e l'altra
+    o.drawImage(mouthBuf.src, 0, 0);
     for (let i = 0; i < cols; i++) {
       const u = ((i + 0.5) / cols) * 2 - 1;
-      const att = Math.pow(Math.max(0, 1 - u * u), 0.9 + round * 0.65);
-      const x = mx - half + i * colW;
+      const att = Math.pow(Math.max(0, 1 - u * u), 1.1 + round * 0.6);
+      // colonne su pixel interi, affiancate senza sovrapporsi: niente righe verticali più scure dove due ombre si sommavano
+      const x = Math.round(x0 + i * colW), cw = Math.round(x0 + (i + 1) * colW) - x;
+      if (cw < 1) continue;
       const drop = jaw * att, up = lift * att;
-      if (drop < 0.4) continue;
-      const gapTop = my - up, gapBot = my + drop, gapH = Math.max(1, gapBot - gapTop);
-      o.save(); o.globalAlpha = 0.9;
-      o.drawImage(mouthBuf.src, x, my - 1.2, colW + 0.8, 2.4, x, gapTop, colW + 0.8, gapH * 0.72);
-      o.restore();
-      const cg = o.createLinearGradient(0, gapTop, 0, gapBot);
-      cg.addColorStop(0, `rgba(${cave[0]},${cave[1]},${cave[2]},0)`);
-      cg.addColorStop(0.4, `rgba(${cave[0]},${cave[1]},${cave[2]},${(0.42 * att).toFixed(3)})`);
-      cg.addColorStop(1, `rgba(${cave[0]},${cave[1]},${cave[2]},${(0.08 * att).toFixed(3)})`);
-      o.fillStyle = cg; o.fillRect(x, gapTop, colW + 0.8, gapH);
-      if (openAmt > 0.2 && att > 0.25) {
-        const teethH = Math.max(1.2, gapH * (0.16 + aShape * 0.08 + round * 0.06));
-        const tg = o.createLinearGradient(0, gapTop, 0, gapTop + teethH);
-        tg.addColorStop(0, `rgba(${tooth[0]},${tooth[1]},${tooth[2]},0)`);
-        tg.addColorStop(0.45, `rgba(${tooth[0]},${tooth[1]},${tooth[2]},${(0.62 * att).toFixed(3)})`);
-        tg.addColorStop(1, `rgba(${tooth[0]},${tooth[1]},${tooth[2]},0)`);
-        o.fillStyle = tg; o.fillRect(x, gapTop, colW + 0.8, teethH);
+      if (drop < 0.15) continue;
+      const gTop = my - core - up, gBot = my + core + drop;
+      // sopra: [top, my-core] -> [top, gTop]  (il labbro superiore sale, la pelle sopra si comprime appena)
+      o.drawImage(mouthBuf.src, x, top, cw, my - core - top, x, top, cw, gTop - top);
+      // fessura: [my-core, my+core] -> [gTop, gBot]  (si allarga la riga vera tra le labbra)
+      o.drawImage(mouthBuf.src, x, my - core, cw, core * 2, x, gTop, cw, gBot - gTop);
+      // sotto: [my+core, bot] -> [gBot, bot]  (labbro inferiore e mento scendono, il bordo in basso resta fermo)
+      o.drawImage(mouthBuf.src, x, my + core, cw, bot - my - core, x, gBot, cw, bot - gBot);
+      const a = Math.min(0.6, 0.68 * att * Math.min(1, (gBot - gTop) / Math.max(2, len * 0.05)));
+      if (a > 0.01) {
+        const cg = o.createLinearGradient(0, gTop, 0, gBot);
+        cg.addColorStop(0, `rgba(${cave[0]},${cave[1]},${cave[2]},0)`);
+        cg.addColorStop(0.45, `rgba(${cave[0]},${cave[1]},${cave[2]},${a.toFixed(3)})`);
+        cg.addColorStop(1, `rgba(${cave[0]},${cave[1]},${cave[2]},0)`);
+        o.fillStyle = cg; o.fillRect(x, gTop, cw, gBot - gTop);
       }
-      o.drawImage(mouthBuf.src, x, my - above, colW + 0.8, above, x, my - above - up, colW + 0.8, above);
-      o.drawImage(mouthBuf.src, x, my + 0.6, colW + 0.8, below, x, my + drop, colW + 0.8, below);
-      const soft = Math.max(1.4, drop * 0.22);
-      o.save(); o.globalCompositeOperation = 'destination-out';
-      const sg = o.createLinearGradient(0, my + drop, 0, my + drop + soft);
-      sg.addColorStop(0, 'rgba(0,0,0,0.72)'); sg.addColorStop(1, 'rgba(0,0,0,0)');
-      o.fillStyle = sg; o.fillRect(x, my + drop, colW + 0.8, soft);
-      const ug = o.createLinearGradient(0, my - up - soft * 0.6, 0, my - up);
-      ug.addColorStop(0, 'rgba(0,0,0,0)'); ug.addColorStop(1, 'rgba(0,0,0,0.45)');
-      o.fillStyle = ug; o.fillRect(x, my - up - soft * 0.6, colW + 0.8, soft * 0.6);
-      o.restore();
-      const blend = o.createLinearGradient(0, my + drop, 0, my + drop + soft);
-      blend.addColorStop(0, `rgba(${lipc[0]},${lipc[1]},${lipc[2]},${(0.28 * att).toFixed(3)})`);
-      blend.addColorStop(1, `rgba(${lipc[0]},${lipc[1]},${lipc[2]},0)`);
-      o.fillStyle = blend; o.fillRect(x, my + drop, colW + 0.8, soft);
     }
+    // bordi morbidi: agli angoli e in alto/in basso la toppa sfuma nella foto (lì lo spostamento è già zero)
     o.globalCompositeOperation = 'destination-in';
     const fade = o.createLinearGradient(mx - half, 0, mx + half, 0);
-    fade.addColorStop(0, 'rgba(0,0,0,0)'); fade.addColorStop(0.22, 'rgba(0,0,0,1)');
-    fade.addColorStop(0.78, 'rgba(0,0,0,1)'); fade.addColorStop(1, 'rgba(0,0,0,0)');
-    o.fillStyle = fade; o.fillRect(0, 0, tw, oh);
+    fade.addColorStop(0, 'rgba(0,0,0,0)'); fade.addColorStop(0.18, 'rgba(0,0,0,1)');
+    fade.addColorStop(0.82, 'rgba(0,0,0,1)'); fade.addColorStop(1, 'rgba(0,0,0,0)');
+    o.fillStyle = fade; o.fillRect(0, 0, tw, th);
+    const vf = o.createLinearGradient(0, top, 0, bot);
+    vf.addColorStop(0, 'rgba(0,0,0,0)'); vf.addColorStop(0.12, 'rgba(0,0,0,1)');
+    vf.addColorStop(0.88, 'rgba(0,0,0,1)'); vf.addColorStop(1, 'rgba(0,0,0,0)');
+    o.fillStyle = vf; o.fillRect(0, 0, tw, th);
     o.globalCompositeOperation = 'source-over';
     ctx.save(); ctx.translate(cx, cy); ctx.rotate(lip); ctx.translate(-tw / 2, -(pad + above));
     ctx.drawImage(mouthBuf.out, 0, 0); ctx.restore();
+    paintMouth.last = { jaw: +jaw.toFixed(2), lip: +lip.toFixed(3), split: mouthBuf.split || 0 };
   }
 
   // Editor dei punti del viso: trascina 👁 👁 👄
