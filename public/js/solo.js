@@ -77,7 +77,7 @@
       if (c) c.hidden = true;
       paintProva(false);
       setProva(false);
-      if (status) status.textContent = 'Nova usa la foto.';
+      if (status) status.textContent = 'Eris usa la foto.';
       return;
     }
     if (status) status.textContent = 'Carico il 3D…';
@@ -363,7 +363,7 @@
       const ch = soloChar();
       if (!ch) {
         const conv = $('#tab-conv'); if (conv) conv.hidden = false;
-        const title = $('#title'); if (title) title.textContent = 'Nova';
+        const title = $('#title'); if (title) title.textContent = 'Eris';
         document.body.dataset.tab = 'conv';
         this.bindOnce();
         this.showChat();
@@ -586,14 +586,14 @@
     },
     paintHome() {
       const ch = soloChar();
-      const name = $('#nh-name'); if (name) name.textContent = (ch && ch.name) || 'Nova';
+      const name = $('#nh-name'); if (name) name.textContent = (ch && ch.name) || 'Eris';
       const st = $('#nh-status');
       const ws = $('#wa-status');
       if (st) st.textContent = (ws && ws.textContent) || 'online';
       const slot = $('#nh-avatar');
       if (slot) {
         slot.replaceChildren();
-        if (App.paintAvatar) App.paintAvatar(slot, ch || { name: 'Nova', ready: 'nova-scelta' }, 'nh-avatar-face');
+        if (App.paintAvatar) App.paintAvatar(slot, ch || { name: 'Eris', ready: 'nova-scelta' }, 'nh-avatar-face');
         else slot.textContent = ((ch && ch.name) || 'N').slice(0, 1);
       }
       // v2d-36: il look di adesso, in parole (scena o vestito), sotto il nome
@@ -610,7 +610,7 @@
       const titles = { carattere: 'Carattere', look: 'Vestiti e fisico', richieste: 'Richieste libere', gesti: 'Gesti', video: 'Videochiamata', cam: 'Fotocamera', voce: 'Voce' };
       const title = $('#title');
       const ch = soloChar();
-      if (title && document.body.classList.contains('solo-home') && !document.body.classList.contains('in-call')) title.textContent = titles[page] || (ch && ch.name) || 'Nova';
+      if (title && document.body.classList.contains('solo-home') && !document.body.classList.contains('in-call')) title.textContent = titles[page] || (ch && ch.name) || 'Eris';
       if (!document.body.classList.contains('solo-portrait')) this.paintBack(page === 'list' ? 'list' : 'page');
     },
     openPortrait() {
@@ -640,7 +640,7 @@
       ['tab-account', 'tab-chat', 'tab-calls', 'tab-images', 'tab-feed'].forEach((id) => { const el = document.getElementById(id); if (el) el.hidden = true; });
       document.body.dataset.tab = 'conv';
       const ch = soloChar();
-      const title = $('#title'); if (title) title.textContent = (ch && ch.name) || 'Nova';
+      const title = $('#title'); if (title) title.textContent = (ch && ch.name) || 'Eris';
       const bar = $('#look-bar'); if (bar) bar.hidden = true;
       this.paintBack('chat');
       this.setDock('chat');
@@ -847,7 +847,7 @@
       if (!dlg) {
         dlg = document.createElement('dialog'); dlg.id = 'solo-look-dialog'; dlg.className = 'sheet';
         dlg.innerHTML = `<form method="dialog" class="solo-look-form">
-          <h3>Aspetto di Nova</h3>
+          <h3>Aspetto di Eris</h3>
           <p class="muted small">Solo testo → nuova foto inventata (stesso volto AI).</p>
           <label>Capelli <input name="hair" placeholder="es. biondo miele a spalle con frangia"></label>
           <label>Occhi <input name="eyes" placeholder="es. verdi"></label>

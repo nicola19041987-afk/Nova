@@ -31,7 +31,7 @@ test('il tono di Nova è lo stesso in chat, dettato e voce, senza toccare i dati
     expect(login.ok(), await login.text()).toBeTruthy();
   } else expect(pin.ok(), await pin.text()).toBeTruthy();
   const chars = await (await request.get('/api/characters')).json();
-  const nova = chars.find((c) => c && /nova/i.test(c.name || ''));
+  const nova = chars.find((c) => c && /nova|eris/i.test(c.name || ''));
   expect(nova && nova.id).toBeTruthy();
   const before = fs.readFileSync(CHARS);
   const diskBefore = JSON.parse(before.toString('utf8')).find((c) => c.id === nova.id);

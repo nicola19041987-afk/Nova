@@ -11,7 +11,7 @@
     d = document.createElement('dialog');
     d.id = 'mood-dialog'; d.className = 'sheet mood-sheet';
     d.innerHTML = `<form method="dialog">
-      <h3>Umore di Nova</h3>
+      <h3>Umore di Eris</h3>
       <p id="mood-summary" class="mood-summary">…</p>
       <div id="mood-bars"></div>
       <p class="muted small">Ultimi 7 giorni</p>

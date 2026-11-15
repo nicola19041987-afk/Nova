@@ -40,7 +40,7 @@ test('login resta visibile e non si blocca', async ({ page }) => {
   page.on('pageerror', (e) => errors.push(e.message));
   await page.goto('/');
   await expect(page.locator('#view-login')).toBeVisible();
-  await expect(page.locator('.login-wordmark')).toHaveText('Nova');
+  await expect(page.locator('.login-wordmark')).toHaveText('Eris');
   await expect(page.locator('#profile-pick')).toBeVisible();
   await page.waitForTimeout(400);
   await expect(page.locator('#view-login')).toBeVisible();

@@ -16,7 +16,7 @@ async function startCamera() {
   const ios = window.Motion && Motion.isIOS(), standalone = window.Motion && Motion.isStandalone();
   if (!window.isSecureContext) { App.toast('Fotocamera bloccata: l\'app deve essere aperta in HTTPS'); return false; }
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    App.toast(ios && standalone ? 'Questa versione di iOS non permette la fotocamera nell\'app installata: apri Nova in Safari' : 'Fotocamera non disponibile: serve un browser recente', 6000); return false;
+    App.toast(ios && standalone ? 'Questa versione di iOS non permette la fotocamera nell\'app installata: apri Eris in Safari' : 'Fotocamera non disponibile: serve un browser recente', 6000); return false;
   }
   stopCamera();
   try {
@@ -28,7 +28,7 @@ async function startCamera() {
     return true;
   } catch (e) {
     const msg = e.name === 'NotAllowedError'
-      ? (ios && standalone ? 'Permesso fotocamera negato. Nell\'app installata sulla Home, iOS lo chiede di nuovo a ogni apertura: tocca Consenti, oppure controlla Impostazioni > Safari > Fotocamera (o apri Nova in Safari).'
+      ? (ios && standalone ? 'Permesso fotocamera negato. Nell\'app installata sulla Home, iOS lo chiede di nuovo a ogni apertura: tocca Consenti, oppure controlla Impostazioni > Safari > Fotocamera (o apri Eris in Safari).'
         : ios ? 'Permesso fotocamera negato: Impostazioni > Safari > Fotocamera > Consenti, poi ricarica.' : 'Permesso fotocamera negato')
       : e.name === 'NotReadableError' ? 'La fotocamera è usata da un\'altra app: chiudila e riprova'
       : e.name === 'OverconstrainedError' ? 'Questa fotocamera non è disponibile su questo dispositivo'

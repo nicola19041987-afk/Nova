@@ -11,7 +11,7 @@
   const S = { sent: 0, offered: false, pendingBye: false, timer: 0 };
   const key = (ch) => 'away:' + ((ch && ch.id) || 'nova');
   const ls = () => (root.App && App.ls) || null;
-  function isNova(ch) { return !!ch && (document.body.classList.contains('solo-mode') || /^nova/i.test(String(ch.name || '')) || ch.id === 'nova' || (root.App && App.solo && App.solo.char && App.solo.char() === ch)); }
+  function isNova(ch) { return !!ch && (document.body.classList.contains('solo-mode') || /^(nova|eris)/i.test(String(ch.name || '')) || ch.id === 'nova' || (root.App && App.solo && App.solo.char && App.solo.char() === ch)); }
   function awayInfo(ch) { try { const v = ls() && ls().get(key(ch || (App && App.current)), null); return v && v.at ? v : null; } catch { return null; } }
   function classify(text) {
     const t = String(text || '').trim();
@@ -99,7 +99,7 @@
     let card = document.getElementById('nv-away-card');
     if (a && stage) {
       if (!card) { card = document.createElement('div'); card.id = 'nv-away-card'; stage.appendChild(card); }
-      card.textContent = ((ch && ch.name) || 'Nova') + ' è uscita · scrivile quando vuoi';
+      card.textContent = ((ch && ch.name) || 'Eris') + ' è uscita · scrivile quando vuoi';
     } else if (card) card.remove();
     try { if (App.chat && App.chat.header) App.chat.header(); } catch { /* */ }
     try { if (App.solo && App.solo.paintHome) App.solo.paintHome(); } catch { /* */ }

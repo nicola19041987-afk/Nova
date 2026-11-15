@@ -11,7 +11,7 @@ async function login(request, user, pin) {
 test('carattere, vestiti e richieste si salvano, si ricaricano e non scavalcano le regole', async ({ request }) => {
   await login(request, 'nicola', '1357');
   const chars = await (await request.get('/api/characters')).json();
-  const nova = chars.find((c) => c && /nova/i.test(c.name || ''));
+  const nova = chars.find((c) => c && /nova|eris/i.test(c.name || ''));
   expect(nova && nova.id).toBeTruthy();
   const id = nova.id;
 
