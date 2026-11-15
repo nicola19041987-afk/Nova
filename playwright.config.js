@@ -1,5 +1,10 @@
 const { defineConfig } = require('@playwright/test');
 
+// v2d-44: i test locali non devono MAI usare i webhook veri (appunti, richieste «sistema»): se la macchina che lancia i test
+// ha queste variabili, il server di prova inoltrava appunti finti di «Luisa» («Il microfono non parte») a chi segue l'app.
+// Tolte qui, così non arrivano né al webServer né ai server avviati dai singoli test (ereditano process.env).
+for (const k of Object.keys(process.env)) if (/^(NOTES|SISTEMA)_WEBHOOK_/.test(k)) delete process.env[k];
+
 module.exports = defineConfig({
   testDir: './tests',
   timeout: 30000,

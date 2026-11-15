@@ -151,5 +151,5 @@
   });
   function seg(g) { $$('#gal-seg button').forEach((b) => b.classList.toggle('on', b.dataset.g === g)); $('#gal-photos').hidden = g !== 'photos'; $('#gal-create').hidden = g !== 'create'; }
   $('#gal-seg').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) seg(b.dataset.g); });
-  App.gallery = { load, seg, open, close, viewChat(f) { open([{ chat: true, kind: f.kind, url: '/api/chat-media/' + f.file, thumb: f.thumb ? '/api/chat-media/' + f.thumb : null, name: f.kind === 'video' ? 'Video' : 'Foto' }], 0); } };
+  App.gallery = { load, seg, open, close, meta, upload, viewChat(f) { open([{ chat: true, kind: f.kind, url: '/api/chat-media/' + f.file, thumb: f.thumb ? '/api/chat-media/' + f.thumb : null, name: f.kind === 'video' ? 'Video' : 'Foto' }], 0); } };
 })();

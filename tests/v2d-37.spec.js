@@ -99,6 +99,7 @@ test('bocca e voce: il clip «parla» si vede solo quando la voce suona davvero 
     AudioBufferSourceNode.prototype.start = function (when) { const c = this.context; const w = when || c.currentTime; const d = this.buffer ? this.buffer.duration : 0; if (d > 0.3) window.__au.push({ on: performance.now() + (w - c.currentTime) * 1000, off: performance.now() + (w - c.currentTime + d) * 1000 }); return st.apply(this, arguments); };
   });
   await open(page, 'nova_maldive');
+  await page.evaluate(() => App.ls.set('motionTalk', '1')); // v2d-44: i clip «parla» ora sono una scelta (di serie la bocca segue l'audio)
   const res = {};
   for (const look of ['nova_studio', 'nova_mora']) {
     await hold(page, look);

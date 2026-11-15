@@ -1494,3 +1494,16 @@ body.solo-mode.in-call #chat-form > .cb-side{display:none!important}
 /* v2d-41: la barra di registrazione resta dentro il campo e non copre 🎙️ (secondo tocco = invia) né ➤ */
 #chat-form .cb-pill{position:relative}
 #chat-form .cb-pill > .vn-hud{left:4px;right:80px;bottom:2px;padding:6px 10px}
+/* v2d-44: punto unico foto/video in chat (anteprime sopra il campo di testo, che diventa il campo delle modifiche) */
+#chat-form.composer.has-att,#chat-form.composer.att-busy,body.solo-mode #chat-form.composer.has-att,body.solo-mode #chat-form.composer.att-busy{flex-wrap:wrap!important}
+#chat-form .att-tray,#chat-form .att-status{flex:0 0 100%;max-width:100%;box-sizing:border-box;order:-1}
+#chat-form .att-tray[hidden],#chat-form .att-status[hidden]{display:none!important}
+#chat-form .att-tray{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:4px 4px 2px}
+#chat-form .att-item{position:relative;width:64px;height:64px;border-radius:10px;overflow:hidden;background:#d9dde1;flex:0 0 64px}
+#chat-form .att-item img,#chat-form .att-item video{width:100%;height:100%;object-fit:cover;display:block}
+#chat-form .att-badge{position:absolute;left:4px;bottom:3px;color:#fff;font-size:12px;text-shadow:0 1px 2px #000}
+#chat-form .att-x{position:absolute;top:2px;right:2px;width:22px;height:22px;min-width:0;padding:0;border:0;border-radius:50%;background:rgba(0,0,0,.6)!important;color:#fff!important;font-size:15px;line-height:22px}
+#chat-form .att-hint{flex:1 1 100%;margin:0;font-size:12px;line-height:1.3;color:#54656f}
+#chat-form .att-status{margin:0;padding:2px 8px;font-size:12.5px;color:#075e54}
+#chat-form.att-busy #vn-plus{opacity:.4;pointer-events:none}
+body #chat-form .att-tray .att-x,body.solo-mode #tab-conv #chat-form .att-tray .att-x{position:absolute!important;top:3px!important;right:3px!important;left:auto!important;bottom:auto!important;width:22px!important;height:22px!important;min-width:0!important;max-width:22px!important;min-height:0!important;max-height:22px!important;flex:none!important;padding:0!important;margin:0!important;font-size:15px!important;line-height:22px!important;border-radius:50%!important}

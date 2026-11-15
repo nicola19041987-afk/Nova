@@ -72,7 +72,7 @@
     const mic = $('#vn-mic');
     const send = document.querySelector('#chat-form button[type="submit"]');
     if (!input || !mic || !send) return;
-    const empty = !input.value.trim();
+    const empty = !input.value.trim() && !(App.attach && App.attach.count()); // v2d-44: con un allegato c'è sempre «invia»
     mic.hidden = !empty;
     send.hidden = empty;
   }
@@ -211,17 +211,7 @@
   const input = $('#chat-input');
   if (input) input.addEventListener('input', paintMic);
   paintMic();
-  const plus = $('#vn-plus');
-  if (plus) plus.addEventListener('click', () => {
-    const pick = document.createElement('input');
-    pick.type = 'file'; pick.accept = 'image/*';
-    pick.onchange = () => {
-      const file = pick.files && pick.files[0]; if (!file || !App.chat) return;
-      const url = URL.createObjectURL(file);
-      App.chat.send('', false, { url, kind: 'image', w: 0, h: 0, localOnly: true });
-    };
-    pick.click();
-  });
+  // v2d-44: il «+» ora è il punto unico per foto e video (caricati davvero e modificabili): vedi attach.js
 
   App.voiceNote = { box, gesture, urls, paintMic };
 })();

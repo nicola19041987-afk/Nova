@@ -151,6 +151,7 @@
     return !!((App.avatarConv && App.avatarConv.speaking) || (App.tts && App.tts.playing && el && !el.paused && el.currentTime > 0) || (window.speechSynthesis && window.speechSynthesis.speaking));
   }
   App.speakingAudio = speakingAudio;
+  App.talkClipsOn = () => talkClipsOn(); // v2d-44: per i controlli (labiale guidato dall'audio di serie)
   // v2d-30: movimento continuo. Libreria di clip collegati per posa (MotionGraph): uno finisce, il successivo
   // parte dalla stessa posa, senza fermo immagine. Mentre Nova parla resta la foto col labiale (come v2d-29);
   // quando sta per rispondere i clip la riportano verso la posa della foto, così il passaggio non salta.
@@ -160,7 +161,16 @@
     // v2d-40: in chiamata vocale (lei non ti vede la faccia, conta la voce) la bocca è quella disegnata sulla foto e guidata
     // dall'audio che si sente: i clip «parla» hanno una bocca generata che non segue la voce. 'voiceLips'='0' torna ai clip.
     try { const st = document.getElementById('stage'); if (st && st.classList.contains('nv-voicecall') && App.ls.get('voiceLips', '') !== '0' && faceOk(soloChar() || App.current)) return false; } catch { /* */ }
-    try { return !!(App.ls && App.ls.get('motionTalk', '') !== '0' && (App.motionPlayer && App.motionPlayer.lib.some((c) => c.kind === 'parla'))); } catch { return false; }
+    // v2d-44 (Nicola: «la bocca non va a tempo con l'audio»): i clip «parla» hanno una bocca generata che NON segue la voce.
+    // Di serie, se i punti del viso di questa foto ci sono, la bocca è quella disegnata e guidata dall'audio che si sente
+    // (tempo reale, voce classica, vocali), anche in videochiamata e fuori chiamata. I clip «parla» restano: senza punti del
+    // viso (mai una bocca storta e ferma) oppure se si sceglie apposta 'motionTalk'='1'.
+    try {
+      const pref = App.ls ? App.ls.get('motionTalk', '') : '';
+      if (pref === '0') return false;
+      if (pref !== '1' && faceOk(soloChar() || App.current)) return false;
+      return !!(App.motionPlayer && App.motionPlayer.lib.some((c) => c.kind === 'parla'));
+    } catch { return false; }
   }
   // v2d-36: punti del viso misurati su QUESTA foto (look o base): solo allora la bocca si può disegnare sulla foto
   function faceOk(ch) {

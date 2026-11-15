@@ -360,10 +360,10 @@ function fitComposer() {
   i.style.overflowY = !empty && i.scrollHeight > next + 2 ? 'auto' : 'hidden';
   if (App.stickChat) App.stickChat();
 }
-$('#chat-form').addEventListener('submit', (e) => { e.preventDefault(); const i = $('#chat-input'); const t = i.value; i.value = ''; fitComposer(); App.chat.send(t); });
+$('#chat-form').addEventListener('submit', (e) => { e.preventDefault(); const i = $('#chat-input'); const t = i.value; i.value = ''; fitComposer(); if (App.attach && App.attach.count()) { App.attach.submit(t); return; } App.chat.send(t); }); // v2d-44: con foto/video allegati il testo è la modifica da fare
 $('#chat-only').addEventListener('click', () => { const i = $('#chat-input'); const t = i.value; if (!t.trim()) return App.toast('Scrivi prima il messaggio'); i.value = ''; fitComposer(); App.chat.send(t, true); });
 $('#chat-input').addEventListener('input', fitComposer);
-$('#chat-input').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !/Mobi/.test(navigator.userAgent)) { e.preventDefault(); $('#chat-form').requestSubmit(); } });
+$('#chat-input').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && (!/Mobi/.test(navigator.userAgent) || (App.attach && App.attach.count()))) { e.preventDefault(); $('#chat-form').requestSubmit(); } });
 $('#chat-input').addEventListener('focus', () => { const b = $('#kb-hide'); if (b) b.hidden = false; });
 $('#chat-input').addEventListener('blur', () => { const b = $('#kb-hide'); if (b) b.hidden = true; setTimeout(() => App.chat && App.chat.scroll && App.chat.scroll(), 80); });
 $('#kb-hide').addEventListener('click', () => { $('#chat-input').blur(); });

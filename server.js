@@ -3486,6 +3486,49 @@ app.post('/api/gallery/:id/restore', auth, async (req, res) => {
   if (!pub) return res.status(404).json({ error: 'Elemento non trovato' });
   res.json({ item: pub });
 });
+// v2d-44: punto unico di caricamento in chat. Dopo «＋» (foto o video) chi scrive mette cosa cambiare e preme invio:
+// - foto: modifica con xAI (/images/edits) a partire dalla foto (o dalla copia ridotta fatta dal telefono, che legge anche HEIC);
+//   il risultato è un nuovo elemento della Galleria (l'originale resta), poi entrambi vanno in chat.
+// - video: nessuna modifica possibile qui: il video resta salvato e l'istruzione viene conservata come nota sul video.
+// Immagini sempre non esplicite (stesse regole di generazione dell'app).
+const GAL_EDIT_TYPES = /^image\/(jpeg|png)$/;
+app.post('/api/gallery/:id/edit', auth, requireActivated, requireKey, async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  if (!ID_RE.test(req.params.id)) return res.status(400).json({ error: 'ID non valido' });
+  if (isGuest(req.user)) return res.status(403).json({ error: 'Non disponibile per questo profilo.', code: 'GUEST' });
+  const instruction = String((req.body && req.body.instruction) || '').replace(/\s+/g, ' ').trim().slice(0, 600);
+  if (!instruction) return res.status(400).json({ error: 'Scrivi cosa modificare' });
+  if (hasYouth(instruction)) return res.status(400).json({ error: 'Descrizione non consentita: solo persone adulte (25+).' });
+  const it = readJSON(galIndex(req.user), []).find((i) => i.id === req.params.id && !i.deletedAt);
+  if (!it || !fs.existsSync(path.join(galDir(req.user), it.file))) return res.status(404).json({ error: 'Elemento non trovato' });
+  if (it.kind === 'video') {
+    let pub = null;
+    await mutateJSON(galIndex(req.user), [], (l) => l.map((x) => {
+      if (x.id !== it.id) return x;
+      const n = { ...x, notes: [...(Array.isArray(x.notes) ? x.notes : []), { text: instruction, at: new Date().toISOString(), by: req.user }].slice(-20) };
+      pub = galPub(n); return n;
+    }));
+    return res.json({ kind: 'video', edited: false, noted: true, item: pub, message: 'Video salvato. Le modifiche ai video non si possono fare qui: la tua istruzione è salvata come nota sul video.' });
+  }
+  let src = null;
+  const small = req.body && req.body.src ? String(req.body.src) : '';
+  if (small) { const b = parseDataUrl(small); if (!b || b.length > 8e6) return res.status(400).json({ error: 'Immagine non valida' }); src = small; }
+  else if (GAL_EDIT_TYPES.test(it.type || '') && it.size <= 8e6) src = fileToDataUrl(path.join(galDir(req.user), it.file));
+  if (!src) return res.status(415).json({ error: 'Questa foto non si può modificare così: riprova dal telefono (la riduco prima di mandarla).' });
+  const prompt = `Edit this photo. Apply only this change, requested in Italian: «${instruction}». Keep everything else exactly as it is: same people, same faces and identity, same pose, framing, background and light, unless the request says otherwise. Realistic photo, non-explicit, no text.`;
+  try {
+    const gen = await editImage(req.aiKey, prompt, [src], false);
+    const id = newId(), file = `${id}.${gen.jpg ? 'jpg' : 'png'}`;
+    fs.writeFileSync(path.join(galDir(req.user), file), gen.buf);
+    const n = { id, file, kind: 'image', type: gen.jpg ? 'image/jpeg' : 'image/png', size: gen.buf.length, name: safeText(`Modifica: ${instruction}`, 120),
+      w: null, h: null, duration: null, addedAt: new Date().toISOString(), thumb: null, editOf: it.id, instruction };
+    await mutateJSON(galIndex(req.user), [], (l) => [...l, n]);
+    res.json({ kind: 'image', edited: true, item: galPub(n), source: galPub(it) });
+  } catch (e) {
+    console.error('Modifica foto dalla chat:', e.message);
+    res.status(502).json({ error: e.message || 'Servizio AI non raggiungibile' });
+  }
+});
 // Foto/video inviati in una chat: copiati nell'archivio condiviso (la chat è di coppia, la vede anche l'altro profilo)
 const CHAT_MEDIA_RE = /^[a-f0-9]{16}\.(jpg|png|webp|gif|heic|mp4|mov|webm)$/;
 function galToChat(u, gid) {
@@ -4668,6 +4711,45 @@ function seedReadyChars() {
   renameSeededSoloToEris();
   if (id) preferUnico(id);
   dropLookHistoryOnce();
+  if (id) erisCanottaOnce(id);
+}
+// v2d-44 (Nicola): foto principale di Eris = mezzo busto con la canotta azzurra (coda alta, tatuaggio sul braccio destro,
+// braccio sinistro libero). UNA volta sola: la foto di prima va nello storico dei look (si può ripristinare), i look del
+// guardaroba e le foto in archivio non si toccano. Punti del viso già misurati (bocca e occhi pronti subito).
+const CANOTTA_KEY = 'eris_canotta_v2d44';
+const CANOTTA_FILE = 'e44c0a7a00000001.jpg';
+function erisCanottaOnce(id) {
+  const done = readJSON(MIGRATIONS_FILE, {}) || {};
+  if (done[CANOTTA_KEY]) return;
+  const src = path.join(__dirname, 'assets', 'ready', 'eris-canotta.jpg');
+  if (!fs.existsSync(src)) return;
+  try {
+    const url = `/api/avatars/${CANOTTA_FILE}`, dst = path.join(avatarDir(), CANOTTA_FILE);
+    if (!fs.existsSync(dst)) fs.copyFileSync(src, dst);
+    let lm = null;
+    try { lm = cleanLm({ ...JSON.parse(fs.readFileSync(path.join(__dirname, 'assets', 'ready', 'eris-canotta-landmarks.json'), 'utf8')), auto: true, src: url }, url); }
+    catch (e) { console.error('Punti del viso canotta non letti:', e.message); }
+    const chars = readJSON(CHARS_FILE(), []);
+    const i = Array.isArray(chars) ? chars.findIndex((c) => c && c.id === id) : -1;
+    if (i < 0) return;
+    const cur = chars[i], from = cur.avatar || null;
+    // installazione nuova (o dei test): la foto è ancora una di quelle di serie in assets/ready -> nessun cambio
+    const fileNow = (AV_RE.exec(String(cur.avatar || '')) || [])[1];
+    if (fileNow && fs.existsSync(path.join(avatarDir(), fileNow))) {
+      const h = crypto.createHash('sha256').update(fs.readFileSync(path.join(avatarDir(), fileNow))).digest('hex');
+      const seeded = fs.readdirSync(path.join(__dirname, 'assets', 'ready')).filter((n) => /\.jpg$/.test(n) && n !== 'eris-canotta.jpg')
+        .some((n) => crypto.createHash('sha256').update(fs.readFileSync(path.join(__dirname, 'assets', 'ready', n))).digest('hex') === h);
+      if (seeded) { writeJSON(MIGRATIONS_FILE, { ...done, [CANOTTA_KEY]: { at: new Date().toISOString(), skipped: 'foto di serie' } }); return; }
+    }
+    if (cur.avatar !== url) {
+      const next = { ...cur, avatar: url, avatarSource: 'upload', landmarks: lm, updatedAt: new Date().toISOString() };
+      next.lookHistory = pushHistory(cur, next, 'prima della canotta azzurra (v2d-44)');
+      chars[i] = next;
+      writeJSON(CHARS_FILE(), chars);
+    }
+    writeJSON(MIGRATIONS_FILE, { ...done, [CANOTTA_KEY]: { at: new Date().toISOString(), from, to: url } });
+    console.log('Foto principale di Eris: canotta azzurra', url, '(prima:', from, ')');
+  } catch (e) { console.error('Foto canotta non applicata:', e.message); }
 }
 // v2d-41: la «memoria visiva» (storico delle descrizioni di aspetto/età in Vestiti e fisico, es. «25 anni», «26 anni») occupa
 // spazio e non serve: copia di sicurezza completa in backups/memoria-visiva-v41/, poi resta solo il testo attuale.
