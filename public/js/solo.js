@@ -551,6 +551,7 @@
         e.stopImmediatePropagation();
         if (document.body.classList.contains('solo-portrait')) { this.closePortrait(); return; }
         if (document.body.dataset.tab === 'account') { this.showHome(); return; }
+        if (document.body.dataset.tab === 'images') { this.showChat(); return; }
         if (document.body.classList.contains('solo-home') && this._nh && this._nh !== 'list') { this.showPage('list'); return; }
         if (document.body.classList.contains('solo-home')) { this.showChat(); return; }
         this.showHome();
@@ -700,6 +701,16 @@
         const ch = soloChar(); if (!ch) return;
         if (App.current?.id !== ch.id && App.chat) App.chat.open(ch.id);
         if (App.sight && App.sight.active && !App.sight.active() && App.sight.start) App.sight.start();
+        return;
+      }
+      if (name === 'images') {
+        if (this.full) this.toggleFull(false);
+        document.body.classList.remove('solo-chat');
+        App.openTab('images');
+        $('#tab-conv').hidden = true;
+        const bar = $('#look-bar'); if (bar) bar.hidden = true;
+        document.body.dataset.tab = 'images';
+        this.paintBack('list');
         return;
       }
       if (name === 'settings') {
