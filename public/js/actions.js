@@ -121,7 +121,7 @@
       const ready = String((ch && ch.ready) || '');
       const avatar = String((ch && ch.avatar) || '');
       const still = ready === 'nova-scelta' || ready === 'nova-unico' || ready === 'nova-bionda' || ready === 'still' || !!(ch && ch.still === true) || /nova-scelta|a11cea7a10000001|b10b1a0000000001|5ce17a0000000001/.test(avatar);
-      if (still) return '🎭 Con questa foto Eris usa respiro, sguardo e bocca. I filmati pronti sono saluto e capelli.';
+      if (still) return '🎭 Con questa foto Alpha usa respiro, sguardo e bocca. I filmati pronti sono saluto e capelli.';
       const localKey = App.key && String(App.key() || '').trim();
       const serverKey = !!(App.me && App.me.serverKey);
       if (!localKey && !serverKey) return '🎭 Nessuna azione pronta: si preparano da sole appena c\'è la chiave xAI';

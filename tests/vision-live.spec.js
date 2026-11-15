@@ -24,7 +24,7 @@ test('xAI descrive un riquadro rosso della fotocamera', async ({ request }) => {
     expect(login.ok(), await login.text()).toBeTruthy();
   } else expect(setup.ok(), await setup.text()).toBeTruthy();
   const chars = await (await request.get('/api/characters')).json();
-  const nova = chars.find((c) => c && /^(Nova|Eris)$/i.test(c.name || '')) || chars[0];
+  const nova = chars.find((c) => c && /^(Nova|Alpha|Alpha)$/i.test(c.name || '')) || chars[0];
   expect(nova && nova.id).toBeTruthy();
   const frame = redJpeg();
   const r = await request.post('/api/chats/' + nova.id + '/sight', {

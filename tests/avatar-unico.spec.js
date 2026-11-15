@@ -53,7 +53,7 @@ test('gli avatar vecchi restano su disco, nascosti, e Nova è l’unica visibile
     const list = await api.get('/api/characters');
     expect(list.ok(), await list.text()).toBeTruthy();
     const chars = await list.json();
-    expect(chars.map((c) => c.name)).toEqual(['Eris']);
+    expect(chars.map((c) => c.name)).toEqual(['Alpha']);
     expect(chars[0].id).toBe('5ce17a0000000001');
     expect(chars[0].ready).toBe('nova-scelta');
     expect(chars[0].personality).toBe('');
@@ -101,10 +101,10 @@ test('gli avatar vecchi restano su disco, nascosti, e Nova è l’unica visibile
     const gal = await (await api.get('/api/archive')).json();
     const oldPhoto = gal.items.find((i) => i.label && i.label.includes('Greta') && i.source === 'Avatar');
     const oldClip = gal.items.find((i) => i.source === 'Clip' && i.label && i.label.includes('archiviato'));
-    const unica = gal.items.find((i) => i.label === 'Eris' || (i.source === 'Avatar' && !(i.label || '').includes('archiviato') && (i.label || '').includes('Eris')));
+    const unica = gal.items.find((i) => i.label === 'Alpha' || (i.source === 'Avatar' && !(i.label || '').includes('archiviato') && (i.label || '').includes('Alpha')));
     expect(oldPhoto && oldPhoto.label.includes('archiviato')).toBe(true);
     expect(oldClip).toBeTruthy();
-    expect(gal.items.some((i) => i.source === 'Avatar' && (i.label || '') === 'Eris')).toBe(true);
+    expect(gal.items.some((i) => i.source === 'Avatar' && (i.label || '') === 'Alpha')).toBe(true);
     expect(unica && !(unica.label || '').includes('archiviato')).toBe(true);
     expect(fs.existsSync(path.join(dir, 'shared', 'avatars', 'a11cea7a10000001.jpg'))).toBe(true);
     expect(fs.existsSync(path.join(dir, 'shared', 'avatars', 'b10b1a0000000001.jpg'))).toBe(true);

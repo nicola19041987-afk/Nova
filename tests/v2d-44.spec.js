@@ -174,7 +174,7 @@ test('v2d-44: iPhone SE 375x568, il vassoio allegati non copre il campo di testo
     const p = new URL(route.request().url()).pathname;
     const json = (o) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(o) });
     if (p === '/api/me') return json({ user: 'nicola', name: 'Nico', admin: true, editor: true, activated: true, consent: { activatedAt: '2026-01-01T00:00:00.000Z', phrase: 'ok' }, adult: false, adultChat: false, solo: true, soloKey: 'greta', serverKey: true });
-    if (p === '/api/characters') return json([{ id: '5ce17a0000000001', name: 'Eris', ready: 'nova-scelta', avatar: '', motionClips: [], outfits: [], personality: '', style: '', requests: '', voice: 'eve' }]);
+    if (p === '/api/characters') return json([{ id: '5ce17a0000000001', name: 'Alpha', ready: 'nova-scelta', avatar: '', motionClips: [], outfits: [], personality: '', style: '', requests: '', voice: 'eve' }]);
     if (p.startsWith('/api/chats/')) return json({ epoch: 'e1', last: 0, messages: [], typing: null });
     if (p === '/api/gallery') return json({ items: [], trash: [], trashDays: 30 });
     if (p === '/api/memory') return json([]);
@@ -205,7 +205,7 @@ test('v2d-44: mentre parla, di serie la bocca è quella guidata dall\'audio (non
     const p = new URL(route.request().url()).pathname;
     const json = (o) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(o) });
     if (p === '/api/me') return json({ user: 'nicola', name: 'Nico', admin: true, editor: true, activated: true, consent: { activatedAt: '2026-01-01T00:00:00.000Z', phrase: 'ok' }, adult: false, adultChat: false, solo: true, soloKey: 'greta', serverKey: true });
-    if (p === '/api/characters') return json([{ id: '5ce17a0000000001', name: 'Eris', ready: 'nova-scelta', avatar: '', landmarks: withFace ? LM : null, motionClips: [], outfits: [], personality: '', style: '', requests: '', voice: 'eve' }]);
+    if (p === '/api/characters') return json([{ id: '5ce17a0000000001', name: 'Alpha', ready: 'nova-scelta', avatar: '', landmarks: withFace ? LM : null, motionClips: [], outfits: [], personality: '', style: '', requests: '', voice: 'eve' }]);
     if (p.startsWith('/api/chats/')) return json({ epoch: 'e1', last: 0, messages: [], typing: null });
     if (p === '/api/gallery') return json({ items: [], trash: [], trashDays: 30 });
     if (p === '/api/memory') return json([]);
@@ -236,7 +236,7 @@ test('v2d-44: mentre parla, di serie la bocca è quella guidata dall\'audio (non
 });
 
 // v2d-44: foto principale = canotta azzurra (una volta sola, la foto di prima resta nello storico dei look)
-test('v2d-44: la foto di Eris diventa la canotta azzurra, con bocca e occhi pronti e la foto di prima nello storico', async ({ page, request, browserName }) => {
+test('v2d-44: la foto di Alpha diventa la canotta azzurra, con bocca e occhi pronti e la foto di prima nello storico', async ({ page, request, browserName }) => {
   test.skip(browserName === 'webkit', 'Chromium.');
   test.setTimeout(120000);
   const CH = '5ce17a0000000001', OLD = 'aaaa0000bbbb0001.jpg';
@@ -244,7 +244,7 @@ test('v2d-44: la foto di Eris diventa la canotta azzurra, con bocca e occhi pron
   fs.mkdirSync(path.join(dir, 'shared', 'avatars'), { recursive: true });
   fs.copyFileSync(process.env.V2D44_BEFORE || JPG, path.join(dir, 'shared', 'avatars', OLD));
   const lmOld = JSON.parse(fs.readFileSync(path.join(ROOT, 'assets', 'ready', 'nova-scelta-landmarks.json'), 'utf8'));
-  fs.writeFileSync(path.join(dir, 'shared', 'characters.json'), JSON.stringify([{ id: CH, name: 'Eris', ready: 'nova-scelta', avatar: '/api/avatars/' + OLD, avatarSource: 'upload', landmarks: { ...lmOld, src: '/api/avatars/' + OLD }, appearance: {}, look: {}, wardrobe: [], personality: '', style: '', orders: '', requests: '', voice: 'eve', lookHistory: [], outfits: [] }]));
+  fs.writeFileSync(path.join(dir, 'shared', 'characters.json'), JSON.stringify([{ id: CH, name: 'Alpha', ready: 'nova-scelta', avatar: '/api/avatars/' + OLD, avatarSource: 'upload', landmarks: { ...lmOld, src: '/api/avatars/' + OLD }, appearance: {}, look: {}, wardrobe: [], personality: '', style: '', orders: '', requests: '', voice: 'eve', lookHistory: [], outfits: [] }]));
   const ai = await startMockAI([]);
   const shot = async (name) => {
     if (!SHOTS) return;
@@ -281,7 +281,7 @@ test('v2d-44: la foto di Eris diventa la canotta azzurra, con bocca e occhi pron
   s = startServer(dir, ai.address().port);
   try {
     await waitUp(s);
-    expect(s.log()).toContain('Foto principale di Eris: canotta azzurra');
+    expect(s.log()).toContain('Foto principale di Alpha: canotta azzurra');
     const base = `http://127.0.0.1:${s.port}`;
     await page.context().clearCookies();
     await enter(base);
@@ -297,7 +297,7 @@ test('v2d-44: la foto di Eris diventa la canotta azzurra, con bocca e occhi pron
     await shot('06-avatar-dopo-chat-390x844.png');
     // secondo avvio: non si ripete
     s.child.kill(); s = startServer(dir, ai.address().port); await waitUp(s);
-    expect(s.log()).not.toContain('Foto principale di Eris: canotta azzurra');
+    expect(s.log()).not.toContain('Foto principale di Alpha: canotta azzurra');
   } finally { s.child.kill(); ai.close(); }
 });
 

@@ -16,7 +16,7 @@
     const t = data.totals || { photos: 0, videos: 0, by: {}, first: null, last: null };
     const by = t.by || {};
     $('#archive-totals').innerHTML = `<p><b>${t.videos || 0}</b> video · <b>${t.photos || 0}</b> foto</p>
-      <p>Nicola ${by.Nicola || 0} · Luisa ${by.Luisa || 0} · Eris ${by['Nova-generated'] || 0} · sconosciuto ${by.sconosciuto || 0}</p>
+      <p>Nicola ${by.Nicola || 0} · Luisa ${by.Luisa || 0} · Alpha ${by['Nova-generated'] || 0} · sconosciuto ${by.sconosciuto || 0}</p>
       <p class="muted small">${t.first ? 'dal ' + esc(when(t.first)) + ' al ' + esc(when(t.last)) : 'Nessuna foto o video sul server.'}</p>`;
     const grid = $('#archive-grid');
     const items = data.items || [];

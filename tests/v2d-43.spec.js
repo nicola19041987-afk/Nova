@@ -13,7 +13,7 @@ async function mockHome(page) {
     const p = new URL(req.url()).pathname;
     const json = (o) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(o) });
     if (p === '/api/me') return json({ user: 'nicola', name: 'Nico', admin: true, editor: true, activated: true, consent: { activatedAt: '2026-01-01T00:00:00.000Z', phrase: 'ok' }, adult: false, adultChat: false, solo: true, soloKey: 'greta', serverKey: true });
-    if (p === '/api/characters') return json([{ id: CH, name: 'Eris', ready: 'nova-scelta', avatar: '', motionClips: [], outfits: [], personality: '', style: '', requests: '', voice: 'eve' }]);
+    if (p === '/api/characters') return json([{ id: CH, name: 'Alpha', ready: 'nova-scelta', avatar: '', motionClips: [], outfits: [], personality: '', style: '', requests: '', voice: 'eve' }]);
     if (p.startsWith('/api/chats/')) return json({ epoch: 'e1', last: 0, messages: [], typing: null });
     if (p === '/api/settings') return json({ autoSave: false, allowExport: false });
     if (p === '/api/adult-status') return json({ set: false, chat: false, users: [], missing: [] });

@@ -26,7 +26,7 @@ async function loginNicola(request) {
 }
 async function novaId(request) {
   const list = await (await request.get('/api/characters')).json();
-  const nova = list.find((c) => /nova|eris/i.test(c.name || '')) || list[0];
+  const nova = list.find((c) => /nova|alpha|alpha/i.test(c.name || '')) || list[0];
   return nova.id;
 }
 
