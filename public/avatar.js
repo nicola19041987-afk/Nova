@@ -64,6 +64,10 @@
       this._pf = { draw: new Float32Array(240), gap: new Float32Array(240), n: 0 }; // v8.4.1: tempi dei fotogrammi (media e p95)
       this._applyResize();
       if (window.ResizeObserver) new ResizeObserver(() => this.resize()).observe(canvas);
+      // v2d-48: visibilità del canvas dall'IntersectionObserver (nessun ricalcolo forzato del layout a ogni fotogramma:
+      // con 3 avatar e una chat lunga erano i «long task» che rendevano l'app a scatti). Senza IO: come prima.
+      this._ioVis = true;
+      if (window.IntersectionObserver) { try { new IntersectionObserver((es) => { const e = es[es.length - 1]; if (e) this._ioVis = !!e.isIntersecting; }).observe(canvas); this._io = true; } catch { this._io = false; } }
       this._raf = requestAnimationFrame(this.loop); // parte subito, anche senza fotocamera
       this._wd = setInterval(() => { try { this.watchdog(); } catch {} }, 1000);
     }
@@ -76,7 +80,7 @@
     _applyResize() {
       if (this._inFrame) { this._needResize = true; return; }
       const w = this.c.clientWidth || 0, h = this.c.clientHeight || 0; if (!w || !h) return;
-      let d = Math.min(3, window.devicePixelRatio || 1); const MAXPX = 1.8e6, MAXD = 2000;
+      let d = Math.min(3, window.devicePixelRatio || 1); const MAXPX = 1.1e6, MAXD = 2000; // v2d-48: 1,1 Mpx (prima 1,8): su iPhone ~1,8x invece di 2,3x, metà lavoro per fotogramma
       d = Math.min(d, Math.sqrt(MAXPX / (w * h)), MAXD / Math.max(w, h));
       const pw = Math.max(1, Math.round(w * d)), ph = Math.max(1, Math.round(h * d));
       if (Math.abs(pw - this.c.width) > 2 || Math.abs(ph - this.c.height) > 2) { this.c.width = pw; this.c.height = ph; }
@@ -368,9 +372,14 @@
     // v8.4.5: «cane da guardia»: se i fotogrammi si fermano (iOS Risparmio energetico, errore, rAF sospeso) riparte il ciclo e
     // il movimento CSS (respiro/ondeggiamento sul canvas, gestito dal compositore del browser) diventa più evidente
     // v8.5.2: isteresi sul fallback CSS — niente flip-flop fotogramma per fotogramma (causa del "saltella")
+    // v2d-48: canvas dell'avatar coperto dal video Simli (opaco, a tutto riquadro)
+    _covered() {
+      if (!(window.App && App.avatarConv === this && document.body.classList.contains('simli-on'))) return false;
+      const v = document.getElementById('simli-video'); return !!(v && !v.hidden && v.srcObject);
+    }
     watchdog() {
       const c = this.c, st = c.parentElement, now = performance.now();
-      const vis = document.visibilityState === 'visible' && c.isConnected && c.getClientRects().length > 0;
+      const vis = document.visibilityState === 'visible' && c.isConnected && (this._io ? this._ioVis : c.getClientRects().length > 0) && !this._covered();
       const age = now - (this._drawn || 0);
       const stale = vis && age > 1600;
       if (stale) {
@@ -429,9 +438,11 @@
     }
     frame(now) {
       if (!this.c.isConnected) return;
-      const visible = this.c.getClientRects().length > 0;
+      // v2d-48: niente getClientRects() a ogni fotogramma (forzava stile+layout di tutta la pagina); e con il volto Simli
+      // a schermo il canvas è coperto dal video: lo stato (bocca, respiro) continua, il disegno no.
+      const visible = (this._io ? this._ioVis : this.c.getClientRects().length > 0) && !this._covered();
       this._lerpLm(now);
-      if (++this._frame % 30 === 0) this.resize();
+      if (++this._frame % 30 === 0 && visible) this.resize();
       // v8.4.1: ritmo costante ~60 fotogrammi al secondo anche a riposo (prima 30: il movimento sembrava "a scatti");
       // sugli schermi a 120 Hz si salta un fotogramma su due (stesso ritmo, metà lavoro)
       if (now - (this._drawn || 0) < 12) return;

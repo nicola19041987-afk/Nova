@@ -3,6 +3,9 @@
  * "solo messaggio" senza IA, memoria automatica ed evoluzione della personalità. */
 App.chat = {
   epoch: null, last: 0, ids: new Set(), busy: false, polling: false,
+  // v2d-48: chat lunga (500+ messaggi) disegnata a finestre: all'apertura solo gli ultimi WIN, i precedenti si aggiungono
+  // in cima quando si scorre verso l'alto (stessi messaggi, stesso ordine; meno nodi = niente scatti su iPhone).
+  WIN: 120, MORE: 80, older: [],
   renderList() {
     $('#char-list').innerHTML = App.chars.map((c) => `<li data-id="${c.id}">${App.avatarHtml(c)}
       <div class="grow"><b>${esc(c.name)}</b><span>${esc(c.state ? 'Umore: ' + c.state.mood : '')}${App.previews[c.id] ? ' · nuovo look da salvare' : ''}</span></div>
@@ -26,7 +29,7 @@ App.chat = {
       else if (App.solo && App.solo.showChat) App.solo.showChat();
       requestAnimationFrame(() => { App.fitFrame && App.fitFrame(); setTimeout(() => App.fitFrame && App.fitFrame(), 100); });
     }
-    $('#messages').innerHTML = ''; this.epoch = null; this.last = 0; this.ids = new Set();
+    $('#messages').innerHTML = ''; this.epoch = null; this.last = 0; this.ids = new Set(); this.older = [];
     this.header(null);
     await this.poll(true);
     this.scroll();
@@ -46,7 +49,16 @@ App.chat = {
   },
   // Nome visibile dell'autore: Nico / Luisa / nome del personaggio
   label(m) { return m.authorName || (m.author === 'nicola' ? 'Nico' : m.author === 'luisa' ? 'Luisa' : (App.current && App.current.name) || ''); },
-  addMsg(m) {
+  // v2d-48: aggiunge in cima i messaggi precedenti non ancora disegnati, mantenendo il punto di lettura
+  showOlder() {
+    const box = $('#messages'); if (!box || !this.older.length) return 0;
+    const chunk = this.older.splice(Math.max(0, this.older.length - this.MORE));
+    const first = box.querySelector('.msg'), h0 = box.scrollHeight, t0 = box.scrollTop;
+    for (const m of chunk) { if (m.id) this.ids.delete(m.id); this.addMsg(m, first); }
+    box.scrollTop = t0 + (box.scrollHeight - h0);
+    return chunk.length;
+  },
+  addMsg(m, before = null) {
     if (m.id && this.ids.has(m.id)) return null;
     if (m.id) this.ids.add(m.id);
     const mine = m.role === 'user' && (!m.author || m.author === App.me.user);
@@ -96,7 +108,8 @@ App.chat = {
     d.addEventListener('pointercancel', () => clearTimeout(hold));
     d.addEventListener('pointermove', () => clearTimeout(hold));
     d.addEventListener('contextmenu', (e) => { e.preventDefault(); clearTimeout(hold); copyText(); });
-    $('#messages').appendChild(d); return d;
+    if (before && before.parentNode) before.parentNode.insertBefore(d, before); else $('#messages').appendChild(d);
+    return d;
   },
   // spunte: due spunte quando il server ha il messaggio, blu quando dopo c'è una risposta (del personaggio o dell'altra persona)
   ticks() {
@@ -137,10 +150,16 @@ App.chat = {
       const r = await App.api(`/api/chats/${ch.id}${q}`);
       if (App.current !== ch) return;
       const stick = this.nearBottom();
-      if (r.reset) { $('#messages').innerHTML = ''; this.ids = new Set(); }
+      if (r.reset) { $('#messages').innerHTML = ''; this.ids = new Set(); this.older = []; }
       this.epoch = r.epoch; this.last = r.last;
-      let added = 0;
-      for (const m of r.messages) {
+      let added = 0, list = r.messages;
+      if ((r.reset || full) && list.length > this.WIN) { // v2d-48: solo gli ultimi WIN subito; gli altri restano pronti in memoria
+        const cut = list.length - this.WIN;
+        this.older = this.older.concat(list.slice(0, cut).filter((m) => !(m.id && this.ids.has(m.id))));
+        for (const m of this.older) if (m.id) this.ids.add(m.id);
+        list = list.slice(cut);
+      }
+      for (const m of list) {
         if (!this.addMsg(m)) continue;
         added++;
         // risposta del personaggio arrivata col polling (es. chiesta dall'altro profilo): l'avatar "la dice" e reagisce
@@ -302,6 +321,9 @@ App.chat = {
 // ---- sincronizzazione dell'archivio condiviso ----
 // Chat: ogni 3 s mentre è visibile (in pausa se l'app è in background).
 setInterval(() => { if (App.chat.visible() && !App.chat.busy) App.chat.poll(); }, 3000);
+// v2d-48: vicino all'inizio della chat si aggiungono i messaggi precedenti (a blocchi)
+(function () { const m = document.getElementById('messages'); if (!m) return; let q = 0;
+  m.addEventListener('scroll', () => { if (q || m.scrollTop > 400 || !App.chat.older.length) return; q = requestAnimationFrame(() => { q = 0; if (m.scrollTop <= 400) App.chat.showOlder(); }); }, { passive: true }); })();
 document.addEventListener('visibilitychange', () => { if (App.chat.visible()) App.chat.poll(); if (!document.hidden) App.sync(); });
 // Personaggi e memoria: ogni 7 s controlla le versioni e ricarica solo ciò che l'altro profilo ha cambiato.
 App._ver = { chars: null, memory: null };

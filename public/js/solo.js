@@ -657,6 +657,7 @@
     syncMotion,
     syncMini,
     showChat() {
+      const wasChat = document.body.classList.contains('solo-chat');
       document.body.classList.add('solo-chat');
       document.body.classList.remove('solo-home', 'solo-portrait', 'solo-calls', 'solo-settings');
       if (this.full) this.toggleFull(false);
@@ -670,7 +671,8 @@
       this.setDock('chat');
       if (App.chat && App.chat.header) App.chat.header(); // v2d-46: tornando da «Chiamate» la testata riprende foto e «online»
       syncMotion();
-      requestAnimationFrame(fit);
+      // v2d-48: entrando in chat si parte dagli ultimi messaggi (la chat caricata mentre era nascosta restava in cima, al primo messaggio)
+      requestAnimationFrame(() => { fit(); if (!wasChat && App.chat && App.chat.scroll) App.chat.scroll(); });
     },
     showHome() {
       document.body.classList.add('solo-home');
