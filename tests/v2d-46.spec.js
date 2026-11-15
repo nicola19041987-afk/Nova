@@ -95,7 +95,7 @@ const vis = (page, sel) => page.evaluate((s) => { const e = document.querySelect
 
 test('v2d-46: cache del service worker e HTML: barra Chat · Chiamate · Impostazioni, niente Galleria nel menu', async ({ request }) => {
   const sw = await (await request.get('/sw.js')).text();
-  expect(sw).toContain("const CACHE = 'app-privata-v2d-46'");
+  expect(sw).toMatch(/const CACHE = 'app-privata-v2d-4[6-9]'/);
   const html = await (await request.get('/')).text();
   expect(html).not.toContain('id="dock-gallery"');
   expect(html).not.toMatch(/<span>Galleria<\/span><em>/);
@@ -350,6 +350,7 @@ test('v2d-46: Simli parte solo col volto creato dalla foto di Alpha (mai il volt
     const b = []; req.on('data', (d) => b.push(d)); req.on('end', () => {
       hits.push({ url: req.url, key: req.headers['x-simli-api-key'], len: Buffer.concat(b).length });
       res.setHeader('Content-Type', 'application/json');
+      if (req.url.startsWith('/faces/trinity/preprocess')) { res.setHeader('Content-Type', 'image/png'); res.setHeader('TARGET-RATIO', '0'); res.setHeader('warnings', '[]'); return res.end(Buffer.alloc(2000, 7)); }
       if (req.url.startsWith('/faces/trinity?')) return res.end(JSON.stringify({ message: 'in coda', face_id: '11111111-2222-3333-4444-555555555555', warnings: [] }));
       if (req.url.startsWith('/faces/trinity/generation_status')) return res.end(JSON.stringify({ status: hits.filter((h) => h.url.includes('generation_status')).length > 1 ? 'completed' : 'processing', face_id: '11111111-2222-3333-4444-555555555555' }));
       if (req.url.startsWith('/compose/token')) return res.end(JSON.stringify({ session_token: 'tok' }));
@@ -371,7 +372,7 @@ test('v2d-46: Simli parte solo col volto creato dalla foto di Alpha (mai il volt
     expect((await api.post(base + '/api/simli/key', { headers: HEAD, data: { key: 'simli-prova-segreta' } })).ok()).toBeTruthy();
     expect((await (await api.get(base + '/api/me')).json()).simliFace).toBe(false);
     expect((await api.post(base + '/api/simli/session', { headers: HEAD, data: {} })).status()).toBe(409);
-    const mk = await api.post(base + '/api/simli/face', { headers: HEAD, data: {} });
+    const mk = await api.post(base + '/api/simli/face', { headers: HEAD, data: { wait: true } });
     const mkTxt = await mk.text();
     expect(mk.ok(), mkTxt).toBeTruthy();
     expect(mkTxt).not.toContain('simli-prova-segreta');
@@ -383,4 +384,91 @@ test('v2d-46: Simli parte solo col volto creato dalla foto di Alpha (mai il volt
     const ok = await api.post(base + '/api/simli/session', { headers: HEAD, data: {} });
     expect(ok.ok()).toBeTruthy();
   } finally { for (const c of ctxs) await c.dispose().catch(() => {}); s.child.kill(); ai.close(); sim.close(); }
+});
+
+// v2d-47: volto Simli come da documentazione (preprocess -> target-ratio -> create), errori di Simli registrati senza chiave,
+// stessa foto col fondo allungato provata per prima, 403 = piano esaurito: ci si ferma (niente acquisti).
+async function simliSetup(playwright, handler) {
+  const hits = [];
+  const sim = http.createServer((req, res) => {
+    const b = []; req.on('data', (d) => b.push(d)); req.on('end', () => { const h = { url: req.url, key: req.headers['x-simli-api-key'], ratio: req.headers['target-ratio'], len: Buffer.concat(b).length, body: Buffer.concat(b) }; hits.push(h); handler(h, res, hits); });
+  });
+  await new Promise((ok) => sim.listen(0, '127.0.0.1', ok));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nova-v2d47-simli-'));
+  fs.mkdirSync(path.join(dir, 'shared', 'avatars'), { recursive: true });
+  fs.copyFileSync(path.join(ROOT, 'assets', 'ready', 'eris-canotta.jpg'), path.join(dir, 'shared', 'avatars', CANOTTA));
+  fs.writeFileSync(path.join(dir, 'migrations.json'), JSON.stringify({ eris_canotta_v2d44: { at: 'x', to: '/api/avatars/' + CANOTTA } }));
+  fs.writeFileSync(path.join(dir, 'shared', 'characters.json'), JSON.stringify([{ id: CH, name: 'Alpha', ready: 'nova-scelta', avatar: '/api/avatars/' + CANOTTA, avatarSource: 'upload', appearance: {}, look: {}, wardrobe: [], lookHistory: [], voice: 'eve' }]));
+  const ai = await startMockAI([]);
+  const s = startServer(dir, ai.address().port, { SIMLI_TEST_BASE: `http://127.0.0.1:${sim.address().port}` });
+  await waitUp(s);
+  const base = `http://127.0.0.1:${s.port}`;
+  const api = await playwright.request.newContext();
+  await login(api, base, 'nicola', '1357');
+  expect((await api.post(base + '/api/simli/key', { headers: HEAD, data: { key: 'simli-prova-segreta-47' } })).ok()).toBeTruthy();
+  return { hits, sim, s, ai, api, base, close: async () => { await api.dispose().catch(() => {}); s.child.kill(); ai.close(); sim.close(); } };
+}
+const EXT = fs.readFileSync(path.join(ROOT, 'assets', 'ready', 'alpha-foto-v46-simli.jpg'));
+
+test('v2d-47: volto Simli = preprocess + target-ratio + create; errore di Simli registrato senza chiave; foto col fondo allungato prima, poi la foto com\'è', async ({ playwright, browserName }) => {
+  test.skip(browserName === 'webkit', 'solo server');
+  test.setTimeout(60000);
+  let pre = 0;
+  const t = await simliSetup(playwright, (h, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    if (h.url.startsWith('/faces/trinity/preprocess')) {
+      pre++;
+      if (pre === 1) { res.statusCode = 400; return res.end(JSON.stringify({ detail: 'Could not frame waist-up (x-simli-api-key: simli-prova-segreta-47)' })); }
+      res.setHeader('Content-Type', 'image/png'); res.setHeader('TARGET-RATIO', '0'); res.setHeader('warnings', '["torso partly cropped"]'); return res.end(Buffer.alloc(3000, 9));
+    }
+    if (h.url.startsWith('/faces/trinity?')) return res.end(JSON.stringify({ message: 'in coda', face_id: '22222222-3333-4444-5555-666666666666', dispatch_after: 1792412345, warnings: [] }));
+    if (h.url.startsWith('/faces/trinity/generation_status')) return res.end(JSON.stringify({ status: 'pending', queue_position: 1, generations: [] }));
+    res.end('{}');
+  });
+  try {
+    const live = (await (await t.api.get(t.base + '/api/characters')).json()).find((c) => c.id === CH);
+    expect(live.avatar).toBe('/api/avatars/' + FOTO);
+    const mk = await t.api.post(t.base + '/api/simli/face', { headers: HEAD, data: { wait: true } });
+    const txt = await mk.text();
+    expect(mk.ok(), txt).toBeTruthy();
+    expect(txt).not.toContain('simli-prova-segreta-47');
+    const pres = t.hits.filter((h) => h.url.startsWith('/faces/trinity/preprocess'));
+    expect(pres.length).toBe(2);
+    expect(pres.every((h) => h.key === 'simli-prova-segreta-47')).toBe(true);
+    expect(pres[0].body.includes(EXT.subarray(2000, 2400))).toBe(true); // prima la stessa foto col fondo allungato
+    expect(pres[1].body.includes(JPG.subarray(2000, 2400))).toBe(true); // poi la foto com'è
+    const cr = t.hits.filter((h) => h.url.startsWith('/faces/trinity?'));
+    expect(cr.length).toBe(1);
+    expect(cr[0].url).toContain('face_name=alpha-v2d47');
+    expect(cr[0].ratio).toBe('0'); // TARGET-RATIO del preprocess passato così com'è
+    expect(cr[0].body.includes(Buffer.alloc(3000, 9).subarray(0, 2500))).toBe(true); // il PNG riquadrato da Simli
+    const st = JSON.parse(txt);
+    expect(st.face.status).toBe('pending'); expect(st.face.input).toBe('foto-originale'); expect(st.face.mode).toBe('preprocess');
+    expect(st.face.warnings).toContain('torso partly cropped');
+    expect(st.job.state).toBe('created');
+    const err = st.job.attempts.find((a) => a.http === 400);
+    expect(err.input).toBe('foto-con-fondo-allungato'); expect(err.step).toBe('preprocess');
+    expect(err.detail).toContain('Could not frame waist-up'); expect(err.detail).toContain('[chiave]');
+    expect(t.s.log()).toContain('Could not frame waist-up');
+    expect(t.s.log()).not.toContain('simli-prova-segreta-47');
+    // già in creazione: un secondo tocco non ne crea un altro
+    const again = await (await t.api.post(t.base + '/api/simli/face', { headers: HEAD, data: { wait: true } })).json();
+    expect(again.already).toBe(true);
+    expect(t.hits.filter((h) => h.url.startsWith('/faces/trinity?')).length).toBe(1);
+  } finally { await t.close(); }
+});
+
+test('v2d-47: piano Simli esaurito (403): ci si ferma subito, stato «no-credits», nessun altro tentativo né acquisto', async ({ playwright, browserName }) => {
+  test.skip(browserName === 'webkit', 'solo server');
+  test.setTimeout(60000);
+  const t = await simliSetup(playwright, (h, res) => { res.statusCode = 403; res.setHeader('Content-Type', 'application/json'); res.end('{"detail":"no generations left"}'); });
+  try {
+    const st = await (await t.api.post(t.base + '/api/simli/face', { headers: HEAD, data: { wait: true } })).json();
+    expect(st.job.state).toBe('no-credits');
+    expect(st.face).toBe(null);
+    expect(t.hits.length).toBe(1);
+    // senza attesa: risponde subito 202 e lavora in background
+    const bg = await t.api.post(t.base + '/api/simli/face', { headers: HEAD, data: {} });
+    expect(bg.status()).toBe(202);
+  } finally { await t.close(); }
 });

@@ -2650,7 +2650,9 @@ function simliStatus() {
   const fromEnv = !!envSecret('SIMLI_API_KEY');
   const stored = !!readSimliFile().key;
   const f = readSimliFace();
-  return { configured: fromEnv || stored, fromEnv, stored, face: f ? { status: f.status || 'pending', ready: f.ready === true, at: f.at || null, avatar: f.avatar || null } : null };
+  const j = readSimliJob();
+  return { configured: fromEnv || stored, fromEnv, stored, face: f ? { status: f.status || 'pending', ready: f.ready === true, at: f.at || null, avatar: f.avatar || null, input: f.input || null, mode: f.mode || null, dispatchAfter: f.dispatchAfter || null, warnings: f.warnings || [] } : null,
+    job: j ? { state: j.state, running: simliJobRunning, startedAt: j.startedAt || null, updatedAt: j.updatedAt || null, attempts: Array.isArray(j.attempts) ? j.attempts.slice(-8) : [] } : null }; // v2d-47: esito ed errori di Simli (mai la chiave)
 }
 // stato della generazione del volto (Simli: Trinity-2, di solito qualche ora). Pronto -> ready:true e da lì si usa.
 async function pollSimliFace() {
@@ -2669,6 +2671,84 @@ async function pollSimliFace() {
   } catch (e) { console.error('Simli stato volto:', e.message); return f; }
 }
 setInterval(() => { pollSimliFace().catch(() => {}); }, 10 * 60e3).unref();
+// v2d-47: creazione del volto come da documentazione Simli (Trinity-2): 1) POST /faces/trinity/preprocess (riquadra la
+// persona a mezzo busto, restituisce PNG + TARGET-RATIO), 2) POST /faces/trinity con quel PNG e l'header target-ratio.
+// Ingressi provati in ordine: la STESSA foto con il fondo allungato (viso e corpo intatti, pixel per pixel), poi la foto
+// così com'è; ultima riserva: invio diretto senza preprocess. Ogni errore di Simli viene registrato (testo ripulito: mai la
+// chiave). 403 = nessuna generazione rimasta nel piano: ci si ferma, niente acquisti. Lavoro in background (preprocess ~25 s).
+const SIMLI_JOB_FILE = () => path.join(DATA_DIR, 'simli-face-job.json');
+const SIMLI_EXT_ASSET = path.join(__dirname, 'assets', 'ready', 'alpha-foto-v46-simli.jpg');
+let simliJobRunning = false;
+function simliRedact(text, key) {
+  let t = String(text || '');
+  if (key && key.length >= 6) t = t.split(key).join('[chiave]');
+  t = t.replace(/(api[-_ ]?key["'\s:=]+)[^\s"',}]+/gi, '$1[chiave]').replace(/\b(sk|key|token)[-_][A-Za-z0-9_\-]{12,}/g, '[chiave]');
+  return t.replace(/\s+/g, ' ').slice(0, 600);
+}
+function readSimliJob() { const j = readJSON(SIMLI_JOB_FILE(), null); return j && typeof j === 'object' ? j : null; }
+function writeSimliJob(j) { writePrivateJSON(SIMLI_JOB_FILE(), { ...j, updatedAt: new Date().toISOString() }); }
+function simliInputs(ch, m) {
+  const out = [];
+  if (m[1] === ALPHA_FOTO_FILE && fs.existsSync(SIMLI_EXT_ASSET)) out.push({ label: 'foto-con-fondo-allungato', buf: fs.readFileSync(SIMLI_EXT_ASSET), name: 'alpha-foto-v46-simli.jpg', type: 'image/jpeg' });
+  out.push({ label: 'foto-originale', buf: fs.readFileSync(avatarPath(m[1])), name: m[1], type: m[2] === 'png' ? 'image/png' : 'image/jpeg' });
+  return out;
+}
+async function simliCall(url, key, input, extraHeaders = {}, timeoutMs = 240000) {
+  const form = new FormData();
+  form.append('image', new Blob([input.buf], { type: input.type }), input.name);
+  return fetch(url, { method: 'POST', headers: { 'x-simli-api-key': key, ...extraHeaders }, body: form, signal: AbortSignal.timeout(timeoutMs) });
+}
+async function runSimliFaceJob(ch, m, key) {
+  const attempts = [];
+  const save = (state, extra = {}) => writeSimliJob({ state, avatar: ch.avatar, attempts, startedAt: job0, ...extra });
+  const job0 = new Date().toISOString();
+  const fail = async (input, step, r) => {
+    const body = simliRedact(await r.text().catch(() => ''), key);
+    attempts.push({ input: input.label, step, http: r.status, detail: body, at: new Date().toISOString() });
+    console.error(`Simli ${step} (${input.label}): HTTP ${r.status} ${body}`);
+    save('working');
+  };
+  const created = (input, mode, j, warnings) => {
+    writePrivateJSON(SIMLI_FACE_FILE(), { faceId: j.face_id, status: 'pending', ready: false, avatar: ch.avatar, at: new Date().toISOString(), input: input.label, mode, dispatchAfter: Number(j.dispatch_after) || null, warnings: (warnings || []).concat(Array.isArray(j.warnings) ? j.warnings : []).slice(0, 8).map((w) => String(w).slice(0, 200)) });
+    save('created', { faceId: j.face_id, input: input.label, mode });
+    console.log(`Volto Simli in creazione (${input.label}, ${mode}):`, j.face_id, j.message ? String(j.message).slice(0, 120) : '');
+    return true;
+  };
+  const noCredits = (input, step) => { attempts.push({ input: input.label, step, http: 403, detail: 'nessuna generazione Trinity-2 rimasta nel piano (nessun acquisto fatto)' }); save('no-credits'); console.error('Simli: nessuna generazione rimasta nel piano'); return true; };
+  try {
+    save('working');
+    const inputs = simliInputs(ch, m);
+    for (const input of inputs) {
+      const pre = await simliCall(`${SIMLI_API}/faces/trinity/preprocess`, key, input);
+      if (pre.status === 403) return noCredits(input, 'preprocess');
+      if (!pre.ok) { await fail(input, 'preprocess', pre); continue; }
+      const png = Buffer.from(await pre.arrayBuffer());
+      const ratio = pre.headers.get('target-ratio');
+      let warnings = []; try { const w = JSON.parse(pre.headers.get('warnings') || '[]'); if (Array.isArray(w)) warnings = w; } catch { /* */ }
+      attempts.push({ input: input.label, step: 'preprocess', http: 200, ratio, warnings: warnings.slice(0, 5).map((w) => String(w).slice(0, 200)), bytes: png.length, at: new Date().toISOString() });
+      save('working');
+      const framed = { label: input.label + '+preprocess', buf: png, name: 'alpha-framed.png', type: 'image/png' };
+      const cr = await simliCall(`${SIMLI_API}/faces/trinity?face_name=alpha-v2d47`, key, framed, ratio != null && ratio !== '' ? { 'target-ratio': String(ratio) } : {}, 120000);
+      if (cr.status === 403) return noCredits(input, 'create');
+      if (!cr.ok) { await fail(framed, 'create', cr); continue; }
+      const j = await cr.json().catch(() => ({}));
+      if (SIMLI_FACE_RE.test(String(j.face_id || ''))) return created(input, 'preprocess', j, warnings);
+      attempts.push({ input: framed.label, step: 'create', http: cr.status, detail: 'risposta senza face_id' }); save('working');
+    }
+    // riserva: invio diretto (Simli riquadra da sé, ~25 s in più)
+    const input = inputs[0];
+    const cr = await simliCall(`${SIMLI_API}/faces/trinity?face_name=alpha-v2d47`, key, input, {}, 240000);
+    if (cr.status === 403) return noCredits(input, 'create-diretto');
+    if (cr.ok) { const j = await cr.json().catch(() => ({})); if (SIMLI_FACE_RE.test(String(j.face_id || ''))) return created(input, 'diretto', j); }
+    else await fail(input, 'create-diretto', cr);
+    save('failed');
+    return false;
+  } catch (e) {
+    attempts.push({ step: 'rete', detail: simliRedact(e.message, key) });
+    save('failed'); console.error('Simli crea volto:', simliRedact(e.message, key));
+    return false;
+  }
+}
 app.post('/api/simli/face', auth, async (req, res) => {
   if (req.user !== ADMIN_USER) return res.status(403).json({ error: 'Solo Nicola può creare il volto Simli.', code: 'OWNER_ONLY' });
   res.setHeader('Cache-Control', 'no-store');
@@ -2678,23 +2758,12 @@ app.post('/api/simli/face', auth, async (req, res) => {
   const ch = getSoloChar(req.user);
   const m = ch && AV_RE.exec(String(ch.avatar || ''));
   if (!m) return res.status(404).json({ error: 'Foto di Alpha non trovata' });
-  if (prev && prev.avatar === ch.avatar && prev.status !== 'failed' && req.body && req.body.again !== true) return res.json({ ok: true, already: true, ...simliStatus() });
-  try {
-    const buf = fs.readFileSync(avatarPath(m[1]));
-    const form = new FormData();
-    form.append('image', new Blob([buf], { type: m[2] === 'png' ? 'image/png' : 'image/jpeg' }), m[1]);
-    const r = await fetch(`${SIMLI_API}/faces/trinity?face_name=alpha-v2d46`, { method: 'POST', headers: { 'x-simli-api-key': key }, body: form, signal: AbortSignal.timeout(120000) });
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok || !SIMLI_FACE_RE.test(String(j.face_id || ''))) {
-      console.error('Simli crea volto: HTTP', r.status);
-      return res.status(r.status === 403 ? 402 : 502).json({ error: r.status === 403 ? 'Simli: nessuna generazione di volto disponibile nel piano' : 'Simli: volto non creato', httpStatus: r.status });
-    }
-    writePrivateJSON(SIMLI_FACE_FILE(), { faceId: j.face_id, status: 'pending', ready: false, avatar: ch.avatar, at: new Date().toISOString(), dispatchAfter: Number(j.dispatch_after) || null, warnings: Array.isArray(j.warnings) ? j.warnings.slice(0, 5).map((w) => String(w).slice(0, 200)) : [] });
-    res.json({ ok: true, ...simliStatus() });
-  } catch (e) {
-    console.error('Simli crea volto:', e.message);
-    res.status(502).json({ error: 'Simli non raggiungibile' });
-  }
+  if (prev && prev.avatar === ch.avatar && prev.status !== 'failed' && !(req.body && req.body.again === true)) return res.json({ ok: true, already: true, ...simliStatus() });
+  if (simliJobRunning) return res.status(202).json({ ok: true, running: true, ...simliStatus() });
+  simliJobRunning = true;
+  const job = runSimliFaceJob(ch, m, key).finally(() => { simliJobRunning = false; });
+  if (req.body && req.body.wait === true) { await job; return res.json({ ok: true, ...simliStatus() }); } // prove locali
+  res.status(202).json({ ok: true, started: true, ...simliStatus() });
 });
 app.get('/api/simli/face', auth, async (req, res) => {
   if (req.user !== ADMIN_USER) return res.status(403).json({ error: 'Solo Nicola può vedere il volto Simli.', code: 'OWNER_ONLY' });
