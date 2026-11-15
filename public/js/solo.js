@@ -203,6 +203,16 @@
     App.motionPlayer.noPrune = true; // v2d-36: si scaricano solo i clip del look attuale, gli altri restano in cache
     return App.motionPlayer;
   }
+  // v2d-46: con la foto fissa (App.faceLocked) si suonano SOLO i clip registrati da questa foto (clip.photo === ch.avatar).
+  // I clip vecchi (altre foto, scene, video «legacy») restano sul server ma non coprono mai il volto scelto.
+  function lookLib(ch) {
+    const G = window.MotionGraph; if (!G || !ch) return [];
+    if (App.faceLocked && App.faceLocked()) {
+      const ok = new Set((Array.isArray(ch.motionClips) ? ch.motionClips : []).filter((c) => c && c.photo && c.photo === ch.avatar).map((c) => c.url));
+      return ok.size ? G.libraryOf(ch, '').filter((c) => ok.has(c.url)) : [];
+    }
+    return App.outfits && App.outfits.key ? G.libraryOf(ch, App.outfits.key(ch)) : G.libraryOf(ch);
+  }
   function syncMotion() {
     const v = document.getElementById('motion-video');
     const stage = document.getElementById('stage');
@@ -211,7 +221,7 @@
     const G = window.MotionGraph;
     // v2d-33: si suonano solo i clip del look attuale (vestito/capelli/trucco); in cache restano tutti
     const all = motionOn() && ch && G ? G.libraryOf(ch) : [];
-    const look0 = all.length && App.outfits && App.outfits.key ? G.libraryOf(ch, App.outfits.key(ch)) : all;
+    const look0 = all.length ? lookLib(ch) : all;
     // v2d-36: qualità secondo la connessione (std / lite / still). Con 'still' niente clip: la foto con un respiro leggero.
     const net = App.net || window.NovaNet;
     const lib0 = net ? net.pick(look0) : look0.filter((c) => c.quality !== 'lite');
@@ -277,7 +287,7 @@
   ];
   function miniClips(ch) {
     const G = window.MotionGraph; if (!G || !ch) return [];
-    const look = App.outfits && App.outfits.key ? G.libraryOf(ch, App.outfits.key(ch)) : G.libraryOf(ch); // v2d-33: clip del look attuale
+    const look = lookLib(ch); // v2d-33: clip del look attuale; v2d-46: con la foto fissa solo i clip di QUESTA foto
     if (App.net && App.net.mode() === 'still') return [];
     const liteL = look.filter((c) => c.quality === 'lite'); // v2d-36: la foto piccola usa sempre i clip leggeri, se ci sono
     const lib = liteL.length >= 2 ? liteL : look.filter((c) => c.quality !== 'lite');
@@ -552,6 +562,9 @@
       // v2d-37: «Voce» dalla Home = chiamata vocale vera (tempo reale di serie, riserva classica), come «Video»
       const voiceCall = () => { if (App.call && App.call.minimized && App.call.restore) { App.call.restore(); return; } try { const p = App.call.start('voice'); if (p && p.catch) p.catch((err) => App.toast((err && err.message) || 'Chiamata vocale non avviata')); } catch (err) { App.toast((err && err.message) || 'Chiamata vocale non avviata'); } };
       const qa = $('#nh-q-voice'); if (qa) qa.addEventListener('click', (e) => { e.preventDefault(); voiceCall(); });
+      // v2d-46: scheda Chiamate (barra in basso): videochiamata e chiamata vocale vere + elenco delle chiamate recenti
+      const cgv = $('#calls-video'); if (cgv) cgv.addEventListener('click', (e) => { e.preventDefault(); const go = $('#nh-video-go'); if (go) go.click(); });
+      const cga = $('#calls-voice'); if (cga) cga.addEventListener('click', (e) => { e.preventDefault(); voiceCall(); });
       const voice = $('#nh-voice');
       if (voice) voice.addEventListener('click', (e) => { e.preventDefault(); voiceCall(); });
       const back = $('#back-btn');
@@ -561,7 +574,7 @@
         e.stopImmediatePropagation();
         if (document.body.classList.contains('solo-portrait')) { this.closePortrait(); return; }
         if (document.body.dataset.tab === 'account') { this.showHome(); return; }
-        if (document.body.dataset.tab === 'images') { this.showChat(); return; }
+        if (document.body.dataset.tab === 'images' || document.body.dataset.tab === 'calls') { this.showChat(); return; }
         if (document.body.classList.contains('solo-home') && this._nh && this._nh !== 'list') { this.showPage('list'); return; }
         if (document.body.classList.contains('solo-home')) { this.showChat(); return; }
         this.showHome();
@@ -645,7 +658,7 @@
     syncMini,
     showChat() {
       document.body.classList.add('solo-chat');
-      document.body.classList.remove('solo-home', 'solo-portrait');
+      document.body.classList.remove('solo-home', 'solo-portrait', 'solo-calls', 'solo-settings');
       if (this.full) this.toggleFull(false);
       const conv = $('#tab-conv'); if (conv) conv.hidden = false;
       ['tab-account', 'tab-chat', 'tab-calls', 'tab-images', 'tab-feed'].forEach((id) => { const el = document.getElementById(id); if (el) el.hidden = true; });
@@ -655,12 +668,13 @@
       const bar = $('#look-bar'); if (bar) bar.hidden = true;
       this.paintBack('chat');
       this.setDock('chat');
+      if (App.chat && App.chat.header) App.chat.header(); // v2d-46: tornando da «Chiamate» la testata riprende foto e «online»
       syncMotion();
       requestAnimationFrame(fit);
     },
     showHome() {
       document.body.classList.add('solo-home');
-      document.body.classList.remove('solo-chat', 'solo-portrait');
+      document.body.classList.remove('solo-chat', 'solo-portrait', 'solo-calls', 'solo-settings');
       if (App.rt && App.rt.warmNow) setTimeout(App.rt.warmNow, 300); // v2d-41: chiamata in tempo reale pronta anche dalla Home
       if (this.full) this.toggleFull(false);
       const conv = $('#tab-conv'); if (conv) conv.hidden = false;
@@ -672,11 +686,27 @@
       const bar = $('#look-bar'); if (bar) bar.hidden = false;
       this.paintHome();
       this.setDock('home');
+      if (App.chat && App.chat.header) App.chat.header();
       syncMotion();
       requestAnimationFrame(fit);
     },
+    // v2d-46: scheda «Chiamate» della barra in basso (stile WhatsApp): avvia video/voce e mostra le chiamate recenti
+    showCalls() {
+      if (this.full) this.toggleFull(false);
+      document.body.classList.remove('solo-chat', 'solo-home', 'solo-portrait', 'solo-settings');
+      document.body.classList.add('solo-calls');
+      if (App.openTab) App.openTab('calls');
+      const conv = $('#tab-conv'); if (conv) conv.hidden = true;
+      const calls = $('#tab-calls'); if (calls) calls.hidden = false;
+      const bar = $('#look-bar'); if (bar) bar.hidden = true;
+      document.body.dataset.tab = 'calls';
+      const title = $('#title'); if (title) title.textContent = 'Chiamate';
+      this.paintBack('list');
+      this.setDock('calls');
+    },
     setDock(name) {
-      document.querySelectorAll('[data-dock]').forEach((b) => b.classList.toggle('active', b.dataset.dock === name));
+      const tab = name === 'settings' || name === 'video' ? 'home' : name; // v2d-46: «Impostazioni» in basso = Home stile Impostazioni di WhatsApp
+      document.querySelectorAll('[data-dock]').forEach((b) => b.classList.toggle('active', b.dataset.dock === name || b.dataset.dock === tab));
     },
     onDock(name) {
       this.setDock(name);
@@ -691,6 +721,7 @@
         this.showHome();
         return;
       }
+      if (name === 'calls') { this.showCalls(); return; }
       if (name === 'mic') {
         // Il microfono del dock non apre una chiamata: accende o spegne il dettato nel composer.
         const listening = App.voice && App.voice.isListening && App.voice.isListening();
@@ -725,7 +756,8 @@
       }
       if (name === 'settings') {
         if (this.full) this.toggleFull(false);
-        document.body.classList.remove('solo-chat');
+        document.body.classList.remove('solo-chat', 'solo-calls');
+        document.body.classList.add('solo-settings');
         this.syncSettings(soloChar());
         App.openTab('account');
         $('#tab-conv').hidden = true;

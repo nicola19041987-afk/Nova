@@ -552,7 +552,7 @@ function seesMsg(user, m, from) {
 }
 app.get('/api/me', auth, (req, res) => {
   if (isGuest(req.user)) return res.json({ user: req.user, name: userName(req.user), guest: true, admin: false, editor: false, solo: true, soloKey: SOLO_KEY, activated: false, consent: null, adult: false, adultChat: false, serverKey: !!getServerAiKey(), chatModel: CHAT_MODEL });
-  res.json({ user: req.user, name: USERS[req.user].name, admin: isAdmin(req.user), editor: canEdit(req.user), solo: true, soloKey: SOLO_KEY, adminName: ADMIN_MSG.split(' ')[1], activated: isActivated(req.user), consent: getConsent(req.user), adult: adultOn(req.user), adultChat: adultChat(), serverKey: !!getServerAiKey(), chatModel: CHAT_MODEL, imageModel: IMAGE_MODEL, videoModel: VIDEO_MODEL, videoEnabled: !!VIDEO_PATH });
+  res.json({ user: req.user, name: USERS[req.user].name, admin: isAdmin(req.user), editor: canEdit(req.user), solo: true, soloKey: SOLO_KEY, adminName: ADMIN_MSG.split(' ')[1], activated: isActivated(req.user), consent: getConsent(req.user), adult: adultOn(req.user), adultChat: adultChat(), serverKey: !!getServerAiKey(), simliFace: simliFaceReady() && !!getSimliKey(), chatModel: CHAT_MODEL, imageModel: IMAGE_MODEL, videoModel: VIDEO_MODEL, videoEnabled: !!VIDEO_PATH });
 });
 
 // ---------- consenso vocale ----------
@@ -2225,6 +2225,7 @@ function buildSystem(user, ch, opts = {}) {
     (ch.ready === SOLO_KEY ? SOLO_FIXED.style : ch.style) && `CARATTERE (com'è e come parla): ${ch.ready === SOLO_KEY ? SOLO_FIXED.style : ch.style}`,
     `CHAT DI COPPIA CONDIVISA: gli utenti sono Nico (Nicola) e Luisa, una coppia, entrambi adulti. Sono due persone reali che vedono gli stessi messaggi. Ogni loro messaggio inizia con il nome di chi scrive ("Nico:" o "Luisa:"): riconosci da lì chi ti sta scrivendo e rivolgiti a quella persona; il suo nome però usalo DI RADO, come fanno le persone vere che si parlano spesso (al massimo una volta ogni tanto, quando serve a distinguere tra Nico e Luisa o in un saluto dopo tanto tempo), mai come intercalare a inizio o fine frase. Ricorda chi ha detto cosa e, quando ha senso, coinvolgi entrambi. Non iniziare le tue risposte con il tuo nome e non scrivere tu il prefisso "Nico:"/"Luisa:".`,
     `Ora ti sta scrivendo ${USERS[user].name}.`,
+    notesRuleText(user), // v2d-46: regola nel codice
     ...Object.keys(USERS).map((u) => rulesOf(u) && `LE REGOLE / IL GIOCO DI ${USERS[u].name.toUpperCase()}:\n${rulesOf(u)}`),
     mem.filter((m) => !m.charId).length && `MEMORIA CONDIVISA (cosa sai di Nico, di Luisa e della coppia):\n${mem.filter((m) => !m.charId).map((m) => '- ' + m.text).join('\n')}`,
     mem.filter((m) => m.charId === ch.id).length && `LA TUA MEMORIA DI BASE (chi sei, modificabile dagli utenti):\n${mem.filter((m) => m.charId === ch.id).map((m) => '- ' + m.text).join('\n')}`,
@@ -2584,7 +2585,7 @@ function rtInstructions(user, ch, mode) {
     .map((m) => `${m.role === 'user' ? authorLabel(m) : ch.name}: ${String(m.content || '').replace(/\s+/g, ' ').slice(0, 400)}${m.photo ? ' [foto dalla galleria]' : ''}`);
   return [buildSystem(user, ch, { call: true, callMode: mode, realtime: true }),
     recent.length && `ULTIMI MESSAGGI DELLA CHAT (contesto, continua da qui):\n${recent.join('\n')}`,
-    `In questa chiamata parli solo con ${USERS[user].name} (la senti dal vivo: le sue parole non hanno il prefisso col nome).`, APP_INTENT_RT, BASE_RULE].filter(Boolean).join('\n\n');
+    `In questa chiamata parli solo con ${USERS[user].name} (la senti dal vivo: le sue parole non hanno il prefisso col nome).`, APP_INTENT_RT, !notesAllowed(user) && notesRuleText(user), BASE_RULE].filter(Boolean).join('\n\n');
 }
 // VAD del servizio voce: soglia alta, silenzio e prefisso più lunghi, così un rumore breve non chiude il turno.
 // Se un campo venisse rifiutato, il telefono riprova la configurazione a pezzi e tiene comunque le istruzioni.
@@ -2631,9 +2632,15 @@ app.post('/api/realtime/session', auth, requireActivated, requireKey, async (req
 });
 // istruzioni aggiornate durante la chiamata (es. modalità adulti cambiata, nuovi ricordi): nessuna chiamata a xAI
 // Volto in tempo reale (Simli). La chiave resta sul server: al telefono arriva solo un token di pochi minuti.
-const SIMLI_API = 'https://api.simli.ai';
+const SIMLI_API = /^http:\/\/127\.0\.0\.1:\d+$/.test(String(process.env.SIMLI_TEST_BASE || '')) ? process.env.SIMLI_TEST_BASE : 'https://api.simli.ai'; // v2d-46: finto servizio solo in locale (prove)
 const SIMLI_STOCK_FACE = 'bf13113a-355a-4d97-8b90-4edccd1da7b2';
+// v2d-46: volto Simli di Alpha creato dalla SUA foto (POST /api/simli/face, solo Nicola). Finché non è pronto, la sessione
+// Simli NON parte (mai il volto di serie di un'altra persona): in chiamata resta la foto con la bocca guidata dall'audio.
+const SIMLI_FACE_FILE = () => path.join(DATA_DIR, 'simli-face.json');
+function readSimliFace() { const j = readJSON(SIMLI_FACE_FILE(), null); return j && typeof j === 'object' && SIMLI_FACE_RE.test(String(j.faceId || '')) ? j : null; }
+function simliFaceReady() { const f = readSimliFace(); return !!(f && f.ready === true); }
 function simliFaceId() {
+  const f = readSimliFace(); if (f && f.ready === true) return f.faceId;
   const env = envSecret('SIMLI_FACE_ID');
   if (SIMLI_FACE_RE.test(env)) return env;
   const stored = readSimliFile().faceId;
@@ -2642,8 +2649,73 @@ function simliFaceId() {
 function simliStatus() {
   const fromEnv = !!envSecret('SIMLI_API_KEY');
   const stored = !!readSimliFile().key;
-  return { configured: fromEnv || stored, fromEnv, stored };
+  const f = readSimliFace();
+  return { configured: fromEnv || stored, fromEnv, stored, face: f ? { status: f.status || 'pending', ready: f.ready === true, at: f.at || null, avatar: f.avatar || null } : null };
 }
+// stato della generazione del volto (Simli: Trinity-2, di solito qualche ora). Pronto -> ready:true e da lì si usa.
+async function pollSimliFace() {
+  const f = readSimliFace(); const key = getSimliKey();
+  if (!f || f.ready === true || f.status === 'failed' || !key) return f;
+  try {
+    const r = await fetch(`${SIMLI_API}/faces/trinity/generation_status?face_id=${encodeURIComponent(f.faceId)}`, { headers: { 'x-simli-api-key': key }, signal: AbortSignal.timeout(15000) });
+    if (!r.ok) { console.error('Simli stato volto: HTTP', r.status); return f; }
+    const j = await r.json().catch(() => ({}));
+    const g = (Array.isArray(j.generations) && j.generations.find((x) => x && x.face_id === f.faceId)) || j;
+    const status = String((g && g.status) || j.status || f.status || 'pending').slice(0, 20);
+    const next = { ...f, status, checkedAt: new Date().toISOString(), ...(status === 'completed' ? { ready: true, readyAt: new Date().toISOString() } : {}) };
+    writePrivateJSON(SIMLI_FACE_FILE(), next);
+    if (status === 'completed') console.log('Volto Simli di Alpha pronto');
+    return next;
+  } catch (e) { console.error('Simli stato volto:', e.message); return f; }
+}
+setInterval(() => { pollSimliFace().catch(() => {}); }, 10 * 60e3).unref();
+app.post('/api/simli/face', auth, async (req, res) => {
+  if (req.user !== ADMIN_USER) return res.status(403).json({ error: 'Solo Nicola può creare il volto Simli.', code: 'OWNER_ONLY' });
+  res.setHeader('Cache-Control', 'no-store');
+  const key = getSimliKey();
+  if (!key) return res.status(503).json({ error: 'Simli non configurato' });
+  const prev = readSimliFace();
+  const ch = getSoloChar(req.user);
+  const m = ch && AV_RE.exec(String(ch.avatar || ''));
+  if (!m) return res.status(404).json({ error: 'Foto di Alpha non trovata' });
+  if (prev && prev.avatar === ch.avatar && prev.status !== 'failed' && req.body && req.body.again !== true) return res.json({ ok: true, already: true, ...simliStatus() });
+  try {
+    const buf = fs.readFileSync(avatarPath(m[1]));
+    const form = new FormData();
+    form.append('image', new Blob([buf], { type: m[2] === 'png' ? 'image/png' : 'image/jpeg' }), m[1]);
+    const r = await fetch(`${SIMLI_API}/faces/trinity?face_name=alpha-v2d46`, { method: 'POST', headers: { 'x-simli-api-key': key }, body: form, signal: AbortSignal.timeout(120000) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !SIMLI_FACE_RE.test(String(j.face_id || ''))) {
+      console.error('Simli crea volto: HTTP', r.status);
+      return res.status(r.status === 403 ? 402 : 502).json({ error: r.status === 403 ? 'Simli: nessuna generazione di volto disponibile nel piano' : 'Simli: volto non creato', httpStatus: r.status });
+    }
+    writePrivateJSON(SIMLI_FACE_FILE(), { faceId: j.face_id, status: 'pending', ready: false, avatar: ch.avatar, at: new Date().toISOString(), dispatchAfter: Number(j.dispatch_after) || null, warnings: Array.isArray(j.warnings) ? j.warnings.slice(0, 5).map((w) => String(w).slice(0, 200)) : [] });
+    res.json({ ok: true, ...simliStatus() });
+  } catch (e) {
+    console.error('Simli crea volto:', e.message);
+    res.status(502).json({ error: 'Simli non raggiungibile' });
+  }
+});
+app.get('/api/simli/face', auth, async (req, res) => {
+  if (req.user !== ADMIN_USER) return res.status(403).json({ error: 'Solo Nicola può vedere il volto Simli.', code: 'OWNER_ONLY' });
+  res.setHeader('Cache-Control', 'no-store');
+  await pollSimliFace();
+  res.json(simliStatus());
+});
+// v2d-46: chiavi e configurazione (solo nomi e presenza, MAI i valori). Le chiavi nelle variabili d'ambiente di Render sono fisse.
+app.get('/api/keys/status', auth, (req, res) => {
+  if (req.user !== ADMIN_USER) return res.status(403).json({ error: 'Solo Nicola può vedere questa impostazione.', code: 'OWNER_ONLY' });
+  res.setHeader('Cache-Control', 'no-store');
+  const has = (n) => !!envSecret(n);
+  const xaiFile = (() => { try { const j = readJSON(SERVER_KEY_FILE(), null); return !!(j && String(j.key || '').trim()); } catch { return false; } })();
+  res.json({
+    xai: { configured: !!getServerAiKey(), env: has('XAI_API_KEY') ? 'XAI_API_KEY' : has('AI_KEY') ? 'AI_KEY' : null, storedOnDisk: xaiFile },
+    simli: simliStatus(),
+    simliFaceIdEnv: has('SIMLI_FACE_ID'),
+    notesWebhook: { url: has('NOTES_WEBHOOK_URL'), key: has('NOTES_WEBHOOK_KEY') },
+    setupCode: has('SETUP_CODE') || has('NOVA_SETUP_CODE'),
+  });
+});
 app.post('/api/simli/key', auth, (req, res) => {
   if (!isAdmin(req.user)) return res.status(403).json({ error: ADMIN_MSG, code: 'ADMIN_ONLY' });
   res.setHeader('Cache-Control', 'no-store');
@@ -2662,6 +2734,7 @@ app.post('/api/simli/session', auth, requireActivated, async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   const key = getSimliKey();
   if (!key) return res.status(503).json({ error: 'Simli non configurato', fallback: true });
+  if (!simliFaceReady()) return res.status(409).json({ error: 'Volto Simli di Alpha non ancora pronto', fallback: true }); // v2d-46: mai un altro volto
   try {
     const headers = { 'x-simli-api-key': key };
     const [tokenRes, iceRes] = await Promise.all([
@@ -2720,7 +2793,7 @@ app.post('/api/chats/:id/voice-turn', auth, requireActivated, async (req, res) =
     const before = readChat(id);
     const prev = [...((before && before.messages) || [])].reverse().find((m) => m && m.role === 'user' && m.author === req.user);
     saved = await appendMsg(id, { role: 'user', author: req.user, content: text, extra: callX });
-    try { const it = await handleAppIntent(req.user, text, 'voce', prev && prev.content); intentKind = it ? ({ note: 'nota', memory: 'ricordo', life: 'vita' }[it.kind] || 'richiesta') : null; }
+    try { const it = await handleAppIntent(req.user, text, 'voce', prev && prev.content); intentKind = it ? ({ note: 'nota', memory: 'ricordo', life: 'vita', 'ask-nico': 'chiedi-nico' }[it.kind] || 'richiesta') : null; }
     catch (e) { console.error('Blocco note / richiesta app (chiamata):', e.message); }
   }
   else {
@@ -3839,8 +3912,13 @@ function forwardAppRequest(user, text, channel) {
 async function handleAppIntent(user, text, channel, prevText) {
   if (isBlocked(user)) return null; // v2d-32: niente note né inoltri da un profilo sospeso
   const life = lifeIntent(text); // v2d-36: «ricordati…», «ho visto che ti sei comprata…» (chat e chiamata, mani libere)
+  const it = life ? null : appIntent(text);
+  // v2d-46 (Nicola, 15/11): SOLO Nico può far segnare appunti, ricordi o richieste. Per chiunque altro non si salva e non si
+  // inoltra niente: Alpha risponde «Un secondo <nome>, devo chiederlo a Nico». Regola nel codice, non nei campi note.
+  if ((life && life.kind === 'memory') || it) {
+    if (!notesAllowed(user)) return { kind: 'ask-nico', hint: askNicoHint(user) };
+  }
   if (life) return handleLifeIntent(user, life);
-  const it = appIntent(text);
   if (!it) return null;
   if (it.kind === 'note') {
     const note = await saveBloccoNote(user, text, channel, prevText);
@@ -3856,6 +3934,14 @@ app.get('/api/blocco-note', auth, (req, res) => {
   const list = loadBlocco().slice().reverse().map((n) => ({ id: n.id, text: n.text, from: n.from, channel: n.channel, at: n.at }));
   res.json({ notes: list, count: list.length });
 });
+// v2d-46: appunti, ricordi e richieste si salvano solo per Nico (il proprietario). Gli altri: «Un secondo <nome>, devo chiederlo a Nico».
+function notesAllowed(user) { return user === ADMIN_USER; }
+function askNicoLine(user) { return `Un secondo ${userName(user) || 'tu'}, devo chiederlo a Nico`; }
+function askNicoHint(user) { return `SISTEMA (non citare questa riga): ${userName(user) || 'questa persona'} ti ha chiesto di segnare, ricordare o passare una richiesta. Solo Nico può farti salvare appunti o richieste: NON l'hai salvato e NON l'hai passato. Rispondi esattamente «${askNicoLine(user)}», poi continua la conversazione con naturalezza. Non dire «me lo segno».`; }
+function notesRuleText(user) {
+  if (notesAllowed(user)) return 'APPUNTI E RICHIESTE: solo Nico può farti segnare appunti, ricordi o richieste. Ora parli con Nico: puoi farlo come sempre.';
+  return `APPUNTI E RICHIESTE: solo Nico può farti segnare appunti, ricordi o richieste. Ora parli con ${userName(user) || 'un\'altra persona'}, non con Nico: se ti chiede di segnare, ricordare, salvare o passare qualcosa, NON dire mai «me lo segno» o «l'ho segnato»; rispondi «${askNicoLine(user)}».`;
+}
 const isOwner = (u) => u === ADMIN_USER;
 // v2d-32: sospendere / riattivare un profilo (solo Nicola). I dati restano tutti.
 app.get('/api/admin/user-block', auth, (req, res) => {
@@ -4726,6 +4812,40 @@ function seedReadyChars() {
   if (id) preferUnico(id);
   dropLookHistoryOnce();
   if (id) erisCanottaOnce(id);
+  if (id) alphaFotoOnce(id);
+}
+// v2d-46 (Nicola, 15/11 17:41): foto principale di Alpha = ESATTAMENTE la foto che ha mandato (bionda, coda alta, canotta
+// azzurra, mano sul petto, spalle, tatuaggio braccio destro). UNA volta sola e solo se la foto attuale è ancora la canotta
+// v2d-44: la foto di prima va nello storico dei look (ripristinabile), nessun file viene cancellato. Punti del viso misurati
+// prima (assets/ready/alpha-foto-v46-landmarks.json): bocca e occhi pronti subito.
+const ALPHA_FOTO_KEY = 'alpha_foto_v2d46';
+const ALPHA_FOTO_FILE = 'a1fa460000000001.jpg';
+function alphaFotoOnce(id) {
+  const done = readJSON(MIGRATIONS_FILE, {}) || {};
+  if (done[ALPHA_FOTO_KEY]) return;
+  const src = path.join(__dirname, 'assets', 'ready', 'alpha-foto-v46.jpg');
+  if (!fs.existsSync(src)) return;
+  try {
+    const url = `/api/avatars/${ALPHA_FOTO_FILE}`, dst = path.join(avatarDir(), ALPHA_FOTO_FILE);
+    const chars = readJSON(CHARS_FILE(), []);
+    const i = Array.isArray(chars) ? chars.findIndex((c) => c && c.id === id) : -1;
+    if (i < 0) return;
+    const cur = chars[i], from = cur.avatar || null;
+    if (from !== `/api/avatars/${CANOTTA_FILE}`) { // installazione nuova / prove / foto già cambiata a mano: non si tocca
+      writeJSON(MIGRATIONS_FILE, { ...done, [ALPHA_FOTO_KEY]: { at: new Date().toISOString(), skipped: 'foto attuale non è la canotta v2d-44', from } });
+      return;
+    }
+    if (!fs.existsSync(dst)) fs.copyFileSync(src, dst);
+    let lm = null;
+    try { lm = cleanLm({ ...JSON.parse(fs.readFileSync(path.join(__dirname, 'assets', 'ready', 'alpha-foto-v46-landmarks.json'), 'utf8')), auto: true, src: url }, url); }
+    catch (e) { console.error('Punti del viso foto v46 non letti:', e.message); }
+    const next = { ...cur, avatar: url, avatarSource: 'upload', landmarks: lm, lookAuto: false, updatedAt: new Date().toISOString() };
+    next.lookHistory = pushHistory(cur, next, 'prima della foto scelta da Nicola (v2d-46)');
+    chars[i] = next;
+    writeJSON(CHARS_FILE(), chars);
+    writeJSON(MIGRATIONS_FILE, { ...done, [ALPHA_FOTO_KEY]: { at: new Date().toISOString(), from, to: url } });
+    console.log('Foto principale di Alpha (v2d-46):', url, '(prima:', from, ')');
+  } catch (e) { console.error('Foto v2d-46 non applicata:', e.message); }
 }
 // v2d-44 (Nicola): foto principale di Alpha = mezzo busto con la canotta azzurra (coda alta, tatuaggio sul braccio destro,
 // braccio sinistro libero). UNA volta sola: la foto di prima va nello storico dei look (si può ripristinare), i look del

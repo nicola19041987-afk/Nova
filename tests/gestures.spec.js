@@ -1,4 +1,4 @@
-const { test, expect } = require('./harness');
+const { test, expect, scenesOn } = require('./harness');
 
 const HEAD = { 'X-Requested-With': 'app-privata' };
 
@@ -47,6 +47,7 @@ async function mockApp(page) {
 }
 
 test('un gesto non copre la bocca mentre parla e torna alla foto alla fine', async ({ page, browserName }) => {
+  await scenesOn(page); // v2d-46: scene/clip/gesti spenti di serie (volto = foto scelta); qui si prova il meccanismo
   test.skip(browserName === 'webkit', 'Questo WebKit chiude il processo sulla home con l’avatar. Il flusso è verificato su Chromium.');
   await mockApp(page);
   await page.goto('/');

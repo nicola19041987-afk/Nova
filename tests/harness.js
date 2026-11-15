@@ -11,3 +11,13 @@ const test = pw.test.extend({
 });
 
 module.exports = { test, expect: pw.expect, request: pw.request };
+
+// v2d-46: di serie il volto è SEMPRE la foto scelta (niente scene/vestiti/gesti/clip di altre foto). I test che verificano
+// proprio quei meccanismi (rimasti nel codice) li riaccendono su questo telefono con faceLock='0'.
+async function scenesOn(page) {
+  await page.addInitScript(() => {
+    const g = Storage.prototype.getItem;
+    Storage.prototype.getItem = function (k) { return /:faceLock$/.test(String(k)) ? '"0"' : g.call(this, k); };
+  });
+}
+module.exports.scenesOn = scenesOn;

@@ -46,6 +46,7 @@
     const tabs = ['account', 'images', 'calls', 'feed', 'chat'];
     for (const name of tabs) {
       const el = document.getElementById('tab-' + name);
+      if (name === 'calls' && document.body.classList.contains('solo-calls')) continue; // v2d-46: «Chiamate» è una scheda della barra in basso, non un foglio
       if (shown(el)) return { kind: 'tab' };
     }
     return null;

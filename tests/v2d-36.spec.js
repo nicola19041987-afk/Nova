@@ -1,4 +1,4 @@
-const { test, expect } = require('./harness');
+const { test, expect, scenesOn } = require('./harness');
 const pw = require('@playwright/test');
 const fs = require('fs');
 const path = require('path');
@@ -240,7 +240,7 @@ test('niente barra in basso: Home e Blocco note raggiungibili dall alto, ritratt
   for (const s of ['#app-refresh', '#blocco-btn', '#wa-video', '#wa-home', '#chat-input', '#vn-mic']) expect(await visible(page, s), s).toBe(true);
   await page.click('#wa-home');
   await expect(page.locator('body')).toHaveClass(/solo-home/);
-  expect(await visible(page, '#solo-dock')).toBe(false);
+  expect(await visible(page, '#solo-dock')).toBe(true); // v2d-46: in Home c'è la barra Chat · Chiamate · Impostazioni (in chat no)
   expect(await visible(page, '#back-btn')).toBe(true); // ‹ Chat
   await page.click('#back-btn');
   await expect(page.locator('body')).toHaveClass(/solo-chat/);
@@ -276,6 +276,7 @@ test('videochiamata a tutto schermo anche se parte con la tastiera aperta (scocc
 });
 
 test('saluto: dopo «ok ciao ciao» Nova se ne va (clip palestra-ciao) e resta «non in linea» finché non le riscrivi', async ({ page }) => {
+  await scenesOn(page); // v2d-46: scene/clip/gesti spenti di serie (volto = foto scelta); qui si prova il meccanismo
   test.skip(!HAS_LIB, 'libreria v2d-36 solo in locale');
   const L = lib(); const seen = { chat: [] };
   await page.setViewportSize({ width: 390, height: 664 });
@@ -305,6 +306,7 @@ test('saluto: dopo «ok ciao ciao» Nova se ne va (clip palestra-ciao) e resta �
 });
 
 test('rete lenta: con 3G arrivano i clip leggeri, con la rete lentissima resta la foto che respira; mai un fermo', async ({ page, browserName }) => {
+  await scenesOn(page); // v2d-46: scene/clip/gesti spenti di serie (volto = foto scelta); qui si prova il meccanismo
   test.skip(!HAS_LIB, 'libreria v2d-36 solo in locale');
   test.skip(browserName !== 'chromium', 'limitazione di rete via CDP solo su Chromium');
   test.setTimeout(90000);
@@ -414,6 +416,7 @@ test('cambio spontaneo: il server le fa dire «ho voluto cambiare…» (una volt
 });
 
 test('cambio spontaneo in app: dopo una risposta, in un momento tranquillo, si cambia da sola e al messaggio dopo lo dice', async ({ page }) => {
+  await scenesOn(page); // v2d-46: scene/clip/gesti spenti di serie (volto = foto scelta); qui si prova il meccanismo
   test.skip(!HAS_LIB, 'libreria v2d-36 solo in locale');
   const L = lib(); const seen = { chat: [] };
   await page.setViewportSize({ width: 390, height: 664 });
@@ -519,6 +522,7 @@ test('microfono a interruttore: un tocco avvia, un secondo tocco ferma e invia (
 
 // niente lampo bianco all inizio della chiamata e bocca/viso sempre in movimento per oltre 60 s mentre parla (rete lenta)
 test('chiamata: mai un lampo bianco e viso sempre in movimento per 60 s mentre parla (rete lenta)', async ({ page, browserName }) => {
+  await scenesOn(page); // v2d-46: scene/clip/gesti spenti di serie (volto = foto scelta); qui si prova il meccanismo
   test.skip(!HAS_LIB, 'libreria v2d-36 solo in locale');
   test.setTimeout(240000);
   const L = lib(); const seen = { chat: [] };
@@ -549,6 +553,7 @@ test('chiamata: mai un lampo bianco e viso sempre in movimento per 60 s mentre p
 });
 
 test('Home pulita: niente testi vecchi (nascosti, non tolti), foto grande del look, tasti rapidi, tutto raggiungibile', async ({ page }) => {
+  await scenesOn(page); // v2d-46: scene/clip/gesti spenti di serie (volto = foto scelta); qui si prova il meccanismo
   test.skip(!HAS_LIB, 'libreria v2d-36 solo in locale');
   const L = lib(); const seen = { chat: [] };
   await page.setViewportSize({ width: 390, height: 844 });
@@ -564,8 +569,8 @@ test('Home pulita: niente testi vecchi (nascosti, non tolti), foto grande del lo
   expect(body).not.toContain('La foto 2D non cambia');
   await expect(page.locator('#nh-look')).toContainText('palestra');
   for (const s of ['#nh-photo', '#nh-q-chat', '#nh-q-video', '#nh-q-voice']) expect(await visible(page, s), s).toBe(true);
-  const ph = await page.evaluate(() => document.querySelector('#nh-photo .nh-avatar').getBoundingClientRect().height);
-  expect(ph).toBeGreaterThan(200); // v2d-41: foto della Home un po' più bassa perché tutto il menu entri nello schermo
+  const ph = await page.evaluate(() => { const r = document.querySelector('#nh-photo .nh-avatar').getBoundingClientRect(); return [r.width, r.height]; });
+  expect(ph[1]).toBeGreaterThanOrEqual(120); expect(Math.round(ph[0])).toBe(Math.round(ph[1])); // v2d-46: foto rotonda in alto come le Impostazioni di WhatsApp
   // in fondo si arriva (Impostazioni), senza tasti tagliati ai lati
   await page.locator('#dock-settings').scrollIntoViewIfNeeded();
   expect(await visible(page, '#dock-settings')).toBe(true);
@@ -576,6 +581,7 @@ test('Home pulita: niente testi vecchi (nascosti, non tolti), foto grande del lo
 });
 
 test('chiamata senza clip «parla» e senza punti del viso: niente bocca disegnata storta, il video calmo continua', async ({ page }) => {
+  await scenesOn(page); // v2d-46: scene/clip/gesti spenti di serie (volto = foto scelta); qui si prova il meccanismo
   test.skip(!HAS_LIB, 'libreria v2d-36 solo in locale');
   const L = lib(); const seen = { chat: [] };
   L.clips = L.clips.filter((c) => !(c.outfit === 'nova_palestra' && c.kind === 'parla'));

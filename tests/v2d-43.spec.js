@@ -25,7 +25,7 @@ async function mockHome(page) {
 }
 
 test('v2d-43: nel menu solo-mode c e Galleria, apre la scheda con Aggiungi, e Indietro torna in chat', async ({ page, browserName }) => {
-  test.skip(browserName === 'webkit', 'Questo WebKit chiude il processo aprendo la Home. Il percorso e verificato su Chromium.');
+  test.skip(true, 'v2d-46: Galleria tolta dal menu su richiesta di Nicola (la scheda resta nel codice); il menu nuovo è in v2d-46.spec.js');
   await page.setViewportSize({ width: 390, height: 844 });
   await mockHome(page);
   await page.goto('/');

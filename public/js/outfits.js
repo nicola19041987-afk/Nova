@@ -152,9 +152,14 @@
   const App = root.App;
   // v2d-36: nelle prove automatiche (webdriver) il cambio spontaneo è spento, salvo ls 'spontLook' = '1'; '0' lo spegne sempre
   try { const f = App.ls ? App.ls.get('spontLook', null) : null; spont.on = f === '1' || (f !== '0' && !(root.navigator && root.navigator.webdriver)); } catch { /* */ }
+  // v2d-46 (Nicola, 15/11): la foto scelta del personaggio è SEMPRE il volto mostrato (Home, intestazione, chat, chiamata).
+  // Scene («a tavola», «al parco»…), look e cambi «al volo» non la sostituiscono più. I look restano salvati sul server
+  // (nessun dato cancellato); 'faceLock'='0' su questo telefono torna al comportamento di prima (solo per prove).
+  const locked = () => { try { return !(App.ls && App.ls.get('faceLock', '') === '0'); } catch { return true; } };
+  App.faceLocked = locked;
   App.outfits = {
-    current: (ch) => current(ch),
-    key: (ch) => key(ch),
+    current: (ch) => (locked() ? null : current(ch)),
+    key: (ch) => (locked() ? '' : key(ch)),
     // cambia look: chiave, o '' per la foto di base. Aggiorna foto, labiale e movimento.
     set(ch, k, by = 'chat') {
       if (!ch) return false;
@@ -170,6 +175,7 @@
     },
     // chiamato prima di mandare un messaggio: se è una richiesta di vestiti, lei si cambia. Ritorna il look nuovo o null.
     hear(ch, text) {
+      if (locked()) return null; // v2d-46: niente cambi di foto dalla chat
       // v2d-41: con la foto principale nuova (lookAuto:false) i vestiti si fanno «al volo» su quella foto, non con i look vecchi
       if (autoOff(ch)) {
         const t = String(text || '').toLowerCase();
@@ -218,7 +224,7 @@
     told(ch) { const st = ch && load(ch); if (st && st.by === 'lei' && st.told === false) { st.told = true; save(ch, st); } },
     // v2d-36: momento tranquillo (dopo una sua risposta): ogni tanto si cambia da sola. Ritorna il look nuovo o null.
     maybeSpontaneous(ch, rand) {
-      if (!ch || ch.role === 'support') return null;
+      if (!ch || ch.role === 'support' || locked()) return null;
       const sp = (App.avatarConv && App.avatarConv.speaking) || (App.voice && App.voice.speaking);
       const k = midChange(ch, Date.now(), rand, { speaking: !!sp, busy: !!(App.chat && App.chat.busy), done: this._midDone === ch.id, guest: !!(App.me && App.me.guest) });
       if (!k) return null;
@@ -229,6 +235,7 @@
     // ridisegna foto + labiale + clip se il look è cambiato (richiesta o nuova visita). Mai mentre parla o risponde.
     apply(force) {
       const ch = App.current; if (!ch) return;
+      if (!force && locked()) return; // v2d-46: foto fissa, nessun ridisegno per cambio scena
       if (!force && ((App.avatarConv && App.avatarConv.speaking) || (App.chat && App.chat.busy) || (App.call && App.call.active))) return;
       const k = ch.id + '|' + key(ch);
       if (!force && this._applied === k) return;
@@ -243,12 +250,12 @@
   };
   // la foto mostrata (avatar, intestazione, poster dei video) è quella del look attuale
   const baseFace = App.faceSrc;
-  App.faceSrc = (ch) => { const o = ch && current(ch); return o ? o.avatar : baseFace(ch); };
+  App.faceSrc = (ch) => { const o = ch && !locked() && current(ch); return o ? o.avatar : baseFace(ch); };
   // punti del viso per il labiale: quelli misurati su questa foto; altrimenti quelli della base (non validi per il warp:
   // il riconoscimento del viso li misura sul telefono e li salva sul look con App.faceFound)
   // v2d-36: un look senza punti propri NON usa quelli della foto di base (bocca disegnata nel posto sbagliato): null ->
   // punti «incerti», niente bocca disegnata, e il riconoscimento del viso li misura su questa foto
-  App.faceLm = (ch) => { const o = ch && current(ch); if (o) return o.landmarks && o.landmarks.eyeL ? o.landmarks : null; return ch && ch.landmarks; };
+  App.faceLm = (ch) => { const o = ch && !locked() && current(ch); if (o) return o.landmarks && o.landmarks.eyeL ? o.landmarks : null; return ch && ch.landmarks; };
   // controllo leggero: dopo una lunga assenza (nuova visita) la scena cambia; mai a metà conversazione
   setInterval(() => { try { if (document.visibilityState === 'visible') App.outfits.apply(false); } catch { /* */ } }, 60000);
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -75,9 +75,10 @@
   // ---------- voce di lei: blocchi PCM in coda senza buchi, labiale dall'analizzatore ----------
   function outChain(s) {
     if (s.out) return s.out;
-    const c = ctx(), g = c.createGain(), an = c.createAnalyser(); an.fftSize = 1024; an.smoothingTimeConstant = 0.2;
-    g.gain.value = s.volume; g.connect(an); an.connect(c.destination);
-    s.out = { c, g, an, td: new Float32Array(an.fftSize), fd: new Uint8Array(an.frequencyBinCount) }; return s.out;
+    const c = ctx(), g = c.createGain(), mix = c.createGain(), an = c.createAnalyser(); an.fftSize = 1024; an.smoothingTimeConstant = 0.2;
+    // v2d-46: g (volume + dissolvenza) -> mix (0 solo quando si sente la voce dal video Simli) -> analizzatore -> uscita
+    g.gain.value = s.volume; mix.gain.value = 1; g.connect(mix); mix.connect(an); an.connect(c.destination);
+    s.out = { c, g, mix, an, td: new Float32Array(an.fftSize), fd: new Uint8Array(an.frequencyBinCount) }; return s.out;
   }
   const playing = (s) => s && s.playT > ctx().currentTime + 0.005;
   // v2d-40: il tempo dell'audio che si SENTE adesso (non quello che il motore audio sta preparando): currentTime è avanti di
@@ -192,6 +193,7 @@
       for (const x of s.sources) { try { x.onended = null; x.stop(t + 0.035); } catch {} }
     } else for (const x of s.sources) { try { x.onended = null; x.stop(); } catch {} }
     s.sources = []; s.playT = 0; s.env = []; lips(s, false);
+    if (App.simli && App.simli.interrupt) App.simli.interrupt(); // v2d-46: interrotta -> anche il volto Simli smette subito
   }
   function fadeOutEnd(s) { // fine risposta: chiude dolcemente l'ultimo pezzo
     const c = App.audio.ctx, o = s.out; if (!c || !o || !(s.playT > c.currentTime + 0.05)) return;
@@ -464,7 +466,9 @@
     },
     speaking: () => !!(S && playing(S)),
     heard: () => heard(ctx()), // v2d-40: istante dell'audio che si sente adesso
-    level: () => (S ? level(S) : 0), // v2d-37: livello reale della sua voce in uscita (analizzatore + PCM), 0..1
+    level: () => (S ? level(S) : 0),
+    // v2d-46: con il volto Simli si sente la voce che arriva insieme al suo video (labiale perfetto); l'audio locale si abbassa
+    localMute(on) { try { const o = S && S.out; if (o && o.mix) o.mix.gain.setTargetAtTime(on ? 0 : 1, o.c.currentTime, 0.02); } catch { /* */ } }, // v2d-37: livello reale della sua voce in uscita (analizzatore + PCM), 0..1
     listening: () => !!(S && S.userSpeaking),
     refreshInstructions() { PRE = null; if (S && !S.closed) refresh(S); },
     lat: () => (S ? S.lat.slice() : []),

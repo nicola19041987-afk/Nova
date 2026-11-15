@@ -1,4 +1,4 @@
-const { test, expect } = require('./harness');
+const { test, expect, scenesOn } = require('./harness');
 const fs = require('fs');
 const path = require('path');
 
@@ -67,6 +67,7 @@ for (const vp of [{ w: 390, h: 664, n: 'iPhone 14 (Safari)' }, { w: 390, h: 844,
 }
 
 test('v2d-41: la descrizione del look va a capo e non finisce a metà parola', async ({ page, browserName }) => {
+  await scenesOn(page); // v2d-46: scene/clip/gesti spenti di serie (volto = foto scelta); qui si prova il meccanismo
   test.skip(browserName === 'webkit', 'Home: verificata su Chromium.');
   await page.setViewportSize({ width: 390, height: 664 });
   await mock(page, { outfit: true }); await boot(page);
@@ -153,6 +154,7 @@ test('v2d-41: in videochiamata la fotocamera si accende da sola, subito, con il 
   await page.evaluate(() => App.call.end());
 });
 test('v2d-41: «fammi vedere la maglietta che avevi preso» -> look al volo con dissolvenza al nero, sulla foto principale', async ({ page, browserName }) => {
+  await scenesOn(page); // v2d-46: scene/clip/gesti spenti di serie (volto = foto scelta); qui si prova il meccanismo
   test.skip(browserName === 'webkit', 'Home su questo WebKit: vedi sopra.');
   await mock(page);
   const NOW = '/api/avatars/a1f0000000000001.jpg'; let asked = null;

@@ -1507,3 +1507,32 @@ body.solo-mode.in-call #chat-form > .cb-side{display:none!important}
 #chat-form .att-status{margin:0;padding:2px 8px;font-size:12.5px;color:#075e54}
 #chat-form.att-busy #vn-plus{opacity:.4;pointer-events:none}
 body #chat-form .att-tray .att-x,body.solo-mode #tab-conv #chat-form .att-tray .att-x{position:absolute!important;top:3px!important;right:3px!important;left:auto!important;bottom:auto!important;width:22px!important;height:22px!important;min-width:0!important;max-width:22px!important;min-height:0!important;max-height:22px!important;flex:none!important;padding:0!important;margin:0!important;font-size:15px!important;line-height:22px!important;border-radius:50%!important}
+
+/* ===== v2d-46 (Nicola, 15/11): menu vero stile Impostazioni di WhatsApp =====
+   Barra in basso con TRE schede: Chat, Chiamate, Impostazioni (= questa Home). Niente Galleria né pagine di prova.
+   In Home la foto è un cerchio in alto (tocco = si ingrandisce e si muove); sotto l'elenco a icone. Dentro la chat e in
+   chiamata la barra non c'è (come WhatsApp dentro una conversazione). */
+body.solo-mode.solo-home:not(.in-call):not(.solo-portrait):not(.av-full-on) #solo-dock,
+body.solo-mode.solo-calls:not(.in-call):not(.solo-portrait) #solo-dock,
+body.solo-mode.solo-settings:not(.in-call):not(.solo-portrait) #solo-dock{display:flex!important}
+body.solo-mode.solo-chat #solo-dock,body.solo-mode.in-call:not(.call-min) #solo-dock{display:none!important}
+body.solo-mode #nh-photo{flex-direction:column!important;align-items:center!important;padding:20px 12px 14px!important;gap:10px!important}
+body.solo-mode #nh-photo .nh-avatar{width:132px!important;height:132px!important;border-radius:50%!important;margin:0 auto}
+body.solo-mode #nh-photo .nh-avatar > .nh-avatar-face{border-radius:50%!important}
+body.solo-mode #nh-photo .nh-avatar > .nh-avatar-face > img{object-position:50% 30%!important}
+body.solo-mode #nh-photo .nh-id{padding:0 14px!important;text-align:center;align-items:center;display:flex;flex-direction:column}
+body.solo-mode #nh-photo .nh-id b{font-size:22px}
+.calls-go{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 16px 16px}
+.calls-go button{display:flex;align-items:center;justify-content:center;gap:6px;min-height:52px;border:0!important;border-radius:12px!important;background:#fff!important;color:#1A1D21!important;font-size:15px;font-weight:650}
+.calls-go button:active{background:#EEF2F6!important}
+body.solo-mode.solo-calls #tab-calls{background:#F2F2F7}
+/* v2d-46: volto Simli (solo quello creato dalla foto di Alpha) sopra la foto in videochiamata */
+body.simli-on #simli-video:not([hidden]){display:block!important;position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center 18%;z-index:4;background:#111;pointer-events:none}
+/* v2d-46: schermi bassi (Safari con le barre, iPhone SE): foto rotonda più piccola accanto al nome, come WhatsApp, così
+   tutto l'elenco resta sopra la barra in basso senza scorrere */
+@media (max-height:720px){
+  body.solo-mode #nh-photo{flex-direction:row!important;justify-content:flex-start!important;padding:10px 14px!important;gap:12px!important}
+  body.solo-mode #nh-photo .nh-avatar{width:64px!important;height:64px!important;margin:0}
+  body.solo-mode #nh-photo .nh-id{text-align:left;align-items:flex-start}
+  body.solo-mode #nh-photo .nh-id b{font-size:20px}
+}

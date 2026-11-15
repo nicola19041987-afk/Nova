@@ -1,4 +1,4 @@
-const { test, expect } = require('./harness');
+const { test, expect, scenesOn } = require('./harness');
 const fs = require('fs');
 const path = require('path');
 const O = require('../public/js/outfits.js');
@@ -87,6 +87,7 @@ test('look tenuti da prima di v2d-37: i look vecchi fermi (senza «parla") o sen
 });
 
 test('bocca e voce: il clip «parla» si vede solo quando la voce suona davvero (mai prima), entro 600 ms, e si ferma quando tace', async ({ page }) => {
+  await scenesOn(page); // v2d-46: scene/clip/gesti spenti di serie (volto = foto scelta); qui si prova il meccanismo
   test.skip(!HAS_LIB, 'libreria v2d-36 solo in locale');
   test.setTimeout(90000);
   const L = lib(); const seen = { chat: [] };

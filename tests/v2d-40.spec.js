@@ -1,4 +1,4 @@
-const { test, expect } = require('./harness');
+const { test, expect, scenesOn } = require('./harness');
 const fs = require('fs');
 const path = require('path');
 
@@ -119,6 +119,7 @@ const viewState = (page) => page.evaluate(() => {
 const canvasLuma = (page) => page.evaluate(() => { const c = document.getElementById('avatar-canvas'), t = document.createElement('canvas'); t.width = 36; t.height = 64; const x = t.getContext('2d'); x.drawImage(c, 0, 0, 36, 64); const d = x.getImageData(0, 0, 36, 64).data; let s = 0; for (let i = 0; i < d.length; i += 4) s += 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2]; return Math.round(s / (d.length / 4)); });
 
 test('chiamata vocale dalla Home: lei viva a tutto schermo (niente sfondo scuro sfocato né ritratto rotondo), solo ✕, microfono e riaggancia', async ({ page }) => {
+  await scenesOn(page); // v2d-46: scene/clip/gesti spenti di serie (volto = foto scelta); qui si prova il meccanismo
   test.skip(!HAS_LIB, 'libreria privata solo in locale');
   const L = lib(); const seen = { chat: [] };
   await mock(page, L, seen); await rtSetup(page);
@@ -143,6 +144,7 @@ test('chiamata vocale dalla Home: lei viva a tutto schermo (niente sfondo scuro 
 });
 
 test('passo indietro nel disegno: di rado e lento, torna vicina; mai con prefers-reduced-motion; reset riducendo, passando al video e riagganciando', async ({ page }) => {
+  await scenesOn(page); // v2d-46: scene/clip/gesti spenti di serie (volto = foto scelta); qui si prova il meccanismo
   test.skip(!HAS_LIB, 'libreria privata solo in locale');
   const L = lib(); const seen = { chat: [] };
   await mock(page, L, seen); await rtSetup(page);

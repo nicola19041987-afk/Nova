@@ -29,6 +29,7 @@
     return kf;
   }
 
+  const LIP_ATTACK_MS = 40, LIP_RELEASE_MS = 90; // v2d-46: labiale che segue l'audio suonato senza ritardo percepibile
   const ease = (t) => { t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t); }; // smoothstep
   class TalkingAvatar {
     constructor(canvas) {
@@ -441,7 +442,7 @@
       const dt = Math.min(100, now - (this._last || now)); this._last = now;
       this.stepLibrary(now);
       const kf = (a) => 1 - Math.pow(1 - a, dt / 16.67); // v8.4.1: smorzamenti indipendenti dal frame rate (uguali a 30, 60 o 120 Hz)
-      { const tg = this.target(now); const raw = (tg - this.mouth) * kf(tg > this.mouth ? 0.36 : 0.2); const cap = 0.16; this.mouth += Math.max(-cap * 0.75, Math.min(cap, raw)); // apertura morbida, mai a scatti
+      { const tg = this.target(now); const up = tg > this.mouth; this.mouth += (tg - this.mouth) * (1 - Math.exp(-dt / (up ? LIP_ATTACK_MS : LIP_RELEASE_MS))); if (this.mouth < 0.004 && tg === 0) this.mouth = 0; // v2d-46: apertura ~40 ms, chiusura ~90 ms (costanti di tempo, uguali a 30/60/120 Hz); niente audio = bocca chiusa
         // v8.4.5: parla ma la bocca resta chiusa (audio non analizzabile, es. iOS): passa al labiale stimato dal testo
         // v2d-40: solo se l'inviluppo è guasto (tutto a zero) e l'audio sta davvero avanzando; una pausa vera resta a bocca chiusa
         if (this.speaking && this._env) { const el = this._env.el, adv = !!(el && !el.paused && !el.ended && el.currentTime > 0.15); if (tg > 0.05) this._openAt = now; else if (!this._simFb && (!(window.App && App.call && App.call.active) || (adv && (this._envMax || 0) < 0.03)) && this._spkText && now - Math.max(this._spkAt || 0, this._openAt || 0) > 900) { this._simFb = true; this._env = null; this.simulateText(this._spkText, 1); } } }

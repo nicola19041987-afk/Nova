@@ -246,7 +246,6 @@
               <button type="button" data-nh-open="voce"><i class="nh-ic" style="background:#2E90FA">🎙️</i><span>Voce</span><em>›</em></button>
             </div>
             <div class="nh-group">
-              <button type="button" data-dock="images" id="dock-gallery" aria-label="Galleria"><i class="nh-ic" style="background:#EE46BC">🖼</i><span>Galleria</span><em>›</em></button>
               <button type="button" data-dock="settings" id="dock-settings"><i class="nh-ic" style="background:#667085">⚙</i><span>Impostazioni</span><em>›</em></button>
             </div>
           </div>
@@ -323,6 +322,7 @@
 
       <!-- v8.4: chiamate recenti -->
       <div id="tab-calls" class="tab" hidden>
+        <div class="calls-go" id="calls-go"><button type="button" id="calls-video">📹 <span>Videochiamata</span></button><button type="button" id="calls-voice">🎙️ <span>Chiamata vocale</span></button></div>
         <div class="seg" id="calls-seg"><button class="on" data-f="all">Tutte</button><button data-f="video">Video</button><button data-f="voice">Vocali</button></div>
         <ul id="calls-list" class="ios-list calls-list"></ul>
         <p class="muted small center-text">Tocca una riga per richiamare. Le chiamate restano solo nel tuo profilo.</p>
@@ -597,8 +597,8 @@
     </nav>
     <nav class="solo-dock" id="solo-dock" hidden aria-label="Navigazione">
       <button type="button" data-dock="chat" id="dock-chat" aria-label="Chat"><span class="dock-ic">💬</span><span>Chat</span></button>
-      <button type="button" data-dock="video" id="dock-video" aria-label="Video"><span class="dock-ic">📹</span><span>Video</span></button>
-      <button type="button" data-dock="home" id="dock-home" aria-label="Home"><span class="dock-ic">🏠</span><span>Home</span></button>
+      <button type="button" data-dock="calls" id="dock-calls" aria-label="Chiamate"><span class="dock-ic">📞</span><span>Chiamate</span></button>
+      <button type="button" data-dock="home" id="dock-home" aria-label="Impostazioni"><span class="dock-ic">⚙️</span><span>Impostazioni</span></button>
     </nav>
     <button id="home-ind" class="home-ind" type="button" aria-label="Torna alla Home"><i></i></button>
 

@@ -1,4 +1,4 @@
-const { test, expect } = require('./harness');
+const { test, expect, scenesOn } = require('./harness');
 const fs = require('fs');
 const path = require('path');
 const O = require('../public/js/outfits.js');
@@ -177,6 +177,7 @@ async function mock(page, seen) {
 }
 
 test('app: scena a sorpresa inquadrata all\'ombelico, si muove con i suoi clip calmi, «più elegante» la cambia', async ({ page }, testInfo) => {
+  await scenesOn(page); // v2d-46: scene/clip/gesti spenti di serie (volto = foto scelta); qui si prova il meccanismo
   test.skip(!LIB.length, 'libreria v2d-35 solo in locale');
   test.setTimeout(150000);
   const dir = path.join(OUT, 'v2d-35-' + testInfo.project.name); fs.mkdirSync(dir, { recursive: true });

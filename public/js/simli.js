@@ -45,10 +45,36 @@
     if (kind === 'wait') { el.hidden = false; el.classList.remove('err'); el.textContent = line; }
     else if (kind === 'err') { el.hidden = false; el.classList.add('err'); el.textContent = line; }
   }
-  function show() {
-    document.body.classList.remove('simli-on');
+  // v2d-46: il volto Simli si mostra SOLO se è quello di Alpha creato dalla sua foto (App.me.simliFace, deciso dal server).
+  function show(on) {
+    document.body.classList.toggle('simli-on', !!on);
     const v = document.getElementById('simli-video');
-    if (v) { v.hidden = true; try { v.pause(); } catch { /* già fermo */ } v.srcObject = null; }
+    if (v && !on) { v.hidden = true; try { v.pause(); } catch { /* già fermo */ } v.srcObject = null; }
+    if (v && on) v.hidden = false;
+    voiceFrom(!!on);
+  }
+  // v2d-46: labiale perfetto con Simli = si sente l'audio che arriva INSIEME al video di Simli (stesso orologio della bocca).
+  // L'audio locale si abbassa solo quando dalla traccia di Simli arriva davvero voce; se tace mentre lei parla, torna l'audio locale.
+  let sa = null;
+  function voiceFrom(on) {
+    if (!on) { if (sa) { clearInterval(sa.t); try { sa.src.disconnect(); sa.g.disconnect(); } catch { /* */ } sa = null; } if (App.rt && App.rt.localMute) App.rt.localMute(false); return; }
+    const v = document.getElementById('simli-video'); const st = v && v.srcObject;
+    const c = App.audio && App.audio.ctx; if (!st || !c || sa || !st.getAudioTracks || !st.getAudioTracks().length) return;
+    try {
+      const src = c.createMediaStreamSource(new MediaStream(st.getAudioTracks())), an = c.createAnalyser(), g = c.createGain();
+      an.fftSize = 512; g.gain.value = 0; src.connect(an); an.connect(g); g.connect(c.destination);
+      const td = new Float32Array(an.fftSize);
+      sa = { src, an, g, td, heardAt: 0, ok: false };
+      sa.t = setInterval(() => {
+        an.getFloatTimeDomainData(td); let e = 0; for (let i = 0; i < td.length; i++) e += td[i] * td[i];
+        const rms = Math.sqrt(e / td.length), now = performance.now();
+        if (rms > 0.01) sa.heardAt = now;
+        const localTalking = !!(App.rt && App.rt.speaking && App.rt.speaking());
+        const want = sa.heardAt && now - sa.heardAt < 1500;
+        if (want && !sa.ok) { sa.ok = true; g.gain.setTargetAtTime(1, c.currentTime, 0.02); if (App.rt && App.rt.localMute) App.rt.localMute(true); }
+        else if (sa.ok && localTalking && !want) { sa.ok = false; g.gain.setTargetAtTime(0, c.currentTime, 0.02); if (App.rt && App.rt.localMute) App.rt.localMute(false); }
+      }, 50);
+    } catch (e) { console.warn('Audio Simli non collegato, resta la voce locale', e && e.message); }
   }
   function sendBytes(bytes) {
     const ws = session && session.ws;
@@ -81,7 +107,13 @@
     video.setAttribute('muted', ''); video.setAttribute('autoplay', '');
     try { const p = video.play(); if (p && p.catch) p.catch(() => {}); } catch { /* fuori dal gesto */ }
   }
-  function reveal() { show(); }
+  function reveal(s) {
+    const video = document.getElementById('simli-video');
+    if (!s || s.closed || session !== s || !wanted() || !video || !video.srcObject) return;
+    s.shown = true;
+    show(true);
+    note('', 'clear');
+  }
   function watch(video, s) {
     if (s.watched) return;
     s.watched = true;
@@ -132,8 +164,49 @@
     note(text, 'log');
   }
   async function start() {
-    close();
-    return false;
+    if (!(App.me && App.me.simliFace)) { close(); return false; } // v2d-46: nessun volto di Alpha pronto -> foto con la bocca sull'audio
+    if (!wanted()) return false;
+    if (session && !session.closed) return true;
+    if (starting) return starting;
+    const video = document.getElementById('simli-video');
+    if (video) prime(video);
+    note('Connessione video…', 'wait');
+    const run = (async () => {
+      let data;
+      try { data = await App.api('/api/simli/session', { method: 'POST', body: {} }); }
+      catch (e) { fail((e && e.message) || 'Video non disponibile'); return false; }
+      if (!wanted() || !data || !data.session_token) { fail(data && data.error ? data.error : 'Video non disponibile'); return false; }
+      if (!video || !window.RTCPeerConnection || !window.WebSocket) { fail('Questo browser non mostra il video'); return false; }
+      const pc = new RTCPeerConnection({ iceServers: data.iceServers || [{ urls: ['stun:stun.l.google.com:19302'] }] });
+      try { pc.addTransceiver('audio', { direction: 'recvonly' }); pc.addTransceiver('video', { direction: 'recvonly' }); } catch { /* offerta senza transceiver */ }
+      const url = new URL('wss://api.simli.ai/compose/webrtc/p2p');
+      url.searchParams.set('session_token', data.session_token);
+      url.searchParams.set('enableSFU', 'true');
+      const ws = new WebSocket(url);
+      const s = { ws, pc, closed: false, ready: false, shown: false, watched: false, reason: '' };
+      session = s;
+      pc.addEventListener('track', (evt) => {
+        if (!evt.track || evt.track.kind !== 'video' || !evt.streams || !evt.streams[0] || session !== s) return;
+        video.srcObject = evt.streams[0];
+        prime(video);
+        watch(video, s);
+      });
+      ws.addEventListener('message', (ev) => { onMessage(s, pc, ev.data); });
+      ws.addEventListener('close', () => { if (session === s && !s.shown) fail(s.reason || 'Video interrotto'); else if (session === s) close(); });
+      pc.addEventListener('connectionstatechange', () => { if (pc.connectionState === 'failed' && session === s) fail('Connessione video persa'); });
+      await new Promise((res, rej) => {
+        ws.addEventListener('open', res, { once: true });
+        ws.addEventListener('error', () => rej(new Error('Collegamento video non riuscito')), { once: true });
+      });
+      if (s.closed || !wanted()) { close(); return false; }
+      await pc.setLocalDescription(await pc.createOffer());
+      await iceGathered(pc);
+      if (s.closed || ws.readyState !== 1) return false;
+      ws.send(JSON.stringify({ type: pc.localDescription.type, sdp: pc.localDescription.sdp }));
+      return true;
+    })();
+    starting = run;
+    try { return await run; } catch (e) { fail((e && e.message) || 'Video non disponibile'); return false; } finally { if (starting === run) starting = null; }
   }
 
   document.addEventListener('visibilitychange', () => {

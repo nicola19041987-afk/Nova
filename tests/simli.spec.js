@@ -88,7 +88,7 @@ test('la chiave Simli si salva, lo stato non la mostra, e la sessione la usa se 
     const pin = await api.post('/api/pin/setup', { data: { user: 'nicola', pin: '1357' }, headers: HEAD });
     expect(pin.ok(), await pin.text()).toBeTruthy();
     const before = await (await api.get('/api/simli/key/status')).json();
-    expect(before).toEqual({ configured: false, fromEnv: false, stored: false });
+    expect(before).toMatchObject({ configured: false, fromEnv: false, stored: false }); // v2d-46: in più lo stato del volto creato dalla foto
     const none = await api.post('/api/simli/session', { headers: HEAD, data: {} });
     expect(none.status()).toBe(503);
     expect((await none.json()).fallback).toBe(true);
@@ -101,7 +101,7 @@ test('la chiave Simli si salva, lo stato non la mostra, e la sessione la usa se 
     const statusRes = await api.get('/api/simli/key/status');
     const statusText = await statusRes.text();
     expect(statusText).not.toContain(secret);
-    expect(JSON.parse(statusText)).toEqual({ configured: true, fromEnv: false, stored: true });
+    expect(JSON.parse(statusText)).toMatchObject({ configured: true, fromEnv: false, stored: true });
     const onDisk = JSON.parse(fs.readFileSync(path.join(dir, 'server-simli-key.json'), 'utf8'));
     expect(onDisk.key).toBe(secret);
     expect(onDisk.faceId).toBe(face);

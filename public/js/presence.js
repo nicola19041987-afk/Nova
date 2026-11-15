@@ -47,6 +47,7 @@
   }
   function walkClip(ch) {
     const G = root.MotionGraph; if (!G || !ch) return null;
+    if (App.faceLocked && App.faceLocked()) return null; // v2d-46: niente clip di altre foto: solo dissolvenza sulla foto scelta
     const k = App.outfits && App.outfits.key ? App.outfits.key(ch) : '';
     const all = G.libraryOf(ch, k).filter((c) => c.kind === 'event' && c.event === 'ciao');
     if (!all.length) return null;
