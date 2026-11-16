@@ -22,7 +22,7 @@
     $('#call-timer').textContent = fmt(Date.now() - t0);
     if (rt) { // tempo reale: stato dalla sessione (ottimista: "sta parlando…" appena hai finito)
       const st = App.rt.status() || 'Ti ascolto…', sp = App.rt.speaking() || st === 'Sta parlando…';
-      $('#call-text').hidden = true; $('#call-state').textContent = st;
+      paintCallText(); $('#call-state').textContent = st;
       ui.classList.toggle('speaking', sp); ui.classList.toggle('thinking', false); ui.classList.add('rt');
       $('#call-mute').classList.toggle('off', muted); $('#call-mute').textContent = muted ? '🔇' : '🎙️';
       return;
@@ -32,7 +32,7 @@
     const micOk = (App.callMic && App.callMic.active) || (SR && App.voice.listening && App.voice.listening());
     // v8.4: appena hai finito di parlare lo stato diventa subito "sta parlando…" (la voce parte frase per frase)
     const st = connecting ? 'Collegamento…' : App.chat.busy ? 'Sta parlando…' : speaking ? 'Sta parlando…' : muted ? 'Microfono spento' : !micOk ? 'Scrivi qui sotto (o usa il 🎙️ della tastiera)' : 'Ti ascolto…';
-    $('#call-text').hidden = !!micOk || muted || connecting;
+    paintCallText();
     $('#call-state').textContent = st;
     ui.classList.toggle('speaking', !!speaking); ui.classList.toggle('thinking', !!App.chat.busy);
     $('#call-mute').classList.toggle('off', muted); $('#call-mute').textContent = muted ? '🔇' : '🎙️';
@@ -55,6 +55,7 @@
     else if (on && !cam && App.call && App.call.active) startCam(); // v2d-41: passando al video la fotocamera parte subito
     paintCam();
     App.call.mode = mode; if (mode === 'video') everVideo = true;
+    paintVideoToggle(); paintCallText();
     if (on && rt) App.rt.setMode(mode);
     cancelAnimationFrame(raf); if (mode === 'voice' && !soloVoice) raf = requestAnimationFrame(portrait);
     requestAnimationFrame(() => App.fitFrame && App.fitFrame());
@@ -245,7 +246,7 @@
     App.audio.callSession(false);
     const ch = App.current, secs = Math.round((Date.now() - t0) / 1000); // v8.4: registro chiamate (scheda Chiamate)
     if (ch) App.api('/api/calls', { method: 'POST', body: { characterId: ch.id, mode: everVideo ? 'video' : 'voice', startedAt: new Date(t0).toISOString(), seconds: secs } }).catch(() => {});
-    stopCam(); ui.hidden = true; stage.classList.remove('fs', 'call'); document.body.classList.remove('avatar-fs-on', 'in-call', 'call-min'); minimized = false;
+    stopCam(); clearCallImg(); ui.hidden = true; stage.classList.remove('fs', 'call'); document.body.classList.remove('avatar-fs-on', 'in-call', 'call-min'); minimized = false; paintCallText();
     if (prevTts === false && App.voice.ttsOn()) $('#tts-btn').click();
     if (prevAuto !== null) $('#auto-send').checked = prevAuto;
     App.toast((mode === 'voice' ? '📞 Chiamata vocale terminata · ' : '📹 Videochiamata terminata · ') + fmt(Date.now() - t0));
@@ -261,6 +262,7 @@
     stage.classList.remove('fs');
     document.body.classList.remove('avatar-fs-on');
     document.body.classList.add('call-min');
+    paintCallText();
     requestAnimationFrame(() => { App.fitFrame && App.fitFrame(); App.chat.scroll && App.chat.scroll(); });
     if (App.solo && App.solo.syncMotion) App.solo.syncMotion();
   }
@@ -274,6 +276,7 @@
     if (App.avatarConv && App.avatarConv.setVoiceView) App.avatarConv.setVoiceView(stage.classList.contains('nv-voicecall')); // v2d-40
     stage.classList.add('fs', 'call');
     document.body.classList.add('avatar-fs-on', 'in-call');
+    paintCallText(); paintVideoToggle();
     if (App.fullscreenFix) App.fullscreenFix(); // v2d-36: a tutto schermo anche se la tastiera era aperta
     requestAnimationFrame(() => { App.fitFrame && App.fitFrame(); App.chat.scroll && App.chat.scroll(); });
     if (App.solo && App.solo.syncMotion) App.solo.syncMotion();
@@ -328,6 +331,45 @@
     stopCam();
     await startCam();
   }
+
+  // v2d-50: tasto video al posto della cornetta (acceso in videochiamata, spento in chiamata vocale)
+  function paintVideoToggle() {
+    const b = $('#call-videotoggle'); if (!b) return;
+    const onVid = mode === 'video';
+    b.setAttribute('aria-pressed', onVid ? 'true' : 'false');
+    b.title = onVid ? 'Torna alla chiamata vocale' : 'Videochiamata';
+    b.setAttribute('aria-label', b.title);
+  }
+  // v2d-50: riga +/testo solo in videochiamata (anche con il microfono attivo)
+  function paintCallText() {
+    const form = $('#call-text'); if (!form) return;
+    form.hidden = !(on && mode === 'video' && !minimized);
+  }
+  let callImg = null;
+  function clearCallImg() {
+    if (callImg && callImg.url) try { URL.revokeObjectURL(callImg.url); } catch {}
+    callImg = null;
+    const p = $('#call-att-preview');
+    if (p) { p.hidden = true; p.innerHTML = ''; }
+  }
+  function paintCallAtt() {
+    const p = $('#call-att-preview'); if (!p) return;
+    p.hidden = !callImg;
+    p.innerHTML = callImg ? '<img src="' + callImg.url + '" alt=""><button type="button" class="att-x" aria-label="Togli">×</button>' : '';
+  }
+  // copia JPEG lato lungo 1200 px, sotto il limite di /api/chats/:id/sight (base64 max 700000)
+  async function smallJpeg(file) {
+    const url = URL.createObjectURL(file);
+    try {
+      const im = await new Promise((ok, ko) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => ko(new Error('Foto non leggibile')); i.src = url; });
+      const w = im.naturalWidth, h = im.naturalHeight, k = Math.min(1, 1200 / Math.max(w, h));
+      const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(w * k)); c.height = Math.max(1, Math.round(h * k));
+      c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
+      let q = 0.82, out = c.toDataURL('image/jpeg', q);
+      while (out.length > 680000 && q > 0.4) { q -= 0.12; out = c.toDataURL('image/jpeg', q); }
+      return out;
+    } finally { URL.revokeObjectURL(url); }
+  }
   App.call = {
     active: false, mode: null, start, end, setMode,
     get realtime() { return rt; },
@@ -364,7 +406,8 @@
   if (voiceBtn) voiceBtn.addEventListener('click', (e) => { e.stopPropagation(); start('voice'); });
   $('#call-tovideo').addEventListener('click', (e) => { e.stopPropagation(); setMode('video'); });
   $('#call-speaker').addEventListener('click', (e) => { e.stopPropagation(); setSpeaker(!speaker); });
-  $('#call-end').addEventListener('click', (e) => { e.stopPropagation(); end(); });
+  const vtg = $('#call-videotoggle');
+  if (vtg) vtg.addEventListener('click', (e) => { e.stopPropagation(); if (on) setMode(mode === 'video' ? 'voice' : 'video'); });
   $('#call-hangup').addEventListener('click', (e) => { e.stopPropagation(); end(); });
   $('#call-min').addEventListener('click', (e) => { e.stopPropagation(); minimize(); });
   $('#call-mute').addEventListener('click', (e) => { e.stopPropagation(); muted = !muted; if (rt) App.rt.setMuted(muted); else if (micMode === 'vad') App.callMic.setMuted(muted); state(); }); // v8.4.4: muto via software (il microfono resta aperto)
@@ -404,6 +447,34 @@
     if (rt) { if (App.rt.speaking()) App.rt.interrupt(); return; }
     if ((App.tts && App.tts.playing) || App.avatarConv.speaking) { App.voice.cancel(); App.avatarConv.stopAudio(); }
   });
-  $('#call-text').addEventListener('submit', (e) => { e.preventDefault(); e.stopPropagation(); const i = $('#call-input'); const t = i.value.trim(); i.value = ''; if (t && !(rt && App.rt.sendText(t))) App.chat.send(t); });
+  const attBtn = $('#call-attach');
+  if (attBtn) attBtn.addEventListener('click', (e) => {
+    e.preventDefault(); e.stopPropagation();
+    const pick = document.createElement('input');
+    pick.type = 'file'; pick.accept = 'image/*'; pick.hidden = true;
+    pick.onchange = () => {
+      const f = pick.files && pick.files[0]; pick.remove();
+      if (!f || !/^image\//.test(f.type || '') && !/\.(jpe?g|png|webp|gif|heic|heif)$/i.test(f.name || '')) { if (f) App.toast('Allega una foto'); return; }
+      clearCallImg(); callImg = { file: f, url: URL.createObjectURL(f) }; paintCallAtt();
+    };
+    document.body.appendChild(pick); pick.click();
+  });
+  const attPrev = $('#call-att-preview');
+  if (attPrev) attPrev.addEventListener('click', (e) => { const b = e.target.closest('.att-x'); if (!b) return; e.preventDefault(); e.stopPropagation(); clearCallImg(); });
+  $('#call-text').addEventListener('submit', async (e) => {
+    e.preventDefault(); e.stopPropagation();
+    if (mode !== 'video') return;
+    const i = $('#call-input'); const t = i.value.trim();
+    if (!t && !callImg) return;
+    if (!App.rt || !App.rt.sendInstruction) { App.toast('Aspetta il collegamento…'); return; }
+    let imageUrl = '';
+    if (callImg) {
+      try { imageUrl = await smallJpeg(callImg.file); }
+      catch (err) { App.toast('Foto non leggibile'); return; }
+    }
+    const ok = await App.rt.sendInstruction(t, imageUrl ? { imageUrl } : {});
+    if (!ok) { App.toast('Aspetta il collegamento…'); return; }
+    i.value = ''; clearCallImg();
+  });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && on) end(); });
 })();

@@ -136,7 +136,7 @@ test('chiamata vocale dalla Home: lei viva a tutto schermo (niente sfondo scuro 
   expect(s.cvZ).toBeGreaterThan(s.vidZ); // il disegno sopra i video (che restano accesi sotto)
   expect(s.vidTransform).toBe('none'); // nessuna scala CSS
   expect(s.portrait).toBe(0); expect(s.backdrop).toBe('hidden');
-  expect(s.buttons.sort()).toEqual(['call-badge', 'call-end', 'call-min', 'call-mute'].sort()); // v2d-41: ⚡/Classica visibile in alto
+  expect(s.buttons.sort()).toEqual(['call-badge', 'call-videotoggle', 'call-min', 'call-mute'].sort()); // v2d-50: cornetta sostituita dal tasto video
   expect(s.on).toBe(true);
   expect(await canvasLuma(page)).toBeGreaterThan(70);
   fs.mkdirSync(OUT, { recursive: true }); await page.screenshot({ path: path.join(OUT, `voce-${test.info().project.name}.png`) });

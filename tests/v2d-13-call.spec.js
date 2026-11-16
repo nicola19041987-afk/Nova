@@ -57,6 +57,7 @@ test('il video in testata apre la chiamata a schermo intero', async ({ page, bro
       camOff: cam.getAttribute('aria-pressed') === 'false',
       mute: !!document.getElementById('call-mute'),
       end: !!document.getElementById('call-end'),
+      videoToggle: !!document.getElementById('call-videotoggle'),
       flip: !!document.getElementById('call-flip'),
       self: !!document.getElementById('call-self'),
       phone: !!document.getElementById('wa-voice'),
@@ -70,7 +71,8 @@ test('il video in testata apre la chiamata a schermo intero', async ({ page, bro
   expect(call.ui).toBe(true);
   expect(call.timer).toMatch(/^\d\d:\d\d$/);
   expect(call.camOff).toBe(true);
-  expect(call.mute && call.end && call.flip && call.self).toBe(true);
+  expect(call.mute && call.videoToggle && call.flip && call.self).toBe(true);
+  expect(call.end).toBe(false);
   expect(call.phone).toBe(false);
   expect(call.house).toBe(true);
   expect(call.face).toContain('8b4bf23923c5e90d');

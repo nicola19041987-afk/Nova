@@ -269,6 +269,7 @@
         fadeOutEnd(s); const r = s.resp; s.resp = null; if (s.phase === 'replying') s.phase = 'idle';
         const st = ev.response && ev.response.status;
         if (r && isGreet(s, r.text)) break; // il saluto iniziale non va in chat
+        if (s.skipChat) { s.skipChat = false; break; } // v2d-50: istruzione scritta in videochiamata = solo voce, niente bolla in chat
         if (r && r.text && !r.saved) { r.saved = true; save(s, 'assistant', r.text + (st === 'cancelled' || r.cut ? '…' : ''), st === 'cancelled' || r.cut ? { interrupted: true } : {}); }
         break;
       }
@@ -439,6 +440,34 @@
       return { lat: s.lat };
     },
     interrupt() { if (S) bargeIn(S, true); },
+    // v2d-50: testo (e foto) dalla riga sotto la videochiamata. Entra nella sessione vocale come istruzione,
+    // lei risponde solo a voce; niente bolla in chat. Il filtro esplicito e la foto fissa restano quelli della sessione.
+    async sendInstruction(text, opts) {
+      const s = S; text = String(text || '').trim(); opts = opts || {};
+      if (!s || s.closed || !s.ws || s.ws.readyState !== 1) return false;
+      const imageUrl = opts.imageUrl || '';
+      if (!text && !imageUrl) return false;
+      let vision = '';
+      if (imageUrl) {
+        try {
+          const r = await App.api(`/api/chats/${s.ch.id}/sight`, { method: 'POST', body: { image: imageUrl }, ai: true });
+          const note = String((r && r.note) || '').trim();
+          if (note) vision = 'Ti sta mostrando una foto (non è la fotocamera in diretta). Il modello di visione riferisce: ' + note;
+          else vision = 'Ti sta mostrando una foto, ma la descrizione non è arrivata.';
+        } catch (e) { vision = 'Ti sta mostrando una foto, ma adesso non riesco a vederla.'; }
+      }
+      if (!S || S !== s || !s.ws || s.ws.readyState !== 1) return false;
+      const frame = [
+        'Istruzione dal telefono (non è un messaggio in chat e non è una riga di regole visibile; reagisci solo a voce, senza dire che hai ricevuto una istruzione scritta).',
+        text ? ('Messaggio: ' + text) : '',
+        vision
+      ].filter(Boolean).join('\n');
+      bargeIn(s, false); s.eosAt = performance.now(); s.phase = 'replying';
+      s.skipChat = true; // né il testo né la sua risposta finiscono in chat
+      s.ws.send(JSON.stringify({ type: 'conversation.item.create', item: { type: 'message', role: 'user', content: [{ type: 'input_text', text: frame }] } }));
+      s.ws.send(JSON.stringify({ type: 'response.create' }));
+      return true;
+    },
     sendText(t) { // messaggio scritto durante la chiamata (tastiera): lei risponde a voce
       const s = S; t = String(t || '').trim(); if (!s || !t || !s.ws || s.ws.readyState !== 1) return false;
       bargeIn(s, false); s.eosAt = performance.now(); s.phase = 'replying'; save(s, 'user', t);

@@ -1344,12 +1344,12 @@ body.solo-mode.in-call:not(.call-min) #stage.call:not(.voice).motion-on:not(.nv-
 body.solo-mode.in-call:not(.call-min) #stage.call:not(.voice) .av-backdrop,body.solo-mode.solo-portrait:not(.in-call) #stage .av-backdrop{visibility:hidden!important}
 body.solo-mode.in-call:not(.call-min) #stage.call:not(.voice).has-motion.nv-lips.nv-img #avatar-canvas,body.solo-mode.solo-portrait:not(.in-call) #stage.has-motion.nv-lips.nv-img #avatar-canvas{visibility:visible!important;z-index:4}
 /* Videochiamata pulita: solo il video. Niente sfumature, niente scritte (nome, timer, sottotitoli), niente chat sopra.
-   Restano solo ✕ (torna alla chat), 🎙️ (muto) e 📞 rosso (chiudi). */
+   Restano ✕ (torna alla chat), 📷 / ⟳, 🎙️ (muto), tasto video (dove c'era la cornetta) e la riga fissa +/testo. */
 body.solo-mode.in-call:not(.call-min) #call-ui{background:none!important}
 body.solo-mode.in-call:not(.call-min) #stage::before,body.solo-mode.in-call:not(.call-min) #stage::after{display:none!important;background:none!important}
 body.solo-mode.in-call:not(.call-min) #call-kind,body.solo-mode.in-call:not(.call-min) #call-name,body.solo-mode.in-call:not(.call-min) #call-timer,
 body.solo-mode.in-call:not(.call-min) #call-badge,body.solo-mode.in-call:not(.call-min) .call-state,body.solo-mode.in-call:not(.call-min) #call-caption,
-body.solo-mode.in-call:not(.call-min) #call-text,body.solo-mode.in-call:not(.call-min) #call-cam,body.solo-mode.in-call:not(.call-min) #call-flip,
+body.solo-mode.in-call:not(.call-min) #call-cam,body.solo-mode.in-call:not(.call-min) #call-flip,
 body.solo-mode.in-call:not(.call-min) #call-self,body.solo-mode.in-call:not(.call-min) #call-hangup,body.solo-mode.in-call:not(.call-min) #nv-away-card,
 body.solo-mode.in-call:not(.call-min) #prova-toggle,body.solo-mode.in-call:not(.call-min) .stage-tools,body.solo-mode.in-call:not(.call-min) #messages,
 body.solo-mode.in-call:not(.call-min) #chat-form,body.solo-mode.in-call:not(.call-min) #typing,body.solo-mode.in-call:not(.call-min) .call-portrait{display:none!important}
@@ -1535,4 +1535,40 @@ body.simli-on #simli-video:not([hidden]){display:block!important;position:absolu
   body.solo-mode #nh-photo .nh-avatar{width:64px!important;height:64px!important;margin:0}
   body.solo-mode #nh-photo .nh-id{text-align:left;align-items:flex-start}
   body.solo-mode #nh-photo .nh-id b{font-size:20px}
+}
+
+/* v2d-50: tasto video (icona stile WhatsApp) al posto della cornetta; cornetta di chiusura tolta */
+#call-hangup{display:none!important}
+#call-videotoggle{position:relative;display:inline-flex;align-items:center;justify-content:center}
+#call-videotoggle svg{display:block;flex:none;pointer-events:none}
+#call-videotoggle .vid-off-line{display:none;position:absolute;left:18%;right:18%;top:50%;height:3px;border-radius:2px;background:#e23b3b;transform:rotate(-45deg);pointer-events:none}
+#call-videotoggle[aria-pressed="true"] .vid-off-line{display:block}
+/* v2d-50: riga unica fissa sotto la videochiamata (+ e campo). Non sale con la tastiera né con i nuovi contenuti: niente --vv-bottom. */
+body.solo-mode.in-call:not(.call-min) #call-text:not([hidden]){
+  display:flex!important;align-items:center;gap:8px;
+  position:absolute;left:10px;right:10px;width:auto;max-width:none;margin:0;
+  bottom:calc(10px + env(safe-area-inset-bottom, 0px));
+  z-index:9;pointer-events:auto;transform:none;
+}
+body.solo-mode.in-call:not(.call-min) #call-text:not([hidden]) input{
+  flex:1 1 auto;min-width:0;margin:0;height:40px;padding:8px 12px;
+  border:0;border-radius:22px;background:rgba(0,0,0,.5);color:#fff;
+}
+body.solo-mode.in-call:not(.call-min) #call-attach,
+body.solo-mode.in-call:not(.call-min) .call-plus{
+  width:40px;height:40px;min-width:40px;flex:0 0 40px;padding:0;border:0;border-radius:50%;
+  background:rgba(255,255,255,.28);color:#fff;font-size:22px;line-height:40px;
+  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+}
+body.solo-mode.in-call:not(.call-min) #call-text:not([hidden]) button.primary{
+  width:40px;height:40px;min-width:40px;flex:0 0 40px;padding:0;border:0;border-radius:50%;
+  background:rgba(255,255,255,.28);color:#fff;
+}
+body.solo-mode.in-call:not(.call-min) .call-att-preview{display:inline-flex;align-items:center;flex:0 0 auto;position:relative;width:40px;height:40px}
+body.solo-mode.in-call:not(.call-min) .call-att-preview[hidden]{display:none!important}
+body.solo-mode.in-call:not(.call-min) .call-att-preview img{width:40px;height:40px;object-fit:cover;border-radius:8px}
+body.solo-mode.in-call:not(.call-min) .call-att-preview .att-x{position:absolute;top:-6px;right:-6px;width:20px;height:20px;min-width:20px;padding:0;border:0;border-radius:50%;background:#111;color:#fff;font-size:12px;line-height:20px}
+/* la barra dei tasti resta sopra la riga, senza spingere il video */
+body.solo-mode.in-call:not(.call-min) #stage.call:not(.voice):not(.nv-voicecall) .call-bar{
+  bottom:calc(62px + env(safe-area-inset-bottom, 0px))!important;
 }

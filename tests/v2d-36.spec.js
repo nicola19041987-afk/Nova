@@ -485,7 +485,7 @@ test('videochiamata pulita: niente sottotitoli/trascrizione, niente sfumature, s
   expect(r.cap).toBe('');
   expect(r.texts, 'testo visibile sopra la videochiamata').toEqual([]);
   expect(r.grad).toEqual([]);
-  expect(r.buttons.filter((b) => b !== 'call-flip' && b !== 'call-badge').sort()).toEqual(['call-cam', 'call-end', 'call-min', 'call-mute']); // v2d-41: con la camera accesa c'è anche «gira», e l'etichetta del collegamento
+  expect(r.buttons.filter((b) => b && b !== 'call-flip' && b !== 'call-badge' && b !== 'call-attach').sort()).toEqual(['call-cam', 'call-min', 'call-mute', 'call-videotoggle']); // v2d-50: cornetta → tasto video; muto e camera restano; + è nella riga testo
   fs.mkdirSync(OUT, { recursive: true });
   await page.screenshot({ path: path.join(OUT, `call-clean-${test.info().project.name}.png`) });
 });

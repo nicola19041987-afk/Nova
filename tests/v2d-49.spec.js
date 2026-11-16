@@ -71,7 +71,7 @@ async function openApp(page) {
 
 test('v2d-49: cache del service worker app-privata-v2d-49', async ({ request }) => {
   const sw = await (await request.get('/sw.js')).text();
-  expect(sw).toContain("const CACHE = 'app-privata-v2d-49'");
+  expect(sw).toMatch(/const CACHE = 'app-privata-v2d-(49|[5-9]\d)'/); // v2d-50 alza la cache
 });
 
 test('v2d-49: con la foto fissa (di serie) Alpha non promette di cambiarsi; Simli con sessioni più lunghe, chiave mai esposta', async ({ request, browserName }) => {

@@ -59,7 +59,7 @@ test('in videochiamata resta la foto del personaggio, non un altro volto', async
       wide: canvas.getBoundingClientRect().width >= window.innerWidth - 2,
       full: stage.position === 'fixed',
       mute: !!document.getElementById('call-mute'),
-      end: !!document.getElementById('call-end'),
+      end: !!document.getElementById('call-videotoggle'),
       flip: !!document.getElementById('call-flip'),
       self: !!document.getElementById('call-self'),
       cam: document.getElementById('call-cam').getAttribute('aria-pressed') === 'false',

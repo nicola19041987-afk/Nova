@@ -127,7 +127,7 @@ test('in chiamata e nel ritratto il video gira, la testata resta la foto', async
     return {
       paused: v.paused, hidden: v.hidden, w: box.width, h: box.height,
       mute: !!document.getElementById('call-mute'),
-      end: !!document.getElementById('call-end'),
+      end: !!document.getElementById('call-videotoggle'),
       name: document.getElementById('call-name').textContent,
     };
   });
