@@ -207,7 +207,7 @@ $('#notes-save').addEventListener('click', async () => {
 });
 const contentFilter = document.getElementById('set-content-filter');
 if (contentFilter) contentFilter.addEventListener('change', async (e) => {
-  if (!e.target.checked && !confirm('Disattivare il filtro contenuti espliciti? In chat e in chiamata Alpha può usare un linguaggio esplicito, solo tra adulti. Immagini e video restano non espliciti.')) {
+  if (!e.target.checked && !confirm('Disattivare il filtro contenuti espliciti? In chat e in chiamata Ira può usare un linguaggio esplicito, solo tra adulti. Immagini e video restano non espliciti.')) {
     e.target.checked = true;
     return;
   }

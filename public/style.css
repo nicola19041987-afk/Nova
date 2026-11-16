@@ -1526,7 +1526,7 @@ body.solo-mode #nh-photo .nh-id b{font-size:22px}
 .calls-go button{display:flex;align-items:center;justify-content:center;gap:6px;min-height:52px;border:0!important;border-radius:12px!important;background:#fff!important;color:#1A1D21!important;font-size:15px;font-weight:650}
 .calls-go button:active{background:#EEF2F6!important}
 body.solo-mode.solo-calls #tab-calls{background:#F2F2F7}
-/* v2d-46: volto Simli (solo quello creato dalla foto di Alpha) sopra la foto in videochiamata */
+/* v2d-46: volto Simli (solo quello creato dalla foto di Ira) sopra la foto in videochiamata */
 body.simli-on #simli-video:not([hidden]){display:block!important;position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center 18%;z-index:4;background:#111;pointer-events:none}
 /* v2d-46: schermi bassi (Safari con le barre, iPhone SE): foto rotonda più piccola accanto al nome, come WhatsApp, così
    tutto l'elenco resta sopra la barra in basso senza scorrere */

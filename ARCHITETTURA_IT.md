@@ -1,5 +1,7 @@
 # Nova — architettura (snapshot WIP)
 
+Nome visibile del personaggio: **Ira** (v2d-51). Gli id interni (`greta`, `nova-scelta`, `5ce17a0000000001`) restano.
+
 ## Stack
 
 - **Runtime**: Node.js + Express (`server.js`), dati JSON sotto `DATA_DIR` (condivisi Nico/Luisa in `data/shared/`).

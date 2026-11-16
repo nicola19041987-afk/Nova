@@ -39,24 +39,25 @@ async function pinLogin(request, base) {
   else expect(setup.ok(), await setup.text()).toBeTruthy();
 }
 
-test('v2d-45: titolo, PWA e cache del service worker dicono Alpha', async ({ request }) => {
+test('v2d-45: titolo, PWA e cache del service worker non dicono più Eris (oggi Ira, v2d-51)', async ({ request }) => {
   const html = await (await request.get('/')).text();
-  expect(html).toContain('<title>Alpha</title>');
-  expect(html).toContain('name="apple-mobile-web-app-title" content="Alpha"');
-  expect(html).toContain('id="login-title">Alpha<');
+  expect(html).toContain('<title>Ira</title>');
+  expect(html).toContain('name="apple-mobile-web-app-title" content="Ira"');
+  expect(html).toContain('id="login-title">Ira<');
   expect(html).not.toMatch(/>Eris</);
+  expect(html).not.toMatch(/>Alpha</);
   const man = await (await request.get('/manifest.json')).json();
-  expect(man.name).toBe('Alpha');
-  expect(man.short_name).toBe('Alpha');
+  expect(man.name).toBe('Ira');
+  expect(man.short_name).toBe('Ira');
   const sw = await (await request.get('/sw.js')).text();
-  expect(sw).toMatch(/const CACHE = 'app-privata-v2d-(4[5-9]|[5-9]\d)'/); // v2d-50 alza la cache
+  expect(sw).toMatch(/const CACHE = 'app-privata-v2d-(4[5-9]|[5-9]\d)'/); // v2d-51 alza la cache
   expect(sw).not.toContain("app-privata-v2d-44'");
 });
 
-test('v2d-45: il login mostra Alpha', async ({ page }) => {
+test('v2d-45: il login mostra Ira (nome visibile attuale, dopo v2d-51)', async ({ page }) => {
   await page.goto('/');
   await expect(page.locator('#view-login')).toBeVisible();
-  await expect(page.locator('.login-wordmark')).toHaveText('Alpha');
+  await expect(page.locator('.login-wordmark')).toHaveText('Ira');
 });
 
 test('v2d-45: migrazione una tantum Eris → Alpha, senza toccare id, foto, ready; al secondo avvio non si ripete', async ({ playwright }) => {
@@ -75,6 +76,7 @@ test('v2d-45: migrazione una tantum Eris → Alpha, senza toccare id, foto, read
   try {
     await waitUp(s);
     expect(s.log()).toContain('Nome visibile del personaggio aggiornato: Eris → Alpha');
+    expect(s.log()).toContain('Nome visibile del personaggio aggiornato: Alpha → Ira');
     const base = `http://127.0.0.1:${s.port}`;
     const api = await playwright.request.newContext(); ctxs.push(api);
     await pinLogin(api, base);
@@ -82,28 +84,31 @@ test('v2d-45: migrazione una tantum Eris → Alpha, senza toccare id, foto, read
     expect(hz.status()).toBe(200);
     expect(await hz.json()).toEqual({ ok: true });
     const live = await (await api.get(base + '/api/characters')).json();
-    expect(live[0].name).toBe('Alpha');
+    expect(live[0].name).toBe('Ira');
     expect(live[0].id).toBe(CH);
     expect(live[0].ready).toBe('nova-scelta');
     expect(live[0].avatar).toBe('/api/avatars/' + OLD);
     expect(live[0].voice).toBe('eve');
     const arch = await api.post(base + '/api/characters/' + CH + '/archive', { headers: HEAD });
     expect(arch.status()).toBe(409);
-    expect((await arch.json()).error).toBe('Alpha resta visibile.');
+    expect((await arch.json()).error).toBe('Ira resta visibile.');
     const disk = JSON.parse(fs.readFileSync(path.join(dir, 'shared', 'characters.json'), 'utf8'));
     const card = disk.find((c) => c.id === CH);
-    expect(card.name).toBe('Alpha');
+    expect(card.name).toBe('Ira');
     expect(card.avatar).toBe('/api/avatars/' + OLD);
     expect(card.ready).toBe('nova-scelta');
     const mig = JSON.parse(fs.readFileSync(path.join(dir, 'migrations.json'), 'utf8'));
     expect(mig.solo_visible_name_alpha_v45.changed).toBe(true);
     expect(mig.solo_visible_name_alpha_v45.from).toBe('Eris');
+    expect(mig.solo_visible_name_ira_v51.changed).toBe(true);
+    expect(mig.solo_visible_name_ira_v51.from).toBe('Alpha');
     s.child.kill();
     s = startServer(dir, ai.address().port);
     await waitUp(s);
     expect(s.log()).not.toContain('Nome visibile del personaggio aggiornato: Eris → Alpha');
+    expect(s.log()).not.toContain('Nome visibile del personaggio aggiornato: Alpha → Ira');
     const disk2 = JSON.parse(fs.readFileSync(path.join(dir, 'shared', 'characters.json'), 'utf8'));
-    expect(disk2.find((c) => c.id === CH).name).toBe('Alpha');
+    expect(disk2.find((c) => c.id === CH).name).toBe('Ira');
   } finally {
     for (const c of ctxs) await c.dispose().catch(() => {});
     s.child.kill();

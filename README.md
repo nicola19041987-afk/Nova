@@ -3,6 +3,9 @@
 Web app privata (PWA) per **Nico e Luisa**: chat con personaggi IA che evolvono, avatar animati e parlanti,
 immagini e video con l'API **xAI** (estensione del tuo account Grok), Diario di coppia. Tutto in italiano.
 
+Il personaggio visibile si chiama **Ira** (titolo, header, PWA e come si presenta). Gli identificativi interni
+(`ready: nova-scelta`, `SOLO_KEY` greta, id `5ce17a0000000001`, file e chiavi di migrazione) non cambiano.
+
 ## Requisiti
 - Node.js 18 o superiore (testato con Node 24)
 - Una chiave API xAI (console.x.ai) — si inserisce **nell'app**, non sul server

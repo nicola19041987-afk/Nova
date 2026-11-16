@@ -119,7 +119,7 @@
     box.innerHTML = list.length ? list.map((n) => `<article>
       <p class="who">${esc(n.author || '')} · ${esc(n.status === 'inviato' ? 'inviato' : 'in attesa')}</p>
       <p class="txt">${esc(n.text || '')}</p>
-      <p class="reply"><b>Alpha</b> ${esc((n.reply && n.reply.text) || '')}</p>
+      <p class="reply"><b>Ira</b> ${esc((n.reply && n.reply.text) || '')}</p>
     </article>`).join('') : '<p class="muted small">Nessun appunto ancora.</p>';
     box.scrollTop = box.scrollHeight;
   }

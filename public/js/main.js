@@ -1,5 +1,5 @@
 /* main.js — avvio, navigazione a schede, cambi automatici giornalieri, service worker. */
-document.title = 'Alpha';
+document.title = 'Ira';
 App.avatarConv = new TalkingAvatar($('#avatar-canvas'));
 App.avatarEditor = new TalkingAvatar($('#editor-canvas'));
 
@@ -125,7 +125,7 @@ App.openTab = function (t) {
   if (App.home) App.home.hide();
   $$('.tabbar button').forEach((x) => x.classList.toggle('active', x.dataset.tab === t));
   ['chat', 'conv', 'calls', 'feed', 'images', 'account'].forEach((n) => { const el = $(`#tab-${n}`); if (el) el.hidden = true; });
-  document.title = 'Alpha';
+  document.title = 'Ira';
   const solo = document.body.classList.contains('solo-mode');
   if (solo && t === 'chat') {
     if (App.solo && App.solo.showChat) App.solo.showChat();
@@ -133,7 +133,7 @@ App.openTab = function (t) {
       const ch = App.solo && App.solo.char && App.solo.char();
       if (ch && (!App.current || App.current.id !== ch.id)) App.chat.open(ch.id);
       $('#tab-conv').hidden = false; $('#back-btn').hidden = true;
-      $('#title').textContent = (App.current && App.current.name) || 'Alpha';
+      $('#title').textContent = (App.current && App.current.name) || 'Ira';
       document.body.dataset.tab = 'conv';
     }
     $('#large-title').hidden = true;

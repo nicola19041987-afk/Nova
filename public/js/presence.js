@@ -5,13 +5,13 @@
    Il saluto vale solo a conversazione avviata (almeno 2 tuoi messaggi in questa visita) o se lei ha detto che stava per andare;
    un «ciao» all'inizio è un saluto d'arrivo. Lo stato resta solo su questo telefono (App.ls), non si salva niente sul server. */
 (function (root) {
-  const BYE = /^\s*(?:ok(?:ay|ei)?|va bene|vabb?[eè]|dai|allora|perfetto|grazie)?[\s,.!]*(?:ciao(?:\s*ciao)*|a\s+dopo|a\s+più\s+tardi|a\s+piu\s+tardi|ci\s+sentiamo(?:\s+dopo|\s+domani)?|a\s+domani|buonanotte|notte|vai\s+pure|bye|devo\s+andare|scappo|ti\s+lascio\s+andare)(?:\s+(?:nova|tesoro|cara|bella))?[\s,.!❤️😘👋🙂😊]*$/i;
+  const BYE = /^\s*(?:ok(?:ay|ei)?|va bene|vabb?[eè]|dai|allora|perfetto|grazie)?[\s,.!]*(?:ciao(?:\s*ciao)*|a\s+dopo|a\s+più\s+tardi|a\s+piu\s+tardi|ci\s+sentiamo(?:\s+dopo|\s+domani)?|a\s+domani|buonanotte|notte|vai\s+pure|bye|devo\s+andare|scappo|ti\s+lascio\s+andare)(?:\s+(?:nova|ira|alpha|eris|tesoro|cara|bella))?[\s,.!❤️😘👋🙂😊]*$/i;
   const STAY = /\b(aspetta|resta|rimani|non\s+andare|non\s+te\s+ne\s+andare|ancora\s+un\s+(attimo|po|po'|momento)|un\s+attimo\s+ancora|dove\s+vai)\b/i;
   const LEAVING = /\b(me\s+ne\s+vado|vado\s+in\s+palestra|devo\s+andare|scappo|ti\s+lascio|se\s+(tu\s+)?hai\s+finito)\b/i;
   const S = { sent: 0, offered: false, pendingBye: false, timer: 0 };
   const key = (ch) => 'away:' + ((ch && ch.id) || 'nova');
   const ls = () => (root.App && App.ls) || null;
-  function isNova(ch) { return !!ch && (document.body.classList.contains('solo-mode') || /^(nova|alpha)/i.test(String(ch.name || '')) || ch.id === 'nova' || (root.App && App.solo && App.solo.char && App.solo.char() === ch)); }
+  function isNova(ch) { return !!ch && (document.body.classList.contains('solo-mode') || /^(nova|eris|alpha|ira)/i.test(String(ch.name || '')) || ch.id === 'nova' || (root.App && App.solo && App.solo.char && App.solo.char() === ch)); }
   function awayInfo(ch) { try { const v = ls() && ls().get(key(ch || (App && App.current)), null); return v && v.at ? v : null; } catch { return null; } }
   function classify(text) {
     const t = String(text || '').trim();
@@ -100,7 +100,7 @@
     let card = document.getElementById('nv-away-card');
     if (a && stage) {
       if (!card) { card = document.createElement('div'); card.id = 'nv-away-card'; stage.appendChild(card); }
-      card.textContent = ((ch && ch.name) || 'Alpha') + ' è uscita · scrivile quando vuoi';
+      card.textContent = ((ch && ch.name) || 'Ira') + ' è uscita · scrivile quando vuoi';
     } else if (card) card.remove();
     try { if (App.chat && App.chat.header) App.chat.header(); } catch { /* */ }
     try { if (App.solo && App.solo.paintHome) App.solo.paintHome(); } catch { /* */ }

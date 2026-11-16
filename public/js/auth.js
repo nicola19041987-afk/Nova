@@ -4,7 +4,7 @@
 let pinProfile = null, pinSetup = false, needsSetupCode = false;
 App.showLogin = async function () {
   App.showView('login'); $('#login-error').textContent = ''; $('#pin-form').hidden = true;
-  const title = $('#login-title'); if (title) title.textContent = 'Alpha';
+  const title = $('#login-title'); if (title) title.textContent = 'Ira';
   const lead = $('#login-lead'); if (lead) lead.hidden = false;
   try {
     const { profiles, setupCode } = await App.api('/api/profiles'); needsSetupCode = setupCode;

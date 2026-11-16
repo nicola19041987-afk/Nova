@@ -1,5 +1,7 @@
 # Nova — roadmap (snapshot WIP)
 
+Nome visibile del personaggio: **Ira** (v2d-51). Gli id interni e le voci storiche sotto (Nova / Greta) non sono stati rinominati.
+
 ## Verificato e pubblicato su `main` (cache `app-privata-v8-6-9`)
 
 Solo ciò che i test di questo branch hanno eseguito. Il tag `stable-v8.6.6` resta il baseline su `main`.

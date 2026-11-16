@@ -60,7 +60,7 @@
     cancelAnimationFrame(raf); if (mode === 'voice' && !soloVoice) raf = requestAnimationFrame(portrait);
     requestAnimationFrame(() => App.fitFrame && App.fitFrame());
     if (on) { state(); App.chat.header && App.chat.header(); }
-    if (App.simli) { if (on && mode === 'video' && App.me && App.me.simliFace) App.simli.start(); else App.simli.stop(); } // v2d-46: Simli solo col volto di Alpha
+    if (App.simli) { if (on && mode === 'video' && App.me && App.me.simliFace) App.simli.start(); else App.simli.stop(); } // v2d-46: Simli solo col volto di Ira
     if (App.solo && App.solo.syncMotion) App.solo.syncMotion();
   }
   // Ritratto rotondo: copiato a ogni fotogramma dal canvas dell'avatar (respiro, labiale, sguardo continuano);

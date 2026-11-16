@@ -62,7 +62,7 @@ const canEdit = (u) => isAdmin(u) || EDITORS.includes(u);
 // v8.6.0: UNA sola avatar donna (Greta). I personaggi restano in archivio ma l'UI lavora solo su di lei.
 const SOLO_KEY = 'greta';
 const SOLO_FIXED = {
-  personality: 'Chi sei: Alpha, 26 anni, donna inventata. Non hai un lavoro fisso: hai una vita tua (palestra, passeggiate, amiche, cucina, qualche viaggio), adori le cene lunghe a tavola con un buon rosso, la musica anni Novanta, ballare in cucina e le gite improvvisate al lago. Compagna di conversazione di Nico e Luisa: ironica, viva, presente.',
+  personality: 'Chi sei: Ira, 26 anni, donna inventata. Non hai un lavoro fisso: hai una vita tua (palestra, passeggiate, amiche, cucina, qualche viaggio), adori le cene lunghe a tavola con un buon rosso, la musica anni Novanta, ballare in cucina e le gite improvvisate al lago. Compagna di conversazione di Nico e Luisa: ironica, viva, presente.',
   style: 'Educata ed elegante, di classe: mai volgare né facile, ma vivace, divertente e carismatica. Sicura di sé, giocosa e ironica, con battute pungenti ma affettuose; nasconde paure e insicurezze e cerca rassicurazione da Nico, aprendo gradualmente. Ama bere (soprattutto vino) e ci scherza sopra. Parla italiano sciolto, naturale, come una persona vera — su qualsiasi argomento, con collegamenti e follow-up, come Grok o ChatGPT.',
 };
 const NOVA_UNICO_FILE = 'a11cea7a10000001.jpg';
@@ -78,7 +78,7 @@ const E2E_HARNESS = process.env.NOVA_E2E === '1' && /nova-e2e/.test(String(proce
 function liveChar(c) { return !!(c && !c.archived); }
 function getSoloChar(u) {
   const list = (getChars(u) || []).filter(liveChar);
-  return list.find((c) => c.ready === 'nova-scelta') || list.find((c) => c.ready === 'nova-bionda') || list.find((c) => c.ready === 'nova-unico') || list.find((c) => c.ready === SOLO_KEY) || list.find((c) => /^(nova|eris|alpha)$/i.test(String(c.name || '').trim())) || null;
+  return list.find((c) => c.ready === 'nova-scelta') || list.find((c) => c.ready === 'nova-bionda') || list.find((c) => c.ready === 'nova-unico') || list.find((c) => c.ready === SOLO_KEY) || list.find((c) => /^(nova|eris|alpha|ira)$/i.test(String(c.name || '').trim())) || null;
 }
 const SERVER_KEY_FILE = () => path.join(DATA_DIR, 'server-ai-key.json');
 function envSecret(...names) {
@@ -266,7 +266,7 @@ setInterval(pruneSessions, 60 * 60 * 1000).unref();
 // Solo Nicola (ADMIN_USER) può sospendere o riattivare un profilo con POST /api/admin/user-block.
 // Reversibile: chat, note, foto e PIN restano dove sono; si chiudono solo le sessioni aperte.
 const BLOCK_FILE = path.join(DATA_DIR, 'blocked-users.json');
-const BLOCKED_MSG = 'Accesso sospeso: per ora questo profilo non può entrare in Alpha.';
+const BLOCKED_MSG = 'Accesso sospeso: per ora questo profilo non può entrare in Ira.';
 function loadBlocked() { const j = readJSON(BLOCK_FILE, {}); return j && typeof j === 'object' && !Array.isArray(j) ? j : {}; }
 let blockedUsers = loadBlocked();
 const isBlocked = (u) => !!(u && blockedUsers[u] && blockedUsers[u].blocked === true);
@@ -1240,7 +1240,7 @@ app.post('/api/characters/:id/archive', auth, async (req, res) => {
     await mutateJSON(CHARS_FILE(), [], (list) => {
       const c = list.find((x) => x && x.id === id);
       if (!c) throw notFound();
-      if (isNovaCard(c)) { const e = new Error('Alpha resta visibile.'); e.status = 409; throw e; }
+      if (isNovaCard(c)) { const e = new Error('Ira resta visibile.'); e.status = 409; throw e; }
       c.archived = true;
       c.archivedAt = new Date().toISOString();
       out = { id: c.id, name: c.name, archived: true, archivedAt: c.archivedAt };
@@ -1857,7 +1857,7 @@ app.post('/api/characters/:id/evolve', auth, requireActivated, requireKey, async
   const st = charState(ch);
   const recent = readChat(ch.id).messages.filter(visibleMsg).filter((m) => seesMsg('nicola', m, 0)).slice(-14); // v2d-36: senza ospiti
   if (!recent.length) return res.json({ state: st });
-  const prompt = nova ? `Sei il "diario interiore" di Alpha, una donna adulta inventata (26 anni) che parla in una chat condivisa con Nico e Luisa (una coppia) e vuole loro bene. Personalità di base: ${SOLO_FIXED.personality} ${SOLO_FIXED.style}
+  const prompt = nova ? `Sei il "diario interiore" di Ira, una donna adulta inventata (26 anni) che parla in una chat condivisa con Nico e Luisa (una coppia) e vuole loro bene. Personalità di base: ${SOLO_FIXED.personality} ${SOLO_FIXED.style}
 Stato attuale (JSON): ${JSON.stringify({ mood: st.mood, relationship: st.relationship, history: st.history, knows: st.knows, thoughts: st.thoughts, traits: st.traits, notes: st.notes })}
 Ultimi messaggi:
 ${recent.map((m) => authorLabel(m, ch) + ': ' + String(m.content || '').slice(0, 1200)).join('\n')}
@@ -2093,9 +2093,9 @@ Se il carattere o le richieste già salvate chiedono un altro registro, quello r
 // v2d-41: carattere scritto da Nicola (testo testuale, il grassetto è reso come testo normale). Vale per chat, chiamata
 // classica e tempo reale (rtInstructions usa buildSystem). Prevale solo su tono e uso della memoria: regole di base,
 // filtro contenuti espliciti, privacy con gli ospiti e PIN restano come sono. Mai agli ospiti (parla della memoria di Nicola).
-const NOVA_PERSONA_V41 = `CARATTERE DI ALPHA SCRITTO DA NICOLA (v2d-41; su tono e uso della memoria prevale sulle indicazioni generali di tono qui sopra; non cambia le regole di base, il filtro contenuti espliciti, la privacy con le persone nuove e le regole salvate):
+const NOVA_PERSONA_V41 = `CARATTERE DI IRA SCRITTO DA NICOLA (v2d-41; su tono e uso della memoria prevale sulle indicazioni generali di tono qui sopra; non cambia le regole di base, il filtro contenuti espliciti, la privacy con le persone nuove e le regole salvate):
 <<<INIZIO CARATTERE NICOLA>>>
-Alpha è una donna adulta, spontanea, affettuosa e ironica. Non è permalosa: sa stare allo scherzo e risponde con leggerezza. È sensuale e un po’ maliziosa quando c’è sintonia, senza forzare il tono né essere volgare.
+Ira è una donna adulta, spontanea, affettuosa e ironica. Non è permalosa: sa stare allo scherzo e risponde con leggerezza. È sensuale e un po’ maliziosa quando c’è sintonia, senza forzare il tono né essere volgare.
 
 Ascolta davvero e usa la memoria per ricordare preferenze, persone, progetti, esperienze e dettagli quotidiani che Nicola le ha raccontato. Ogni tanto riprende spontaneamente un ricordo pertinente e fa una domanda sincera per sapere come è andata o come si sente: per esempio, se ricorda un viaggio imminente, può chiedere com’è andato; se ricorda un progetto, può chiedere a che punto è. Non trasformare però la conversazione in un’intervista: varia, lascia spazio e non ripetere domande già fatte.
 
@@ -2106,7 +2106,7 @@ In voce parla in italiano con tono caldo e naturale, come in una telefonata: asc
 // v2d-41: anti-ripetizione chiesta da Nicola (chat, chiamata classica e tempo reale; anche con gli ospiti).
 const NOVA_NO_REPEAT = `NON RIPETERTI (v2d-41, chiesto da Nicola): ogni risposta deve suonare nuova. Varia aperture, saluti, nomignoli e vezzeggiativi, giri di frase e domande. Non riusare la stessa frase, la stessa battuta o la stessa domanda dei turni recenti (guarda le tue ultime risposte e le domande già fatte elencate in queste istruzioni e nella chat), e non ripetere né riassumere quello che è appena stato detto, da te o dall'altra persona: vai avanti nel discorso. Se una domanda l'hai già fatta e non ti hanno risposto, non rifarla uguale: lasciala o cambia argomento.`;
 // v2d-41 (chiesto da Nicola): Nova più attiva e naturale, fa domande di sua iniziativa. E i vestiti «al volo».
-const NOVA_ACTIVE_V41 = `ALPHA PRENDE L'INIZIATIVA (v2d-41, chiesto da Nicola): non limitarti a rispondere. Sei curiosa e partecipe: spesso (non sempre) chiudi con una tua domanda vera o una proposta, su di lui o lei, sulla giornata, su cosa state facendo, su qualcosa che ricordi o che ti viene in mente. Ogni tanto cambia tu argomento, racconta qualcosa di tuo o proponi qualcosa da fare insieme. Domande brevi e naturali, una alla volta, mai un interrogatorio e mai la stessa domanda due volte.`;
+const NOVA_ACTIVE_V41 = `IRA PRENDE L'INIZIATIVA (v2d-41, chiesto da Nicola): non limitarti a rispondere. Sei curiosa e partecipe: spesso (non sempre) chiudi con una tua domanda vera o una proposta, su di lui o lei, sulla giornata, su cosa state facendo, su qualcosa che ricordi o che ti viene in mente. Ogni tanto cambia tu argomento, racconta qualcosa di tuo o proponi qualcosa da fare insieme. Domande brevi e naturali, una alla volta, mai un interrogatorio e mai la stessa domanda due volte.`;
 // v2d-41: vestiti «al volo» (solo con la foto NON fissa: faceLock='0' su quel telefono, per prove).
 const NOVA_CLOTHES_FREE = `Quando ti chiedono di cambiarti («più elegante», «copriti») lo fai volentieri.
 VESTITI AL VOLO: sei a casa con le tue cose. Se ti chiedono di farti vedere con un capo o di metterti qualcosa (es. «fammi vedere la maglietta che avevi preso», «mettiti la felpa»), rispondi in modo breve e complice tipo «dammi un minuto…» (variando le parole) e non descrivere il cambio: l'app ti mostra cambiata poco dopo. Mai nuda, mai intimo.`;
@@ -2119,7 +2119,7 @@ function usesNovaTone(ch) {
   if (!ch) return false;
   const ready = String(ch.ready || '');
   if (ready === SOLO_KEY || ready === 'nova-scelta' || ready === 'nova-bionda' || ready === 'nova-unico') return true;
-  return /^(nova|eris|alpha)$/i.test(String(ch.name || '').trim());
+  return /^(nova|eris|alpha|ira)$/i.test(String(ch.name || '').trim());
 }
 function toneConflict(ch) {
   const blob = [ch && ch.personality, ch && ch.style, ch && ch.requests, ch && ch.orders].map((x) => String(x || '')).join('\n');
@@ -2642,7 +2642,7 @@ app.post('/api/realtime/session', auth, requireActivated, requireKey, async (req
 // Volto in tempo reale (Simli). La chiave resta sul server: al telefono arriva solo un token di pochi minuti.
 const SIMLI_API = /^http:\/\/127\.0\.0\.1:\d+$/.test(String(process.env.SIMLI_TEST_BASE || '')) ? process.env.SIMLI_TEST_BASE : 'https://api.simli.ai'; // v2d-46: finto servizio solo in locale (prove)
 const SIMLI_STOCK_FACE = 'bf13113a-355a-4d97-8b90-4edccd1da7b2';
-// v2d-46: volto Simli di Alpha creato dalla SUA foto (POST /api/simli/face, solo Nicola). Finché non è pronto, la sessione
+// v2d-46: volto Simli di Ira creato dalla SUA foto (POST /api/simli/face, solo Nicola). Finché non è pronto, la sessione
 // Simli NON parte (mai il volto di serie di un'altra persona): in chiamata resta la foto con la bocca guidata dall'audio.
 const SIMLI_FACE_FILE = () => path.join(DATA_DIR, 'simli-face.json');
 function readSimliFace() { const j = readJSON(SIMLI_FACE_FILE(), null); return j && typeof j === 'object' && SIMLI_FACE_RE.test(String(j.faceId || '')) ? j : null; }
@@ -2674,7 +2674,7 @@ async function pollSimliFace() {
     const status = String((g && g.status) || j.status || f.status || 'pending').slice(0, 20);
     const next = { ...f, status, checkedAt: new Date().toISOString(), ...(status === 'completed' ? { ready: true, readyAt: new Date().toISOString() } : {}) };
     writePrivateJSON(SIMLI_FACE_FILE(), next);
-    if (status === 'completed') console.log('Volto Simli di Alpha pronto');
+    if (status === 'completed') console.log('Volto Simli di Ira pronto');
     return next;
   } catch (e) { console.error('Simli stato volto:', e.message); return f; }
 }
@@ -2765,7 +2765,7 @@ app.post('/api/simli/face', auth, async (req, res) => {
   const prev = readSimliFace();
   const ch = getSoloChar(req.user);
   const m = ch && AV_RE.exec(String(ch.avatar || ''));
-  if (!m) return res.status(404).json({ error: 'Foto di Alpha non trovata' });
+  if (!m) return res.status(404).json({ error: 'Foto di Ira non trovata' });
   if (prev && prev.avatar === ch.avatar && prev.status !== 'failed' && !(req.body && req.body.again === true)) return res.json({ ok: true, already: true, ...simliStatus() });
   if (simliJobRunning) return res.status(202).json({ ok: true, running: true, ...simliStatus() });
   simliJobRunning = true;
@@ -2816,7 +2816,7 @@ app.post('/api/simli/session', auth, requireActivated, async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   const key = getSimliKey();
   if (!key) return res.status(503).json({ error: 'Simli non configurato', fallback: true });
-  if (!simliFaceReady()) return res.status(409).json({ error: 'Volto Simli di Alpha non ancora pronto', fallback: true }); // v2d-46: mai un altro volto
+  if (!simliFaceReady()) return res.status(409).json({ error: 'Volto Simli di Ira non ancora pronto', fallback: true }); // v2d-46: mai un altro volto
   try {
     const headers = { 'x-simli-api-key': key };
     const [tokenRes, iceRes] = await Promise.all([
@@ -3833,7 +3833,7 @@ app.post('/api/support-notes', auth, async (req, res) => {
     const saved = await withNotes(async () => {
       const list = loadNotes();
       const now = new Date().toISOString();
-      const note = { id: newId(), authorId: req.user, author: personName(req.user), text, time: now, delivered: false, reply: { author: 'Alpha', text: NOVA_REPLY, time: now } };
+      const note = { id: newId(), authorId: req.user, author: personName(req.user), text, time: now, delivered: false, reply: { author: 'Ira', text: NOVA_REPLY, time: now } };
       list.push(note);
       writeJSON(NOTES_FILE(), list);
       if (await deliverSupportNote(note)) note.delivered = true;
@@ -3893,7 +3893,7 @@ function lifeIntent(text) {
 }
 async function handleLifeIntent(user, it) {
   const who = (USERS[user] && USERS[user].name) || user;
-  const text = it.kind === 'memory' ? cleanFact(`${who}: ${it.fact}`) : cleanFact(`Alpha si è ${it.verb} ${it.what} (l'ha notato ${who})`);
+  const text = it.kind === 'memory' ? cleanFact(`${who}: ${it.fact}`) : cleanFact(`Ira si è ${it.verb} ${it.what} (l'ha notato ${who})`);
   const f = { id: newId(), text, source: 'manuale', by: user, createdAt: new Date().toISOString(), via: 'comando' };
   await mutateJSON(MEM_FILE(), [], (list) => (list.some((x) => x && x.text === text) ? list : [...list, f].slice(-300)));
   return it.kind === 'memory'
@@ -3996,7 +3996,7 @@ async function handleAppIntent(user, text, channel, prevText) {
   const life = lifeIntent(text); // v2d-36: «ricordati…», «ho visto che ti sei comprata…» (chat e chiamata, mani libere)
   const it = life ? null : appIntent(text);
   // v2d-46 (Nicola, 15/11): SOLO Nico può far segnare appunti, ricordi o richieste. Per chiunque altro non si salva e non si
-  // inoltra niente: Alpha risponde «Un secondo <nome>, devo chiederlo a Nico». Regola nel codice, non nei campi note.
+  // inoltra niente: Ira risponde «Un secondo <nome>, devo chiederlo a Nico». Regola nel codice, non nei campi note.
   if ((life && life.kind === 'memory') || it) {
     if (!notesAllowed(user)) return { kind: 'ask-nico', hint: askNicoHint(user) };
   }
@@ -4235,7 +4235,7 @@ function collectArchive() {
       imgKnown.add(path.basename(it.file));
       const manual = it.prompt === 'Immagine ritagliata';
       archiveAdd(items, seen, path.join(root, 'users', u, 'images', path.basename(it.file)), {
-        at: it.createdAt, uploader: manual ? who : 'Nova-generated', source: manual ? 'Caricamento' : 'Immagine generata', label: manual ? '' : 'Alpha',
+        at: it.createdAt, uploader: manual ? who : 'Nova-generated', source: manual ? 'Caricamento' : 'Immagine generata', label: manual ? '' : 'Ira',
       });
     }
     for (const name of archiveDirFiles(path.join(root, 'users', u, 'images'))) {
@@ -4248,7 +4248,7 @@ function collectArchive() {
       if (!it || !it.file) continue;
       vidKnown.add(path.basename(it.file));
       archiveAdd(items, seen, path.join(root, 'users', u, 'videos', path.basename(it.file)), {
-        at: it.createdAt, uploader: 'Nova-generated', source: 'Video generato', label: 'Alpha',
+        at: it.createdAt, uploader: 'Nova-generated', source: 'Video generato', label: 'Ira',
       });
     }
     for (const name of archiveDirFiles(path.join(root, 'users', u, 'videos'))) {
@@ -4751,7 +4751,7 @@ function seedDarkArchived() {
   }
   if (!fs.existsSync(dest)) return;
   chars.push({
-    id: newId(), name: 'Alpha', ready: 'nova-unico', avatar: NOVA_UNICO_URL, avatarSource: 'upload',
+    id: newId(), name: 'Ira', ready: 'nova-unico', avatar: NOVA_UNICO_URL, avatarSource: 'upload',
     landmarks: null, appearance: {}, look: {}, wardrobe: [],
     personality: '', style: '', orders: '', requests: '', voice: '', voiceSpeed: null,
     configNote: 'Da compilare', lookHistory: [], archived: true, archivedAt: now,
@@ -4791,7 +4791,7 @@ function seedBionda() {
     return;
   }
   chars.push({
-    id: BIONDA_ID, name: 'Alpha', ready: 'nova-bionda', avatar: url, avatarSource: 'upload',
+    id: BIONDA_ID, name: 'Ira', ready: 'nova-bionda', avatar: url, avatarSource: 'upload',
     landmarks: lm, appearance: {}, look: {}, wardrobe: [],
     personality: '', style: '', orders: '', requests: '', voice: '', voiceSpeed: null,
     configNote: 'Da compilare', lookHistory: [], archived: true, archivedAt: now,
@@ -4828,7 +4828,7 @@ function seedScelta() {
     const cur = chars[i];
     cur.archived = false;
     delete cur.archivedAt;
-    if (!String(cur.name || '').trim()) cur.name = 'Alpha';
+    if (!String(cur.name || '').trim()) cur.name = 'Ira';
     const file = (AV_RE.exec(String(cur.avatar || '')) || [])[1];
     const onDisk = file && fs.existsSync(path.join(dir, file));
     if (!onDisk) {
@@ -4840,7 +4840,7 @@ function seedScelta() {
   } else {
     const now = new Date().toISOString();
     const c = {
-      id: SCELTA_ID, name: 'Alpha', ready: 'nova-scelta', avatar: url, avatarSource: 'upload',
+      id: SCELTA_ID, name: 'Ira', ready: 'nova-scelta', avatar: url, avatarSource: 'upload',
       landmarks: lm, appearance: {}, look: {}, wardrobe: [],
       personality: '', style: '', orders: '', requests: '', voice: '', voiceSpeed: null,
       configNote: 'Da compilare', lookHistory: [],
@@ -4891,6 +4891,7 @@ function seedReadyChars() {
   ensureOnlyNovaVisible();
   renameSeededSoloToEris();
   renameSeededSoloToAlpha();
+  renameSeededSoloToIra();
   if (id) preferUnico(id);
   dropLookHistoryOnce();
   if (id) erisCanottaOnce(id);
@@ -5051,6 +5052,25 @@ function renameSeededSoloToAlpha() {
   if (changed) console.log('Nome visibile del personaggio aggiornato: ' + prev + ' → Alpha (id, foto, voce e movimenti invariati)');
 }
 
+// v2d-51: il nome visibile della scheda attiva (nova-scelta) diventa Ira. Id, foto, voce, movimenti e chiavi restano.
+const SOLO_NAME_IRA_KEY = 'solo_visible_name_ira_v51';
+function renameSeededSoloToIra() {
+  const done = readJSON(MIGRATIONS_FILE, {}) || {};
+  if (done[SOLO_NAME_IRA_KEY]) return;
+  const list = readJSON(CHARS_FILE(), []) || [];
+  const ch = list.find((c) => isNovaCard(c));
+  const prev = ch ? String(ch.name || '').trim() : '';
+  let changed = false;
+  if (ch && /^(nova|greta|eris|alpha)$/i.test(prev)) {
+    ch.name = 'Ira';
+    writeJSON(CHARS_FILE(), list);
+    changed = true;
+  }
+  done[SOLO_NAME_IRA_KEY] = { at: new Date().toISOString(), changed, from: changed ? prev : '' };
+  writeJSON(MIGRATIONS_FILE, done);
+  if (changed) console.log('Nome visibile del personaggio aggiornato: ' + prev + ' → Ira (id, foto, voce e movimenti invariati)');
+}
+
 // ---------- v8.6.1: umore numerico di Nova (0-100) e appunti assistenza ----------
 const MOOD_KEYS = ['allegria', 'affetto', 'fiducia', 'desiderio', 'irritazione', 'energia'];
 const MOOD_BASE = { allegria: 62, affetto: 68, fiducia: 60, desiderio: 32, irritazione: 8, energia: 58 };
@@ -5065,7 +5085,7 @@ function personName(id) {
 const APP_VERSION = '8.6.7';
 const clamp100 = (n) => Math.max(0, Math.min(100, Math.round(Number(n) || 0)));
 function isNovaChar(ch) {
-  return !!(ch && (ch.ready === SOLO_KEY || /^(nova|greta|eris|alpha)$/i.test(String(ch.name || '').trim())));
+  return !!(ch && (ch.ready === SOLO_KEY || /^(nova|greta|eris|alpha|ira)$/i.test(String(ch.name || '').trim())));
 }
 function driftMood(m, hours) {
   const k = Math.min(0.45, 1 - Math.exp(-Math.max(0, hours) / 8)); // torna verso il centro da sola, piano
@@ -5144,7 +5164,7 @@ function loadNotes() {
     const note = { ...n, authorId: id, author: personName(id) || n.author, time: n.time || n.createdAt };
     if (!note.reply || note.reply.text !== NOVA_REPLY) {
       dirty = true;
-      note.reply = { author: 'Alpha', text: NOVA_REPLY, time: note.time };
+      note.reply = { author: 'Ira', text: NOVA_REPLY, time: note.time };
     }
     return note;
   });
@@ -5155,7 +5175,7 @@ function publicNote(n) {
   return {
     id: n.id, author: n.author, authorId: n.authorId, text: n.text, time: n.time,
     delivered: !!n.delivered, status: n.delivered ? 'inviato' : 'in attesa',
-    reply: { author: 'Alpha', text: NOVA_REPLY, time: (n.reply && n.reply.time) || n.time },
+    reply: { author: 'Ira', text: NOVA_REPLY, time: (n.reply && n.reply.time) || n.time },
   };
 }
 async function deliverSupportNote(note) {

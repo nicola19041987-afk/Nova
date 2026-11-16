@@ -54,7 +54,7 @@ async function login(request, base, user, pin) {
 // personaggio come sul server: foto scelta + scena «a tavola» salvata sul telefono (prima copriva la foto)
 function alpha() {
   return {
-    id: CH, name: 'Alpha', ready: 'nova-scelta', avatar: '/api/avatars/' + FOTO, avatarSource: 'upload', landmarks: { ...LM, src: '/api/avatars/' + FOTO },
+    id: CH, name: 'Ira', ready: 'nova-scelta', avatar: '/api/avatars/' + FOTO, avatarSource: 'upload', landmarks: { ...LM, src: '/api/avatars/' + FOTO },
     outfits: [{ key: 'nova_tavola', style: 'scena', label: 'A tavola in sala la sera, con un bicchiere di rosso: top nero', avatar: '/api/avatars/a1102c499e5beaba.jpg' }],
     motionClips: [{ id: 'x1', url: '/api/motion/aaaaaaaaaaaaaaaa.mp4', kind: 'base', from: 'petto', to: 'petto', outfit: 'nova_tavola' }, { id: 'x2', url: '/api/motion/bbbbbbbbbbbbbbbb.mp4', kind: 'base', from: 'petto', to: 'petto' }],
     motionVideo: '/api/motion/cccccccccccccccc.mp4', personality: '', style: '', requests: '', voice: 'eve', messages: 3,
@@ -302,7 +302,7 @@ test('v2d-46: migrazione una tantum canotta → foto mandata da Nicola (storico,
   fs.copyFileSync(path.join(ROOT, 'assets', 'ready', 'eris-canotta.jpg'), path.join(dir, 'shared', 'avatars', CANOTTA));
   fs.writeFileSync(path.join(dir, 'migrations.json'), JSON.stringify({ eris_canotta_v2d44: { at: 'x', to: '/api/avatars/' + CANOTTA } }));
   fs.writeFileSync(path.join(dir, 'shared', 'characters.json'), JSON.stringify([{
-    id: CH, name: 'Alpha', ready: 'nova-scelta', avatar: '/api/avatars/' + CANOTTA, avatarSource: 'upload', landmarks: { src: '/api/avatars/' + CANOTTA },
+    id: CH, name: 'Ira', ready: 'nova-scelta', avatar: '/api/avatars/' + CANOTTA, avatarSource: 'upload', landmarks: { src: '/api/avatars/' + CANOTTA },
     appearance: {}, look: {}, wardrobe: [], personality: '', style: '', orders: '', requests: 'solo Nico', voice: 'eve', lookHistory: [], outfits: [{ key: 'nova_tavola', style: 'scena', label: 'a tavola', avatar: '/api/avatars/a1102c499e5beaba.jpg' }],
   }]));
   const ai = await startMockAI([]);
@@ -342,7 +342,7 @@ test('v2d-46: migrazione una tantum canotta → foto mandata da Nicola (storico,
   }
 });
 
-test('v2d-46: Simli parte solo col volto creato dalla foto di Alpha (mai il volto di serie)', async ({ playwright, browserName }) => {
+test('v2d-46: Simli parte solo col volto creato dalla foto di Ira (mai il volto di serie)', async ({ playwright, browserName }) => {
   test.skip(browserName === 'webkit', 'solo server');
   test.setTimeout(60000);
   const hits = [];
@@ -398,7 +398,7 @@ async function simliSetup(playwright, handler) {
   fs.mkdirSync(path.join(dir, 'shared', 'avatars'), { recursive: true });
   fs.copyFileSync(path.join(ROOT, 'assets', 'ready', 'eris-canotta.jpg'), path.join(dir, 'shared', 'avatars', CANOTTA));
   fs.writeFileSync(path.join(dir, 'migrations.json'), JSON.stringify({ eris_canotta_v2d44: { at: 'x', to: '/api/avatars/' + CANOTTA } }));
-  fs.writeFileSync(path.join(dir, 'shared', 'characters.json'), JSON.stringify([{ id: CH, name: 'Alpha', ready: 'nova-scelta', avatar: '/api/avatars/' + CANOTTA, avatarSource: 'upload', appearance: {}, look: {}, wardrobe: [], lookHistory: [], voice: 'eve' }]));
+  fs.writeFileSync(path.join(dir, 'shared', 'characters.json'), JSON.stringify([{ id: CH, name: 'Ira', ready: 'nova-scelta', avatar: '/api/avatars/' + CANOTTA, avatarSource: 'upload', appearance: {}, look: {}, wardrobe: [], lookHistory: [], voice: 'eve' }]));
   const ai = await startMockAI([]);
   const s = startServer(dir, ai.address().port, { SIMLI_TEST_BASE: `http://127.0.0.1:${sim.address().port}` });
   await waitUp(s);

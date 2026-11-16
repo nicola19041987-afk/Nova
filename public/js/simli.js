@@ -79,7 +79,7 @@
     if (kind === 'wait') { el.hidden = false; el.classList.remove('err'); el.textContent = line; }
     else if (kind === 'err') { el.hidden = false; el.classList.add('err'); el.textContent = line; }
   }
-  // v2d-46: il volto Simli si mostra SOLO se è quello di Alpha creato dalla sua foto (App.me.simliFace, deciso dal server).
+  // v2d-46: il volto Simli si mostra SOLO se è quello di Ira creato dalla sua foto (App.me.simliFace, deciso dal server).
   function show(on) {
     document.body.classList.toggle('simli-on', !!on);
     const v = document.getElementById('simli-video');
@@ -244,7 +244,7 @@
   // permanente: niente volto, niente chiave, non attivato -> nessun nuovo tentativo
   const PERMANENT = new Set([401, 403, 404, 409, 503]);
   async function start() {
-    if (!(App.me && App.me.simliFace)) { close(); return false; } // v2d-46: nessun volto di Alpha pronto -> foto con la bocca sull'audio
+    if (!(App.me && App.me.simliFace)) { close(); return false; } // v2d-46: nessun volto di Ira pronto -> foto con la bocca sull'audio
     if (!wanted()) return false;
     if (session && !session.closed) return true;
     if (starting) return starting;

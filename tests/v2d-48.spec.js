@@ -10,7 +10,7 @@ const FOTO = 'a1fa460000000001.jpg';
 const LM = JSON.parse(fs.readFileSync(path.join(ROOT, 'assets', 'ready', 'alpha-foto-v46-landmarks.json'), 'utf8'));
 const JPG = fs.readFileSync(path.join(ROOT, 'assets', 'ready', 'alpha-foto-v46.jpg'));
 const N = 527;
-const MSGS = Array.from({ length: N }, (_, k) => { const i = k + 1; return { id: 'm' + String(i).padStart(14, '0'), n: i, role: i % 2 ? 'user' : 'assistant', author: i % 2 ? 'nicola' : undefined, authorName: i % 2 ? 'Nico' : 'Alpha', content: `messaggio ${i} ` + 'testo '.repeat(1 + (i % 5)), at: new Date(Date.parse('2026-11-10T10:00:00Z') + i * 60000).toISOString() }; });
+const MSGS = Array.from({ length: N }, (_, k) => { const i = k + 1; return { id: 'm' + String(i).padStart(14, '0'), n: i, role: i % 2 ? 'user' : 'assistant', author: i % 2 ? 'nicola' : undefined, authorName: i % 2 ? 'Nico' : 'Ira', content: `messaggio ${i} ` + 'testo '.repeat(1 + (i % 5)), at: new Date(Date.parse('2026-11-10T10:00:00Z') + i * 60000).toISOString() }; });
 
 async function mockApp(page) {
   await page.addInitScript(() => { if (navigator.serviceWorker) navigator.serviceWorker.register = () => new Promise(() => {}); });
@@ -20,7 +20,7 @@ async function mockApp(page) {
     if (p.startsWith('/api/avatars/')) return route.fulfill({ status: 200, contentType: 'image/jpeg', body: JPG });
     if (p.startsWith('/api/motion/')) return route.fulfill({ status: 404, body: '' });
     if (p === '/api/me') return json({ user: 'nicola', name: 'Nico', admin: true, editor: true, activated: true, consent: { activatedAt: '2026-01-01T00:00:00.000Z', phrase: 'ok' }, adult: false, adultChat: false, solo: true, soloKey: 'greta', serverKey: true, simliFace: false });
-    if (p === '/api/characters') return json([{ id: CH, name: 'Alpha', ready: 'nova-scelta', avatar: '/api/avatars/' + FOTO, avatarSource: 'upload', landmarks: { ...LM, src: '/api/avatars/' + FOTO }, outfits: [], motionClips: [], personality: '', style: '', requests: '', voice: 'eve', messages: N }]);
+    if (p === '/api/characters') return json([{ id: CH, name: 'Ira', ready: 'nova-scelta', avatar: '/api/avatars/' + FOTO, avatarSource: 'upload', landmarks: { ...LM, src: '/api/avatars/' + FOTO }, outfits: [], motionClips: [], personality: '', style: '', requests: '', voice: 'eve', messages: N }]);
     if (p.startsWith('/api/chats/')) { const since = u.searchParams.get('since'); return json({ epoch: 'e1', last: N, reset: since == null, messages: since == null ? MSGS : [], typing: null }); }
     if (p === '/api/calls') return json({ calls: [] });
     if (p === '/api/gallery') return json({ items: [], trash: [], trashDays: 30 });
@@ -66,7 +66,7 @@ test('v2d-48: chat di 527 messaggi: subito gli ultimi 120, i precedenti in cima 
   expect(all).toEqual(MSGS.map((m) => m.id));
   expect(await page.evaluate(() => document.querySelectorAll('#messages .day-pill').length)).toBe(1);
   // un messaggio nuovo arriva in fondo come prima (nessun doppione)
-  const added = await page.evaluate(() => App.chat.addMsg({ id: 'm' + String(528).padStart(14, '0'), role: 'assistant', authorName: 'Alpha', content: 'nuovo', at: new Date().toISOString() }) && document.querySelector('#messages .msg:last-of-type').dataset.id);
+  const added = await page.evaluate(() => App.chat.addMsg({ id: 'm' + String(528).padStart(14, '0'), role: 'assistant', authorName: 'Ira', content: 'nuovo', at: new Date().toISOString() }) && document.querySelector('#messages .msg:last-of-type').dataset.id);
   expect(added).toBe('m' + String(528).padStart(14, '0'));
   expect(await page.evaluate(() => App.chat.addMsg({ id: 'm' + String(10).padStart(14, '0'), role: 'user', content: 'x' }))).toBeNull();
 });

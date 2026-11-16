@@ -19,7 +19,7 @@ async function openApp(page) {
     const json = (o) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(o) });
     if (p.startsWith('/api/avatars/')) return route.fulfill({ status: 200, contentType: 'image/jpeg', path: JPG });
     if (p === '/api/me') return json({ user: 'nicola', name: 'Nico', admin: true, editor: true, activated: true, consent: { activatedAt: '2026-01-01T00:00:00.000Z', phrase: 'ok' }, adult: false, adultChat: false, solo: true, soloKey: 'greta', serverKey: true });
-    if (p === '/api/characters') return json([{ id: '5ce17a0000000001', name: 'Alpha', ready: 'nova-scelta', avatar: '/api/avatars/a1fa460000000001.jpg', personality: 'x', style: '', requests: '' }]);
+    if (p === '/api/characters') return json([{ id: '5ce17a0000000001', name: 'Ira', ready: 'nova-scelta', avatar: '/api/avatars/a1fa460000000001.jpg', personality: 'x', style: '', requests: '' }]);
     if (p.startsWith('/api/chats/') && p.endsWith('/sight')) return json({ note: 'Vedo un vestito blu su uno sfondo chiaro.', cadenceMs: 8000, continuous: false });
     if (p.startsWith('/api/chats/')) return json({ epoch: 'e1', last: 0, messages: [], typing: null });
     if (p === '/api/settings') return json({ autoSave: false, allowExport: false });
@@ -63,7 +63,7 @@ const vis = () => {
 
 test('v2d-50: cache del service worker app-privata-v2d-50', async ({ request }) => {
   const sw = await (await request.get('/sw.js')).text();
-  expect(sw).toContain("const CACHE = 'app-privata-v2d-50'");
+  expect(sw).toMatch(/const CACHE = 'app-privata-v2d-(50|[5-9]\d)'/); // v2d-51 alza la cache
   expect(sw).not.toContain("const CACHE = 'app-privata-v2d-49'");
 });
 

@@ -4,7 +4,7 @@ test('il PIN è chiaro, con titolo verde e Avanti', async ({ page, browserName }
   test.skip(browserName === 'webkit', 'Questo WebKit chiude il processo sulla schermata di accesso. Il percorso è verificato su Chromium.');
   await page.goto('/');
   await expect(page.locator('#view-login')).toBeVisible();
-  await expect(page.locator('.login-wordmark')).toHaveText('Alpha');
+  await expect(page.locator('.login-wordmark')).toHaveText('Ira');
   const screen = await page.evaluate(() => getComputedStyle(document.querySelector('.login-screen')).backgroundColor);
   expect(screen).toBe('rgb(255, 255, 255)');
   await page.locator('.login-profile').first().click();

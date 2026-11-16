@@ -65,10 +65,10 @@ test('solo Nova è visibile; gli altri sei si archiviano e si ripristinano senza
     expect(pin.ok(), await pin.text()).toBeTruthy();
     const live = await (await api.get('/api/characters')).json();
     expect(live.map((c) => c.id)).toEqual([NOVA]);
-    expect(live[0].name).toBe('Alpha');
+    expect(live[0].name).toBe('Ira');
     expect(live[0].avatar).toBe('/api/avatars/5ce17a0000000001.jpg');
     const hidden = await (await api.get('/api/characters/archived')).json();
-    expect(hidden.map((c) => c.name).filter((n) => n !== 'Alpha').sort()).toEqual(['Aurora', 'Chiara', 'Elena', 'Giada', 'Matteo', 'Vera']);
+    expect(hidden.map((c) => c.name).filter((n) => n !== 'Ira').sort()).toEqual(['Aurora', 'Chiara', 'Elena', 'Giada', 'Matteo', 'Vera']);
     expect(hidden.some((c) => c.id === NOVA)).toBe(false);
     expect(hidden.every((c) => c.archived === true)).toBe(true);
     const afterBoot = {};
@@ -84,7 +84,7 @@ test('solo Nova è visibile; gli altri sei si archiviano e si ripristinano senza
     const back = await api.post('/api/characters/a100000000000005/restore', { headers: HEAD });
     expect(back.ok(), await back.text()).toBeTruthy();
     const live2 = await (await api.get('/api/characters')).json();
-    expect(live2.map((c) => c.name).sort()).toEqual(['Alpha', 'Matteo']);
+    expect(live2.map((c) => c.name).sort()).toEqual(['Ira', 'Matteo']);
     expect(fs.readFileSync(path.join(chats, 'a100000000000005.json'), 'utf8')).toBe(bodies.boot['a100000000000005']);
   } finally {
     await api.dispose();
@@ -98,7 +98,7 @@ test('solo Nova è visibile; gli altri sei si archiviano e si ripristinano senza
     const login = await api2.post('/api/login', { data: { user: 'nicola', pin: '2468' }, headers: HEAD });
     expect(login.ok(), await login.text()).toBeTruthy();
     const still = await (await api2.get('/api/characters')).json();
-    expect(still.map((c) => c.name).sort()).toEqual(['Alpha', 'Matteo']);
+    expect(still.map((c) => c.name).sort()).toEqual(['Ira', 'Matteo']);
     const again = await api2.post('/api/characters/a100000000000005/archive', { headers: HEAD });
     expect(again.ok(), await again.text()).toBeTruthy();
     const only = await (await api2.get('/api/characters')).json();

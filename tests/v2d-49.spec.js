@@ -1,4 +1,4 @@
-// v2d-49 (Nicola, 16/11 alle 00:21): 1) con la foto fissa Alpha non promette più «dammi un minuto, adesso mi cambio»;
+// v2d-49 (Nicola, 16/11 alle 00:21): 1) con la foto fissa Ira non promette più «dammi un minuto, adesso mi cambio»;
 // 2) bocca senza riga bianca né labbro doppio, niente toppe per sguardo e sopracciglia (occhio «girato» con la testa inclinata);
 // 3) Simli: a fine sessione (durata massima o silenzio) la videochiamata si riconnette da sola, con attese crescenti e un
 // limite di tentativi; poco prima della durata massima passa a una sessione nuova senza stacchi. Filtro prima dei 16 kHz.
@@ -56,7 +56,7 @@ async function mockApp(page, { simliFace = false, session = null } = {}) {
     if (p.startsWith('/api/avatars/')) return route.fulfill({ status: 200, contentType: 'image/jpeg', body: JPG });
     if (p.startsWith('/api/motion/')) return route.fulfill({ status: 404, body: '' });
     if (p === '/api/me') return json({ user: 'nicola', name: 'Nico', admin: true, editor: true, activated: true, consent: { activatedAt: '2026-01-01T00:00:00.000Z', phrase: 'ok' }, adult: false, adultChat: false, solo: true, soloKey: 'greta', serverKey: true, simliFace });
-    if (p === '/api/characters') return json([{ id: CH, name: 'Alpha', ready: 'nova-scelta', avatar: '/api/avatars/' + FOTO, avatarSource: 'upload', landmarks: { ...LM, src: '/api/avatars/' + FOTO }, outfits: [], motionClips: [], personality: '', style: '', requests: '', voice: 'eve', messages: 0 }]);
+    if (p === '/api/characters') return json([{ id: CH, name: 'Ira', ready: 'nova-scelta', avatar: '/api/avatars/' + FOTO, avatarSource: 'upload', landmarks: { ...LM, src: '/api/avatars/' + FOTO }, outfits: [], motionClips: [], personality: '', style: '', requests: '', voice: 'eve', messages: 0 }]);
     if (p.startsWith('/api/chats/')) return json({ epoch: 'e1', last: 0, reset: true, messages: [], typing: null });
     if (p === '/api/calls') return json({ calls: [] });
     if (p === '/api/memory' || p === '/api/gestures') return json([]);
@@ -74,7 +74,7 @@ test('v2d-49: cache del service worker app-privata-v2d-49', async ({ request }) 
   expect(sw).toMatch(/const CACHE = 'app-privata-v2d-(49|[5-9]\d)'/); // v2d-50 alza la cache
 });
 
-test('v2d-49: con la foto fissa (di serie) Alpha non promette di cambiarsi; Simli con sessioni più lunghe, chiave mai esposta', async ({ request, browserName }) => {
+test('v2d-49: con la foto fissa (di serie) Ira non promette di cambiarsi; Simli con sessioni più lunghe, chiave mai esposta', async ({ request, browserName }) => {
   test.skip(browserName === 'webkit', 'solo server');
   test.setTimeout(60000);
   const seen = [];
