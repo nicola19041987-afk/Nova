@@ -50,7 +50,7 @@ test('v2d-51: titolo, PWA e cache del service worker dicono Ira', async ({ reque
   expect(man.name).toBe('Ira');
   expect(man.short_name).toBe('Ira');
   const sw = await (await request.get('/sw.js')).text();
-  expect(sw).toContain("const CACHE = 'app-privata-v2d-51'");
+  expect(sw).toMatch(/const CACHE = 'app-privata-v2d-(51|[5-9]\d)'/); // v2d-52 alza la cache
   expect(sw).not.toContain("const CACHE = 'app-privata-v2d-50'");
 });
 

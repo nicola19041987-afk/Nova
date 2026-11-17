@@ -428,7 +428,7 @@ app.post('/api/pin/setup', loginLimiter, (req, res) => {
   const user = USER_ALIASES[String(req.body.user || '').toLowerCase()];
   const pin = String(req.body.pin || '');
   if (!user) return res.status(400).json({ error: 'Profilo non valido' });
-  if (isBlocked(user)) return res.status(403).json({ error: BLOCKED_MSG, code: 'BLOCKED' });
+  if (isBlocked(user)) return res.status(401).json({ error: 'Credenziali non valide' });
   if (!PIN_RE.test(pin)) return res.status(400).json({ error: 'Il PIN deve avere 4 cifre' });
   if (SETUP_CODE && req.body.setupCode !== SETUP_CODE) return res.status(403).json({ error: 'Codice di configurazione errato' });
   const pins = getPins();
@@ -453,7 +453,7 @@ app.post('/api/login', loginLimiter, async (req, res) => {
   const user = USER_ALIASES[String(req.body.user || '').toLowerCase()];
   const pin = String(req.body.pin || '');
   const rec = user && getPins()[user];
-  if (isBlocked(user)) return res.status(403).json({ error: BLOCKED_MSG, code: 'BLOCKED' });
+  if (isBlocked(user)) return res.status(401).json({ error: 'Credenziali non valide' });
   if (user) {
     const li = lockInfo(user);
     if (li.until > Date.now()) return res.status(429).json({ error: `Profilo bloccato per troppi PIN errati. Riprova tra ${Math.ceil((li.until - Date.now()) / 60000)} minuti.` });
