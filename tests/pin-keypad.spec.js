@@ -13,9 +13,10 @@ test('il tastierino inserisce il PIN e Avanti entra, senza tastiera nativa', asy
   await page.addInitScript(() => { if (navigator.serviceWorker) navigator.serviceWorker.register = () => new Promise(() => {}); });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/');
-  await page.locator('.login-profile', { hasText: 'Nico' }).click();
+  await page.locator('.login-profile', { hasText: 'Nicola' }).click();
   await expect(page.locator('#pin-pad')).toBeVisible();
-  await expect(page.locator('#login-title')).toHaveText('Inserisci il PIN');
+  await expect(page.locator('#login-title')).toHaveText('IRA');
+  await expect(page.locator('.login-profile', { hasText: 'Nicola' })).toHaveClass(/on/);
   const before = await page.evaluate(() => {
     const input = document.getElementById('pin-input');
     const body = getComputedStyle(document.body).backgroundColor;
@@ -24,7 +25,7 @@ test('il tastierino inserisce il PIN e Avanti entra, senza tastiera nativa', asy
   expect(before.active).toBe(false);
   expect(before.readonly).toBe(true);
   expect(before.mode).toBe('none');
-  expect(before.body).toBe('rgb(255, 255, 255)');
+  expect(before.body).toBe('rgb(0, 0, 0)');
   await page.screenshot({ path: '/opt/cursor/artifacts/v2d-22-pin-390.png' });
   for (const n of ['1', '3', '5']) await page.locator(`#pin-pad [data-key="${n}"]`).click();
   const dots = await page.evaluate(() => {

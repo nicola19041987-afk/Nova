@@ -58,12 +58,14 @@
   <!-- LOGIN -->
   <section id="view-login" class="view login-screen" hidden>
     <div class="login-wrap">
-      <h1 class="login-wordmark" id="login-title">Ira</h1>
+      <h1 class="login-wordmark" id="login-title">IRA</h1>
       <p id="login-lead" class="login-lead">Scegli il profilo</p>
-      <div id="profile-pick" class="profiles"></div>
+      <div id="profile-pick" class="profiles" role="radiogroup" aria-label="Profilo"></div>
       <form id="pin-form" hidden autocomplete="off">
         <p id="pin-title" class="login-hint"></p>
+        <div id="pin-slots" class="pin-slots" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
         <input id="pin-input" class="pin-digits" type="password" inputmode="none" maxlength="4" autocomplete="off" readonly required>
+        <div id="pin-slots-confirm" class="pin-slots" aria-hidden="true" hidden><span></span><span></span><span></span><span></span></div>
         <input id="pin-confirm" class="pin-digits" type="password" inputmode="none" maxlength="4" placeholder="Ripeti" hidden autocomplete="off" readonly>
         <input id="setup-code" type="password" placeholder="Codice di configurazione" hidden autocomplete="off">
         <button class="primary login-pill" type="submit" id="pin-submit">Avanti</button>
@@ -80,7 +82,7 @@
           <button type="button" data-key="9">9</button>
           <span class="pin-pad-gap"></span>
           <button type="button" data-key="0">0</button>
-          <button type="button" data-key="del" aria-label="Cancella">⌫</button>
+          <button type="button" data-key="del" aria-label="Cancella">←</button>
         </div>
       </form>
       <p class="error" id="login-error"></p>

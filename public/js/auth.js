@@ -1,31 +1,44 @@
 /* auth.js — login e attivazione account con consenso vocale (UNA sola volta). */
-// Accesso: scegli il profilo (Nico / Luisa) e inserisci il PIN a 4 cifre.
+// Accesso: scegli il profilo (Nicola / Luisa) e inserisci il PIN a 4 cifre.
 // Primo avvio: ogni profilo imposta il proprio PIN UNA volta; poi non è più reimpostabile da qui (solo admin: npm run reset-pin).
 let pinProfile = null, pinSetup = false, needsSetupCode = false;
 App.showLogin = async function () {
   App.showView('login'); $('#login-error').textContent = ''; $('#pin-form').hidden = true;
-  const title = $('#login-title'); if (title) title.textContent = 'Ira';
-  const lead = $('#login-lead'); if (lead) lead.hidden = false;
+  const title = $('#login-title'); if (title) { title.textContent = 'IRA'; delete title.dataset.pin; } // v2d-53: nome dell'app IRA (il personaggio resta Ira)
+  const lead = $('#login-lead'); if (lead) lead.hidden = true; // v2d-55: i puntini Nicola / Luisa sono la scelta
   try {
     const { profiles, setupCode } = await App.api('/api/profiles'); needsSetupCode = setupCode;
     $('#profile-pick').hidden = false;
-    $('#profile-pick').innerHTML = profiles.map((p) => `<button type="button" class="login-profile" data-profile="${p.id}" data-has="${p.hasPin}" data-name="${esc(p.name)}">${esc(p.name)}<small>${p.hasPin ? 'Inserisci il PIN' : 'Primo accesso'}</small></button>`).join('');
+    $('#profile-pick').innerHTML = profiles.map((p) => `<button type="button" class="login-profile" role="radio" aria-checked="false" data-profile="${p.id}" data-has="${p.hasPin}" data-name="${esc(p.name)}"><span class="login-dot" aria-hidden="true"></span><span class="login-name">${esc(profileLabel(p))}</span></button>`).join('');
     const last = localStorage.getItem('ap:lastProfile');
     const lp = profiles.find((p) => p.id === last && p.hasPin); if (lp) pickProfile(lp.id, true, lp.name);
   } catch (e) { $('#login-error').textContent = e.message; }
 };
+function profileLabel(p) {
+  if (p.id === 'nicola' || p.id === 'nico') return 'Nicola';
+  return p.name;
+}
 function pickProfile(id, hasPin, name) {
   pinProfile = id; pinSetup = !hasPin;
-  $('#profile-pick').hidden = true; $('#pin-form').hidden = false;
-  const title = $('#login-title'); if (title) title.textContent = pinSetup ? 'Scegli il PIN' : 'Inserisci il PIN';
+  $('#profile-pick').hidden = false; $('#pin-form').hidden = false;
+  $('#profile-pick').querySelectorAll('.login-profile').forEach((b) => {
+    const on = b.dataset.profile === id;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-checked', on ? 'true' : 'false');
+  });
+  const title = $('#login-title'); if (title) { title.textContent = 'IRA'; delete title.dataset.pin; }
   const lead = $('#login-lead'); if (lead) lead.hidden = true;
-  $('#pin-title').textContent = pinSetup ? `Ciao ${name}. Si imposta una sola volta.` : `Ciao ${name}.`;
+  const shown = (id === 'nicola' || id === 'nico') ? 'Nicola' : name;
+  $('#pin-title').textContent = pinSetup ? `Ciao ${shown}. Si imposta una sola volta.` : '';
+  $('#login-error').textContent = '';
   $('#pin-confirm').hidden = !pinSetup; $('#pin-confirm').required = pinSetup;
   $('#setup-code').hidden = !(pinSetup && needsSetupCode);
   $('#pin-submit').textContent = 'Avanti';
   $('#pin-input').value = ''; $('#pin-confirm').value = '';
+  const confSlots = $('#pin-slots-confirm'); if (confSlots) confSlots.hidden = !pinSetup;
   pinTarget = $('#pin-input');
   $('#pin-input').classList.add('on'); $('#pin-confirm').classList.remove('on');
+  paintPinSlots();
 }
 $('#profile-pick').addEventListener('click', (e) => {
   const b = e.target.closest('[data-profile]'); if (!b) return;
@@ -37,6 +50,15 @@ function pinField() {
   if (pinTarget && !pinTarget.hidden) return pinTarget;
   return $('#pin-input');
 }
+function paintPinSlots() {
+  const fill = (input, box) => {
+    if (!box) return;
+    const n = String(input && input.value || '').replace(/\D/g, '').length;
+    box.querySelectorAll('span').forEach((s, i) => s.classList.toggle('on', i < n));
+  };
+  fill($('#pin-input'), $('#pin-slots'));
+  fill($('#pin-confirm'), $('#pin-slots-confirm'));
+}
 function typePin(key) {
   const el = pinField(); if (!el) return;
   const cur = String(el.value || '').replace(/\D/g, '');
@@ -46,6 +68,7 @@ function typePin(key) {
     pinTarget = $('#pin-confirm');
     $('#pin-input').classList.remove('on'); $('#pin-confirm').classList.add('on');
   }
+  paintPinSlots();
 }
 $('#pin-pad').addEventListener('click', (e) => {
   const b = e.target.closest('[data-key]'); if (!b) return;
@@ -64,7 +87,7 @@ document.addEventListener('keydown', (e) => {
   else if (e.key === 'Backspace') { e.preventDefault(); typePin('del'); }
   else if (e.key === 'Enter') { e.preventDefault(); $('#pin-form').requestSubmit(); }
 });
-$('#pin-input').addEventListener('input', (e) => { e.target.value = e.target.value.replace(/\D/g, '').slice(0, 4); if (!pinSetup && e.target.value.length === 4) $('#pin-form').requestSubmit(); });
+$('#pin-input').addEventListener('input', (e) => { e.target.value = e.target.value.replace(/\D/g, '').slice(0, 4); paintPinSlots(); if (!pinSetup && e.target.value.length === 4) $('#pin-form').requestSubmit(); });
 $('#pin-form').addEventListener('submit', async (e) => {
   e.preventDefault(); $('#login-error').textContent = '';
   const pin = $('#pin-input').value;
@@ -76,7 +99,7 @@ $('#pin-form').addEventListener('submit', async (e) => {
     } else await App.api('/api/login', { method: 'POST', body: { user: pinProfile, pin } });
     localStorage.setItem('ap:lastProfile', pinProfile);
     $('#pin-input').value = ''; App._fromPin = true; await App.boot();
-  } catch (err) { $('#login-error').textContent = err.message; $('#pin-input').value = ''; }
+  } catch (err) { $('#login-error').textContent = err.message; $('#pin-input').value = ''; paintPinSlots(); }
 });
 document.addEventListener('click', async (e) => {
   if (!e.target.closest('[data-action="logout"]')) return;

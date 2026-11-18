@@ -57,7 +57,7 @@ test('v2d-45: titolo, PWA e cache del service worker non dicono più Eris (oggi 
 test('v2d-45: il login mostra Ira (nome visibile attuale, dopo v2d-51)', async ({ page }) => {
   await page.goto('/');
   await expect(page.locator('#view-login')).toBeVisible();
-  await expect(page.locator('.login-wordmark')).toHaveText('Ira');
+  await expect(page.locator('.login-wordmark')).toHaveText('IRA');
 });
 
 test('v2d-45: migrazione una tantum Eris → Alpha, senza toccare id, foto, ready; al secondo avvio non si ripete', async ({ playwright }) => {

@@ -1,12 +1,12 @@
 const { test, expect } = require('./harness');
 
-test('il PIN è chiaro, con titolo verde e Avanti', async ({ page, browserName }) => {
+test('il PIN è chiaro, con titolo IRA rosso e Avanti', async ({ page, browserName }) => {
   test.skip(browserName === 'webkit', 'Questo WebKit chiude il processo sulla schermata di accesso. Il percorso è verificato su Chromium.');
   await page.goto('/');
   await expect(page.locator('#view-login')).toBeVisible();
-  await expect(page.locator('.login-wordmark')).toHaveText('Ira');
+  await expect(page.locator('.login-wordmark')).toHaveText('IRA'); // v2d-53
   const screen = await page.evaluate(() => getComputedStyle(document.querySelector('.login-screen')).backgroundColor);
-  expect(screen).toBe('rgb(255, 255, 255)');
+  expect(screen).toBe('rgb(0, 0, 0)');
   await page.locator('.login-profile').first().click();
   await expect(page.locator('#pin-submit')).toHaveText('Avanti');
   const pinUi = await page.evaluate(() => {
@@ -14,10 +14,10 @@ test('il PIN è chiaro, con titolo verde e Avanti', async ({ page, browserName }
     const f = getComputedStyle(document.getElementById('pin-input'));
     return { btn: b.backgroundColor, outline: f.outlineStyle, border: f.borderBottomColor };
   });
-  expect(pinUi.btn).toBe('rgb(0, 168, 132)');
+  expect(pinUi.btn).toBe('rgb(229, 9, 20)');
   expect(pinUi.outline).toBe('none');
-  expect(pinUi.border).toBe('rgb(0, 128, 105)');
-  await expect(page.locator('#login-title')).toContainText('PIN');
+  expect(pinUi.border).toBe('rgb(229, 9, 20)');
+  await expect(page.locator('#login-title')).toHaveText('IRA');
   await page.setViewportSize({ width: 390, height: 844 });
   await page.locator('#pin-input').blur();
   if (browserName !== 'webkit') await page.screenshot({ path: '/opt/cursor/artifacts/v2d-14-pin-390.png' });
@@ -27,7 +27,7 @@ test('il PIN è chiaro, con titolo verde e Avanti', async ({ page, browserName }
     return { inputmode: document.getElementById('pin-input').getAttribute('inputmode'), border: s.borderBottomColor, toast: !toast || toast.hidden };
   });
   expect(field.inputmode).toBe('none');
-  expect(field.border).toBe('rgb(0, 128, 105)');
+  expect(field.border).toBe('rgb(229, 9, 20)');
   expect(field.toast).toBe(true);
 });
 

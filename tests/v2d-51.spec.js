@@ -43,7 +43,7 @@ test('v2d-51: titolo, PWA e cache del service worker dicono Ira', async ({ reque
   const html = await (await request.get('/')).text();
   expect(html).toContain('<title>Ira</title>');
   expect(html).toContain('name="apple-mobile-web-app-title" content="Ira"');
-  expect(html).toContain('id="login-title">Ira<');
+  expect(html).toContain('id="login-title">IRA<');
   expect(html).not.toMatch(/>Alpha</);
   expect(html).not.toMatch(/>Eris</);
   const man = await (await request.get('/manifest.json')).json();
@@ -57,7 +57,7 @@ test('v2d-51: titolo, PWA e cache del service worker dicono Ira', async ({ reque
 test('v2d-51: il login mostra Ira', async ({ page }) => {
   await page.goto('/');
   await expect(page.locator('#view-login')).toBeVisible();
-  await expect(page.locator('.login-wordmark')).toHaveText('Ira');
+  await expect(page.locator('.login-wordmark')).toHaveText('IRA');
 });
 
 test('v2d-51: il prompt di sistema presenta Ira, non Alpha', async ({ request }) => {
