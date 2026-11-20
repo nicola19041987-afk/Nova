@@ -1111,33 +1111,33 @@ body.solo-mode #avatar-canvas{pointer-events:auto;z-index:1}
 #look-history button{background:#fff;color:#1E6FD9}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 
-/* Chat: fondo beige con un motivo nostro, bolle verdi a destra e bianche a sinistra. */
+/* v2d-58: chat Ira nera, bolle ricevute grigio scuro, inviate fucsia, testo bianco, pillola Oggi grigia. */
 body.solo-mode #tab-conv #messages{
-  background-color:#EFE6D8!important;
-  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160' fill='none' stroke='%23d7cbbd' stroke-width='1.3' stroke-linecap='round'><circle cx='18' cy='20' r='5'/><path d='M62 14h12M68 8v12'/><path d='M120 36c7 0 11 7 7 12'/><rect x='28' y='78' width='9' height='9' rx='2'/><path d='M100 96l7 5-7 5'/><circle cx='142' cy='132' r='3.5'/></svg>")!important;
+  background-color:#000!important;
+  background-image:none!important;
   background-size:160px 160px!important;
   padding:8px 10px 12px!important;
   max-height:none!important;
 }
-body.solo-mode #tab-conv .day-pill{align-self:center;margin:6px auto 10px;padding:4px 12px;border-radius:8px;background:#fff;color:#54656f;font-size:12.5px;box-shadow:0 1px .5px #0002}
+body.solo-mode #tab-conv .day-pill{align-self:center;margin:6px auto 10px;padding:4px 12px;border-radius:8px;background:#E5E5E5;color:#000;font-size:12.5px;box-shadow:0 1px .5px #0002}
 body.solo-mode #tab-conv .msg{max-width:82%!important;padding:6px 8px 16px!important;border:0!important;box-shadow:0 1px .5px #00000014!important;overflow:visible}
 body.solo-mode #tab-conv .msg .who{display:none!important}
-body.solo-mode #tab-conv .msg.user:not(.other){background:#D9FDD3!important;color:#111b21!important;border-radius:8px 0 8px 8px!important;margin-left:auto!important}
-body.solo-mode #tab-conv .msg.user:not(.other)::after{content:'';position:absolute;right:-7px;top:0;border:7px solid transparent;border-top-color:#D9FDD3;border-left-color:#D9FDD3}
-body.solo-mode #tab-conv .msg.assistant,body.solo-mode #tab-conv .msg.user.other{background:#fff!important;color:#111b21!important;border-radius:0 8px 8px 8px!important;margin-right:auto!important;margin-left:0!important}
-body.solo-mode #tab-conv .msg.assistant::after,body.solo-mode #tab-conv .msg.user.other::after{content:'';position:absolute;left:-7px;top:0;border:7px solid transparent;border-top-color:#fff;border-right-color:#fff}
-body.solo-mode #tab-conv .msg .meta,body.solo-mode #tab-conv .msg .ticks{color:#667781!important;font-size:11px!important}
-body.solo-mode #tab-conv .msg .ticks.read,body.solo-mode #tab-conv .msg .ticks.saved{color:#53bdeb!important}
-body.solo-mode #tab-conv .msg.typing .body{font-style:italic;color:#667781}
-body.solo-mode #chat-form.composer{background:#F0F2F5!important;border-top:0;padding:6px 6px 8px!important;gap:4px!important;align-items:flex-end}
+body.solo-mode #tab-conv .msg.user:not(.other){background:#C2185B!important;color:#fff!important;border-radius:8px 0 8px 8px!important;margin-left:auto!important}
+body.solo-mode #tab-conv .msg.user:not(.other)::after{content:'';position:absolute;right:-7px;top:0;border:7px solid transparent;border-top-color:#C2185B;border-left-color:#C2185B}
+body.solo-mode #tab-conv .msg.assistant,body.solo-mode #tab-conv .msg.user.other{background:#2A2A2A!important;color:#fff!important;border-radius:0 8px 8px 8px!important;margin-right:auto!important;margin-left:0!important}
+body.solo-mode #tab-conv .msg.assistant::after,body.solo-mode #tab-conv .msg.user.other::after{content:'';position:absolute;left:-7px;top:0;border:7px solid transparent;border-top-color:#2A2A2A;border-right-color:#2A2A2A}
+body.solo-mode #tab-conv .msg .meta,body.solo-mode #tab-conv .msg .ticks{color:rgba(255,255,255,.7)!important;font-size:11px!important}
+body.solo-mode #tab-conv .msg .ticks.read,body.solo-mode #tab-conv .msg .ticks.saved{color:rgba(255,255,255,.7)!important}
+body.solo-mode #tab-conv .msg.typing .body{font-style:italic;color:rgba(255,255,255,.7)}
+body.solo-mode #chat-form.composer{background:#000!important;border-top:0;padding:6px 6px 8px!important;gap:4px!important;align-items:flex-end}
 body.solo-mode.solo-chat:not(.in-call) #view-app,
 body.solo-mode.solo-chat:not(.in-call) main,
 body.solo-mode.solo-chat:not(.in-call) #tab-conv,
 body.solo-mode.solo-chat:not(.in-call) #typing{
-  background:#F0F2F5;
+  background:#000;
 }
 body.solo-mode.solo-chat:not(.in-call) #chat-form.composer{
-  background:#F0F2F5!important;
+  background:#000!important;
   padding-bottom:calc(8px + env(safe-area-inset-bottom))!important;
 }
 body.solo-mode #chat-form.composer{flex-wrap:nowrap!important;align-items:flex-end!important}
@@ -1253,8 +1253,8 @@ html:has(#view-login:not([hidden])),body:has(#view-login:not([hidden])){backgrou
 #app-shell{width:100%;max-width:none;left:0;right:0;margin:0}
 body.solo-mode #view-app{height:100%!important;max-height:100%!important;min-height:0!important;padding-bottom:0!important}
 body.solo-mode.solo-chat:not(.in-call),
-body.solo-mode.solo-chat:not(.in-call) #app-shell{background:#F0F2F5}
-html.kb-open body.solo-mode.solo-chat:not(.in-call){background:#1c1c1e}
+body.solo-mode.solo-chat:not(.in-call) #app-shell{background:#000}
+html.kb-open body.solo-mode.solo-chat:not(.in-call){background:#000}
 body.solo-mode.solo-chat:not(.in-call) .topbar{position:relative;flex:0 0 auto;z-index:30}
 body.solo-mode.solo-chat:not(.in-call) main,
 body.solo-mode.solo-chat:not(.in-call) #tab-conv{

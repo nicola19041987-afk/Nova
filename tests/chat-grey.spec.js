@@ -1,6 +1,6 @@
 const { test, expect } = require('./harness');
 
-test('il fondo sotto i messaggi è grigio chiaro, le bolle e la carta restano', async ({ page }) => {
+test('il fondo sotto i messaggi è nero, le bolle grigio scuro e fucsia restano', async ({ page }) => {
   await page.addInitScript(() => {
     if (navigator.serviceWorker) navigator.serviceWorker.register = () => new Promise(() => {});
   });
@@ -50,13 +50,13 @@ test('il fondo sotto i messaggi è grigio chiaro, le bolle e la carta restano', 
       header: rgb(document.querySelector('.topbar')),
     };
   });
-  expect(colors.conv).toBe('rgb(240, 242, 245)');
-  expect(colors.form).toBe('rgb(240, 242, 245)');
-  expect(colors.messages).toBe('rgb(239, 230, 216)');
-  expect(colors.pattern).toBe(true);
-  expect(colors.user).toBe('rgb(217, 253, 211)');
-  expect(colors.nova).toBe('rgb(255, 255, 255)');
-  expect(colors.header).not.toBe('rgb(240, 242, 245)');
+  expect(colors.conv).toBe('rgb(0, 0, 0)');
+  expect(colors.form).toBe('rgb(0, 0, 0)');
+  expect(colors.messages).toBe('rgb(0, 0, 0)');
+  expect(colors.pattern).toBe(false);
+  expect(colors.user).toBe('rgb(194, 24, 91)');
+  expect(colors.nova).toBe('rgb(42, 42, 42)');
+  expect(colors.header).toBeTruthy();
   await page.screenshot({ path: '/opt/cursor/artifacts/v2d-25-chat-390.png' });
   await page.evaluate(() => {
     window.__vvTest = { height: 430, offsetTop: 280 };
@@ -64,6 +64,6 @@ test('il fondo sotto i messaggi è grigio chiaro, le bolle e la carta restano', 
     App.applyViewport();
   });
   const open = await page.evaluate(() => getComputedStyle(document.getElementById('chat-form')).backgroundColor);
-  expect(open).toBe('rgb(240, 242, 245)');
+  expect(open).toBe('rgb(0, 0, 0)');
   await page.locator('#app-shell').screenshot({ path: '/opt/cursor/artifacts/v2d-25-keyboard-390.png' });
 });

@@ -93,10 +93,10 @@ test('permesso microfono negato non invia un vocale', async ({ page, browserName
     };
   });
   expect(skin.pill).toBe('Oggi');
-  expect(skin.user).toBe('rgb(217, 253, 211)');
-  expect(skin.nova).toBe('rgb(255, 255, 255)');
+  expect(skin.user).toBe('rgb(194, 24, 91)');
+  expect(skin.nova).toBe('rgb(42, 42, 42)');
   expect(skin.ticks).toBe('✓✓');
-  expect(skin.bg).toBe('rgb(239, 230, 216)');
+  expect(skin.bg).toBe('rgb(0, 0, 0)');
   expect(skin.plus && skin.cam).toBe(true);
   await page.waitForFunction(() => {
     const img = document.querySelector('#wa-photo img');
