@@ -1586,3 +1586,20 @@ body.solo-mode.in-call:not(.call-min) .call-att-preview .att-x{position:absolute
 body.solo-mode.in-call:not(.call-min) #stage.call:not(.voice):not(.nv-voicecall) .call-bar{
   bottom:calc(62px + env(safe-area-inset-bottom, 0px))!important;
 }
+
+/* ===== v2d-57 (Nicola, 20/11): elenco chat stile WhatsApp in solo: Ira, poi Mercy, dottore, tuttofare, PT «In arrivo» ===== */
+body.solo-mode.solo-list #tab-chat:not([hidden]){display:block!important;flex:1 1 auto;min-height:0;overflow:auto;background:#fff;padding:0 0 calc(64px + env(safe-area-inset-bottom))!important}
+body.solo-mode.solo-list:not(.in-call) #solo-dock{display:flex!important}
+body.solo-mode.solo-list #tab-chat .new-row,body.solo-mode.solo-list #tab-chat #preset-row,body.solo-mode.solo-list #tab-chat #admin-note-chars,body.solo-mode.solo-list #tab-chat #key-warning{display:none!important}
+body.solo-mode.solo-list #char-list{background:#fff;border-radius:0;margin:0}
+body.solo-mode.solo-list #char-list li{background:#fff;border:0!important;box-shadow:none!important;border-bottom:1px solid #E9EDEF!important;border-radius:0;margin:0;padding:10px 16px;color:#111B21}
+body.solo-mode.solo-list #char-list li .grow b{color:#111B21;font-size:17px;font-weight:600}
+body.solo-mode.solo-list #char-list li .grow span{color:#667781}
+body.solo-mode.solo-list #char-list li [data-edit]{display:none}
+body.solo-mode.solo-list #char-list .avatar{width:52px;height:52px;flex:0 0 52px;background:transparent}
+.avatar-default{background:transparent!important;padding:0}
+.avatar-default svg{display:block;width:100%;height:100%}
+#char-list li.chat-ph{cursor:default}
+body.solo-mode.solo-list #char-list li+li::before{content:none!important;display:none!important}
+body.solo-mode.solo-list #char-list li:active{background:#F5F6F6}
+body.solo-mode.solo-list #wa-video,body.solo-mode.solo-list #wa-home,body.solo-mode.solo-list #wa-photo,body.solo-mode.solo-list #wa-status,body.solo-mode.solo-list #layer-x{display:none!important}

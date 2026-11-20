@@ -6,10 +6,24 @@ App.chat = {
   // v2d-48: chat lunga (500+ messaggi) disegnata a finestre: all'apertura solo gli ultimi WIN, i precedenti si aggiungono
   // in cima quando si scorre verso l'alto (stessi messaggi, stesso ordine; meno nodi = niente scatti su iPhone).
   WIN: 120, MORE: 80, older: [],
+  // v2d-57: elenco chat in ordine fisso Ira, Mercy, dottore, tuttofare, PT. Per ora funziona solo Ira: Mercy, dottore, tuttofare
+  // e PT sono segnaposto non attivi (avatar predefinito «nessuna foto» stile WhatsApp, «In arrivo»). Eventuali schede «Mercy» già
+  // sul server restano nascoste (messaggi vecchi sul disco, non mostrati). Gli altri personaggi visibili seguono come prima.
+  PLACEHOLDERS: ['Mercy', 'dottore', 'tuttofare', 'PT'],
+  isIra(c) { return !!(c && (c.ready === 'nova-scelta' || c.id === '5ce17a0000000001')); },
+  isMercy(c) { return !!(c && (c.ready === 'mercy-bridge' || c.id === '3e4c700000000001' || /^\s*mercy\s*$/i.test(String(c.name || '')))); },
+  ordered() {
+    const all = App.chars || [];
+    const ira = all.filter((c) => this.isIra(c));
+    return [...ira, ...all.filter((c) => !this.isIra(c) && !this.isMercy(c))];
+  },
   renderList() {
-    $('#char-list').innerHTML = App.chars.map((c) => `<li data-id="${c.id}">${App.avatarHtml(c)}
+    const real = this.ordered().map((c) => `<li data-id="${c.id}">${App.avatarHtml(c)}
       <div class="grow"><b>${esc(c.name)}</b><span>${esc(c.state ? 'Umore: ' + c.state.mood : '')}${App.previews[c.id] ? ' · nuovo look da salvare' : ''}</span></div>
-      <button data-edit title="Modifica">✏️</button></li>`).join('');
+      <button data-edit title="Modifica">✏️</button></li>`);
+    const ph = this.PLACEHOLDERS.map((n) => `<li class="chat-ph" data-placeholder="${esc(n)}" aria-disabled="true">${App.defaultAvatarHtml()}
+      <div class="grow"><b>${esc(n)}</b><span>In arrivo</span></div></li>`);
+    $('#char-list').innerHTML = real.concat(ph).join('');
   },
   async open(id) {
     const ch = App.charById(id); if (!ch) return;
@@ -359,7 +373,10 @@ App.sync = async function () {
 setInterval(() => App.sync(), 7000);
 
 $('#char-list').addEventListener('click', (e) => {
+  const ph = e.target.closest('li[data-placeholder]');
+  if (ph) { App.toast && App.toast(`«${ph.dataset.placeholder}» arriva presto: la chat non è ancora attiva.`); return; }
   const li = e.target.closest('li[data-id]'); if (!li) return;
+  if (document.body.classList.contains('solo-mode') && App.solo && App.solo.openFromList && !e.target.closest('[data-edit]')) { App.solo.openFromList(li.dataset.id); return; }
   if (e.target.closest('[data-edit]')) App.editor.open(li.dataset.id); else App.chat.open(li.dataset.id);
 });
 $('#new-char').addEventListener('click', () => App.editor.open(null));

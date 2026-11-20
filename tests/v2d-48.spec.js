@@ -45,6 +45,7 @@ test('v2d-48: chat di 527 messaggi: subito gli ultimi 120, i precedenti in cima 
   await mockApp(page);
   await openApp(page);
   await page.locator('#dock-chat').click();
+  await page.locator('#char-list li[data-id]').first().click(); // v2d-56: «Chat» apre l'elenco, Ira è la prima
   await page.waitForFunction(() => document.querySelectorAll('#messages .msg').length > 0);
   await page.waitForTimeout(800);
   const first = await page.evaluate(() => { const m = document.getElementById('messages'); const all = [...m.querySelectorAll('.msg')]; return { n: all.length, last: all[all.length - 1].dataset.id, firstId: all[0].dataset.id, atEnd: m.scrollHeight - m.scrollTop - m.clientHeight < 80 }; });

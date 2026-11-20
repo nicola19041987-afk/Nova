@@ -135,6 +135,8 @@ test('v2d-46: Home = foto scelta nel cerchio (mai la scena «a tavola»), elenco
   expect(await vis(page, '#layer-x')).toBe(false); // «Chiamate» è una scheda, non un foglio da chiudere
   if (SHOTS) await page.screenshot({ path: path.join(SHOTS, `02-chiamate-${browserName}-390x844.png`) });
   await page.locator('#dock-chat').click();
+  await expect(page.locator('#tab-chat')).toBeVisible(); // v2d-56: «Chat» in basso apre l'elenco; Ira è la prima
+  await page.locator('#char-list li[data-id]').first().click();
   await page.waitForFunction(() => document.body.classList.contains('solo-chat'));
   await expect(page.locator('#chat-form')).toBeVisible();
   expect(await vis(page, '#solo-dock')).toBe(false); // dentro la conversazione la barra non c'è (come WhatsApp)

@@ -577,6 +577,7 @@
         if (document.body.dataset.tab === 'images' || document.body.dataset.tab === 'calls') { this.showChat(); return; }
         if (document.body.classList.contains('solo-home') && this._nh && this._nh !== 'list') { this.showPage('list'); return; }
         if (document.body.classList.contains('solo-home')) { this.showChat(); return; }
+        if (document.body.classList.contains('solo-chat')) { this.showList(); return; } // v2d-57: dalla chat si torna all'elenco
         this.showHome();
       }, true);
       const photo = $('#wa-photo');
@@ -664,18 +665,46 @@
       const conv = $('#tab-conv'); if (conv) conv.hidden = false;
       ['tab-account', 'tab-chat', 'tab-calls', 'tab-images', 'tab-feed'].forEach((id) => { const el = document.getElementById(id); if (el) el.hidden = true; });
       document.body.dataset.tab = 'conv';
+      document.body.classList.remove('solo-list');
       const ch = soloChar();
       const title = $('#title'); if (title) title.textContent = (ch && ch.name) || 'Ira';
       const bar = $('#look-bar'); if (bar) bar.hidden = true;
-      this.paintBack('chat');
+      this.paintBack('list');
       this.setDock('chat');
       if (App.chat && App.chat.header) App.chat.header(); // v2d-46: tornando da «Chiamate» la testata riprende foto e «online»
       syncMotion();
       // v2d-48: entrando in chat si parte dagli ultimi messaggi (la chat caricata mentre era nascosta restava in cima, al primo messaggio)
       requestAnimationFrame(() => { fit(); if (!wasChat && App.chat && App.chat.scroll) App.chat.scroll(); });
     },
+    // v2d-57: elenco chat stile WhatsApp (scheda «Chat» in basso). Ira prima, poi i segnaposto Mercy, dottore, tuttofare e PT («In arrivo»).
+    showList() {
+      if (this.full) this.toggleFull(false);
+      document.body.classList.remove('solo-chat', 'solo-home', 'solo-portrait', 'solo-calls', 'solo-settings');
+      document.body.classList.add('solo-list');
+      document.body.classList.remove('wa-conv'); // testata semplice «Chat», senza foto e tasti chiamata
+      ['tab-conv', 'tab-account', 'tab-calls', 'tab-images', 'tab-feed'].forEach((id) => { const el = document.getElementById(id); if (el) el.hidden = true; });
+      const list = $('#tab-chat'); if (list) list.hidden = false;
+      const bar = $('#look-bar'); if (bar) bar.hidden = true;
+      document.body.dataset.tab = 'chat';
+      const title = $('#title'); if (title) title.textContent = 'Chat';
+      this.paintBack('hide');
+      this.setDock('chat');
+      if (App.chat && App.chat.renderList) App.chat.renderList();
+    },
+    async openFromList(id) {
+      const ch = App.charById(id); if (!ch) return;
+      if (!App.current || App.current.id !== id) { try { await App.chat.open(id); } catch (e) { App.toast && App.toast(e.message); return; } }
+      this.showChat();
+      if (App.chat && App.chat.header) App.chat.header();
+    },
+    backToIra() {
+      const ira = soloChar();
+      if (ira && App.current && App.current.id !== ira.id && App.chat && App.chat.open) App.chat.open(ira.id).catch(() => {});
+    },
     showHome() {
+      this.backToIra();
       document.body.classList.add('solo-home');
+      document.body.classList.remove('solo-list');
       document.body.classList.remove('solo-chat', 'solo-portrait', 'solo-calls', 'solo-settings');
       if (App.rt && App.rt.warmNow) setTimeout(App.rt.warmNow, 300); // v2d-41: chiamata in tempo reale pronta anche dalla Home
       if (this.full) this.toggleFull(false);
@@ -694,6 +723,8 @@
     },
     // v2d-46: scheda «Chiamate» della barra in basso (stile WhatsApp): avvia video/voce e mostra le chiamate recenti
     showCalls() {
+      this.backToIra();
+      document.body.classList.remove('solo-list');
       if (this.full) this.toggleFull(false);
       document.body.classList.remove('solo-chat', 'solo-home', 'solo-portrait', 'solo-settings');
       document.body.classList.add('solo-calls');
@@ -712,7 +743,7 @@
     },
     onDock(name) {
       this.setDock(name);
-      if (name === 'chat') { this.showChat(); return; }
+      if (name === 'chat') { this.showList(); return; } // v2d-57: «Chat» in basso = elenco chat (Ira; Mercy, dottore, tuttofare, PT in arrivo)
       if (name === 'video') {
         if (!document.body.classList.contains('solo-home')) this.showHome();
         this.showPage('video');

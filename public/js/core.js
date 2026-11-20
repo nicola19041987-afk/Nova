@@ -140,6 +140,8 @@ App.avatarHtml = (ch, cls = 'avatar') => {
   const image = a && (String(a).startsWith('/api/') || String(a).startsWith('data:') || String(a).startsWith('blob:') || String(a).startsWith('http'));
   return `<div class="${cls}">${image ? `<img alt="" data-src="${esc(a)}" src="${esc(a)}">` : esc(a || '🙂')}</div>`;
 };
+// v2d-57: avatar predefinito «nessuna foto» stile WhatsApp (sagoma bianca su grigio), senza immagini
+App.defaultAvatarHtml = (cls = 'avatar') => `<div class="${cls} avatar-default" aria-label="Nessuna foto"><svg viewBox="0 0 212 212" width="100%" height="100%" aria-hidden="true"><path fill="#DFE5E7" d="M106 0C47.5 0 0 47.5 0 106s47.5 106 106 106 106-47.5 106-106S164.5 0 106 0z"/><path fill="#FFF" d="M173.6 180.4c-6.6-15.5-21.4-26.7-38.9-28.4-8.3 6.3-18.4 10-29.3 10s-21.1-3.7-29.3-10c-17.5 1.7-32.3 12.9-38.9 28.4 18 19.3 42.4 31.6 68.2 31.6s50.2-12.3 68.2-31.6zM106 145.5c24.2 0 43.8-19.6 43.8-43.8S130.2 57.9 106 57.9 62.2 77.5 62.2 101.7s19.6 43.8 43.8 43.8z"/></svg></div>`;
 App.charById = (id) => App.chars.find((c) => c.id === id);
 App.loadChars = async () => { App.chars = await App.api('/api/characters'); };
 

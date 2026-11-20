@@ -61,6 +61,9 @@ test('dopo l’accesso si apre la Home (v2d-41), da lì la chat, e dalla Home si
   await expect(page.locator('#back-btn')).toBeVisible();
   await expect(page.locator('#messages')).toBeVisible();
   await page.locator('#back-btn').click();
+  // v2d-56: dalla chat si torna all'elenco chat; la Home si raggiunge dalla barra in basso
+  await expect(page.locator('#tab-chat')).toBeVisible();
+  await page.locator('#dock-home').click();
   await expect(page.locator('#nh-list')).toBeVisible();
   await expect(page.locator('#stage')).toBeHidden();
   await expect(page.locator('#chat-form')).toBeHidden();
