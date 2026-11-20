@@ -5,8 +5,8 @@ const { test, expect } = require('./harness');
 test('v2d-58: cache e colori della chat Ira (nero, grigio, fucsia)', async ({ page, request, browserName }) => {
   test.skip(browserName === 'webkit', 'Questo WebKit chiude il processo aprendo la Home. Il percorso è verificato su Chromium.');
   const sw = await (await request.get('/sw.js')).text();
-  expect(sw).toMatch(/const CACHE = 'app-privata-v2d-58'/);
-  expect(sw).not.toContain("const CACHE = 'app-privata-v2d-57'");
+  expect(sw).toMatch(/const CACHE = 'app-privata-v2d-(59|[6-9]\d)'/); // v2d-59 alza la cache
+  expect(sw).not.toContain("const CACHE = 'app-privata-v2d-58'");
 
   await page.addInitScript(() => {
     if (navigator.serviceWorker) navigator.serviceWorker.register = () => new Promise(() => {});

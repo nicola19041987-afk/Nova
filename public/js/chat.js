@@ -6,10 +6,15 @@ App.chat = {
   // v2d-48: chat lunga (500+ messaggi) disegnata a finestre: all'apertura solo gli ultimi WIN, i precedenti si aggiungono
   // in cima quando si scorre verso l'alto (stessi messaggi, stesso ordine; meno nodi = niente scatti su iPhone).
   WIN: 120, MORE: 80, older: [],
-  // v2d-57: elenco chat in ordine fisso Ira, Mercy, dottore, tuttofare, PT. Per ora funziona solo Ira: Mercy, dottore, tuttofare
-  // e PT sono segnaposto non attivi (avatar predefinito «nessuna foto» stile WhatsApp, «In arrivo»). Eventuali schede «Mercy» già
-  // sul server restano nascoste (messaggi vecchi sul disco, non mostrati). Gli altri personaggi visibili seguono come prima.
-  PLACEHOLDERS: ['Mercy', 'dottore', 'tuttofare', 'PT'],
+  // v2d-59: elenco in ordine IRA (foto sua), MERCY (foto sua), DOTT., TUTTOFARE, P.T&FOOD. Funziona solo Ira.
+  // MERCY, DOTT., TUTTOFARE e P.T&FOOD restano segnaposto non attivi («In arrivo»; DOTT./TUTTOFARE/P.T&FOOD senza foto).
+  // Eventuali schede «Mercy» già sul server restano nascoste (messaggi vecchi sul disco, non mostrati).
+  PLACEHOLDERS: [
+    { key: 'mercy', name: 'MERCY', photo: '/avatars/mercy.jpg' },
+    { key: 'dott', name: 'DOTT.' },
+    { key: 'tuttofare', name: 'TUTTOFARE' },
+    { key: 'pt-food', name: 'P.T&FOOD' },
+  ],
   isIra(c) { return !!(c && (c.ready === 'nova-scelta' || c.id === '5ce17a0000000001')); },
   isMercy(c) { return !!(c && (c.ready === 'mercy-bridge' || c.id === '3e4c700000000001' || /^\s*mercy\s*$/i.test(String(c.name || '')))); },
   ordered() {
@@ -19,10 +24,15 @@ App.chat = {
   },
   renderList() {
     const real = this.ordered().map((c) => `<li data-id="${c.id}">${App.avatarHtml(c)}
-      <div class="grow"><b>${esc(c.name)}</b><span>${esc(c.state ? 'Umore: ' + c.state.mood : '')}${App.previews[c.id] ? ' · nuovo look da salvare' : ''}</span></div>
+      <div class="grow"><b>${esc(this.isIra(c) ? 'IRA' : c.name)}</b><span>${esc(c.state ? 'Umore: ' + c.state.mood : '')}${App.previews[c.id] ? ' · nuovo look da salvare' : ''}</span></div>
       <button data-edit title="Modifica">✏️</button></li>`);
-    const ph = this.PLACEHOLDERS.map((n) => `<li class="chat-ph" data-placeholder="${esc(n)}" aria-disabled="true">${App.defaultAvatarHtml()}
-      <div class="grow"><b>${esc(n)}</b><span>In arrivo</span></div></li>`);
+    const ph = this.PLACEHOLDERS.map((p) => {
+      const av = p.photo
+        ? `<div class="avatar"><img alt="" src="${esc(p.photo)}"></div>`
+        : App.defaultAvatarHtml();
+      return `<li class="chat-ph" data-placeholder="${esc(p.name)}" aria-disabled="true">${av}
+      <div class="grow"><b>${esc(p.name)}</b><span>In arrivo</span></div></li>`;
+    });
     $('#char-list').innerHTML = real.concat(ph).join('');
   },
   async open(id) {
