@@ -6,11 +6,11 @@ App.chat = {
   // v2d-48: chat lunga (500+ messaggi) disegnata a finestre: all'apertura solo gli ultimi WIN, i precedenti si aggiungono
   // in cima quando si scorre verso l'alto (stessi messaggi, stesso ordine; meno nodi = niente scatti su iPhone).
   WIN: 120, MORE: 80, older: [],
-  // v2d-59: elenco in ordine IRA (foto sua), MERCY (foto sua), DOTT., TUTTOFARE, P.T&FOOD. Funziona solo Ira.
-  // MERCY, DOTT., TUTTOFARE e P.T&FOOD restano segnaposto non attivi («In arrivo»; DOTT./TUTTOFARE/P.T&FOOD senza foto).
+  // v2d-59: elenco in ordine IRA (foto sua), MERCY (foto sua, sottotitolo «Bot NF Motors»), DOTT., TUTTOFARE, P.T&FOOD.
+  // Funziona solo Ira. MERCY, DOTT., TUTTOFARE e P.T&FOOD restano segnaposto non attivi (DOTT./TUTTOFARE/P.T&FOOD: «In arrivo», senza foto).
   // Eventuali schede «Mercy» già sul server restano nascoste (messaggi vecchi sul disco, non mostrati).
   PLACEHOLDERS: [
-    { key: 'mercy', name: 'MERCY', photo: '/avatars/mercy.jpg' },
+    { key: 'mercy', name: 'MERCY', photo: '/avatars/mercy.jpg', subtitle: 'Bot NF Motors' },
     { key: 'dott', name: 'DOTT.' },
     { key: 'tuttofare', name: 'TUTTOFARE' },
     { key: 'pt-food', name: 'P.T&FOOD' },
@@ -31,7 +31,7 @@ App.chat = {
         ? `<div class="avatar"><img alt="" src="${esc(p.photo)}"></div>`
         : App.defaultAvatarHtml();
       return `<li class="chat-ph" data-placeholder="${esc(p.name)}" aria-disabled="true">${av}
-      <div class="grow"><b>${esc(p.name)}</b><span>In arrivo</span></div></li>`;
+      <div class="grow"><b>${esc(p.name)}</b><span>${esc(p.subtitle || 'In arrivo')}</span></div></li>`;
     });
     $('#char-list').innerHTML = real.concat(ph).join('');
   },

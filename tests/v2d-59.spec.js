@@ -47,7 +47,8 @@ test('v2d-59: cache, nomi elenco, foto Mercy, solo Ira attiva', async ({ page, r
   await expect(mercy.locator('.avatar-default')).toHaveCount(0);
   const loaded = await mercy.locator('img').evaluate((img) => img.complete && img.naturalWidth > 0);
   expect(loaded).toBeTruthy();
-  await expect(mercy).toContainText('In arrivo');
+  await expect(mercy.locator('span')).toHaveText('Bot NF Motors');
+  await expect(mercy).not.toContainText('In arrivo');
 
   for (const n of ['DOTT.', 'TUTTOFARE', 'P.T&FOOD']) {
     const li = page.locator('#char-list li.chat-ph', { hasText: n });

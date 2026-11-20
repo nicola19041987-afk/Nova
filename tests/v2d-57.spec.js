@@ -1,5 +1,5 @@
 // v2d-57: elenco chat dopo il PIN; funziona solo Ira (chat invariata).
-// v2d-59: etichette IRA, MERCY (con foto), DOTT., TUTTOFARE, P.T&FOOD; gli altri restano «In arrivo».
+// v2d-59: etichette IRA, MERCY (con foto, sottotitolo «Bot NF Motors»), DOTT., TUTTOFARE, P.T&FOOD (gli altri «In arrivo»).
 const { test, expect } = require('./harness');
 
 const HEAD = { 'X-Requested-With': 'app-privata' };
@@ -32,7 +32,8 @@ test('v2d-57: cache, elenco chat in ordine, solo Ira attiva, gli altri «In arri
   await expect(mercy.locator('img')).toHaveCount(1);
   await expect(mercy.locator('img')).toHaveAttribute('src', /\/avatars\/mercy\.jpg/);
   await expect(mercy.locator('.avatar-default')).toHaveCount(0);
-  await expect(mercy).toContainText('In arrivo');
+  await expect(mercy).toContainText('Bot NF Motors');
+  await expect(mercy).not.toContainText('In arrivo');
   for (const n of ['DOTT.', 'TUTTOFARE', 'P.T&FOOD']) {
     const li = page.locator('#char-list li.chat-ph', { hasText: n });
     await expect(li).toHaveCount(1);
