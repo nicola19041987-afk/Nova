@@ -26,7 +26,7 @@ test('il tastierino inserisce il PIN e Avanti entra, senza tastiera nativa', asy
   expect(before.readonly).toBe(true);
   expect(before.mode).toBe('none');
   expect(before.body).toBe('rgb(0, 0, 0)');
-  await page.screenshot({ path: '/opt/cursor/artifacts/v2d-22-pin-390.png' });
+  await page.screenshot({ path: '/tmp/v2d-22-pin-390.png' });
   for (const n of ['1', '3', '5']) await page.locator(`#pin-pad [data-key="${n}"]`).click();
   const dots = await page.evaluate(() => {
     const input = document.getElementById('pin-input');

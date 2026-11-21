@@ -22,7 +22,7 @@ test('v2d-57: cache, elenco chat in ordine, solo Ira attiva, gli altri «In arri
   await page.goto('/');
   await page.waitForFunction(() => window.App && App.solo && App.solo._booted && App.chars && App.chars.length > 0);
   await page.waitForTimeout(1500);
-  await page.locator('#dock-chat').click();
+  // v2d-61: niente barra in basso; dopo il PIN l'elenco è già aperto
   await expect(page.locator('#tab-chat')).toBeVisible();
   const names = await page.locator('#char-list li b').allTextContents();
   expect(names).toEqual(['IRA', 'MERCY', 'DOTT.', 'TUTTOFARE', 'P.T&FOOD']);

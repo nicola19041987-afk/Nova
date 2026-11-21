@@ -537,7 +537,7 @@
         const conv = $('#tab-conv'); if (conv) conv.classList.add('stage-mini');
       }
       const rt = $('#solo-rt'); if (rt) rt.addEventListener('click', () => this.toggleRt());
-      const home = $('#wa-home'); if (home) home.addEventListener('click', (e) => { e.stopPropagation(); this.showHome(); });
+      const home = $('#wa-home'); if (home) home.addEventListener('click', (e) => { e.stopPropagation(); this.showList(); }); // v2d-61: niente menu Impostazioni
       const bar = $('#look-bar');
       if (bar) bar.addEventListener('click', (e) => {
         if (e.target.closest('#nh-photo')) { e.preventDefault(); this.openPortrait(); return; }
@@ -557,7 +557,7 @@
       const qc = $('#nh-q-chat'); if (qc) qc.addEventListener('click', (e) => { e.preventDefault(); this.showChat(); });
       // v2d-41: barra in basso della chat: videochiamata e Home in fondo, dopo il campo
       const cv = $('#cb-video'); if (cv) cv.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); if (App.call && App.call.minimized && document.body.classList.contains('call-min') && App.call.restore) { App.call.restore(); return; } if (App.call && App.call.start) App.call.start('video'); });
-      const chm = $('#cb-home'); if (chm) chm.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); this.showHome(); });
+      const chm = $('#cb-home'); if (chm) chm.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); this.showList(); }); // v2d-61: niente Home
       const qv = $('#nh-q-video'); if (qv) qv.addEventListener('click', (e) => { e.preventDefault(); if (App.call && App.call.minimized && document.body.classList.contains('call-min') && App.call.restore) { App.call.restore(); return; } const go = $('#nh-video-go'); if (go) go.click(); }); // v2d-37: chiamata ridotta -> si torna alla chiamata
       // v2d-37: «Voce» dalla Home = chiamata vocale vera (tempo reale di serie, riserva classica), come «Video»
       const voiceCall = () => { if (App.call && App.call.minimized && App.call.restore) { App.call.restore(); return; } try { const p = App.call.start('voice'); if (p && p.catch) p.catch((err) => App.toast((err && err.message) || 'Chiamata vocale non avviata')); } catch (err) { App.toast((err && err.message) || 'Chiamata vocale non avviata'); } };
@@ -573,12 +573,12 @@
         e.preventDefault();
         e.stopImmediatePropagation();
         if (document.body.classList.contains('solo-portrait')) { this.closePortrait(); return; }
-        if (document.body.dataset.tab === 'account') { this.showHome(); return; }
+        if (document.body.dataset.tab === 'account') { this.showList(); return; } // v2d-61
         if (document.body.dataset.tab === 'images' || document.body.dataset.tab === 'calls') { this.showChat(); return; }
         if (document.body.classList.contains('solo-home') && this._nh && this._nh !== 'list') { this.showPage('list'); return; }
         if (document.body.classList.contains('solo-home')) { this.showChat(); return; }
         if (document.body.classList.contains('solo-chat')) { this.showList(); return; } // v2d-57: dalla chat si torna all'elenco
-        this.showHome();
+        this.showList(); // v2d-61: fallback all'elenco, non alle Impostazioni
       }, true);
       const photo = $('#wa-photo');
       if (photo) {
@@ -702,40 +702,12 @@
       if (ira && App.current && App.current.id !== ira.id && App.chat && App.chat.open) App.chat.open(ira.id).catch(() => {});
     },
     showHome() {
-      this.backToIra();
-      document.body.classList.add('solo-home');
-      document.body.classList.remove('solo-list');
-      document.body.classList.remove('solo-chat', 'solo-portrait', 'solo-calls', 'solo-settings');
-      if (App.rt && App.rt.warmNow) setTimeout(App.rt.warmNow, 300); // v2d-41: chiamata in tempo reale pronta anche dalla Home
-      if (this.full) this.toggleFull(false);
-      const conv = $('#tab-conv'); if (conv) conv.hidden = false;
-      const acc = $('#tab-account'); if (acc) acc.hidden = true;
-      const list = $('#tab-chat'); if (list) list.hidden = true;
-      const calls = $('#tab-calls'); if (calls) calls.hidden = true;
-      const images = $('#tab-images'); if (images) images.hidden = true;
-      document.body.dataset.tab = 'conv';
-      const bar = $('#look-bar'); if (bar) bar.hidden = false;
-      this.paintHome();
-      this.setDock('home');
-      if (App.chat && App.chat.header) App.chat.header();
-      syncMotion();
-      requestAnimationFrame(fit);
+      // v2d-61: il menu Impostazioni/Home non è più raggiungibile (resta il codice, si va all'elenco).
+      this.showList();
     },
-    // v2d-46: scheda «Chiamate» della barra in basso (stile WhatsApp): avvia video/voce e mostra le chiamate recenti
+    // v2d-61: la scheda Chiamate non è più raggiungibile; la videochiamata parte dal tasto video in chat.
     showCalls() {
-      this.backToIra();
-      document.body.classList.remove('solo-list');
-      if (this.full) this.toggleFull(false);
-      document.body.classList.remove('solo-chat', 'solo-home', 'solo-portrait', 'solo-settings');
-      document.body.classList.add('solo-calls');
-      if (App.openTab) App.openTab('calls');
-      const conv = $('#tab-conv'); if (conv) conv.hidden = true;
-      const calls = $('#tab-calls'); if (calls) calls.hidden = false;
-      const bar = $('#look-bar'); if (bar) bar.hidden = true;
-      document.body.dataset.tab = 'calls';
-      const title = $('#title'); if (title) title.textContent = 'Chiamate';
-      this.paintBack('list');
-      this.setDock('calls');
+      this.showList();
     },
     setDock(name) {
       const tab = name === 'settings' || name === 'video' ? 'home' : name; // v2d-46: «Impostazioni» in basso = Home stile Impostazioni di WhatsApp
@@ -744,17 +716,11 @@
     onDock(name) {
       this.setDock(name);
       if (name === 'chat') { this.showList(); return; } // v2d-57: «Chat» in basso = elenco chat (Ira; Mercy, dottore, tuttofare, PT in arrivo)
-      if (name === 'video') {
-        if (!document.body.classList.contains('solo-home')) this.showHome();
-        this.showPage('video');
-        this.setDock('video');
+      // v2d-61: Impostazioni, Home, Chiamate e pagine del menu non sono più raggiungibili
+      if (name === 'video' || name === 'home' || name === 'calls' || name === 'settings') {
+        this.showList();
         return;
       }
-      if (name === 'home') {
-        this.showHome();
-        return;
-      }
-      if (name === 'calls') { this.showCalls(); return; }
       if (name === 'mic') {
         // Il microfono del dock non apre una chiamata: accende o spegne il dettato nel composer.
         const listening = App.voice && App.voice.isListening && App.voice.isListening();

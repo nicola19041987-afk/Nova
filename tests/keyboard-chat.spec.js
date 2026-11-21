@@ -36,7 +36,7 @@ test('con la tastiera la testata resta in alto e il composer sopra di essa', asy
     box.lastElementChild.id = 'last-msg';
     box.scrollTop = box.scrollHeight;
   });
-  await page.screenshot({ path: '/opt/cursor/artifacts/v2d-23-chat-390.png' });
+  await page.screenshot({ path: '/tmp/v2d-23-chat-390.png' });
   const box = await page.evaluate(() => {
     window.scrollTo(0, 180);
     window.__vvTest = { height: 430, offsetTop: 280 };
@@ -71,6 +71,6 @@ test('con la tastiera la testata resta in alto e il composer sopra di essa', asy
   expect(box.lastBottom).toBeLessThanOrEqual(box.formTop + 8);
   expect(box.lastTop).toBeGreaterThan(box.header);
   expect(box.headerText).toBe('Nova');
-  await page.screenshot({ path: '/opt/cursor/artifacts/v2d-23-keyboard-390.png' });
-  await page.locator('#app-shell').screenshot({ path: '/opt/cursor/artifacts/v2d-23-keyboard-shell-390.png' });
+  await page.screenshot({ path: '/tmp/v2d-23-keyboard-390.png' });
+  await page.locator('#app-shell').screenshot({ path: '/tmp/v2d-23-keyboard-shell-390.png' });
 });

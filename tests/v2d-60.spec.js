@@ -43,7 +43,7 @@ async function landing(page) {
 test('v2d-60: cache e dopo il PIN si apre l’elenco, non il menu Carattere/Vestiti', async ({ page, request, browserName }) => {
   test.skip(browserName === 'webkit', 'Questo WebKit chiude il processo aprendo la Home. Il percorso è verificato su Chromium.');
   const sw = await (await request.get('/sw.js')).text();
-  expect(sw).toMatch(/const CACHE = 'app-privata-v2d-60'/);
+  expect(sw).toMatch(/const CACHE = 'app-privata-v2d-(6[1-9]|[7-9]\d)'/); // v2d-61 alza la cache
   expect(sw).not.toContain("const CACHE = 'app-privata-v2d-59'");
 
   await disableSw(page);
@@ -59,15 +59,14 @@ test('v2d-60: cache e dopo il PIN si apre l’elenco, non il menu Carattere/Vest
   expect(snap.title).toBe('Chat');
   expect(snap.names).toEqual(['IRA', 'MERCY', 'DOTT.', 'TUTTOFARE', 'P.T&FOOD']);
 
-  // Impostazioni apre ancora il menu
-  await page.locator('#dock-home').click();
-  await page.waitForFunction(() => document.body.classList.contains('solo-home'));
-  await expect(page.locator('#nh-list')).toBeVisible();
-  await expect(page.locator('[data-nh-open="carattere"]')).toBeVisible();
-  await expect(page.locator('[data-nh-open="look"]')).toBeVisible();
+  // v2d-61: Impostazioni non è più raggiungibile
+  await expect(page.locator('#solo-dock')).toBeHidden();
+  await expect(page.locator('#dock-home')).toBeHidden();
+  await page.evaluate(() => App.solo && App.solo.showHome && App.solo.showHome());
+  expect(await page.evaluate(() => document.body.classList.contains('solo-home'))).toBe(false);
+  expect(await page.evaluate(() => document.body.classList.contains('solo-list'))).toBe(true);
 
   // dalla lista si apre solo Ira
-  await page.locator('#dock-chat').click();
   await expect(page.locator('#char-list li[data-id]')).toHaveCount(1);
   await page.locator('#char-list li[data-id]').first().click();
   await page.waitForFunction(() => document.body.classList.contains('solo-chat'));

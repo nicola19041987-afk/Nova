@@ -1603,3 +1603,130 @@ body.solo-mode.solo-list #char-list .avatar{width:52px;height:52px;flex:0 0 52px
 body.solo-mode.solo-list #char-list li+li::before{content:none!important;display:none!important}
 body.solo-mode.solo-list #char-list li:active{background:#F5F6F6}
 body.solo-mode.solo-list #wa-video,body.solo-mode.solo-list #wa-home,body.solo-mode.solo-list #wa-photo,body.solo-mode.solo-list #wa-status,body.solo-mode.solo-list #layer-x{display:none!important}
+
+/* ===== v2d-61: tema scuro su elenco, chat e videochiamata; niente Impostazioni, casa, chiamata vocale, barra in basso.
+   La pagina PIN (login-screen) non è in solo-mode e resta com’è. ===== */
+body.solo-mode,body.solo-mode #view-app,body.solo-mode main{
+  background:#000!important;color:#fff;
+}
+body.solo-mode .topbar,body.solo-mode.solo-chat .topbar,body.solo-mode.solo-list .topbar,body.solo-mode.wa-conv .topbar{
+  background:#000!important;border-bottom:1px solid #2A2A2A!important;box-shadow:none!important;color:#fff;
+}
+body.solo-mode .topbar h2,body.solo-mode #title,body.solo-mode .wa-title,body.solo-mode .wa-status,body.solo-mode #back-btn,body.solo-mode #back-btn .chat-back-arrow,body.solo-mode #back-btn .chat-back-label{
+  color:#fff!important;
+}
+body.solo-mode #app-refresh,body.solo-mode #blocco-btn,body.solo-mode #wa-video,body.solo-mode #cb-video,body.solo-mode .topbar .wa-ic{
+  color:#C2185B!important;background:transparent!important;
+}
+body.solo-mode #app-refresh:active,body.solo-mode #blocco-btn:active,body.solo-mode #wa-video:active,body.solo-mode #cb-video:active{
+  background:#C2185B22!important;
+}
+
+/* niente menu Impostazioni / Home / Chiamate / casa
+   (selettori almeno tanto specifici quanto le regole v2d-46/57 con :not(.in-call)) */
+body.solo-mode #solo-dock,
+body.solo-mode.solo-list #solo-dock,
+body.solo-mode.solo-list:not(.in-call) #solo-dock,
+body.solo-mode.solo-home #solo-dock,
+body.solo-mode.solo-home:not(.in-call):not(.solo-portrait):not(.av-full-on) #solo-dock,
+body.solo-mode.solo-calls #solo-dock,
+body.solo-mode.solo-calls:not(.in-call):not(.solo-portrait) #solo-dock,
+body.solo-mode.solo-settings #solo-dock,
+body.solo-mode.solo-settings:not(.in-call):not(.solo-portrait) #solo-dock,
+body.solo-mode #wa-home,
+body.solo-mode #cb-home,
+body.solo-mode #home-link,
+body.solo-mode #home-ind,
+body.solo-mode #wa-voice,
+body.solo-mode #calls-voice,
+body.solo-mode #nh-q-voice,
+body.solo-mode #nh-voice,
+body.solo-mode #call-tovideo,
+body.solo-mode #call-videotoggle,
+body.solo-mode #call-hangup,
+body.solo-mode #look-bar,
+body.solo-mode #tab-account,
+body.solo-mode #tab-calls,
+body.solo-mode #tab-images,
+body.solo-mode #tab-feed{
+  display:none!important;
+}
+
+/* elenco chat */
+body.solo-mode.solo-list #tab-chat,
+body.solo-mode.solo-list #tab-chat:not([hidden]),
+body.solo-mode.solo-list #tab-chat.tab,
+body.solo-mode.solo-list main,
+body.solo-mode.solo-list #char-list{
+  background-color:#000!important;
+  background-image:none!important;
+  background:#000!important;
+}
+body.solo-mode.solo-list #char-list li{
+  background:#1A1A1A!important;
+  border:0!important;
+  box-shadow:none!important;
+  border-bottom:1px solid #2A2A2A!important;
+  color:#fff;
+}
+body.solo-mode.solo-list #char-list li .grow b{color:#fff!important;font-size:17px;font-weight:600}
+body.solo-mode.solo-list #char-list li .grow span{color:#B3B3B3!important}
+body.solo-mode.solo-list #char-list li.chat-ph .grow b{color:#B3B3B3!important;font-weight:600}
+body.solo-mode.solo-list #char-list li.chat-ph .grow span{color:#8A8A8A!important}
+body.solo-mode.solo-list #char-list li:active{background:#2A2A2A!important}
+body.solo-mode.solo-list #char-list .unread-badge,
+body.solo-mode.solo-list #char-list .badge-n,
+body.solo-mode #blocco-count{
+  background:#C2185B!important;color:#fff!important;
+}
+
+/* chat Ira: header già nero; bolle invariate; niente bianco nel campo e nella pillola */
+body.solo-mode #tab-conv .day-pill{background:#2A2A2A!important;color:#fff!important;box-shadow:none}
+body.solo-mode #chat-form .cb-pill,
+body.solo-mode #tab-conv #chat-form .cb-pill{
+  background:#1A1A1A!important;border:1px solid #2A2A2A!important;
+}
+body.solo-mode #chat-input,
+body.solo-mode #tab-conv .composer textarea,
+body.solo-mode #tab-conv #chat-input,
+body.solo-mode #chat-form .cb-pill #chat-input{
+  background:#1A1A1A!important;color:#fff!important;border:0!important;
+}
+body.solo-mode #chat-input::placeholder{color:#8A8A8A!important}
+body.solo-mode #chat-form.composer{background:#000!important}
+body.solo-mode #tab-conv .composer button,
+body.solo-mode #vn-cam,body.solo-mode #vn-mic,body.solo-mode #vn-plus,body.solo-mode #cb-video{
+  background:transparent!important;color:#C2185B!important;
+}
+body.solo-mode.solo-chat:not(.in-call) #view-app,
+body.solo-mode.solo-chat:not(.in-call) main,
+body.solo-mode.solo-chat:not(.in-call) #tab-conv,
+body.solo-mode.solo-chat:not(.in-call) #typing,
+body.solo-mode.solo-list #view-app{
+  background:#000!important;
+}
+
+/* videochiamata: niente bianco sui tasti; accento fucsia */
+body.solo-mode.in-call .call-x,
+body.solo-mode #call-min.call-x{
+  background:#1A1A1A!important;border:1px solid #2A2A2A!important;color:#C2185B!important;
+}
+body.solo-mode.in-call .call-btn.on,body.solo-mode.in-call .call-btn.off{
+  background:#2A2A2A!important;color:#fff!important;
+}
+body.solo-mode.in-call .call-btn.off{color:#C2185B!important}
+body.solo-mode.in-call #call-text,body.solo-mode.in-call #call-input{
+  background:transparent;color:#fff;
+}
+body.solo-mode.in-call #call-input{background:#1A1A1A!important;border-color:#2A2A2A!important;color:#fff!important}
+body.solo-mode.in-call #call-input::placeholder{color:#8A8A8A!important}
+body.solo-mode.in-call #call-text button.primary,
+body.solo-mode.in-call #call-text .primary{
+  background:#C2185B!important;color:#fff!important;border:0!important;
+}
+body.solo-mode.in-call.call-min #stage{background:#000!important}
+body.solo-mode .adult-ask{
+  background:#1A1A1A!important;color:#fff!important;border:1px solid #2A2A2A!important;
+}
+body.solo-mode .adult-ask button{background:#2A2A2A!important;color:#fff!important}
+body.solo-mode #adult-ask-go{background:#C2185B!important;color:#fff!important}

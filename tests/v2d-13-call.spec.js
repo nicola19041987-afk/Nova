@@ -74,8 +74,8 @@ test('il video in testata apre la chiamata a schermo intero', async ({ page, bro
   expect(call.mute && call.videoToggle && call.flip && call.self).toBe(true);
   expect(call.end).toBe(false);
   expect(call.phone).toBe(false);
-  expect(call.house).toBe(true);
+  expect(call.house).toBe(false); // v2d-61: niente icona casa
   expect(call.face).toContain('8b4bf23923c5e90d');
   expect(call.wide).toBe(true);
-  await page.screenshot({ path: '/opt/cursor/artifacts/v2d-16-call-390.png' });
+  await page.screenshot({ path: '/tmp/v2d-16-call-390.png' });
 });

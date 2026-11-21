@@ -73,8 +73,8 @@ test('v2d-58: cache e colori della chat Ira (nero, grigio, fucsia)', async ({ pa
   expect(skin.userText).toBe('rgb(255, 255, 255)');
   expect(skin.iraText).toBe('rgb(255, 255, 255)');
   expect(skin.pillText).toBe('Oggi');
-  expect(skin.pillBg).toBe('rgb(229, 229, 229)');
-  expect(skin.pillFg).toBe('rgb(0, 0, 0)');
+  expect(skin.pillBg).toBe('rgb(42, 42, 42)');
+  expect(skin.pillFg).toBe('rgb(255, 255, 255)');
   expect(skin.meta).toBe('rgba(255, 255, 255, 0.7)');
   expect(skin.ticks).toBe('rgba(255, 255, 255, 0.7)');
   expect(skin.ticksText).toBe('✓✓');

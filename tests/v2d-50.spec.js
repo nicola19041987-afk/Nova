@@ -67,35 +67,31 @@ test('v2d-50: cache del service worker app-privata-v2d-50', async ({ request }) 
   expect(sw).not.toContain("const CACHE = 'app-privata-v2d-49'");
 });
 
-test('v2d-50: in chiamata vocale la cornetta è sostituita dal tasto video; niente riaggancia', async ({ page }) => {
+test('v2d-50: in videochiamata restano muto e fotocamera, niente riaggancia né passaggio alla vocale', async ({ page }) => {
+  // v2d-61: niente chiamata vocale né tasto per passarci; si apre direttamente il video.
   await openApp(page);
-  await page.evaluate(() => App.call.start('voice').catch(() => {}));
-  await page.waitForFunction(() => document.body.classList.contains('in-call') && App.call.mode === 'voice');
+  await page.evaluate(() => App.call.start('video').catch(() => {}));
+  await page.waitForFunction(() => document.body.classList.contains('in-call') && App.call.mode === 'video');
   const s = await page.evaluate(vis);
-  expect(s.mode).toBe('voice');
+  expect(s.mode).toBe('video');
   expect(s.end).toBe(false);
   expect(s.hangup).toBe(false);
-  expect(s.toggle).toBe(true);
-  expect(s.pressed).toBe('false');
-  expect(s.slash).toBe(false);
+  expect(s.toggle).toBe(false);
   expect(s.mute).toBe(true);
-  expect(s.form).toBe(false);
-  expect(s.buttons).toContain('call-videotoggle');
+  expect(s.cam).toBe(true);
+  expect(s.form).toBe(true);
+  expect(s.buttons).not.toContain('call-videotoggle');
   expect(s.buttons).not.toContain('call-end');
   expect(s.buttons).not.toContain('call-hangup');
 });
 
 test('v2d-50: il tasto video apre la videochiamata; restano muto e camera; riga +/testo fissa; il testo va alla voce, non in chat', async ({ page }) => {
   await openApp(page);
-  await page.evaluate(() => App.call.start('voice').catch(() => {}));
-  await page.waitForFunction(() => document.body.classList.contains('in-call') && App.call.mode === 'voice');
-  await page.click('#call-videotoggle');
-  await page.waitForFunction(() => App.call.mode === 'video');
+  await page.evaluate(() => App.call.start('video').catch(() => {}));
+  await page.waitForFunction(() => document.body.classList.contains('in-call') && App.call.mode === 'video');
   const s = await page.evaluate(vis);
   expect(s.mode).toBe('video');
-  expect(s.toggle).toBe(true);
-  expect(s.pressed).toBe('true');
-  expect(s.slash).toBe(true);
+  expect(s.toggle).toBe(false);
   expect(s.mute).toBe(true);
   expect(s.cam).toBe(true);
   expect(s.hangup).toBe(false);

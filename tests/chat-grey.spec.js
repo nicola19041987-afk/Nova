@@ -57,7 +57,7 @@ test('il fondo sotto i messaggi è nero, le bolle grigio scuro e fucsia restano'
   expect(colors.user).toBe('rgb(194, 24, 91)');
   expect(colors.nova).toBe('rgb(42, 42, 42)');
   expect(colors.header).toBeTruthy();
-  await page.screenshot({ path: '/opt/cursor/artifacts/v2d-25-chat-390.png' });
+  await page.screenshot({ path: '/tmp/v2d-25-chat-390.png' });
   await page.evaluate(() => {
     window.__vvTest = { height: 430, offsetTop: 280 };
     document.getElementById('chat-input').focus();
@@ -65,5 +65,5 @@ test('il fondo sotto i messaggi è nero, le bolle grigio scuro e fucsia restano'
   });
   const open = await page.evaluate(() => getComputedStyle(document.getElementById('chat-form')).backgroundColor);
   expect(open).toBe('rgb(0, 0, 0)');
-  await page.locator('#app-shell').screenshot({ path: '/opt/cursor/artifacts/v2d-25-keyboard-390.png' });
+  await page.locator('#app-shell').screenshot({ path: '/tmp/v2d-25-keyboard-390.png' });
 });
