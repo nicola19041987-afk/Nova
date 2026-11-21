@@ -54,7 +54,7 @@ test('permesso microfono negato non invia un vocale', async ({ page, browserName
     return json({});
   });
   await page.goto('/');
-  await page.waitForFunction(() => (!(App.solo && App.solo._bound && App.current && document.body.classList.contains('solo-home')) || (App.solo.showChat(), 1)) && document.body.classList.contains('solo-chat') && document.getElementById('vn-mic'));
+  await page.waitForFunction(() => (!(App.solo && App.solo._bound && App.current && (document.body.classList.contains('solo-home') || document.body.classList.contains('solo-list'))) || (App.solo.showChat(), 1)) && document.body.classList.contains('solo-chat') && document.getElementById('vn-mic'));
   const g = await page.evaluate(() => ({
     cancel: App.voiceNote.gesture(-90, 0, false),
     lock: App.voiceNote.gesture(0, -90, false),

@@ -49,7 +49,7 @@ App.chat = {
     App.scene && App.scene.apply();
     App.avatarConv.stopAction(true); App.actions && App.actions.render();
     if (document.body.classList.contains('solo-mode')) {
-      if (document.body.classList.contains('solo-home')) $('#back-btn').hidden = false;
+      if (document.body.classList.contains('solo-home') || document.body.classList.contains('solo-list')) $('#back-btn').hidden = false;
       else if (App.solo && App.solo.showChat) App.solo.showChat();
       requestAnimationFrame(() => { App.fitFrame && App.fitFrame(); setTimeout(() => App.fitFrame && App.fitFrame(), 100); });
     }

@@ -374,7 +374,7 @@
     full: false,
     async boot() {
       document.body.classList.add('solo-mode');
-      if (!document.body.classList.contains('solo-chat')) document.body.classList.add('solo-home'); // v2d-41: si parte dalla Home
+      if (!document.body.classList.contains('solo-chat') && !document.body.classList.contains('solo-list')) document.body.classList.add('solo-list'); // v2d-60: durante il boot non aprire la chat (chat.open rispetta solo-list)
       drop3d();
       this.bindOnce();
       const dock = $('#solo-dock'); if (dock) dock.hidden = false;
@@ -402,7 +402,7 @@
       if (App.isAdmin && App.isAdmin() && App.key() && !(App.me && App.me.serverKey)) {
         App.api('/api/solo/prep', { method: 'POST', ai: true, body: { store: true } }).catch(() => {});
       }
-      if (!document.body.classList.contains('solo-chat')) this.showHome(); // v2d-41: all'avvio e dopo il PIN si arriva sulla Home (se nel frattempo si è aperta la chat, si resta lì)
+      if (!document.body.classList.contains('solo-chat')) this.showList(); // v2d-60: all'avvio e dopo il PIN si arriva all'elenco chat (se nel frattempo si è aperta la chat, si resta lì)
       showStage(ch);
       const rt = $('#solo-rt'); if (rt) rt.hidden = false;
       if (App.looks && App.looks.boot) App.looks.boot();

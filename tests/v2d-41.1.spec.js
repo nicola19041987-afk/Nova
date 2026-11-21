@@ -50,7 +50,9 @@ for (const vp of [{ w: 390, h: 664, n: 'iPhone 14 (Safari)' }, { w: 390, h: 844,
     test.skip(browserName === 'webkit', 'Questo WebKit chiude il processo aprendo la Home. Il percorso è verificato su Chromium.');
     await page.setViewportSize({ width: vp.w, height: vp.h });
     await mock(page); await boot(page);
-    expect(await page.evaluate(() => document.body.classList.contains('solo-home') && !document.body.classList.contains('solo-chat'))).toBe(true);
+    expect(await page.evaluate(() => document.body.classList.contains('solo-list') && !document.body.classList.contains('solo-chat'))).toBe(true);
+    await page.evaluate(() => App.solo.showHome()); // il menu Impostazioni si apre dalla barra
+    await page.waitForFunction(() => document.body.classList.contains('solo-home'));
     await expect(page.locator('#nh-list')).toBeVisible();
     const r = await page.evaluate(() => [...document.querySelectorAll('#nh-list button')].filter((b) => b.offsetParent).map((b) => ({ t: b.textContent.trim().slice(0, 20), bottom: b.getBoundingClientRect().bottom })));
     const H = await page.evaluate(() => innerHeight);
@@ -84,6 +86,7 @@ test('v2d-41: Gesti mostra l elenco dei gesti con quante volte sono stati usati'
   await page.setViewportSize({ width: 390, height: 664 });
   await page.addInitScript(() => { localStorage.setItem('nova:gestiUso', JSON.stringify({ 'cenno-si': 3 })); });
   await mock(page); await boot(page);
+  await page.evaluate(() => App.solo.showHome());
   await page.click('[data-nh-open="gesti"]');
   await expect(page.locator('#motion-lib-menu')).toHaveText('Movimenti della foto: 648');
   await expect(page.locator('#motion-lib-list li')).toHaveCount(24);
@@ -101,7 +104,7 @@ test('v2d-41: in chiamata si vedono «Ti ascolto», il tempo e il tipo di colleg
   await page.setViewportSize({ width: 390, height: 664 });
   await page.addInitScript(() => { navigator.mediaDevices.getUserMedia = async () => { const c = new AudioContext(); const d = c.createMediaStreamDestination(); return d.stream; }; });
   await mock(page); await boot(page);
-  await page.evaluate(() => { App.rt.classicOnly = true; App.hasAi = () => true; });
+  await page.evaluate(() => { App.solo.showHome(); App.rt.classicOnly = true; App.hasAi = () => true; });
   await page.click('#nh-q-voice');
   await page.waitForFunction(() => App.call.active, null, { timeout: 15000 });
   await page.waitForTimeout(2500);
@@ -145,7 +148,7 @@ test('v2d-41: in videochiamata la fotocamera si accende da sola, subito, con il 
   test.skip(browserName === 'webkit', 'Home su questo WebKit: vedi sopra.');
   await fakeCam(page); await mock(page); await boot(page);
   expect(await page.evaluate(() => App.ls.get('camOn', false) === true)).toBe(true); // tutto aperto
-  await page.evaluate(() => { App.rt.classicOnly = true; App.hasAi = () => true; window.__t0 = performance.now(); });
+  await page.evaluate(() => { App.solo.showHome(); App.rt.classicOnly = true; App.hasAi = () => true; window.__t0 = performance.now(); });
   await page.click('#nh-q-video');
   await page.waitForFunction(() => { const v = document.getElementById('call-self'); return App.call.active && v && !v.hidden && v.srcObject; }, null, { timeout: 5000 });
   const ms = await page.evaluate(() => performance.now() - window.__t0);

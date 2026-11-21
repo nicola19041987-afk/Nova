@@ -15,8 +15,8 @@ async function loginNicola(page) {
 test('v2d-59: cache, nomi elenco, foto Mercy, solo Ira attiva', async ({ page, request, browserName }) => {
   test.skip(browserName === 'webkit', 'Questo WebKit chiude il processo aprendo la Home. Il percorso è verificato su Chromium.');
   const sw = await (await request.get('/sw.js')).text();
-  expect(sw).toMatch(/const CACHE = 'app-privata-v2d-59'/);
-  expect(sw).not.toContain("const CACHE = 'app-privata-v2d-58'");
+  expect(sw).toMatch(/const CACHE = 'app-privata-v2d-(60|[6-9]\d)'/); // v2d-60 alza la cache
+  expect(sw).not.toContain("const CACHE = 'app-privata-v2d-59'");
   expect(sw).toContain("/avatars/mercy.jpg");
 
   const photo = await request.get('/avatars/mercy.jpg');

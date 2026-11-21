@@ -5,8 +5,8 @@ const { test, expect } = require('./harness');
 test('v2d-58: cache e colori della chat Ira (nero, grigio, fucsia)', async ({ page, request, browserName }) => {
   test.skip(browserName === 'webkit', 'Questo WebKit chiude il processo aprendo la Home. Il percorso è verificato su Chromium.');
   const sw = await (await request.get('/sw.js')).text();
-  expect(sw).toMatch(/const CACHE = 'app-privata-v2d-(59|[6-9]\d)'/); // v2d-59 alza la cache
-  expect(sw).not.toContain("const CACHE = 'app-privata-v2d-58'");
+  expect(sw).toMatch(/const CACHE = 'app-privata-v2d-(60|[6-9]\d)'/); // v2d-60 alza la cache
+  expect(sw).not.toContain("const CACHE = 'app-privata-v2d-59'");
 
   await page.addInitScript(() => {
     if (navigator.serviceWorker) navigator.serviceWorker.register = () => new Promise(() => {});
@@ -29,7 +29,7 @@ test('v2d-58: cache e colori della chat Ira (nero, grigio, fucsia)', async ({ pa
   });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/');
-  await page.waitForFunction(() => (!(App.solo && App.solo._bound && App.current && document.body.classList.contains('solo-home')) || (App.solo.showChat(), 1)) && document.body.classList.contains('solo-chat'));
+  await page.waitForFunction(() => (!(App.solo && App.solo._bound && App.current && (document.body.classList.contains('solo-home') || document.body.classList.contains('solo-list'))) || (App.solo.showChat(), 1)) && document.body.classList.contains('solo-chat'));
   await page.evaluate(() => {
     const chat = App.chat;
     const at = new Date().toISOString();

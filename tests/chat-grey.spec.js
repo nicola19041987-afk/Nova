@@ -22,7 +22,7 @@ test('il fondo sotto i messaggi è nero, le bolle grigio scuro e fucsia restano'
   });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/');
-  await page.waitForFunction(() => (!(App.solo && App.solo._bound && App.current && document.body.classList.contains('solo-home')) || (App.solo.showChat(), 1)) && document.body.classList.contains('solo-chat'));
+  await page.waitForFunction(() => (!(App.solo && App.solo._bound && App.current && (document.body.classList.contains('solo-home') || document.body.classList.contains('solo-list'))) || (App.solo.showChat(), 1)) && document.body.classList.contains('solo-chat'));
   await page.evaluate(() => {
     const box = document.getElementById('messages');
     const a = document.createElement('div');

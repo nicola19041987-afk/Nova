@@ -47,14 +47,16 @@ test('login resta visibile e non si blocca', async ({ page }) => {
   expect(errors).toEqual([]);
 });
 
-test('dopo l’accesso si apre la Home (v2d-41), da lì la chat, e dalla Home si torna alla chat', async ({ page, browserName }) => {
+test('dopo l’accesso si apre l’elenco chat (v2d-60); la Home resta da Impostazioni', async ({ page, browserName }) => {
   test.skip(browserName === 'webkit', 'Questo WebKit chiude il processo aprendo la Home. Il percorso è verificato su Chromium.');
   await mockApp(page);
   await page.goto('/');
-  await page.waitForFunction(() => document.body.classList.contains('solo-home') && document.getElementById('title').textContent === 'Nova');
-  await expect(page.locator('#nh-list')).toBeVisible();
+  await page.waitForFunction(() => document.body.classList.contains('solo-list') && document.getElementById('title').textContent === 'Chat');
+  await expect(page.locator('#tab-chat')).toBeVisible();
+  await expect(page.locator('#char-list')).toBeVisible();
+  await expect(page.locator('#nh-list')).toBeHidden();
   await expect(page.locator('#chat-form')).toBeHidden();
-  await page.locator('#nh-q-chat').click();
+  await page.locator('#char-list li[data-id]').first().click();
   await page.waitForFunction(() => document.body.classList.contains('solo-chat'));
   await expect(page.locator('#chat-form')).toBeVisible();
   await expect(page.locator('#stage')).toBeHidden();
@@ -84,7 +86,9 @@ test('dopo l’accesso si apre la Home (v2d-41), da lì la chat, e dalla Home si
 test('la home è solo Nova (id greta), non la lista e non Chiara', async ({ page }) => {
   await mockApp(page);
   await page.goto('/');
-  await page.waitForFunction(() => document.body.classList.contains('solo-mode') && document.getElementById('title').textContent === 'Nova');
+  await page.waitForFunction(() => document.body.classList.contains('solo-list') && document.getElementById('title').textContent === 'Chat');
+  await page.evaluate(() => App.solo.showHome());
+  await page.waitForFunction(() => document.body.classList.contains('solo-home'));
   const snap = await page.evaluate(async () => {
     const shown = (id) => {
       const el = document.getElementById(id);
@@ -151,7 +155,7 @@ test('il microfono del dock detta nel composer e Home non svuota il thread', asy
   });
   await mockApp(page);
   await page.goto('/');
-  await page.waitForFunction(() => document.getElementById('title').textContent === 'Nova' && document.body.classList.contains('solo-mode') && App.solo && App.solo._bound);
+  await page.waitForFunction(() => (document.getElementById('title').textContent === 'Nova' || document.getElementById('title').textContent === 'Chat') && document.body.classList.contains('solo-mode') && App.solo && App.solo._bound);
   const snap = await page.evaluate(() => {
     const m = document.createElement('div');
     m.id = 'keep-me';
@@ -251,8 +255,9 @@ test('la voce in tempo reale resta in chat e un messaggio arriva da xAI', async 
   await page.goto('/');
   await page.waitForFunction(() => {
     const b = document.getElementById('solo-rt');
-    return document.body.classList.contains('solo-mode') && document.getElementById('title').textContent === 'Nova' && b && !b.hidden;
+    return document.body.classList.contains('solo-mode') && App.solo && App.solo._booted && b && !b.hidden;
   });
+  await page.evaluate(() => App.solo.showChat());
   const snap = await page.evaluate(async () => {
     App.ls.set('key', 'sk-test');
     App.ls.set('callEngine', 'realtime');
@@ -341,8 +346,8 @@ test('labiale e movimento della sessione ⚡ seguono l’audio, senza coprire la
     body: JSON.stringify({ url: 'wss://example.test/rt', token: 'tok', adult: false, session: { instructions: 'Sei Nova', voice: 'ara' } }),
   }));
   await page.goto('/');
-  await page.waitForFunction(() => document.body.classList.contains('solo-mode') && document.getElementById('title').textContent === 'Nova');
-  await page.evaluate(() => App.solo.showChat()); // v2d-41: si parte dalla Home
+  await page.waitForFunction(() => document.body.classList.contains('solo-mode') && App.solo && App.solo._booted);
+  await page.evaluate(() => App.solo.showChat());
   const snap = await page.evaluate(async () => {
     const corr = (xs, ys) => {
       const n = xs.length, mx = xs.reduce((a, b) => a + b, 0) / n, my = ys.reduce((a, b) => a + b, 0) / n;
@@ -432,8 +437,8 @@ test('il PCM della sessione ⚡ apre e chiude la bocca', async ({ page, browserN
     body: JSON.stringify({ url: 'wss://example.test/rt', token: 'tok', adult: false, session: { instructions: 'Sei Nova', voice: 'ara' } }),
   }));
   await page.goto('/');
-  await page.waitForFunction(() => document.body.classList.contains('solo-mode'));
-  await page.evaluate(() => App.solo.showChat()); // v2d-41: si parte dalla Home
+  await page.waitForFunction(() => document.body.classList.contains('solo-mode') && App.solo && App.solo._booted);
+  await page.evaluate(() => App.solo.showChat());
   const live = await page.evaluate(async () => {
     App.ls.set('key', 'sk-test');
     App.ls.set('callEngine', 'realtime');
@@ -475,7 +480,8 @@ test('il PCM della sessione ⚡ apre e chiude la bocca', async ({ page, browserN
 test('a schermo intero resta una sola X, quella globale', async ({ page }) => {
   await mockApp(page);
   await page.goto('/');
-  await page.waitForFunction(() => document.body.classList.contains('solo-mode') && document.getElementById('title').textContent === 'Nova');
+  await page.waitForFunction(() => document.body.classList.contains('solo-mode') && App.solo && App.solo._booted);
+  await page.evaluate(() => App.solo.showChat());
   const xs = await page.evaluate(() => {
     App.solo.toggleFull(true);
     const vis = (el) => {

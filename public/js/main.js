@@ -84,8 +84,8 @@ App.boot = async function () {
   else if (document.body.dataset.tab !== 'account') document.body.dataset.tab = 'conv';
   if (App.roles) App.roles.apply(); if (App.home) App.home.boot();
   try { if (App.archive && App.archive.wanted()) await App.archive.open(); } catch (e) { console.warn(e); }
-  // v2d-41: dopo il PIN (e a ogni avvio) la prima schermata è la Home di Nova; la chat è a un tocco (Chat).
-  if (document.body.classList.contains('solo-mode') && !document.body.classList.contains('archive-on') && App.solo && App.solo.showHome && App.solo.char && App.solo.char()) { if (!document.body.classList.contains('solo-chat')) App.solo.showHome(); } // se nel frattempo si è già aperta la chat, si resta lì
+  // v2d-60: dopo il PIN (e a ogni avvio) la prima schermata è l'elenco chat; Impostazioni resta un tocco in basso.
+  if (document.body.classList.contains('solo-mode') && !document.body.classList.contains('archive-on') && App.solo && App.solo.showList && App.solo.char && App.solo.char()) { if (!document.body.classList.contains('solo-chat') && !document.body.classList.contains('solo-home')) App.solo.showList(); } // se nel frattempo si è già aperta la chat o Impostazioni, si resta lì
   else if (document.body.classList.contains('solo-mode') && !document.body.classList.contains('archive-on') && App.solo && App.solo.showChat) App.solo.showChat();
   App._fromPin = false;
 };

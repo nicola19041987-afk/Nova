@@ -128,7 +128,9 @@ test('il tasto Camera invia un fotogramma e lo stop ferma la ripresa', async ({ 
   const bag = await mockApp(page);
   await page.goto('/');
   await page.waitForFunction(() => document.body.classList.contains('solo-mode') && document.getElementById('dock-cam'));
-  await page.waitForFunction(() => document.body.classList.contains('solo-home')); // v2d-41: dopo l'avvio si è già sulla Home
+  await page.waitForFunction(() => App.solo && App.solo._booted);
+  await page.evaluate(() => App.solo.showHome()); // v2d-60: l'avvio è l'elenco; la camera sta nel menu Impostazioni
+  await page.waitForFunction(() => document.body.classList.contains('solo-home'));
   await page.locator('[data-nh-open="cam"]').click();
   const before = await page.evaluate(() => ({
     on: document.getElementById('dock-cam').getAttribute('aria-pressed'),
@@ -231,7 +233,9 @@ test('l’anteprima spegne la camera e la riga rossa torna', async ({ page }, te
   await mockApp(page);
   await page.goto('/');
   await page.waitForFunction(() => document.body.classList.contains('solo-mode'));
-  await page.waitForFunction(() => document.body.classList.contains('solo-home')); // v2d-41: dopo l'avvio si è già sulla Home
+  await page.waitForFunction(() => App.solo && App.solo._booted);
+  await page.evaluate(() => App.solo.showHome()); // v2d-60: l'avvio è l'elenco; la camera sta nel menu Impostazioni
+  await page.waitForFunction(() => document.body.classList.contains('solo-home'));
   await page.locator('[data-nh-open="cam"]').click();
   expect(await page.evaluate(() => getComputedStyle(document.querySelector('#dock-cam .cam-off-line')).display)).not.toBe('none');
   await page.locator('#dock-cam').click();
@@ -271,7 +275,9 @@ test('permesso negato e nessuna fotocamera restano spenti', async ({ page }, tes
   });
   await page.goto('/');
   await page.waitForFunction(() => document.body.classList.contains('solo-mode'));
-  await page.waitForFunction(() => document.body.classList.contains('solo-home')); // v2d-41: dopo l'avvio si è già sulla Home
+  await page.waitForFunction(() => App.solo && App.solo._booted);
+  await page.evaluate(() => App.solo.showHome()); // v2d-60: l'avvio è l'elenco; la camera sta nel menu Impostazioni
+  await page.waitForFunction(() => document.body.classList.contains('solo-home'));
   await page.locator('[data-nh-open="cam"]').click();
   await page.evaluate(() => {
     navigator.mediaDevices.getUserMedia = () => Promise.reject(Object.assign(new Error('denied'), { name: 'NotAllowedError' }));
@@ -295,7 +301,9 @@ test('la voce in tempo reale manda il fotogramma al modello di visione', async (
   const bag = await mockApp(page);
   await page.goto('/');
   await page.waitForFunction(() => document.body.classList.contains('solo-mode'));
-  await page.waitForFunction(() => document.body.classList.contains('solo-home')); // v2d-41: dopo l'avvio si è già sulla Home
+  await page.waitForFunction(() => App.solo && App.solo._booted);
+  await page.evaluate(() => App.solo.showHome()); // v2d-60: l'avvio è l'elenco; la camera sta nel menu Impostazioni
+  await page.waitForFunction(() => document.body.classList.contains('solo-home'));
   await page.locator('[data-nh-open="cam"]').click();
   await page.locator('#dock-cam').click();
   await page.waitForFunction(() => App.current && App.current.id && App.sight.active() && document.getElementById('sight-preview').videoWidth > 0);
