@@ -1,14 +1,16 @@
 /* location-call.js — in videochiamata Ira si vede già nel luogo da cui si collega
- * (showroom, più avanti casa e palestra). 2D, clip muti, nessuna scritta sul video.
+ * (showroom, barca, auto, casa, palestra). 2D, clip muti, nessuna scritta sul video.
  * La voce resta solo quella in tempo reale. La foto della chat non si tocca.
  * I clip sono Ira già nella scena: mai un ritaglio sulla foto di sfondo.
+ * Prima chiamata: showroom. Poi rotazione deterministica persistita in localStorage.
  */
 (function () {
   const HOME = 'petto';
   const LS_LAST = 'locationLast';
-  const LS_FORCE = 'locationForce'; // solo prova tecnica; vuoto = scelta naturale
-  let index = { default: 'showroom', pick: 'natural', places: [] };
-  let packs = {}; // id -> { still, clips:[{id,url,kind,from,to,label,weight}] }
+  const LS_FORCE = 'locationForce'; // solo prova tecnica; vuoto = rotazione
+  const DEFAULT_ORDER = ['showroom', 'barca', 'auto', 'salotto', 'camera', 'cucina', 'palestra'];
+  let index = { default: 'showroom', pick: 'rotation', order: DEFAULT_ORDER.slice(), places: [] };
+  let packs = {}; // id -> { still, framing, clips:[{id,url,kind,from,to,label,weight}] }
   let current = null; // place id for THIS call
   let loaded = false;
 
@@ -21,33 +23,31 @@
     return !!(App.call && App.call.active && App.call.mode !== 'voice');
   };
 
-  function naturalPick(ready) {
+  function rotationPick(ready) {
     if (!ready.length) return null;
     if (ready.length === 1) return ready[0].id;
     const force = App.ls ? App.ls.get(LS_FORCE, '') : '';
     if (force && ready.some((p) => p.id === force)) return force;
-    const hour = new Date().getHours(); // fuso della macchina / utente
-    const weight = (id) => {
-      // orari tipici, non rigidi: lei lavora allo showroom ma può collegarsi da dove si trova
-      if (id === 'showroom') return (hour >= 9 && hour < 19) ? 3.2 : 1.1;
-      if (id === 'cucina') return (hour >= 7 && hour < 10) || (hour >= 12 && hour < 14) || (hour >= 19 && hour < 21) ? 2.2 : 0.8;
-      if (id === 'palestra') return (hour >= 7 && hour < 10) || (hour >= 17 && hour < 21) ? 2.0 : 0.6;
-      if (id === 'salotto') return (hour >= 18 || hour < 8) ? 2.4 : 1.0;
-      if (id === 'camera') return (hour >= 21 || hour < 8) ? 2.2 : 0.5;
-      return 1;
-    };
+    const readyIds = ready.map((p) => p.id);
+    const order = ((Array.isArray(index.order) && index.order.length) ? index.order : DEFAULT_ORDER)
+      .filter((id) => readyIds.includes(id));
+    for (const id of readyIds) if (!order.includes(id)) order.push(id);
+    if (!order.length) return ready[0].id;
     const last = App.ls ? App.ls.get(LS_LAST, '') : '';
-    const pool = ready.map((p) => ({ id: p.id, w: weight(p.id) * (p.id === last && ready.length > 1 ? 0.35 : 1) }));
-    const sum = pool.reduce((s, x) => s + x.w, 0) || 1;
-    let r = Math.random() * sum;
-    for (const x of pool) { r -= x.w; if (r <= 0) return x.id; }
-    return pool[0].id;
+    // prima chiamata (o storage vuoto): sempre showroom se pronto
+    if (!last || !order.includes(last)) {
+      return order.includes('showroom') ? 'showroom' : order[0];
+    }
+    const i = order.indexOf(last);
+    let next = order[(i + 1) % order.length];
+    if (next === last && order.length > 1) next = order[(i + 2) % order.length];
+    return next;
   }
 
   function libOf(place) {
     const pack = packs[place]; if (!pack) return [];
     return (pack.clips || []).map((c) => ({
-      id: c.id, url: c.url, kind: c.kind === 'parla' ? 'parla' : 'base',
+      id: String(place) + '-' + c.id, url: c.url, kind: c.kind === 'parla' ? 'parla' : 'base',
       from: c.from || HOME, to: c.to || c.from || HOME,
       mood: [], event: '', outfit: '', quality: '',
       weight: Math.max(0.05, Math.min(10, Number(c.weight) || 1)),
@@ -60,8 +60,11 @@
     return (pack && pack.still) ? pack.still : '';
   }
 
+  function isClose(place) {
+    return !!(place && packs[place] && packs[place].framing === 'close');
+  }
 
-  // v2d-62: inquadratura viso+spalle (non figura intera). Leggera variazione a ogni chiamata, come al telefono.
+  // v2d-62: showroom a figura intera → zoom viso+spalle. Pacchetti già ravvicinati: zoom lieve, stessa etichetta/inquadratura risultante.
   function applyFrame(on) {
     const stage = document.getElementById('stage');
     if (!stage) return;
@@ -70,6 +73,17 @@
       stage.style.removeProperty('--call-zoom');
       stage.style.removeProperty('--call-vx');
       stage.style.removeProperty('--call-vy');
+      return;
+    }
+    if (isClose(current)) {
+      const zoom = 1.05 + Math.random() * 0.10; // 1.05–1.15: già viso+spalle, variazione da telefono in mano
+      const vx = 50 + Math.random() * 2 - 1;
+      const vy = 30 + Math.random() * 3 - 1.5;
+      stage.style.setProperty('--call-zoom', zoom.toFixed(3));
+      stage.style.setProperty('--call-fx', '50%');
+      stage.style.setProperty('--call-fy', '30%');
+      stage.style.setProperty('--call-vx', vx.toFixed(1) + '%');
+      stage.style.setProperty('--call-vy', vy.toFixed(1) + '%');
       return;
     }
     const zoom = 2.42 + Math.random() * 0.28; // 2.42–2.70: abbastanza stretto, 720p non troppo morbido
@@ -103,8 +117,14 @@
     },
     onCallStart(mode) {
       if (mode === 'voice') { current = null; applyFrame(false); return; }
+      // start() chiama setMode (onMode) e poi di nuovo onCallStart: non rimescolare il luogo già scelto in questa chiamata.
+      if (current) {
+        applyFrame(true);
+        if (App.solo && App.solo.syncMotion) App.solo.syncMotion();
+        return;
+      }
       const ready = readyPlaces();
-      current = naturalPick(ready);
+      current = rotationPick(ready);
       if (current && App.ls) App.ls.set(LS_LAST, current);
       applyFrame(!!current);
       if (App.solo && App.solo.syncMotion) App.solo.syncMotion();

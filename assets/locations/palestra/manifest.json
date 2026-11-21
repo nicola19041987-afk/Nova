@@ -1,0 +1,12 @@
+{
+  "id": "palestra",
+  "label": "Palestra",
+  "ready": true,
+  "framing": "close",
+  "still": "IRA-CALL-PALESTRA-v02.jpg",
+  "notes": "Ira già nella scena, still ufficiale/approvata, clip 9:16 720p muti image-to-video da quella still. Inquadratura viso+spalle. Nessun testo in sovrimpressione.",
+  "clips": [
+    { "id": "palestra-idle-listen", "file": "palestra-idle-listen.mp4", "kind": "base", "from": "petto", "to": "petto", "label": "Ascolto", "weight": 1 },
+    { "id": "palestra-talk", "file": "palestra-talk.mp4", "kind": "parla", "from": "petto", "to": "petto", "label": "Parla", "weight": 1 }
+  ]
+}

@@ -3430,7 +3430,8 @@ function locationPack(id) {
         label: String(c.label || c.id).slice(0, 60), weight: Math.max(0.05, Math.min(10, Number(c.weight) || 1)),
       });
     }
-    return { id, label: String(raw.label || id), ready: !!raw.ready, still, clips };
+    const framing = raw.framing === 'close' ? 'close' : 'wide';
+    return { id, label: String(raw.label || id), ready: !!raw.ready, still, clips, framing };
   } catch { return null; }
 }
 app.get('/api/locations', auth, (req, res) => {
@@ -3439,7 +3440,8 @@ app.get('/api/locations', auth, (req, res) => {
     const pack = p.ready ? locationPack(p.id) : null;
     return { id: p.id, label: p.label || p.id, ready: !!(pack && pack.clips && pack.clips.length), dir: p.dir || p.id };
   });
-  res.json({ default: idx.default || 'showroom', pick: idx.pick || 'natural', places });
+  const order = Array.isArray(idx.order) ? idx.order.filter((id) => typeof id === 'string' && /^[a-z0-9_-]+$/.test(id)) : [];
+  res.json({ default: idx.default || 'showroom', pick: idx.pick || 'natural', order, places });
 });
 app.get('/api/locations/:place', auth, (req, res) => {
   const pack = locationPack(req.params.place);
