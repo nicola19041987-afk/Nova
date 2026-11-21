@@ -61,6 +61,7 @@
     requestAnimationFrame(() => App.fitFrame && App.fitFrame());
     if (on) { state(); App.chat.header && App.chat.header(); }
     if (App.simli) { if (on && mode === 'video' && App.me && App.me.simliFace) App.simli.start(); else App.simli.stop(); } // v2d-46: Simli solo col volto di Ira
+    if (App.locationCall && App.locationCall.onMode) App.locationCall.onMode(mode);
     if (App.solo && App.solo.syncMotion) App.solo.syncMotion();
   }
   // Ritratto rotondo: copiato a ogni fotogramma dal canvas dell'avatar (respiro, labiale, sguardo continuano);
@@ -111,7 +112,7 @@
     App.stageFs.exit(); stage.classList.add('fs', 'call'); document.body.classList.add('avatar-fs-on', 'in-call'); if (App.fullscreenFix) App.fullscreenFix();
     document.body.classList.remove('simli-on');
     ui.hidden = false; $('#call-name').textContent = ch.name; $('#call-caption').hidden = true;
-    setMode(m || 'video'); speaker = true; $('#call-speaker').classList.add('on'); $('#call-speaker').textContent = '🔊'; if (App.tts) App.tts.volume = 1;
+    setMode(m || 'video'); if (App.locationCall && App.locationCall.onCallStart) App.locationCall.onCallStart(mode); speaker = true; $('#call-speaker').classList.add('on'); $('#call-speaker').textContent = '🔊'; if (App.tts) App.tts.volume = 1;
     $('#act-menu').hidden = true; $('#scene-menu').hidden = true;
     prevTts = null; if (App.tts) App.tts.fails = 0; // v8.4.5: in chiamata lei parla sempre (App.voice.ttsOn() è vero in chiamata), senza toccare «Lettura»
     prevAuto = $('#auto-send').checked; $('#auto-send').checked = true;
@@ -234,6 +235,7 @@
     if (!on) return; const c = App.audio.ctx; if (c && c.state !== 'running') c.resume().catch(() => {});
   }, { capture: true, passive: true }));
   function end() {
+    if (App.locationCall && App.locationCall.onCallEnd) App.locationCall.onCallEnd();
     if (!on) return; on = false; App.call.active = false; cancelAnimationFrame(raf); clearTimeout(retryT); retryT = 0; retryAt = 0;
     micBanner(''); clearInterval(micWatchT); micWatchT = 0;
     stage.classList.remove('voice', 'nv-voicecall'); ui.classList.remove('voice'); App.call.mode = null;

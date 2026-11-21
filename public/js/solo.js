@@ -157,6 +157,13 @@
   // quando sta per rispondere i clip la riportano verso la posa della foto, così il passaggio non salta.
   // Prova facoltativa (spenta): mentre parla, clip «parla» con corpo in movimento al posto della foto col labiale.
   function talkClipsOn() {
+    // In videochiamata con un luogo (showroom): clip «parla» al posto della foto in studio col labiale disegnato.
+    try {
+      if (App.locationCall && App.locationCall.usingClips && App.locationCall.usingClips()) {
+        if (App.ls && App.ls.get('motionTalk', '') === '0') return false;
+        return App.locationCall.lib().some((c) => c.kind === 'parla');
+      }
+    } catch { /* */ }
     // v2d-36: acceso di serie quando il look ha clip «parla» (bocca e viso naturali, niente bocca disegnata); 'motionTalk'='0' lo spegne
     // v2d-40: in chiamata vocale (lei non ti vede la faccia, conta la voce) la bocca è quella disegnata sulla foto e guidata
     // dall'audio che si sente: i clip «parla» hanno una bocca generata che non segue la voce. 'voiceLips'='0' torna ai clip.
@@ -174,7 +181,13 @@
   }
   // v2d-36: punti del viso misurati su QUESTA foto (look o base): solo allora la bocca si può disegnare sulla foto
   function faceOk(ch) {
-    try { const lm = App.faceLm ? App.faceLm(ch) : ch && ch.landmarks; return !!(lm && lm.eyeL && lm.eyeR && lm.mouth); } catch { return false; }
+    try {
+      // v2d-62: in videochiamata nel luogo non si disegna mai bocca/occhi (i punti sarebbero della foto sbagliata).
+      if (App.locationCall && App.locationCall.usingClips && App.locationCall.usingClips()) return false;
+      const lm = App.faceLm ? App.faceLm(ch) : ch && ch.landmarks;
+      const src = App.faceSrc ? App.faceSrc(ch) : (ch && ch.avatar);
+      return !!(lm && lm.eyeL && lm.eyeR && lm.mouth && (!lm.src || !src || lm.src === src));
+    } catch { return false; }
   }
   // v2d-36: il disegno della foto (canvas) si mostra in chiamata/ritratto solo quando la foto giusta è caricata: prima si
   // vede la foto del look sotto (mai il fondo chiaro del canvas = lampo bianco)
@@ -219,9 +232,12 @@
     if (!v || !stage) return;
     const ch = soloChar() || (App.current || null);
     const G = window.MotionGraph;
+    const locOn = !!(App.locationCall && App.locationCall.usingClips && App.locationCall.usingClips());
+    stage.classList.toggle('loc-call', locOn);
     // v2d-33: si suonano solo i clip del look attuale (vestito/capelli/trucco); in cache restano tutti
-    const all = motionOn() && ch && G ? G.libraryOf(ch) : [];
-    const look0 = all.length ? lookLib(ch) : all;
+    // In videochiamata, se c'è un pacchetto luogo, quei clip (Ira già nella scena) hanno la precedenza.
+    const all = locOn ? App.locationCall.lib() : (motionOn() && ch && G ? G.libraryOf(ch) : []);
+    const look0 = locOn ? all : (all.length ? lookLib(ch) : all);
     // v2d-36: qualità secondo la connessione (std / lite / still). Con 'still' niente clip: la foto con un respiro leggero.
     const net = App.net || window.NovaNet;
     const lib0 = net ? net.pick(look0) : look0.filter((c) => c.quality !== 'lite');
@@ -230,13 +246,13 @@
     stage.classList.toggle('nv-still', !!(motionOn() && !away && look0.length && !lib0.length));
     const P = motionPlayer();
     const vids = [v, document.getElementById('motion-video-b')].filter(Boolean);
-    const poster = (App.faceSrc && App.faceSrc(ch)) || '';
+    const poster = (locOn && App.locationCall.still()) || (App.faceSrc && App.faceSrc(ch)) || '';
     const off = () => {
       if (!P || !P.on) { stage.classList.remove('has-motion'); return; }
       P.stop(); // dissolvenza verso la foto, poi il video sparisce
       clearTimeout(v._offT); v._offT = setTimeout(() => { if (!P.on) stage.classList.remove('has-motion'); }, window.MotionGraph.XFADE_MS + 30);
     };
-    { const bg0 = /^\/api\/avatars\/[a-f0-9]{16}\.(png|jpg)$/.test(poster) ? `url("${poster}")` : 'none'; if (stage.style.getPropertyValue('--nv-photo') !== bg0) stage.style.setProperty('--nv-photo', bg0); } // v2d-36: la foto sotto, sempre
+    { const bg0 = /^\/api\/(avatars\/[a-f0-9]{16}\.(png|jpg)|locations\/[a-z0-9_-]+\/still)$/.test(poster) ? `url("${poster}")` : 'none'; if (stage.style.getPropertyValue('--nv-photo') !== bg0) stage.style.setProperty('--nv-photo', bg0); } // v2d-36: la foto sotto, sempre; v2d-62: anche lo still del luogo
     if (!lib.length || !P) {
       if (App.avatarConv) App.avatarConv.faceCalm = false;
       off(); stage.classList.remove('motion-on', 'nv-wait');
@@ -245,7 +261,7 @@
       return;
     }
     // v2d-34: sotto i video c'è sempre la foto del look (mai il fondo chiaro), anche se un clip tarda a caricare
-    const bgv = /^\/api\/avatars\/[a-f0-9]{16}\.(png|jpg)$/.test(poster) ? `url("${poster}")` : 'none';
+    const bgv = /^\/api\/(avatars\/[a-f0-9]{16}\.(png|jpg)|locations\/[a-z0-9_-]+\/still)$/.test(poster) ? `url("${poster}")` : 'none';
     if (stage.style.getPropertyValue('--nv-photo') !== bgv) stage.style.setProperty('--nv-photo', bgv);
     if (poster && !P.playing && v.getAttribute('poster') !== poster) v.poster = poster; // solo il primo video, solo prima del primo clip
     P.setLibrary(lib, lib0); // v2d-36: in anticipo solo i clip del look attuale, nella qualità scelta (non tutta la libreria)

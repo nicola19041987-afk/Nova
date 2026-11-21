@@ -58,7 +58,7 @@
   }
 
   // Normalizza la libreria del personaggio. Compatibile con il vecchio campo motionVideo (un solo clip petto->petto).
-  const URL_RE = /^\/api\/motion\/[a-f0-9]{16}\.mp4$/;
+  const URL_RE = /^\/api\/(motion\/[a-f0-9]{16}|locations\/[a-z0-9_-]+\/[a-z0-9_.-]+)\.mp4$/;
   // v2d-33: outfit = chiave del look attuale (vestito, capelli, trucco). Ogni look ha i suoi clip (campo outfit del clip);
   // i clip senza outfit sono quelli della foto di base. Senza secondo argomento: tutti i clip (come prima).
   function libraryOf(ch, outfit) {

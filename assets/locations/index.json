@@ -1,0 +1,11 @@
+{
+  "default": "showroom",
+  "pick": "natural",
+  "places": [
+    { "id": "showroom", "label": "Showroom NF Motors", "ready": true, "dir": "showroom" },
+    { "id": "salotto", "label": "Salotto", "ready": false },
+    { "id": "camera", "label": "Camera", "ready": false },
+    { "id": "cucina", "label": "Cucina", "ready": false },
+    { "id": "palestra", "label": "Palestra", "ready": false }
+  ]
+}

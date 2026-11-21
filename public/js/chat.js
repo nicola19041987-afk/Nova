@@ -1,6 +1,47 @@
 /* chat.js — elenco personaggi e CHAT CONDIVISA tra Nico e Luisa (stesso thread per entrambi),
  * con polling automatico (~3 s) mentre la chat è visibile, risposta dell'IA in streaming,
  * "solo messaggio" senza IA, memoria automatica ed evoluzione della personalità. */
+
+// v2d-62: la chat di Ira appare vuota da adesso, SOLO in vista. I messaggi restano sul disco / memoria /
+// memoria.json; non si chiama /api/admin/reset, /api/wipe né DELETE sulla chat. Taglio client-side
+// (localStorage + pavimento di versione). Le richieste fatte a Grok in questa chat di assistenza
+// (e avvisi sistema/webhook/admin) non si disegnano, anche se fossero finiti nello store.
+App.chatView = {
+  KEY: 'chatVisibleFrom:v2d62',
+  FLOOR: Date.parse('2026-11-22T00:04:00+01:00') || 0,
+  ensure() {
+    try { if (localStorage.getItem(this.KEY) == null) localStorage.setItem(this.KEY, new Date().toISOString()); } catch { /* */ }
+  },
+  from() {
+    this.ensure();
+    let t = this.FLOOR || 0;
+    try { const p = Date.parse(localStorage.getItem(this.KEY) || ''); if (p) t = Math.max(t, p); } catch { /* */ }
+    return t;
+  },
+  isAssistLeak(m) {
+    if (!m) return false;
+    if (m.role === 'system') return true;
+    const ex = m.extra || m;
+    const src = String((ex && (ex.source || ex.via || ex.kind || ex.channel)) || '').toLowerCase();
+    if (ex.system || ex.notice || ex.webhook || ex.admin || ex.assist || /^(webhook|sistema|system|grok|assistant-chat|admin|notice)$/.test(src)) return true;
+    const author = String(m.author || m.authorName || '').toLowerCase();
+    if (/^(sistema|system|webhook|admin|grok|assistant|appunti)$/.test(author)) return true;
+    const t = String(m.content || '');
+    if (/^\s*\[(steering|sistema|admin|webhook|assistant|grok)\b/i.test(t)) return true;
+    if (/^\s*the call\s*:/i.test(t)) return true;
+    if (/\bCLOUDAGENT_PROMPT\b|\bfast-forward main\b|\[Steering message/i.test(t)) return true;
+    if (/^\s*(?:SISTEMA|APPUNTI E RICHIESTE|NOTE SISTEMA)\s*[:(\[]/i.test(t)) return true;
+    if (/^\s*richiesta di modifica dell['’]app\b/i.test(t)) return true;
+    return false;
+  },
+  hidden(m) {
+    if (this.isAssistLeak(m)) return true;
+    const at = Date.parse((m && m.at) || 0);
+    return !!(at && at < this.from());
+  },
+};
+
+try { App.chatView.ensure(); } catch { /* */ }
 App.chat = {
   epoch: null, last: 0, ids: new Set(), busy: false, polling: false,
   // v2d-48: chat lunga (500+ messaggi) disegnata a finestre: all'apertura solo gli ultimi WIN, i precedenti si aggiungono
@@ -83,6 +124,7 @@ App.chat = {
     return chunk.length;
   },
   addMsg(m, before = null) {
+    if (App.chatView && App.chatView.hidden(m)) return null;
     if (m.id && this.ids.has(m.id)) return null;
     if (m.id) this.ids.add(m.id);
     const mine = m.role === 'user' && (!m.author || m.author === App.me.user);
@@ -176,7 +218,7 @@ App.chat = {
       const stick = this.nearBottom();
       if (r.reset) { $('#messages').innerHTML = ''; this.ids = new Set(); this.older = []; }
       this.epoch = r.epoch; this.last = r.last;
-      let added = 0, list = r.messages;
+      let added = 0, list = (r.messages || []).filter((m) => !(App.chatView && App.chatView.hidden(m)));
       if ((r.reset || full) && list.length > this.WIN) { // v2d-48: solo gli ultimi WIN subito; gli altri restano pronti in memoria
         const cut = list.length - this.WIN;
         this.older = this.older.concat(list.slice(0, cut).filter((m) => !(m.id && this.ids.has(m.id))));

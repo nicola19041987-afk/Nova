@@ -1172,31 +1172,35 @@ body.solo-mode.in-call:not(.call-min) #stage.call:not(.voice) .av-backdrop{
 body.solo-mode.in-call:not(.call-min) #stage.call:not(.voice) #call-ui{
   background:none!important;padding:0!important;
 }
+/* v2d-62: etichette piccole in alto a DESTRA, mai sul viso; X in angolo, raggiungibile, senza accavallarsi. */
 body.solo-mode.in-call:not(.call-min) #stage.call:not(.voice) .call-top{
   position:absolute!important;
-  left:max(12px, env(safe-area-inset-left));
-  top:calc(env(safe-area-inset-top) + 10px);
-  right:auto;width:auto;max-width:42vw;
+  top:calc(env(safe-area-inset-top) + 52px);
+  right:max(10px, env(safe-area-inset-right));
+  left:auto!important;width:auto;max-width:36vw;
   padding:0!important;margin:0!important;
-  align-items:flex-start!important;text-align:left;gap:1px;z-index:6;
+  align-items:flex-end!important;text-align:right;gap:2px;z-index:6;
+  pointer-events:none;
 }
 body.solo-mode.in-call:not(.call-min) #stage.call:not(.voice) .call-kind{
-  font-size:11px;line-height:1.15;opacity:.92;
+  font-size:10px;line-height:1.15;opacity:.88;letter-spacing:.02em;
 }
 body.solo-mode.in-call:not(.call-min) #stage.call:not(.voice) .call-top b{
-  font-size:16px!important;line-height:1.15;font-weight:650;
+  font-size:12px!important;line-height:1.15;font-weight:650;
 }
 body.solo-mode.in-call:not(.call-min) #stage.call:not(.voice) .call-timer{
-  font-size:12px;line-height:1.15;opacity:.92;
+  font-size:11px;line-height:1.15;opacity:.92;
 }
 body.solo-mode.in-call:not(.call-min) #stage.call:not(.voice) .call-badge,
 body.solo-mode.in-call:not(.call-min) #stage.call:not(.voice) .call-state{
-  font-size:11px!important;line-height:1.2;margin:3px 0 0!important;padding:2px 7px!important;
+  font-size:10px!important;line-height:1.2;margin:3px 0 0!important;padding:2px 7px!important;
 }
 body.solo-mode.in-call:not(.call-min) #stage.call:not(.voice) .call-head-actions{
   position:fixed!important;
   top:calc(env(safe-area-inset-top) + 8px);
-  right:calc(env(safe-area-inset-right) + 10px);
+  right:calc(env(safe-area-inset-right) + 8px);
+  z-index:9;
+  pointer-events:auto;
 }
 body.solo-mode.in-call:not(.call-min) #stage.call:not(.voice) .call-bar{
   background:transparent!important;box-shadow:none!important;border-radius:0!important;
@@ -1232,6 +1236,34 @@ body.solo-mode.solo-portrait:not(.in-call) #stage.motion-on #motion-video-b{
 body.solo-mode.in-call:not(.call-min) #stage.call:not(.voice).has-motion,
 body.solo-mode.solo-portrait:not(.in-call) #stage.has-motion{
   background:#000 var(--nv-photo,none) center top / cover no-repeat!important;
+}
+
+/* v2d-62: inquadratura da videochiamata (viso e spalle), non figura intera. Zoom/crop sui clip 720p dello showroom. */
+body.solo-mode.in-call:not(.call-min) #stage.call:not(.voice).loc-call{
+  --call-zoom: 2.55;
+  --call-fx: 41.5%;
+  --call-fy: 14%;
+  --call-vx: 50%;
+  --call-vy: 28%;
+  background-image: var(--nv-photo, none)!important;
+  background-repeat: no-repeat!important;
+  background-position: var(--call-vx) var(--call-vy)!important;
+  background-size: calc(var(--call-zoom) * 100%) auto!important;
+}
+body.solo-mode.in-call:not(.call-min) #stage.call:not(.voice).loc-call.has-motion #motion-video,
+body.solo-mode.in-call:not(.call-min) #stage.call:not(.voice).loc-call.has-motion #motion-video-b,
+body.solo-mode.in-call:not(.call-min) #stage.call:not(.voice).loc-call.motion-on #motion-video,
+body.solo-mode.in-call:not(.call-min) #stage.call:not(.voice).loc-call.motion-on #motion-video-b{
+  object-fit: cover!important;
+  object-position: var(--call-fx) var(--call-fy)!important;
+  width: calc(var(--call-zoom) * 100%)!important;
+  height: calc(var(--call-zoom) * 100%)!important;
+  max-width: none!important;
+  max-height: none!important;
+  inset: auto!important;
+  left: calc(var(--call-vx) - (var(--call-fx) * var(--call-zoom)))!important;
+  top: calc(var(--call-vy) - (var(--call-fy) * var(--call-zoom)))!important;
+  transform: none!important;
 }
 /* v2d-32: prima del primo clip i video ci sono ma trasparenti, senza fondo nero: si vede la foto sotto */
 #stage:not(.has-motion) #motion-video,#stage:not(.has-motion) #motion-video-b{background:transparent!important;opacity:0!important}
@@ -1395,7 +1427,7 @@ body.solo-mode #nh-photo .nh-avatar > img,body.solo-mode #nh-photo .nh-avatar > 
 /* v2d-37: Camera della chiamata di nuovo accessibile (v36 clean-call la nascondeva).
    Solo icona, mai testo/sottotitoli; anteprima locale muta, playsinline su Safari. */
 body.solo-mode.in-call:not(.call-min) #stage.call:not(.voice) #call-cam:not([hidden]){display:inline-flex!important;align-items:center;justify-content:center;width:48px;height:48px;padding:0;position:relative}
-body.solo-mode.in-call:not(.call-min) #stage.call:not(.voice) #call-self:not([hidden]){display:block!important;width:84px;height:112px;max-width:24vw;top:calc(env(safe-area-inset-top) + 64px);right:12px;object-fit:cover;border-radius:12px;z-index:8}
+body.solo-mode.in-call:not(.call-min) #stage.call:not(.voice) #call-self:not([hidden]){display:block!important;width:84px;height:112px;max-width:24vw;top:auto!important;bottom:calc(108px + env(safe-area-inset-bottom));right:12px;object-fit:cover;border-radius:12px;z-index:8}
 /* v2d-37: la foto della Home (div.nh-avatar-face > img) riempie esattamente il riquadro, con lo stesso taglio del video piccolo
    che le si sovrappone (prima l'immagine restava alta 636 px e il video 360: due tagli diversi = giunta su iPhone). */
 body.solo-mode #nh-photo .nh-avatar > .nh-avatar-face{position:absolute;inset:0;width:100%;height:100%;margin:0;border-radius:0;overflow:hidden}
@@ -1444,19 +1476,23 @@ body.solo-mode .nova-home .nh-ic{width:27px;height:27px}
 .ml-list .ml-top b{font-weight:600;font-size:15px;color:#1A1D21}
 .ml-list .ml-use{margin-left:auto;color:#475467;font-size:13px;font-variant-numeric:tabular-nums;white-space:nowrap}
 .ml-list small{color:#667085;font-size:12.5px}
-/* stato della chiamata: piccola etichetta in alto a sinistra (non sono sottotitoli: niente testo di quello che dice) */
+/* v2d-62: etichette piccole in alto a DESTRA, sotto la X, mai sul viso (non sono sottotitoli). */
 body.solo-mode.in-call:not(.call-min) #call-ui .call-top{
-  position:fixed!important;top:calc(env(safe-area-inset-top) + 12px)!important;left:calc(env(safe-area-inset-left) + 12px)!important;
-  right:auto!important;bottom:auto!important;width:auto!important;max-width:calc(100vw - 90px)!important;
-  display:flex!important;flex-direction:row!important;flex-wrap:wrap;align-items:center!important;gap:6px!important;
-  padding:0!important;margin:0!important;background:none!important;z-index:7!important;pointer-events:none
+  position:fixed!important;top:calc(env(safe-area-inset-top) + 52px)!important;right:calc(env(safe-area-inset-right) + 10px)!important;
+  left:auto!important;bottom:auto!important;width:auto!important;max-width:38vw!important;
+  display:flex!important;flex-direction:column!important;flex-wrap:nowrap;align-items:flex-end!important;gap:4px!important;
+  padding:0!important;margin:0!important;background:none!important;z-index:7!important;pointer-events:none;text-align:right
+}
+body.solo-mode.in-call:not(.call-min) #call-ui .call-top > #call-kind,
+body.solo-mode.in-call:not(.call-min) #call-ui .call-top > #call-name{
+  font-size:10px!important;line-height:1.15!important;opacity:.9;max-width:38vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap
 }
 body.solo-mode.in-call:not(.call-min) #call-ui .call-top > #call-timer,
 body.solo-mode.in-call:not(.call-min) #call-ui .call-top > #call-state,
 body.solo-mode.in-call:not(.call-min) #call-ui .call-top > #call-badge:not([hidden]){
-  display:inline-flex!important;align-items:center;height:24px;padding:0 9px!important;margin:0!important;border-radius:12px;border:0;
-  background:rgba(0,0,0,.42)!important;color:#fff!important;font-size:12px!important;line-height:1!important;font-weight:600;opacity:1!important;
-  -webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);white-space:nowrap;max-width:62vw;overflow:hidden;text-overflow:ellipsis
+  display:inline-flex!important;align-items:center;height:20px;padding:0 7px!important;margin:0!important;border-radius:10px;border:0;
+  background:rgba(0,0,0,.42)!important;color:#fff!important;font-size:10px!important;line-height:1!important;font-weight:600;opacity:1!important;
+  -webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);white-space:nowrap;max-width:38vw;overflow:hidden;text-overflow:ellipsis
 }
 body.solo-mode.in-call:not(.call-min) #call-ui .call-top > #call-badge:not([hidden]){pointer-events:auto}
 body.solo-mode.in-call:not(.call-min) #call-ui .call-top > #call-state{order:1}
@@ -1730,3 +1766,11 @@ body.solo-mode .adult-ask{
 }
 body.solo-mode .adult-ask button{background:#2A2A2A!important;color:#fff!important}
 body.solo-mode #adult-ask-go{background:#C2185B!important;color:#fff!important}
+
+
+/* v2d-62: il viso ufficiale è un ritaglio viso/spalle (quadrato): in cerchio si centra il volto, non la sommità. */
+body.solo-mode #char-list .avatar img,
+body.solo-mode .wa-photo .wa-av img,
+body.wa-conv .wa-photo .wa-av img{
+  object-fit:cover!important;object-position:50% 22%!important;
+}

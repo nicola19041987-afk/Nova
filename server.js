@@ -3397,6 +3397,78 @@ app.get('/api/gestures/:id', auth, (req, res) => {
   if (!g || !raw) return res.status(404).end();
   sendPrivateFile(req, res, path.join(__dirname, 'assets', 'gestures', raw.file));
 });
+
+// Pacchetti luogo per la videochiamata (Ira già nella scena). Solo file dichiarati nel manifest.
+const LOCATIONS_DIR = path.join(__dirname, 'assets', 'locations');
+const LOC_PLACE = /^[a-z0-9_-]+$/;
+const LOC_FILE = /^[a-zA-Z0-9._-]+$/;
+function locationIndex() {
+  try {
+    const idx = JSON.parse(fs.readFileSync(path.join(LOCATIONS_DIR, 'index.json'), 'utf8'));
+    return idx && Array.isArray(idx.places) ? idx : { default: 'showroom', pick: 'natural', places: [] };
+  } catch { return { default: 'showroom', pick: 'natural', places: [] }; }
+}
+function locationPack(id) {
+  if (!LOC_PLACE.test(id || '')) return null;
+  const dir = path.join(LOCATIONS_DIR, id);
+  const man = path.join(dir, 'manifest.json');
+  if (!dir.startsWith(LOCATIONS_DIR + path.sep) || !fs.existsSync(man)) return null;
+  try {
+    const raw = JSON.parse(fs.readFileSync(man, 'utf8'));
+    if (!raw || raw.id !== id) return null;
+    const stillName = raw.still && LOC_FILE.test(raw.still) ? raw.still : null;
+    const stillPath = stillName ? path.join(dir, stillName) : null;
+    const still = stillPath && stillPath.startsWith(dir + path.sep) && fs.existsSync(stillPath) ? `/api/locations/${id}/still` : '';
+    const clips = [];
+    for (const c of Array.isArray(raw.clips) ? raw.clips : []) {
+      if (!c || !/^[a-z0-9_-]+$/i.test(c.id || '') || !LOC_FILE.test(c.file || '') || !/\.mp4$/i.test(c.file)) continue;
+      const file = path.join(dir, c.file);
+      if (!file.startsWith(dir + path.sep) || !fs.existsSync(file)) continue;
+      clips.push({
+        id: c.id, url: `/api/locations/${id}/${c.file}`, kind: c.kind === 'parla' ? 'parla' : 'base',
+        from: c.from || 'petto', to: c.to || c.from || 'petto',
+        label: String(c.label || c.id).slice(0, 60), weight: Math.max(0.05, Math.min(10, Number(c.weight) || 1)),
+      });
+    }
+    return { id, label: String(raw.label || id), ready: !!raw.ready, still, clips };
+  } catch { return null; }
+}
+app.get('/api/locations', auth, (req, res) => {
+  const idx = locationIndex();
+  const places = (idx.places || []).map((p) => {
+    const pack = p.ready ? locationPack(p.id) : null;
+    return { id: p.id, label: p.label || p.id, ready: !!(pack && pack.clips && pack.clips.length), dir: p.dir || p.id };
+  });
+  res.json({ default: idx.default || 'showroom', pick: idx.pick || 'natural', places });
+});
+app.get('/api/locations/:place', auth, (req, res) => {
+  const pack = locationPack(req.params.place);
+  if (!pack) return res.status(404).json({ error: 'Luogo non trovato' });
+  res.json(pack);
+});
+app.get('/api/locations/:place/still', auth, (req, res) => {
+  const pack = locationPack(req.params.place);
+  if (!pack || !pack.still) return res.status(404).end();
+  const dir = path.join(LOCATIONS_DIR, req.params.place);
+  const man = JSON.parse(fs.readFileSync(path.join(dir, 'manifest.json'), 'utf8'));
+  const file = path.join(dir, man.still);
+  if (!file.startsWith(dir + path.sep) || !fs.existsSync(file)) return res.status(404).end();
+  sendPrivateFile(req, res, file);
+});
+app.get('/api/locations/:place/:file', auth, (req, res) => {
+  const pack = locationPack(req.params.place);
+  if (!pack) return res.status(404).end();
+  const clip = pack.clips.find((c) => c.url.endsWith('/' + req.params.file) || c.id === req.params.file);
+  if (!clip) return res.status(404).end();
+  const dir = path.join(LOCATIONS_DIR, req.params.place);
+  const man = JSON.parse(fs.readFileSync(path.join(dir, 'manifest.json'), 'utf8'));
+  const raw = (man.clips || []).find((c) => c && (c.file === req.params.file || c.id === req.params.file));
+  if (!raw || !LOC_FILE.test(raw.file)) return res.status(404).end();
+  const file = path.join(dir, raw.file);
+  if (!file.startsWith(dir + path.sep) || !fs.existsSync(file)) return res.status(404).end();
+  sendPrivateFile(req, res, file);
+});
+
 app.get('/api/actions', auth, (req, res) => {
   const adult = adultChat();
   res.json({ video: !!VIDEO_PATH, adult, seconds: ACTION_SECONDS,
@@ -4896,6 +4968,7 @@ function seedReadyChars() {
   dropLookHistoryOnce();
   if (id) erisCanottaOnce(id);
   if (id) alphaFotoOnce(id);
+  if (id) iraUfficialeOnce(id);
 }
 // v2d-46 (Nicola, 15/11 17:41): foto principale di Alpha = ESATTAMENTE la foto che ha mandato (bionda, coda alta, canotta
 // azzurra, mano sul petto, spalle, tatuaggio braccio destro). UNA volta sola e solo se la foto attuale è ancora la canotta
@@ -4929,6 +5002,33 @@ function alphaFotoOnce(id) {
     writeJSON(MIGRATIONS_FILE, { ...done, [ALPHA_FOTO_KEY]: { at: new Date().toISOString(), from, to: url } });
     console.log('Foto principale di Alpha (v2d-46):', url, '(prima:', from, ')');
   } catch (e) { console.error('Foto v2d-46 non applicata:', e.message); }
+}
+
+// v2d-62 (Nicola, 22/11 00:00): foto principale di Ira = viso ufficiale attuale (VISO-BLOCCATO-v8, bob platino,
+// occhi verde-acqua, senza neo). UNA volta sola: la foto precedente (studio, coda, canotta bianca) va nello storico
+// dei look (ripristinabile), nessun file viene cancellato. Niente punti del viso della foto vecchia: in videochiamata
+// si usano i clip dello showroom, mai bocca/occhi fuori posto.
+const IRA_UFFICIALE_KEY = 'ira_ufficiale_v2d62';
+const IRA_UFFICIALE_FILE = 'c2d6200000000001.jpg';
+function iraUfficialeOnce(id) {
+  const done = readJSON(MIGRATIONS_FILE, {}) || {};
+  if (done[IRA_UFFICIALE_KEY]) return;
+  const src = path.join(__dirname, 'assets', 'ready', 'ira-ufficiale-v8.jpg');
+  if (!fs.existsSync(src)) return;
+  try {
+    const url = `/api/avatars/${IRA_UFFICIALE_FILE}`, dst = path.join(avatarDir(), IRA_UFFICIALE_FILE);
+    const chars = readJSON(CHARS_FILE(), []);
+    const i = Array.isArray(chars) ? chars.findIndex((c) => c && c.id === id) : -1;
+    if (i < 0) return;
+    const cur = chars[i], from = cur.avatar || null;
+    if (!fs.existsSync(dst)) fs.copyFileSync(src, dst);
+    const next = { ...cur, avatar: url, avatarSource: 'upload', landmarks: null, lookAuto: false, updatedAt: new Date().toISOString() };
+    next.lookHistory = pushHistory(cur, next, 'prima del viso ufficiale Ira (v2d-62)');
+    chars[i] = next;
+    writeJSON(CHARS_FILE(), chars);
+    writeJSON(MIGRATIONS_FILE, { ...done, [IRA_UFFICIALE_KEY]: { at: new Date().toISOString(), from, to: url } });
+    console.log('Foto ufficiale Ira (v2d-62):', url, '(prima:', from, ')');
+  } catch (e) { console.error('Foto ufficiale v2d-62 non applicata:', e.message); }
 }
 // v2d-44 (Nicola): foto principale di Alpha = mezzo busto con la canotta azzurra (coda alta, tatuaggio sul braccio destro,
 // braccio sinistro libero). UNA volta sola: la foto di prima va nello storico dei look (si può ripristinare), i look del
