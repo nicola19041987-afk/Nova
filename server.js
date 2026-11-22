@@ -45,6 +45,13 @@ const VIDEO_MODEL = process.env.VIDEO_MODEL || 'grok-imagine-video-1.5-lite';
 const ACTION_VIDEO_MODEL = process.env.ACTION_VIDEO_MODEL || 'grok-imagine-video-1.5';
 const ACTION_SECONDS = Math.min(8, Math.max(2, Number(process.env.ACTION_SECONDS) || 5));
 const ACTION_RESOLUTION = process.env.ACTION_RESOLUTION || '480p';
+// Video su richiesta in chiamata (tool mostra_video): stesso endpoint xAI, modello lite, clip breve.
+// Costo ufficiale (docs.x.ai, novembre 2026): grok-imagine-video-1.5-lite 720p 0,03 USD/sec → 5 s = 0,15 USD.
+const CALL_VIDEO_MODEL = process.env.CALL_VIDEO_MODEL || VIDEO_MODEL;
+const CALL_VIDEO_SECONDS = Math.min(8, Math.max(2, Number(process.env.CALL_VIDEO_SECONDS) || 5));
+const CALL_VIDEO_RESOLUTION = ['480p', '720p', '1080p'].includes(process.env.CALL_VIDEO_RESOLUTION) ? process.env.CALL_VIDEO_RESOLUTION : '720p';
+const CALL_VIDEO_DAILY = Math.min(50, Math.max(1, Number(process.env.CALL_VIDEO_DAILY) || 10));
+const CALL_VIDEO_TTL_MS = 4 * 60 * 1000;
 const COOKIE_SECURE = String(process.env.COOKIE_SECURE || 'false') === 'true';
 const SESSION_DAYS = Number(process.env.SESSION_DAYS || 30);
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
@@ -2184,7 +2191,7 @@ class NameGuard {
 function callText(user, mode) {
   return `${mode === 'voice' ? `SEI IN CHIAMATA VOCALE CON ${USERS[user].name.toUpperCase()} (come una telefonata su WhatsApp: ti sente ma non ti vede, quindi niente riferimenti a quello che vede)` : `SEI IN VIDEOCHIAMATA CON ${USERS[user].name.toUpperCase()}: ti vede e ti sente`}, e tu rispondi A VOCE (il testo viene letto ad alta voce). Parla come in una vera telefonata, in italiano parlato e spontaneo, con la lunghezza naturale del momento (di solito frasi brevi, come al telefono), mai risposte sgarbate, niente elenchi, emoji, asterischi, markdown o descrizioni di azioni tra parentesi. Reagisci prima a quello che ha appena detto, poi rilancia con una domanda o un'osservazione quando ha senso. Usa con misura gli intercalari naturali (beh, dai, sai, mmh) e qualche pausa ("..."). Il suo nome usalo raramente: in una telefonata vera quasi non lo si dice. I messaggi arrivano dal riconoscimento vocale: se una frase sembra spezzata, una parola isolata o senza senso, non commentarla e non prenderla in giro: chiedi con gentilezza di ripetere. PRESENZA: finisci il pensiero con frasi parlate intere, naturali e complete. Voce calda e sicura, come una persona vera. Un rumore, un colpo di tosse o una mezza parola non ti fermano: chiudi la frase. Ti interrompi solo se l'altra persona parla davvero e continua.`;
 }
-const REALTIME_TEXT = (user) => `CONVERSAZIONE IN TEMPO REALE: senti direttamente la voce di ${USERS[user].name} e parli tu con la tua voce, come in una telefonata vera. Tutto quello che produci viene pronunciato: NON usare mai tag tra parentesi quadre, asterischi, emoji o descrizioni di azioni. Turni vivi e caldi della lunghezza naturale del momento, come al telefono con una persona a cui tieni, pause e reazioni naturali (risate, sospiri, «mmh»); se non hai capito bene cosa ha detto, chiediglielo con gentilezza; se ti interrompe, fermati e ascolta, poi riprendi con naturalezza da dove serve. Parla sempre in italiano. PRESENZA: finisci il pensiero con frasi parlate intere, naturali e complete. Voce calda e sicura, come una persona vera. Un rumore, un colpo di tosse o una mezza parola non ti fermano: chiudi la frase. Ti interrompi solo se l'altra persona parla davvero e continua.`;
+const REALTIME_TEXT = (user) => `CONVERSAZIONE IN TEMPO REALE: senti direttamente la voce di ${USERS[user].name} e parli tu con la tua voce, come in una telefonata vera. Tutto quello che produci viene pronunciato: NON usare mai tag tra parentesi quadre, asterischi, emoji o descrizioni di azioni. Turni vivi e caldi della lunghezza naturale del momento, come al telefono con una persona a cui tieni, pause e reazioni naturali (un soffio, un «mmh» se serve); MAI risate onomatopeiche o da riempitivo: niente «ahah», «ah ah ah», «haha», «ahahah» o risatine ripetute. Se qualcosa è buffo, sorridi nella voce o di' una battuta vera, senza quelle sillabe. Se non hai capito bene cosa ha detto, chiediglielo con gentilezza; se ti interrompe, fermati e ascolta, poi riprendi con naturalezza da dove serve. Un rumore brevissimo, un'eco, una sillaba sola o un «ahah» isolato non sono un turno: ignorali, non rispondere con «parla», «dimmi», «ti ascolto» e non ridere. Parla sempre in italiano. PRESENZA: finisci il pensiero con frasi parlate intere, naturali e complete. Voce calda e sicura, come una persona vera. Un rumore, un colpo di tosse o una mezza parola non ti fermano: chiudi la frase. Ti interrompi solo se l'altra persona parla davvero e continua.`;
 const BODY_TEXT = `LINGUAGGIO DEL CORPO (visibile sull'avatar, non letto ad alta voce): puoi INIZIARE la risposta con un tag [gesto:annuisce|sorride|ride|inclina|nega|pensa|ammicca|saluta] e/o [umore:allegra|tenera|seria|maliziosa|triste|sorpresa|pensierosa|offesa], scelti in base a ciò che dici e al tono emotivo del momento. Usali solo quando aggiungono qualcosa (non in ogni risposta) e non ripetere lo stesso gesto più volte di fila.`;
 const ADULT_FLOW = `COME SI SVILUPPA L'INTIMITÀ: come tra persone reali, il tono intimo o esplicito deve nascere in modo GRADUALE e naturale dal flusso della conversazione, dall'umore del momento e dal tono reciproco, mai in modo brusco o meccanico (niente frasi fatte o copioni): prima complicità e flirt leggero, poi più intensità solo se l'altra persona ricambia davvero. Ogni tanto verifica con naturalezza che vada bene ("ti va?", "continuo?"). Se l'altra persona rallenta, cambia argomento, è stanca o sembra a disagio, rallenta subito e torna a un tono affettuoso. Una parola volgare o cruda detta fuori contesto NON è un invito: non passare di colpo a contenuti espliciti, rispondi in modo coerente con il momento. Mai insistere.`;
 // v8.5.0: «Senza freni» (interruttore di Nicola, solo con la modalità adulti attiva per entrambi): il tono intimo può spingersi al massimo
@@ -2612,7 +2619,11 @@ function rtInstructions(user, ch, mode, faceLock, location) {
   return [buildSystem(user, ch, { call: true, callMode: mode, realtime: true, faceLock: faceLockOn(faceLock) }),
     locationSceneText(location),
     recent.length && `ULTIMI MESSAGGI DELLA CHAT (contesto, continua da qui):\n${recent.join('\n')}`,
-    `In questa chiamata parli solo con ${USERS[user].name} (la senti dal vivo: le sue parole non hanno il prefisso col nome).`, APP_INTENT_RT, !notesAllowed(user) && notesRuleText(user), BASE_RULE].filter(Boolean).join('\n\n');
+    `In questa chiamata parli solo con ${USERS[user].name} (la senti dal vivo: le sue parole non hanno il prefisso col nome).`,
+    'MOVIMENTI IN CHIAMATA: se ti chiede un gesto o un movimento (salutami, siediti, girati, fai due passi, sistemati i capelli…) chiama lo strumento muovi con l\'azione. Non dire «lo sto facendo», «eccomi», «ora mi siedo» o simili finché non ricevi conferma che il movimento (o il pannello del video) è davvero visibile. Se lo strumento risponde che non c\'è un percorso, puoi dire che lo prepari e, se ha senso, chiamare mostra_video. Se non parte, non inventare di averlo fatto.',
+    'VIDEO SU RICHIESTA: se ti chiede di vedere o di farti mostrare qualcosa che non è un movimento già in libreria (es. «fammi vedere una persona che beve il caffè»), chiama lo strumento mostra_video con una descrizione chiara e breve della scena. Continua a parlare normalmente: la chiamata vocale non si interrompe. Non dire che il video si vede, e non dire «te lo preparo» come frase fissa, finché non arriva conferma che il pannello è visibile; se non hai ancora chiamato lo strumento, non promettere un video. Sul video non deve comparire nessuna scritta. Se la richiesta è esplicita, riguarda persone reali o celebri, oppure minori, rifiuta con naturalezza e non chiamare lo strumento.',
+    'RISATE E RUMORI: non produrre mai «ahah», «ah ah ah», «haha» o risatine ripetute. Ignora turni cortissimi, rumori sotto il secondo e testo spazzatura (anche un «ahah» da eco). Su quei turni non dire «parla», «dimmi», «ti ascolto» e non rispondere con una risata.',
+    APP_INTENT_RT, !notesAllowed(user) && notesRuleText(user), BASE_RULE].filter(Boolean).join('\n\n');
 }
 
 function chooseXaiVoice(v, explicit) {
@@ -2627,7 +2638,11 @@ function rtSession(user, ch, mode, voice, faceLock, location) {
     instructions: rtInstructions(user, ch, mode, faceLock, location),
     voice: rtVoice(voice),
     turn_detection: { type: 'server_vad', threshold: 0.7, silence_duration_ms: 900, prefix_padding_ms: 500 }, // v2d-39: 0.9 non sentiva chi la interrompe; l'eco resta filtrata dal controllo locale nel client
-    tools: [{ type: 'web_search' }], // v8.6.0: attualità e fatti aggiornati in chiamata realtime
+    tools: [
+      { type: 'web_search' }, // v8.6.0: attualità e fatti aggiornati in chiamata realtime
+      { type: 'function', name: 'muovi', description: 'Esegue un movimento già in libreria in questa chiamata (saluto, sedersi, girarsi, passi, alzarsi, piegarsi, avvicinarsi, gesto). Usalo quando chiede un gesto o un movimento del corpo. Se non c\'è un clip compatibile lo strumento lo dice: allora puoi dire che lo prepari e, se ha senso, usare mostra_video. Non usarlo per contenuti espliciti o per minori.', parameters: { type: 'object', properties: { azione: { type: 'string', description: 'Azione richiesta, in italiano (es. sedersi, girarsi, passi, saluto).' } }, required: ['azione'] } },
+      { type: 'function', name: 'mostra_video', description: 'Prepara e mostra in questa chiamata un breve video della scena chiesta (es. una persona che beve il caffè). Usalo quando chiede di vedere, mostrare o far partire un video, o come riserva se muovi non ha un percorso. Non usarlo per contenuti espliciti, per persone reali o celebri, o per minori.', parameters: { type: 'object', properties: { descrizione: { type: 'string', description: 'Descrizione breve della scena, senza scritte in sovrimpressione.' } }, required: ['descrizione'] } },
+    ],
     audio: {
       input: { format: { type: 'audio/pcm', rate: 24000 }, transcription: { language_hint: 'it', keyterms: [ch.name, 'Nico', 'Luisa'].filter(Boolean).map((k) => String(k).slice(0, 50)).slice(0, 10) } },
       output: { format: { type: 'audio/pcm', rate: 24000 } },
@@ -2841,7 +2856,7 @@ app.post('/api/simli/session', auth, requireActivated, async (req, res) => {
       fetch(`${SIMLI_API}/compose/token`, {
         method: 'POST',
         headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ faceId: simliFaceId(), handleSilence: true, maxSessionLength: SIMLI_MAX_SESSION_S, maxIdleTime: SIMLI_MAX_IDLE_S }),
+        body: JSON.stringify({ faceId: simliFaceId(), handleSilence: false, maxSessionLength: SIMLI_MAX_SESSION_S, maxIdleTime: SIMLI_MAX_IDLE_S }),
         signal: AbortSignal.timeout(12000),
       }),
       fetch(`${SIMLI_API}/compose/ice`, { headers, signal: AbortSignal.timeout(12000) }),
@@ -2861,14 +2876,14 @@ app.post('/api/simli/session', auth, requireActivated, async (req, res) => {
 // v2d-33/36: cosa indossa adesso (look scelto dall'app). Il testo è quello del guardaroba sul server, non quello del telefono.
 // changed: true = cambiata perché gliel'hanno chiesto; 'lei' = v2d-36, si è cambiata da sola (look o capelli) e lo dice lei.
 function outfitNote(ch, key, changed) {
-  if (key === 'al_volo' && ch && ch.lookNow && ch.lookNow.label) return `\n\nTi sei appena cambiata perché te l'hanno chiesto: ora indossi «${String(ch.lookNow.label).slice(0, 120)}» (così ti vedono adesso). Se viene a proposito dillo in modo naturale e breve (es. «eccomi… ti piace?»), senza descriverlo troppo.`;
+  if (key === 'al_volo' && ch && ch.lookNow && ch.lookNow.label) return `\n\nTi sei appena cambiata perché te l'hanno chiesto: ora indossi «${String(ch.lookNow.label).slice(0, 120)}» (così ti vedono adesso). Se viene a proposito dillo in modo naturale e breve (es. «ti piace così?»), senza descriverlo troppo e senza dire «eccomi» se non c'è un clip visibile.`;
   const o = key && outfitsView(ch.outfits).find((x) => x && !x.disabled && x.key === motionTok(key));
   if (!o) return '';
   if (o.style === 'scena' && changed !== 'lei') return `\n\nDove sei adesso (lo vede in video): ${o.label}. È la tua giornata: se viene a proposito puoi accennarlo con naturalezza, senza annunciarlo e senza descriverlo ogni volta.`;
   const what = o.style === 'capelli' ? 'Hai cambiato pettinatura/capelli' : 'Ti sei cambiata';
   return `\n\nIn questo momento ${o.style === 'scena' ? 'sei' : 'indossi'}: ${o.label}.` + (changed === 'lei'
     ? ` ${what} DI TUA INIZIATIVA, perché ne avevi voglia: accennalo tu per prima in modo spontaneo, breve e civettuolo, in italiano (es. «ho voluto cambiare un po'… ti piace?»), senza chiedere permesso e senza descriverlo troppo. Dillo una volta sola.`
-    : changed === true ? ' Ti sei appena cambiata perché te l\'hanno chiesto: dillo in modo naturale, breve e contento (es. «dammi un attimo… eccomi»), mai un rifiuto.' : '');
+    : changed === true ? ' Ti sei appena cambiata perché te l\'hanno chiesto: dillo in modo naturale, breve e contento (es. «dammi un attimo… pronto»), mai un rifiuto e senza «eccomi» se non c\'è un clip visibile.' : '');
 }
 app.post('/api/realtime/instructions', auth, requireActivated, (req, res) => {
   const ch = getChars(req.user).find((c) => c.id === String(req.body.characterId || ''));
@@ -3123,6 +3138,122 @@ app.post('/api/videos/save', auth, (req, res) => {
   const p = takePending(req.user, String(req.body.pending || ''), 'video');
   if (!p) return res.status(404).json({ error: 'Anteprima scaduta o non trovata' });
   pending.delete(String(req.body.pending)); res.json({ ...saveVideo(req.user, p.buf, p.prompt), saved: true });
+});
+
+// ---------- video su richiesta in chiamata (tool realtime mostra_video) ----------
+// Stessa autenticazione della chat (sessione + chiave xAI già configurata). Non è un endpoint admin.
+// Un solo lavoro per volta per utente, tetto giornaliero, niente contenuti espliciti né persone reali.
+const CALL_VIDEO_RULE = IMAGE_RULE + 'No explicit sexual content, no nudity, no pornography. Do not depict real identifiable people, celebrities, public figures, or impersonations of real persons. Fictional adults only, clearly aged 25 or older. No on-screen text, captions, titles, subtitles, watermarks or logos. Photorealistic short video. Scene: ';
+const CALL_VIDEO_EXPLICIT_RE = /\b(porn\w*|xxx\b|nudes?\b|nudit\w*|naked|hardcore|fellatio|cunnilingus|penetrat\w*|eiaculat\w*|orgasm\w*|masturb\w*|(sesso|sessuale) esplicito|nuda\b|nudo\b|nudi\b|nude\b|spogliarell\w*|striptease|onlyfans|genitals?|sex[- ]?tape)\b/i;
+const CALL_VIDEO_IMPERSONATE_RE = /(impersona\w*|persona reale|persone reali|volto (?:di |di una )?persona vera|real (?:person|people|celebrity|celebrities)|celebrit[aà]|celebrities|celebrity|public figures?|persona famosa|persone famose|look[- ]?alike|sosia di)/i;
+const callVideoJobs = new Map(); // id -> job
+const callVideoBusy = new Set(); // user
+const callVideoSpendFile = (u) => path.join(userDir(u), 'call-video-spend.json');
+function romeDay() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Rome', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+}
+function callVideoSpend(u) {
+  const rec = readJSON(callVideoSpendFile(u), { day: '', count: 0 }) || { day: '', count: 0 };
+  const day = romeDay();
+  if (rec.day !== day) return { day, count: 0 };
+  return { day, count: Number(rec.count) || 0 };
+}
+function addCallVideoSpend(u) {
+  const cur = callVideoSpend(u);
+  writeJSON(callVideoSpendFile(u), { day: cur.day, count: cur.count + 1, at: new Date().toISOString() });
+}
+function callVideoUnsafe(desc) {
+  if (hasYouth(desc)) return 'Descrizione non consentita: solo persone adulte (25+).';
+  if (CALL_VIDEO_EXPLICIT_RE.test(desc)) return 'Descrizione non consentita: niente contenuti espliciti.';
+  if (CALL_VIDEO_IMPERSONATE_RE.test(desc)) return 'Descrizione non consentita: niente persone reali o celebri.';
+  return '';
+}
+function releaseCallVideo(job) {
+  if (job && job.user) callVideoBusy.delete(job.user);
+}
+function pubCallVideo(job) {
+  const out = { id: job.id, status: job.status, descrizione: job.desc };
+  if (job.error) out.error = job.error;
+  if (job.status === 'done') {
+    out.url = job.url;
+    out.chatUrl = job.chatUrl;
+    out.photo = job.photo;
+    out.message = job.message;
+    out.saved = true;
+  }
+  return out;
+}
+async function finishCallVideo(job, key) {
+  if (job.status === 'done' || job.status === 'failed') return job;
+  if (Date.now() - job.at > CALL_VIDEO_TTL_MS) {
+    job.status = 'failed'; job.error = 'Tempo scaduto'; releaseCallVideo(job); return job;
+  }
+  const r = await fetch(AI_BASE_URL + VIDEO_STATUS_PATH.replace('{id}', encodeURIComponent(job.requestId)), { headers: aiHeaders(key) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) { job.status = 'failed'; job.error = aiErrorMsg(r.status, j); releaseCallVideo(job); return job; }
+  const st = String(j.status || 'pending');
+  if (st === 'pending') return job;
+  if (st !== 'done') { job.status = 'failed'; job.error = 'Generazione video non riuscita.'; releaseCallVideo(job); return job; }
+  const vid = j.video || {};
+  if (vid.respect_moderation === false || !vid.url) {
+    job.status = 'failed'; job.error = 'Il video non ha superato i controlli di sicurezza.'; releaseCallVideo(job); return job;
+  }
+  const buf = Buffer.from(await (await fetch(vid.url)).arrayBuffer());
+  if (!buf.length) { job.status = 'failed'; job.error = 'Video vuoto'; releaseCallVideo(job); return job; }
+  const rec = saveVideo(job.user, buf, job.desc);
+  const file = `${newId()}.mp4`;
+  fs.writeFileSync(path.join(sharedDir('chat-media'), file), buf);
+  const photo = { file, thumb: null, kind: 'video', type: 'video/mp4' };
+  const text = 'Ecco il video che mi hai chiesto.';
+  const msg = await appendMsg(job.charId, { role: 'assistant', author: job.charId, content: text, extra: { replyTo: job.user, call: true, rt: true, photo, callVideo: true } });
+  job.status = 'done';
+  job.url = rec.url;
+  job.chatUrl = '/api/chat-media/' + file;
+  job.photo = photo;
+  job.message = pubMsg(msg, getChars(job.user).find((c) => c.id === job.charId) || { name: 'Ira' });
+  releaseCallVideo(job);
+  return job;
+}
+app.post('/api/call-videos', auth, requireActivated, requireKey, async (req, res) => {
+  if (!VIDEO_PATH) return res.status(501).json({ error: 'Generazione video non configurata (VIDEO_PATH vuoto).' });
+  if (isGuest(req.user) || !USERS[req.user]) return res.status(403).json({ error: 'Non disponibile per questo profilo.' });
+  const ch = getChars(req.user).find((c) => c.id === String(req.body.characterId || ''));
+  if (!ch) return res.status(404).json({ error: 'Personaggio non trovato' });
+  const desc = String(req.body.descrizione || req.body.prompt || '').replace(/\s+/g, ' ').trim().slice(0, 500);
+  if (!desc) return res.status(400).json({ error: 'Descrizione vuota' });
+  const unsafe = callVideoUnsafe(desc);
+  if (unsafe) return res.status(400).json({ error: unsafe, code: 'UNSAFE' });
+  if (callVideoBusy.has(req.user)) return res.status(429).json({ error: 'C’è già un video in preparazione. Aspetta che finisca.', code: 'BUSY' });
+  const spend = callVideoSpend(req.user);
+  if (spend.count >= CALL_VIDEO_DAILY) return res.status(429).json({ error: 'Hai raggiunto il limite di video per oggi.', code: 'DAILY' });
+  const prompt = CALL_VIDEO_RULE + desc;
+  const body = { model: CALL_VIDEO_MODEL, prompt, duration: CALL_VIDEO_SECONDS, aspect_ratio: '9:16', resolution: CALL_VIDEO_RESOLUTION };
+  callVideoBusy.add(req.user);
+  try {
+    const r = await fetch(AI_BASE_URL + VIDEO_PATH, { method: 'POST', headers: aiHeaders(req.aiKey), body: JSON.stringify(body) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.request_id) { callVideoBusy.delete(req.user); console.error('Errore AI video su richiesta: HTTP', r.status); return res.status(502).json({ error: aiErrorMsg(r.status, j) }); }
+    addCallVideoSpend(req.user);
+    const id = newId();
+    const job = { id, user: req.user, charId: ch.id, desc, requestId: j.request_id, status: 'pending', at: Date.now() };
+    callVideoJobs.set(id, job);
+    res.setHeader('Cache-Control', 'no-store');
+    res.json(pubCallVideo(job));
+  } catch (e) {
+    callVideoBusy.delete(req.user);
+    res.status(502).json({ error: 'Servizio AI non raggiungibile' });
+  }
+});
+app.get('/api/call-videos/:id', auth, requireKey, async (req, res) => {
+  const job = callVideoJobs.get(req.params.id);
+  if (!job || job.user !== req.user) return res.status(404).json({ error: 'Lavoro non trovato' });
+  try {
+    await finishCallVideo(job, req.aiKey);
+    res.setHeader('Cache-Control', 'no-store');
+    res.json(pubCallVideo(job));
+  } catch (e) {
+    res.status(502).json({ error: 'Servizio AI non raggiungibile' });
+  }
 });
 
 // ---------- Diario: bacheca privata condivisa SOLO tra Nicola e Luisa ----------
@@ -3446,10 +3577,13 @@ function locationPack(id) {
         id: c.id, url: `/api/locations/${id}/${c.file}`, kind: c.kind === 'parla' ? 'parla' : 'base',
         from: c.from || 'petto', to: c.to || c.from || 'petto',
         label: String(c.label || c.id).slice(0, 60), weight: Math.max(0.05, Math.min(10, Number(c.weight) || 1)),
+        place: id, outfit: String(c.outfit || raw.outfit || ''),
+        action: c.action || (c.kind === 'parla' ? 'talk' : 'idle'),
+        library: 'location',
       });
     }
     const framing = raw.framing === 'close' ? 'close' : 'wide';
-    return { id, label: String(raw.label || id), ready: !!raw.ready, still, clips, framing };
+    return { id, label: String(raw.label || id), ready: !!raw.ready, still, clips, framing, outfit: String(raw.outfit || ''), place: id };
   } catch { return null; }
 }
 app.get('/api/locations', auth, (req, res) => {
@@ -3489,6 +3623,50 @@ app.get('/api/locations/:place/:file', auth, (req, res) => {
   sendPrivateFile(req, res, file);
 });
 
+
+// v2d-66: libreria MOVIMENTI (gesti/azioni) separata dai pacchetti LUOGO.
+const MOVEMENTS_DIR = path.join(__dirname, 'assets', 'movements');
+const MOV_FILE = /^[a-zA-Z0-9._-]+\.mp4$/;
+function movementManifest() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(path.join(MOVEMENTS_DIR, 'manifest.json'), 'utf8'));
+    return raw && Array.isArray(raw.clips) ? raw : { clips: [] };
+  } catch { return { clips: [] }; }
+}
+function movementClips() {
+  const man = movementManifest();
+  const out = [];
+  for (const c of man.clips || []) {
+    if (!c || !/^[a-z0-9_-]+$/i.test(c.id || '') || !MOV_FILE.test(c.file || '')) continue;
+    const file = path.join(MOVEMENTS_DIR, c.file);
+    if (!file.startsWith(MOVEMENTS_DIR + path.sep) || !fs.existsSync(file)) continue;
+    out.push({
+      id: c.id, url: `/api/movements/${c.file}`, file: c.file,
+      library: 'movement',
+      place: String(c.place || ''), outfit: String(c.outfit || ''),
+      mood: c.mood || 'neutral',
+      action: c.action || 'gesture',
+      from: c.from || 'stand', to: c.to || c.from || 'stand',
+      in: Number(c.in) || 0, out: c.out == null ? null : Number(c.out),
+      kind: c.kind === 'parla' ? 'parla' : 'base',
+      label: String(c.label || c.id).slice(0, 80),
+      weight: Math.max(0.05, Math.min(10, Number(c.weight) || 1)),
+    });
+  }
+  return out;
+}
+app.get('/api/movements', auth, (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ library: 'movement', clips: movementClips() });
+});
+app.get('/api/movements/:file', auth, (req, res) => {
+  const clip = movementClips().find((c) => c.file === req.params.file || c.id === req.params.file);
+  if (!clip) return res.status(404).end();
+  const file = path.join(MOVEMENTS_DIR, clip.file);
+  if (!file.startsWith(MOVEMENTS_DIR + path.sep) || !fs.existsSync(file)) return res.status(404).end();
+  sendPrivateFile(req, res, file);
+});
+
 // v2d-66: memoria dei gesti (metadati + conteggi d'uso, niente crescita di file media).
 const motionMem = require('./lib/motion-memory');
 const motionMemFile = (u) => path.join(userDir(u), 'motion-memory.json');
@@ -3501,6 +3679,11 @@ function catalogLocationUrls() {
   }
   return urls;
 }
+function catalogMotionUrls() {
+  const urls = catalogLocationUrls();
+  for (const c of movementClips()) if (c && c.url) urls.add(c.url);
+  return urls;
+}
 function emptyMotionMem() { return { v: 1, clips: {} }; }
 function loadMotionMem(u) {
   const raw = readJSON(motionMemFile(u), emptyMotionMem()) || emptyMotionMem();
@@ -3508,7 +3691,7 @@ function loadMotionMem(u) {
   return { v: 1, clips };
 }
 function publicMotionMem(u) {
-  const catalog = catalogLocationUrls();
+  const catalog = catalogMotionUrls();
   const mem = loadMotionMem(u);
   const clips = motionMem.evict(mem.clips, { cap: motionMem.CAP, catalog });
   const out = {};
@@ -3524,7 +3707,7 @@ app.get('/api/motion-memory', auth, (req, res) => {
 });
 app.post('/api/motion-memory/play', auth, (req, res) => {
   const url = String((req.body && req.body.url) || '');
-  const catalog = catalogLocationUrls();
+  const catalog = catalogMotionUrls();
   if (!motionMem.allowedUrl(url, catalog)) return res.status(400).json({ error: 'URL non consentito' });
   return mutateJSON(motionMemFile(req.user), emptyMotionMem(), (cur) => {
     const now = new Date().toISOString();

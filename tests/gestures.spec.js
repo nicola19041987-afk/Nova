@@ -2,7 +2,7 @@ const { test, expect, scenesOn } = require('./harness');
 
 const HEAD = { 'X-Requested-With': 'app-privata' };
 
-test('il catalogo ha solo saluto e capelli', async ({ request, browserName }) => {
+test('il catalogo gesti ufficiali è vuoto (via i clip del ponytail bruno)', async ({ request, browserName }) => {
   test.skip(browserName === 'webkit', 'stesso server del test Chromium: il limite PIN è per dispositivo');
   const setup = await request.post('/api/pin/setup', { data: { user: 'nicola', pin: '1357' }, headers: HEAD });
   if (setup.status() === 409) {
@@ -10,13 +10,11 @@ test('il catalogo ha solo saluto e capelli', async ({ request, browserName }) =>
     expect(login.ok(), await login.text()).toBeTruthy();
   } else expect(setup.ok(), await setup.text()).toBeTruthy();
   const list = await (await request.get('/api/gestures')).json();
-  expect(list.map((g) => g.id).sort()).toEqual(['capelli', 'saluto']);
-  expect(list.every((g) => g.full === false)).toBe(true);
-  const vid = await request.get('/api/gestures/saluto');
-  expect(vid.ok()).toBeTruthy();
-  expect(vid.headers()['content-type'] || '').toContain('video');
+  expect(Array.isArray(list)).toBe(true);
+  expect(list.map((g) => g.id)).toEqual([]);
+  expect((await request.get('/api/gestures/saluto')).status()).toBe(404);
+  expect((await request.get('/api/gestures/capelli')).status()).toBe(404);
   expect((await request.get('/api/gestures/bere')).status()).toBe(404);
-  expect((await request.get('/api/gestures/stiracchiarsi')).status()).toBe(404);
 });
 
 async function mockApp(page) {

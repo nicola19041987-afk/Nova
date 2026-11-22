@@ -2,7 +2,8 @@
  * (showroom, barca, auto, casa, palestra). 2D, clip muti, nessuna scritta sul video.
  * La voce resta solo quella in tempo reale. La foto della chat non si tocca.
  * I clip sono Ira già nella scena: mai un ritaglio sulla foto di sfondo.
- * Prima chiamata: showroom. Poi rotazione deterministica persistita in localStorage.
+ * Prima chiamata dopo il deploy v2d-66: casa/salotto (flag one-shot locationHomeV266).
+ * Poi rotazione deterministica persistita in localStorage.
  */
 (function () {
   if (window.__novaLocationCallBound) return;
@@ -10,6 +11,8 @@
   const HOME = 'petto';
   const LS_LAST = 'locationLast';
   const LS_FORCE = 'locationForce'; // solo prova tecnica; vuoto = rotazione
+  const LS_HOME_ONCE = 'locationHomeV266'; // prima chiamata dopo questo deploy: salotto
+  const HOME_PLACE = 'salotto';
   const DEFAULT_ORDER = ['showroom', 'barca', 'auto', 'salotto', 'camera', 'cucina', 'palestra'];
   let index = { default: 'showroom', pick: 'rotation', order: DEFAULT_ORDER.slice(), places: [] };
   let packs = {}; // id -> { still, framing, clips:[{id,url,kind,from,to,label,weight}] }
@@ -47,9 +50,15 @@
     for (const id of readyIds) if (!order.includes(id)) order.push(id);
     if (!order.length) return ready[0].id;
     const last = App.ls ? App.ls.get(LS_LAST, '') : '';
-    // prima chiamata (o storage vuoto): sempre showroom se pronto
+    // v2d-66: la prima chiamata dopo questo deploy parte da casa (salotto), anche se c'è già un locationLast.
+    if (App.ls && !App.ls.get(LS_HOME_ONCE, '')) {
+      const home = order.includes(HOME_PLACE) ? HOME_PLACE : (order.includes('camera') ? 'camera' : order[0]);
+      App.ls.set(LS_HOME_ONCE, '1');
+      return home;
+    }
+    // storage vuoto dopo il one-shot: resta casa, non lo showroom
     if (!last || !order.includes(last)) {
-      return order.includes('showroom') ? 'showroom' : order[0];
+      return order.includes(HOME_PLACE) ? HOME_PLACE : order[0];
     }
     const i = order.indexOf(last);
     let next = order[(i + 1) % order.length];
@@ -59,10 +68,13 @@
 
   function libOf(place) {
     const pack = packs[place]; if (!pack) return [];
+    const outfit = pack.outfit || '';
     return (pack.clips || []).map((c) => ({
       id: String(place) + '-' + c.id, url: c.url, kind: c.kind === 'parla' ? 'parla' : 'base',
       from: c.from || HOME, to: c.to || c.from || HOME,
-      mood: [], event: '', outfit: '', quality: '',
+      mood: [], event: '', outfit: c.outfit || outfit, place,
+      action: c.action || (c.kind === 'parla' ? 'talk' : 'idle'),
+      library: 'location', quality: '',
       weight: Math.max(0.05, Math.min(10, Number(c.weight) || 1)),
       label: String(c.label || c.id).slice(0, 60),
     }));
@@ -89,22 +101,28 @@
       return;
     }
     if (isClose(current)) {
-      const zoom = 1.05 + Math.random() * 0.10; // 1.05–1.15: già viso+spalle, variazione da telefono in mano
+      // v2d-66: un po' più largo (~15–20% rispetto a 1.05–1.15). Zoom 1.0 = fotogramma intero, testa mai tagliata.
+      const zoom = 1.00 + Math.random() * 0.03;
+      const fx = 50, fy = 28;
       const vx = 50 + Math.random() * 2 - 1;
-      const vy = 30 + Math.random() * 3 - 1.5;
+      let vy = 32 + Math.random() * 2;
+      if (vy < fy * zoom + 4) vy = fy * zoom + 4;
       stage.style.setProperty('--call-zoom', zoom.toFixed(3));
-      stage.style.setProperty('--call-fx', '50%');
-      stage.style.setProperty('--call-fy', '30%');
+      stage.style.setProperty('--call-fx', fx + '%');
+      stage.style.setProperty('--call-fy', fy + '%');
       stage.style.setProperty('--call-vx', vx.toFixed(1) + '%');
       stage.style.setProperty('--call-vy', vy.toFixed(1) + '%');
       return;
     }
-    const zoom = 2.42 + Math.random() * 0.28; // 2.42–2.70: abbastanza stretto, 720p non troppo morbido
-    const vx = 48 + Math.random() * 5;       // viso circa in centro, un filo a destra/sinistra
-    const vy = 26 + Math.random() * 6;       // viso nel terzo alto, con un po' di cielo sopra
+    // v2d-66: zoom out ~18% da 2.42–2.70 (≈1.98–2.21) e più spazio sopra la testa.
+    const zoom = (2.42 + Math.random() * 0.28) * 0.82;
+    const fx = 41.5, fy = 14;
+    const vx = 48 + Math.random() * 5;
+    let vy = 26 + Math.random() * 6;
+    if (vy < fy * zoom + 5) vy = fy * zoom + 5;
     stage.style.setProperty('--call-zoom', zoom.toFixed(3));
-    stage.style.setProperty('--call-fx', '41.5%');
-    stage.style.setProperty('--call-fy', '14%');
+    stage.style.setProperty('--call-fx', fx + '%');
+    stage.style.setProperty('--call-fy', fy + '%');
     stage.style.setProperty('--call-vx', vx.toFixed(1) + '%');
     stage.style.setProperty('--call-vy', vy.toFixed(1) + '%');
   }

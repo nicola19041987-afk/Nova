@@ -245,6 +245,8 @@
   const PERMANENT = new Set([401, 403, 404, 409, 503]);
   async function start() {
     if (!(App.me && App.me.simliFace)) { close(); return false; } // v2d-46: nessun volto di Ira pronto -> foto con la bocca sull'audio
+    // v2d-66: mai Simli insieme ai clip di luogo (un solo strato visivo).
+    try { if (App.locationCall && ((App.locationCall.usingClips && App.locationCall.usingClips()) || (App.locationCall.place && App.locationCall.place()))) { close(); return false; } } catch {}
     if (!wanted()) return false;
     if (session && !session.closed) return true;
     if (starting) return starting;

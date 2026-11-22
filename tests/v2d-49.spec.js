@@ -130,7 +130,7 @@ test('v2d-49: con la foto fissa (di serie) Ira non promette di cambiarsi; Simli 
     expect(st).not.toContain('simli-prova-segreta-49');
     expect(JSON.parse(st)).toMatchObject({ session_token: 'tok-49', maxSessionLength: 1800, maxIdleTime: 300 });
     const tok = seen.filter((x) => x.url.startsWith('simli:/compose/token')).pop();
-    expect(JSON.parse(tok.body)).toMatchObject({ faceId: FACE, handleSilence: true, maxSessionLength: 1800, maxIdleTime: 300 });
+    expect(JSON.parse(tok.body)).toMatchObject({ faceId: FACE, handleSilence: false, maxSessionLength: 1800, maxIdleTime: 300 });
     expect(s.log()).not.toContain('simli-prova-segreta-49');
   } finally { s.child.kill(); ai.close(); sim.close(); }
 });

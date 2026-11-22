@@ -225,7 +225,7 @@
   function cleanTTS(t) {
     return String(t || '').replace(/\[(?:azione|action|gesto|umore)[^\]]*\]/gi, ' ').replace(/\[[^\]]{12,}\]/g, ' ')
       .replace(/\*[^*\n]{1,200}\*/g, ' ').replace(/https?:\/\/\S+/g, ' ').replace(/[_#`>~*|]/g, '')
-      .replace(/\p{Extended_Pictographic}|\u200d|\ufe0f/gu, '').replace(/\b(?:a?h[ae]h[ae]h?[ah]*|ahah\w*)\b/gi, '[laugh]')
+      .replace(/\p{Extended_Pictographic}|\u200d|\ufe0f/gu, '').replace(/\b(?:a?h[ae]h[ae]h?[ah]*|ahah\w*|haha\w*)\b/gi, ' ').replace(/\[laugh\]/gi, ' ')
       .replace(/\s+/g, ' ').trim();
   }
   async function envelope(blob) { // inviluppo RMS a 60 punti/s per il labiale

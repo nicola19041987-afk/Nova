@@ -2,12 +2,13 @@
   "id": "showroom",
   "label": "Showroom NF Motors",
   "ready": true,
-  "still": "IRA-COMPLETO-NERO-v01-9x16.jpg",
-  "notes": "Ira già nello showroom, completo nero approvato. Clip 9:16 720p muti, partiti da quella still. Nessun testo in sovrimpressione.",
+  "still": "IRA-CALL-SHOWROOM-v04.jpg",
+  "framing": "close",
+  "outfit": "lace-black",
+  "notes": "Ira ufficiale (viso v8, mandala sul braccio destro, set in pizzo nero) già nello showroom, vicino alla Cayman. Clip muti 9:16 ritagliati da ira-salone-cayman.mp4. Niente testo in sovrimpressione. Niente clip «parla» (i vecchi talk del completo nero sono stati tolti: viso/tatuaggio non ufficiali). Braccio sinistro in movimento, non solo mano sul fianco.",
   "clips": [
-    { "id": "idle-look", "file": "showroom-idle-look.mp4", "kind": "base", "from": "petto", "to": "petto", "label": "Respiro in camera", "weight": 1 },
-    { "id": "idle-listen", "file": "showroom-idle-listen.mp4", "kind": "base", "from": "petto", "to": "petto", "label": "Ascolto", "weight": 1 },
-    { "id": "talk-a", "file": "showroom-talk-a.mp4", "kind": "parla", "from": "petto", "to": "petto", "label": "Parla", "weight": 1 },
-    { "id": "talk-b", "file": "showroom-talk-b.mp4", "kind": "parla", "from": "petto", "to": "petto", "label": "Parla (sorriso)", "weight": 1 }
+    { "id": "idle-stand", "file": "showroom-idle-stand.mp4", "kind": "base", "action": "idle", "from": "stand", "to": "stand", "label": "In piedi nello showroom", "weight": 1.2 },
+    { "id": "approach", "file": "showroom-approach.mp4", "kind": "base", "action": "approach", "from": "stand", "to": "stand", "label": "Si avvicina all'auto", "weight": 1 },
+    { "id": "near-car", "file": "showroom-near-car.mp4", "kind": "base", "action": "idle", "from": "stand", "to": "stand", "label": "Vicino all'auto", "weight": 1 }
   ]
 }

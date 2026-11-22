@@ -266,4 +266,15 @@
   App.faceLm = (ch) => { const o = ch && !locked() && current(ch); if (o) return o.landmarks && o.landmarks.eyeL ? o.landmarks : null; return ch && ch.landmarks; };
   // controllo leggero: dopo una lunga assenza (nuova visita) la scena cambia; mai a metà conversazione
   setInterval(() => { try { if (document.visibilityState === 'visible') App.outfits.apply(false); } catch { /* */ } }, 60000);
+
+  // v2d-66: il default diventerà il set in pizzo quando Nicola approva le still in /workspace/ira-look-pizzo-v01/.
+  // Fino ad allora non si cambia nulla. Qualsiasi camicia deve restare aperta al collo, mai abbottonata fino alla gola.
+  App.outfitConfig = {
+    defaultOutfit: null,
+    futureDefaultOutfit: 'lace-pizzo',
+    futureDefaultEnabled: false,
+    futureDefaultSource: 'ira-look-pizzo-v01',
+    shirtCollar: 'open',
+    activeDefault() { return this.futureDefaultEnabled ? this.futureDefaultOutfit : this.defaultOutfit; },
+  };
 })(typeof window !== 'undefined' ? window : globalThis);

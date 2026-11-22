@@ -186,6 +186,15 @@
             <div id="call-portrait" class="call-portrait" hidden><canvas id="call-face" width="320" height="320"></canvas></div>
             <video id="call-self" class="call-self" playsinline muted autoplay hidden></video>
             <p id="call-caption" class="call-caption" hidden></p>
+            <div id="call-video-panel" class="call-video-panel" hidden>
+              <div class="call-video-head">
+                <span id="call-video-title">Video</span>
+                <button type="button" id="call-video-sound" class="call-video-sound" hidden aria-label="Suono" title="Suono">🔇</button>
+                <button type="button" id="call-video-close" aria-label="Chiudi video" title="Chiudi">✕</button>
+              </div>
+              <p id="call-video-progress" class="call-video-progress">Sto preparando il video…</p>
+              <video id="call-video-player" playsinline controls muted hidden></video>
+            </div>
             <form id="call-text" class="call-text" hidden><button type="button" id="call-attach" class="call-plus" title="Allega una foto" aria-label="Allega una foto">＋</button><span id="call-att-preview" class="call-att-preview" hidden></span><input id="call-input" placeholder="Scrivile…" autocomplete="off" enterkeyhint="send"><button class="primary" aria-label="Invia">➤</button></form>
             <div class="call-bar">
               <button type="button" id="call-speaker" class="call-btn" title="Altoparlante" aria-label="Altoparlante">🔊</button>
@@ -850,7 +859,9 @@
   <script src="/js/callmic.js"></script>
   <script src="/js/diag.js"></script>
   <script src="/js/motion-memory.js"></script>
+  <script src="/js/clip-compose.js"></script>
   <script src="/js/location-call.js"></script>
+  <script src="/js/call-video.js"></script>
   <script src="/js/call.js"></script>
   <script src="/js/ios.js"></script>
   <script src="/js/gallery.js"></script>

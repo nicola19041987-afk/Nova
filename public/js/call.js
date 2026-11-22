@@ -19,7 +19,7 @@
   }
   let mode = 'video', speaker = true, raf = 0, amp = 0; // v8.2: 'voice' = chiamata vocale stile WhatsApp, 'video' = videochiamata
   const fmt = (ms) => { const s = Math.floor(ms / 1000); return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0'); };
-  const GREET = ['Ehi, ciao!', 'Eccomi! Ciao.', 'Ehi! Come va?', 'Ciao, che bello vederti!', 'Ciao {n}!', 'Eccomi... ciao!']; // v8.1: il nome solo ogni tanto
+  const GREET = ['Ehi, ciao!', 'Ciao.', 'Ehi! Come va?', 'Ciao, che bello vederti!', 'Ciao {n}!']; // v2d-66: niente «eccomi» (solo se un clip è davvero visibile)
   function state() {
     if (!on) return;
     $('#call-timer').textContent = fmt(Date.now() - t0);
@@ -63,7 +63,9 @@
     cancelAnimationFrame(raf); if (mode === 'voice' && !soloVoice) raf = requestAnimationFrame(portrait);
     requestAnimationFrame(() => App.fitFrame && App.fitFrame());
     if (on) { state(); App.chat.header && App.chat.header(); }
-    if (App.simli) { if (on && mode === 'video' && App.me && App.me.simliFace) App.simli.start(); else App.simli.stop(); } // v2d-46: Simli solo col volto di Ira
+    // v2d-66: un solo strato visivo per chiamata — se c'è un pacchetto luogo, Simli non parte (e viceversa).
+    const locLayer = !!(App.locationCall && ((App.locationCall.usingClips && App.locationCall.usingClips()) || (App.locationCall.place && App.locationCall.place())));
+    if (App.simli) { if (on && mode === 'video' && App.me && App.me.simliFace && !locLayer) App.simli.start(); else App.simli.stop(); }
     if (App.locationCall && App.locationCall.onMode) App.locationCall.onMode(mode);
     if (App.solo && App.solo.syncMotion) App.solo.syncMotion();
   }
@@ -123,7 +125,9 @@
     App.stageFs.exit(); stage.classList.add('fs', 'call'); document.body.classList.add('avatar-fs-on', 'in-call'); if (App.fullscreenFix) App.fullscreenFix();
     document.body.classList.remove('simli-on');
     ui.hidden = false; $('#call-name').textContent = ch.name; $('#call-caption').hidden = true;
-    setMode(m || 'video'); if (App.locationCall && App.locationCall.onCallStart) App.locationCall.onCallStart(mode); speaker = true; $('#call-speaker').classList.add('on'); $('#call-speaker').textContent = '🔊'; if (App.tts) App.tts.volume = 1;
+    setMode(m || 'video'); if (App.locationCall && App.locationCall.onCallStart) App.locationCall.onCallStart(mode);
+    if (App.simli && App.locationCall && App.locationCall.place && App.locationCall.place()) App.simli.stop();
+    speaker = true; $('#call-speaker').classList.add('on'); $('#call-speaker').textContent = '🔊'; if (App.tts) App.tts.volume = 1;
     $('#act-menu').hidden = true; $('#scene-menu').hidden = true;
     prevTts = null; if (App.tts) App.tts.fails = 0; // v8.4.5: in chiamata lei parla sempre (App.voice.ttsOn() è vero in chiamata), senza toccare «Lettura»
     prevAuto = $('#auto-send').checked; $('#auto-send').checked = true;
@@ -249,6 +253,7 @@
   }, { capture: true, passive: true }));
   function end(opts) {
     if (App.locationCall && App.locationCall.onCallEnd) App.locationCall.onCallEnd();
+    if (App.callVideo && App.callVideo.onCallEnd) App.callVideo.onCallEnd();
     if (!on) return; on = false; App.call.active = false; starting = false; mediaOpening = false;
     if (App.audio) App.audio.preferCallVideo = false;
     cancelAnimationFrame(raf); clearTimeout(retryT); retryT = 0; retryAt = 0;

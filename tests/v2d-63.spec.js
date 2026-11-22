@@ -1,5 +1,5 @@
 // v2d-63: pacchetti luogo in videochiamata (showroom, barca, auto, salotto, camera, cucina, palestra).
-// Prima chiamata nello showroom, poi rotazione deterministica persistita, senza ripetizioni immediate.
+// Prima chiamata dopo v2d-66: casa/salotto, poi rotazione deterministica persistita, senza ripetizioni immediate.
 // Inquadratura e etichette come v2d-62 (etichette in alto a destra). Cache app-privata-v2d-63.
 const { test, expect } = require('./harness');
 const path = require('path');
@@ -79,7 +79,7 @@ async function pageEvaluateCall(page) {
   });
 }
 
-test('v2d-63: cache, pacchetti pronti, prima chiamata showroom, rotazione persistente, screenshot 390x844', async ({ page, request, browserName }) => {
+test('v2d-63: cache, pacchetti pronti, prima chiamata casa, rotazione persistente, screenshot 390x844', async ({ page, request, browserName }) => {
   test.skip(browserName === 'webkit', 'Stesso percorso verificato su Chromium (390x844).');
   test.setTimeout(120000);
   fs.mkdirSync(SHOT, { recursive: true });
@@ -102,10 +102,14 @@ test('v2d-63: cache, pacchetti pronti, prima chiamata showroom, rotazione persis
     const pack = await (await page.request.get('/api/locations/' + id, { headers: HEAD })).json();
     expect(pack.still).toBe('/api/locations/' + id + '/still');
     expect((pack.clips || []).length).toBeGreaterThanOrEqual(2);
-    expect((pack.clips || []).some((c) => c.kind === 'parla')).toBe(true);
     expect((pack.clips || []).some((c) => c.kind === 'base')).toBe(true);
-    if (id === 'showroom') expect(pack.framing).toBe('wide');
-    else expect(pack.framing).toBe('close');
+    if (id === 'showroom') {
+      expect(pack.framing).toBe('close');
+      expect((pack.clips || []).every((c) => c.kind !== 'parla')).toBe(true);
+    } else {
+      expect(pack.framing).toBe('close');
+      expect((pack.clips || []).some((c) => c.kind === 'parla')).toBe(true);
+    }
     const stillRes = await page.request.get('/api/locations/' + id + '/still', { headers: HEAD });
     expect(stillRes.ok(), id + ' still').toBeTruthy();
     const clipFile = path.basename(pack.clips[0].url);
@@ -116,10 +120,12 @@ test('v2d-63: cache, pacchetti pronti, prima chiamata showroom, rotazione persis
   await disableSw(page);
   await openIraChat(page);
 
-  // rotazione: pulisci lo storage e simula 8 avvii (un giro + showroom di nuovo)
+  // rotazione: pulisci lo storage (incluso il one-shot casa) e simula 8 avvii
+  const HOME_ROTATION = ['salotto', 'camera', 'cucina', 'palestra', 'showroom', 'barca', 'auto', 'salotto'];
   const rotated = await page.evaluate((order) => {
     App.ls.del('locationLast');
     App.ls.del('locationForce');
+    App.ls.del('locationHomeV266');
     const out = [];
     for (let i = 0; i < order.length + 1; i++) {
       App.locationCall.onCallStart('video');
@@ -128,16 +134,14 @@ test('v2d-63: cache, pacchetti pronti, prima chiamata showroom, rotazione persis
     }
     return out;
   }, ORDER);
-  expect(rotated.map((x) => x.place)).toEqual(ORDER.concat(['showroom']));
+  expect(rotated.map((x) => x.place)).toEqual(HOME_ROTATION);
   for (let i = 1; i < rotated.length; i++) {
     expect(rotated[i].place).not.toBe(rotated[i - 1].place);
   }
-  expect(parseFloat(rotated[0].zoom || '0')).toBeGreaterThanOrEqual(2.3);
-  expect(parseFloat(rotated[0].zoom || '0')).toBeLessThanOrEqual(2.85);
-  for (let i = 1; i < ORDER.length; i++) {
+  for (let i = 0; i < rotated.length; i++) {
     const z = parseFloat(rotated[i].zoom || '0');
-    expect(z, ORDER[i] + ' close zoom').toBeGreaterThanOrEqual(1.0);
-    expect(z, ORDER[i] + ' close zoom').toBeLessThanOrEqual(1.25);
+    expect(z, rotated[i].place + ' zoom').toBeGreaterThanOrEqual(1.0);
+    expect(z, rotated[i].place + ' zoom').toBeLessThanOrEqual(1.25);
   }
 
   // screenshot di ogni luogo (locationForce, senza toccare la rotazione reale oltre il test)
@@ -152,13 +156,8 @@ test('v2d-63: cache, pacchetti pronti, prima chiamata showroom, rotazione persis
     expect(call.place).toBe(id);
     expect(call.still).toBe('/api/locations/' + id + '/still');
     const zoom = parseFloat(call.zoom || '0');
-    if (id === 'showroom') {
-      expect(zoom).toBeGreaterThanOrEqual(2.3);
-      expect(zoom).toBeLessThanOrEqual(2.85);
-    } else {
-      expect(zoom).toBeGreaterThanOrEqual(1.0);
-      expect(zoom).toBeLessThanOrEqual(1.25);
-    }
+    expect(zoom, id + ' zoom').toBeGreaterThanOrEqual(1.0);
+    expect(zoom, id + ' zoom').toBeLessThanOrEqual(1.25);
     expect(call.top).toBeTruthy();
     expect(call.top.right).toBeGreaterThan(390 - 160);
     expect(call.top.left).toBeGreaterThan(390 * 0.55);
@@ -174,19 +173,19 @@ test('v2d-63: cache, pacchetti pronti, prima chiamata showroom, rotazione persis
     await endVideoCall(page);
   }
 
-  // dopo aver tolto force, la prima chiamata vera (storage last può essere palestra dal ciclo force) — puliamo e verifichiamo showroom
-  await page.evaluate(() => { App.ls.del('locationForce'); App.ls.del('locationLast'); });
+  // dopo aver tolto force, la prima chiamata vera parte da casa (salotto), poi ruota
+  await page.evaluate(() => { App.ls.del('locationForce'); App.ls.del('locationLast'); App.ls.del('locationHomeV266'); });
   await startVideoCall(page);
   const first = await pageEvaluateCall(page);
-  expect(first.place).toBe('showroom');
-  expect(first.last).toBe('showroom');
-  const firstShot = path.join(SHOT, 'v2d-63-call-prima-showroom.png');
+  expect(first.place).toBe('salotto');
+  expect(first.last).toBe('salotto');
+  const firstShot = path.join(SHOT, 'v2d-63-call-prima-salotto.png');
   await page.screenshot({ path: firstShot, animations: 'disabled' });
   await endVideoCall(page);
   await startVideoCall(page);
   const second = await pageEvaluateCall(page);
-  expect(second.place).toBe('barca');
-  const secondShot = path.join(SHOT, 'v2d-63-call-seconda-barca.png');
+  expect(second.place).toBe('camera');
+  const secondShot = path.join(SHOT, 'v2d-63-call-seconda-camera.png');
   await page.screenshot({ path: secondShot, animations: 'disabled' });
   await endVideoCall(page);
 });

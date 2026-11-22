@@ -31,7 +31,8 @@ test('v2d-65b: icona e splash IRA (non Nova), cache-bust ?v=865', () => {
   expect(html).not.toContain('?v=864');
   expect(JSON.stringify(man)).toContain('?v=865');
   expect(JSON.stringify(man)).not.toContain('?v=864');
-  expect(sw).toMatch(/const CACHE = 'app-privata-v2d-65b'/);
+  expect(sw).toMatch(/const CACHE = 'app-privata-v2d-(65b|66)'/);
+  expect(html).toContain('?v=865');
   const icon = fs.readFileSync(path.join(__dirname, '../public/icons/icon-512.png'));
   // PNG del wordmark IRA v2d-53 (rosso #E50914 su nero puntinato), non il wordmark Nova azzurro
   expect(icon.length).toBeGreaterThan(1000);

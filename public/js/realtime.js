@@ -45,7 +45,7 @@
       // v2d-39: livello locale del microfono (con cancellazione dell'eco) per confermare subito un'interruzione vera
       s.micLv = s.micLv || []; s.micLv.push(rms); if (s.micLv.length > 4) s.micLv.shift();
       if (!s.userSpeaking && !playing(s) && rms < (s.floor || 0.008) * 2.5) s.floor = Math.max(0.003, (s.floor || 0.008) * 0.95 + rms * 0.05);
-      if (s.bargeTimer && localVoice(s)) { clearBarge(s); bargeIn(s, false); }
+      if (s.bargeTimer && (playing(s) ? localVoiceHigh(s) : localVoice(s))) { clearBarge(s); bargeIn(s, false); }
       if (rms > 0.012 && !playing(s)) s.lastVoiceAt = performance.now(); // fine del parlato (per misurare la latenza)
       if (rms > s.micPeak) s.micPeak = rms; // v8.4.7: microfono «muto» -> riaperto una volta
       if (!s.reacq && !App.audio._reacq) { const tr = s.stream && s.stream.getAudioTracks()[0], mt = !!(tr && (tr.muted || tr.readyState !== 'live')); if (mt || (performance.now() - s.micT0 > 4000 && s.micPeak < 0.0012)) { s.reacq = true; note('microfono muto: riapro', mt ? 'traccia muta' : 'livello ' + s.micPeak.toFixed(4)); App.audio.reacquire(mt ? 'traccia muta' : 'livello quasi zero').catch(() => {}); return; } }
@@ -54,6 +54,10 @@
         if (rms >= 0.06) s.bargeVoiced = (s.bargeVoiced || 0) + 1;
       }
       if (s.muted) return;
+      // v2d-66: software-mute del microfono mentre lei parla (evita che la sua risata/eco torni indietro: «ahah parla»).
+      // Si invia solo se c'è un barge-in con RMS alto, voce locale vera.
+      if (playing(s) && !localVoiceHigh(s)) { s.softMuted = true; return; }
+      s.softMuted = false;
       if (s.ready && s.ws && s.ws.readyState === 1) s.ws.send(JSON.stringify({ type: 'input_audio_buffer.append', audio: b64(pcm) }));
       else { s.early.push(pcm); if (s.early.length > 15) s.early.shift(); } // tiene ~1,5 s finché la sessione non è pronta
     };
@@ -229,6 +233,55 @@
     } catch {}
   }
 
+  // Tool client-side (mostra_video): risponde subito al modello e avvia la generazione.
+  // Non chiude e non riavvia la sessione vocale.
+  function replyTool(s, callId, output) {
+    if (!s.ws || s.ws.readyState !== 1 || !callId) return;
+    try {
+      s.ws.send(JSON.stringify({ type: 'conversation.item.create', item: { type: 'function_call_output', call_id: callId, output } }));
+      s.ws.send(JSON.stringify({ type: 'response.create' }));
+    } catch (e) { console.warn('Risposta strumento non inviata:', e.message); }
+  }
+  function notifyVisible(s, text) {
+    if (!s || !s.ws || s.ws.readyState !== 1) return;
+    try {
+      s.ws.send(JSON.stringify({ type: 'conversation.item.create', item: { type: 'message', role: 'user', content: [{ type: 'input_text', text: String(text || '') }] } }));
+    } catch (e) { console.warn('Avviso visibilità non inviato:', e.message); }
+  }
+  function handleTool(s, ev) {
+    const name = ev.name || (ev.item && ev.item.name) || '';
+    const callId = ev.call_id || ev.callId || (ev.item && ev.item.call_id);
+    let args = ev.arguments || (ev.item && ev.item.arguments) || '{}';
+    if (typeof args === 'string') { try { args = JSON.parse(args || '{}'); } catch { args = { descrizione: String(args || '') }; } }
+    if (name === 'muovi') {
+      const azione = String((args && (args.azione || args.action || args.gesto)) || '').trim();
+      const place = (App.locationCall && App.locationCall.place && App.locationCall.place()) || '';
+      const locLib = (App.locationCall && App.locationCall.lib && App.locationCall.lib()) || [];
+      const outfit = (locLib[0] && locLib[0].outfit) || (App.outfitConfig && App.outfitConfig.activeDefault && App.outfitConfig.activeDefault()) || '';
+      const fromPose = (App.motionPlayer && App.motionPlayer.st && App.motionPlayer.st.pose) || 'stand';
+      const movements = (App.compose && App.compose._movements) || [];
+      const planned = (App.compose && App.compose.plan) ? App.compose.plan(azione, { place, outfit, from: fromPose, movements, location: locLib }) : { ok: false, reason: 'no-composer' };
+      if (!planned || !planned.ok) {
+        replyTool(s, callId, JSON.stringify({ ok: false, stato: 'nessun_percorso', motivo: (planned && planned.reason) || 'nessun clip compatibile', fallback: 'mostra_video', messaggio: 'Non c\'è un movimento già pronto in questo luogo e con questo vestito. Puoi dire che lo prepari e, se ha senso, chiamare mostra_video. Non dire di averlo già fatto.' }));
+        return;
+      }
+      replyTool(s, callId, JSON.stringify({ ok: true, stato: 'avvio', azione: planned.action, messaggio: 'Il movimento sta per partire. Non dire che lo stai facendo o «eccomi» finché non arriva conferma che è visibile.' }));
+      Promise.resolve(App.compose.play(planned)).then((ok) => {
+        notifyVisible(s, ok
+          ? '[sistema: il movimento richiesto è ora visibile in chiamata. Solo ora puoi accennarlo in una frase breve.]'
+          : '[sistema: il movimento non è partito, non è visibile. Non dire di averlo fatto.]');
+      }).catch(() => notifyVisible(s, '[sistema: il movimento non è partito. Non dire di averlo fatto.]'));
+      return;
+    }
+    if (name !== 'mostra_video') {
+      replyTool(s, callId, JSON.stringify({ ok: false, error: 'strumento sconosciuto' }));
+      return;
+    }
+    const desc = String((args && (args.descrizione || args.description || args.prompt)) || '').trim();
+    replyTool(s, callId, JSON.stringify({ ok: true, stato: 'in_preparazione', messaggio: 'Video in preparazione. Continua a parlare normalmente, non chiudere la chiamata. Non dire che il video si vede finché non arriva conferma che il pannello è visibile.' }));
+    if (App.callVideo && App.callVideo.request) App.callVideo.request(s.ch, desc);
+  }
+
   // ---------- eventi da xAI ----------
   function onEvent(s, ev) {
     switch (ev.type) {
@@ -240,7 +293,7 @@
         s.userSpeaking = true; s.phase = 'listening'; s.bargeSamples = 0; s.bargeVoiced = 0; s.live = '';
         // v2d-39: barge-in immediato. Se il microfono locale conferma voce vera, lei si ferma SUBITO; altrimenti si
         // aspetta la conferma (max 1,5 s): il residuo della sua eco non la interrompe.
-        if (playing(s) || s.resp || s.responseActive) { s.bargeEvAt = performance.now(); if (localVoice(s)) bargeIn(s, false); else armBarge(s); }
+        if (playing(s) || s.resp || s.responseActive) { s.bargeEvAt = performance.now(); if (playing(s) ? localVoiceHigh(s) : localVoice(s)) bargeIn(s, false); else armBarge(s); }
         if (App.call && App.call.onInterim) App.call.onInterim('…'); break;
       case 'input_audio_buffer.speech_stopped':
         s.userSpeaking = false; clearBarge(s);
@@ -266,6 +319,8 @@
         if (s.resp) { s.resp.text += ev.delta || ''; s.viseme = vowelShape(s.resp.text); if (App.call && App.call.caption) App.call.caption(s.resp.text); } break;
       case 'response.output_audio_transcript.done': case 'response.audio_transcript.done':
         if (s.resp && ev.transcript) s.resp.text = ev.transcript; break;
+      case 'response.function_call_arguments.done':
+        handleTool(s, ev); break;
       case 'response.done': {
         s.responseActive = false;
         fadeOutEnd(s); const r = s.resp; s.resp = null; if (s.phase === 'replying') s.phase = 'idle';
@@ -299,7 +354,7 @@
     const c = s.cfg.session || {}, t0 = performance.now();
     let ok = await upd(s, c);
     if (!ok && !s.closed) {
-      const parts = [{ instructions: c.instructions, voice: c.voice }, { instructions: c.instructions }, { turn_detection: c.turn_detection }, { audio: c.audio && { input: { format: c.audio.input.format }, output: c.audio.output } }, { audio: c.audio && { input: { transcription: c.audio.input.transcription } } }, { reasoning: c.reasoning }];
+      const parts = [{ instructions: c.instructions, voice: c.voice }, { instructions: c.instructions }, { tools: c.tools }, { turn_detection: c.turn_detection }, { audio: c.audio && { input: { format: c.audio.input.format }, output: c.audio.output } }, { audio: c.audio && { input: { transcription: c.audio.input.transcription } } }, { reasoning: c.reasoning }];
       const done = new Set();
       for (const p of parts) { if (s.closed) return; if (p.instructions && done.has('instructions')) continue; if (Object.values(p).some((v) => v === undefined)) continue; if (await upd(s, p)) Object.keys(p).forEach((k) => done.add(k)); }
       s.partial = true; note('config', 'parziale: ' + [...done].join(', '));
@@ -311,13 +366,19 @@
   function isGreet(s, t) { if (!s.greet || !t) return false; const g = s.greet.trim().slice(0, 10), ok = String(t).trim().slice(0, 10) === g; if (ok) s.greet = null; return ok; }
   function ready(s) {
     if (s.isReady || s.closed) return; s.isReady = true; s.ready = true; s.ok();
-    for (const pcm of s.early.splice(0)) if (!s.muted) s.ws.send(JSON.stringify({ type: 'input_audio_buffer.append', audio: b64(pcm) }));
+    for (const pcm of s.early.splice(0)) if (!s.muted && !playing(s)) s.ws.send(JSON.stringify({ type: 'input_audio_buffer.append', audio: b64(pcm) }));
   }
   // v2d-39: voce dell'utente confermata dal microfono locale: almeno 2 degli ultimi 3 blocchi da 100 ms sopra il rumore di fondo
   // (soglia più alta mentre lei suona: la cancellazione dell'eco lascia un residuo basso, la voce vera è più forte).
   function localVoice(s) {
     const L = (s.micLv || []).slice(-3); if (L.length < 2) return false;
     const th = Math.max(playing(s) ? 0.03 : 0.02, (s.floor || 0.008) * (playing(s) ? 5 : 3.4));
+    return L.filter((v) => v >= th).length >= 2;
+  }
+  // v2d-66: soglia ancora più alta per aprire il microfono (e interrompere) mentre lei sta parlando.
+  function localVoiceHigh(s) {
+    const L = (s.micLv || []).slice(-3); if (L.length < 2) return false;
+    const th = Math.max(0.08, (s.floor || 0.008) * 10);
     return L.filter((v) => v >= th).length >= 2;
   }
   function clearBarge(s) { if (s.bargeTimer) { clearInterval(s.bargeTimer); s.bargeTimer = 0; } }
@@ -328,7 +389,7 @@
       if (s.closed || !s.userSpeaking) { clearBarge(s); return; }
       // conferma dal microfono locale (subito) oppure, come prima, ~700 ms di voce con già un po' di testo trascritto
       const held = performance.now() - s.bargeAt, text = String(s.live || '').replace(/\s+/g, ' ').trim();
-      if (localVoice(s) || (held >= 700 && text.length >= 8)) { clearBarge(s); bargeIn(s, false); }
+      if ((playing(s) ? localVoiceHigh(s) : localVoice(s)) || (held >= 700 && text.length >= 8 && !playing(s))) { clearBarge(s); bargeIn(s, false); }
       else if (held > 2200) clearBarge(s);
     }, 40);
   }
@@ -451,6 +512,7 @@
       return { lat: s.lat };
     },
     interrupt() { if (S) bargeIn(S, true); },
+    notifyVisible(text) { notifyVisible(S, text); },
     // v2d-50: testo (e foto) dalla riga sotto la videochiamata. Entra nella sessione vocale come istruzione,
     // lei risponde solo a voce; niente bolla in chat. Il filtro esplicito e la foto fissa restano quelli della sessione.
     async sendInstruction(text, opts) {

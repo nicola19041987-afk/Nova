@@ -332,6 +332,12 @@
       P.blocked = false;
     };
     async function prepareNext() {
+      if (P.queue && P.queue.length) {
+        const clip = P.queue.shift();
+        P.nextClip = clip; P.nextWhy = 'compose'; P.nextHome = false;
+        await load(back(), clip);
+        return;
+      }
       const opts = { now: performance.now(), home: !!(hooks.wantHome && hooks.wantHome()), talk: talkNow() };
       const probe = Object.assign({}, P.st, { recent: P.st.recent.slice() });
       const { clip, why } = pickNext(P.lib, probe, opts);
@@ -392,6 +398,7 @@
         P.log.push({ at: Math.round(performance.now()), id: clip.id, from: clip.from, to: clip.to, why: P.nextWhy, t0: Math.round((nv.currentTime || 0) * 1000), poster: nv.hasAttribute('poster') });
         if (P.log.length > 60) P.log.shift();
         if (hooks.onClip) hooks.onClip(clip, P.nextWhy);
+        if (P.nextWhy === 'compose' && P._queueResolve) P._queueResolve(true);
         P.nextClip = null;
         // Il video vecchio si tocca solo a dissolvenza finita: caricarci subito il clip seguente mostrava un fotogramma vuoto o sbagliato.
         P.talkSwitchAt = P._talkAt ? Math.round(performance.now() - P._talkAt) : P.talkSwitchAt; P._talkAt = 0;
@@ -461,6 +468,18 @@
     };
     P.mood = (m, ms = 60000) => { const f = MOOD_FAMILY[m] || (TOKEN.test(m || '') ? m : null); if (!f) return; if (f !== P.st.mood && !P.swapping) P.nextClip = null; /* il prossimo clip segue subito il nuovo umore */ P.st.mood = f; P.st.moodUntil = performance.now() + ms; };
     P.event = (e, ms = 25000) => { if (!e) return; if (P.lib && P.lib.calm && performance.now() - (P.st.lastEventAt || -1e9) < EVENT_GAP_MS) return; /* v2d-35: gesti rari */ P.st.event = e; P.st.eventUntil = performance.now() + ms; P.nextClip = null; };
+    // v2d-66: catena di segmenti (composizione). Dopo l'ultimo si torna al loop idle/talk della libreria attuale.
+    P.playSequence = (clips) => new Promise((resolve) => {
+      const list = (Array.isArray(clips) ? clips : []).filter((c) => c && (c.url || c.id));
+      if (!list.length) { resolve(false); return; }
+      P.queue = list.slice();
+      let settled = false;
+      const done = (ok) => { if (settled) return; settled = true; P._queueResolve = null; resolve(!!ok); };
+      P._queueResolve = done;
+      P.nextClip = null;
+      if (!P.on) P.start();
+      setTimeout(() => done(false), 5000);
+    });
     return P;
   }
 

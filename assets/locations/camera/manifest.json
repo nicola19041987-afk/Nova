@@ -13,7 +13,8 @@
       "from": "petto",
       "to": "petto",
       "label": "Ascolto",
-      "weight": 1
+      "weight": 1,
+      "action": "idle"
     },
     {
       "id": "camera-talk",
@@ -22,7 +23,10 @@
       "from": "petto",
       "to": "petto",
       "label": "Parla",
-      "weight": 1
+      "weight": 1,
+      "action": "talk"
     }
-  ]
+  ],
+  "outfit": "home-shirt",
+  "place": "camera"
 }

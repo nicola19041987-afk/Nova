@@ -4,8 +4,7 @@
 (function () {
   const QUIET_MS = 700, IDLE_GAP = 180000, IDLE_AFTER = 90000, HAND_MS = 3400;
   const FALLBACK = [
-    { id: 'saluto', label: 'Saluta con la mano', emoji: '👋', full: false, keys: ['ciao con la mano', 'salut'], url: '/api/gestures/saluto' },
-    { id: 'capelli', label: 'Si sistema i capelli', emoji: '💇‍♀️', full: false, keys: ['pettin', 'capell'], url: '/api/gestures/capelli' },
+
   ];
   let clips = FALLBACK.slice(), pending = null, playing = null, lastPlay = 0, lastTalk = Date.now(), quietSince = 0, lastIdleId = '';
   const video = () => document.getElementById('stage-video');

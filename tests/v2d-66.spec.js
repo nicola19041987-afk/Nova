@@ -21,9 +21,9 @@ test('v2d-66: evict della memoria gesti (mai usati prima, catalogo protetto, cap
   expect(motionMem.CAP).toBe(80);
   expect(motionMem.boostWeight(1, 0)).toBe(1);
   expect(motionMem.boostWeight(1, 1)).toBeCloseTo(1 + Math.log1p(1), 8);
-  const catalog = new Set(['/api/locations/showroom/showroom-talk-a.mp4', '/api/locations/barca/barca-talk.mp4']);
+  const catalog = new Set(['/api/locations/salotto/salotto-talk.mp4', '/api/locations/barca/barca-talk.mp4']);
   const evictedBad = motionMem.evict({
-    '/api/locations/showroom/showroom-talk-a.mp4': { playCount: 2 },
+    '/api/locations/salotto/salotto-talk.mp4': { playCount: 2 },
     '/api/evil/x.mp4': { playCount: 99 },
     '/api/locations/barca/barca-talk.mp4': { playCount: 0 },
   }, { cap: 80, catalog });
@@ -33,10 +33,10 @@ test('v2d-66: evict della memoria gesti (mai usati prima, catalogo protetto, cap
   for (let i = 0; i < 90; i++) {
     clips['/api/locations/x/clip-' + i + '.mp4'] = { playCount: i < 15 ? 0 : i, lastPlayedAt: '2026-01-01T00:00:00Z' };
   }
-  clips['/api/locations/showroom/showroom-talk-a.mp4'] = { playCount: 1, lastPlayedAt: '2026-01-02T00:00:00Z' };
+  clips['/api/locations/salotto/salotto-talk.mp4'] = { playCount: 1, lastPlayedAt: '2026-01-02T00:00:00Z' };
   const ev = motionMem.evict(clips, { cap: 80, catalog, allowAll: true });
   expect(Object.keys(ev).length).toBe(80);
-  expect(ev['/api/locations/showroom/showroom-talk-a.mp4']).toBeTruthy();
+  expect(ev['/api/locations/salotto/salotto-talk.mp4']).toBeTruthy();
   // 91 voci, cap 80: si tolgono prima i 15 mai usati (11 evictions) e restano 4 mai usati + tutti quelli già usati + il catalogo.
   expect(Object.values(ev).filter((e) => !e.playCount).length).toBe(4);
   expect(Object.entries(ev).filter(([u, e]) => u.includes('/clip-') && e.playCount > 0).length).toBe(75);
@@ -47,6 +47,8 @@ test('v2d-66: cache del service worker e pacchetti con still del tatuaggio uffic
   expect(sw).toMatch(/const CACHE = 'app-privata-v2d-66'/);
   expect(sw).not.toContain("const CACHE = 'app-privata-v2d-65'");
   expect(sw).toContain("'/js/motion-memory.js'");
+  expect(sw).toContain("'/js/call-video.js'");
+  expect(sw).toContain("'/js/clip-compose.js'");
   expect(sw).toContain('keys.filter((k) => k !== CACHE)');
 
   const graph = fs.readFileSync(path.join(__dirname, '../public/js/motion-graph.js'), 'utf8');
@@ -76,7 +78,10 @@ test('v2d-66: cache del service worker e pacchetti con still del tatuaggio uffic
     }
     const man = JSON.parse(fs.readFileSync(path.join(__dirname, '../assets/locations', id, 'manifest.json'), 'utf8'));
     if (id === 'showroom') {
-      expect(man.still).toBe('IRA-COMPLETO-NERO-v01-9x16.jpg');
+      expect(man.still).toBe('IRA-CALL-SHOWROOM-v04.jpg');
+      expect(man.outfit).toBe('lace-black');
+      expect(man.framing).toBe('close');
+      expect(man.clips.every((c) => c.kind !== 'parla')).toBe(true);
     } else {
       expect(man.still).toBe(STILLS[id]);
       const a = fs.readFileSync(path.join(__dirname, '../assets/locations', id, man.still));
@@ -100,7 +105,7 @@ test('v2d-66: API memoria gesti, allowlist, conteggi, niente file media', async 
 
   const mem0 = await (await request.get('/api/motion-memory', { headers: HEAD })).json();
   expect(mem0.cap).toBe(80);
-  expect(mem0.clips['/api/locations/showroom/showroom-idle-listen.mp4']).toBeTruthy();
+  expect(mem0.clips['/api/locations/showroom/showroom-idle-stand.mp4']).toBeTruthy();
   expect(mem0.clips['/api/locations/barca/barca-talk.mp4'].playCount).toBeGreaterThanOrEqual(0);
   expect(mem0.clips['/api/gestures/saluto']).toBeFalsy();
 
@@ -109,7 +114,7 @@ test('v2d-66: API memoria gesti, allowlist, conteggi, niente file media', async 
   const bad2 = await request.post('/api/motion-memory/play', { data: { url: '/etc/passwd' }, headers: HEAD });
   expect(bad2.status()).toBe(400);
 
-  const url = '/api/locations/showroom/showroom-talk-a.mp4';
+  const url = '/api/locations/salotto/salotto-talk.mp4';
   const before = mem0.clips[url].playCount;
   const ok = await request.post('/api/motion-memory/play', { data: { url }, headers: HEAD });
   expect(ok.ok(), await ok.text()).toBeTruthy();
@@ -198,9 +203,9 @@ test('v2d-66: in chiamata il luogo resta fisso, i clip partono, la memoria regis
     still: App.locationCall.still(),
     ids: (App.locationCall.lib() || []).map((c) => c.id),
   }));
-  expect(first.place).toBe('showroom');
+  expect(first.place).toBe('salotto');
   expect(first.locked).toBe(true);
-  expect(first.still).toBe('/api/locations/showroom/still');
+  expect(first.still).toBe('/api/locations/salotto/still');
   expect(first.ids.length).toBeGreaterThan(0);
   expect(new Set(first.ids).size).toBe(first.ids.length);
 
@@ -208,7 +213,7 @@ test('v2d-66: in chiamata il luogo resta fisso, i clip partono, la memoria regis
     const v = document.getElementById('motion-video') || document.querySelector('#stage video');
     return !!(v && v.currentTime > 0.05);
   }, null, { timeout: 8000 });
-  await page.screenshot({ path: SHOT + '/call-showroom.png' });
+  await page.screenshot({ path: SHOT + '/call-salotto-home.png' });
 
   await expect.poll(async () => {
     const mem = await (await page.request.get('/api/motion-memory', { headers: HEAD })).json();
@@ -216,7 +221,7 @@ test('v2d-66: in chiamata il luogo resta fisso, i clip partono, la memoria regis
   }, { timeout: 8000 }).toBeGreaterThan(0);
 
   const mid = await page.evaluate(() => App.locationCall.place());
-  expect(mid).toBe('showroom'); // ancora lo stesso luogo a metà chiamata
+  expect(mid).toBe('salotto'); // ancora lo stesso luogo a metà chiamata
 
   await page.evaluate(() => { if (App.call && App.call.end) App.call.end({ silent: true }); });
   await page.waitForFunction(() => App.call && !App.call.active && !App.locationCall.place());
@@ -243,4 +248,58 @@ test('v2d-66: in chiamata il luogo resta fisso, i clip partono, la memoria regis
   expect(barca.locked).toBe(true);
   await page.screenshot({ path: SHOT + '/call-barca-tattoo.png' });
   await page.evaluate(() => { App.ls.set('locationForce', ''); if (App.call && App.call.end) App.call.end({ silent: true }); });
+});
+
+
+test('v2d-66: saluti e prompt di chiamata senza ahah/parla, niente te lo preparo', () => {
+  const callSrc = fs.readFileSync(path.join(__dirname, '../public/js/call.js'), 'utf8');
+  const m = callSrc.match(/const GREET = \[([^\]]+)\]/);
+  expect(m).toBeTruthy();
+  const greet = m[1];
+  expect(greet).not.toMatch(/ahah|haha|ah ah|parla|eccomi|ti ascolto/i);
+  const server = fs.readFileSync(path.join(__dirname, '../server.js'), 'utf8');
+  expect(server).not.toMatch(/Di. una frase corta tipo «te lo preparo»/);
+  expect(server).toMatch(/niente «ahah»/);
+  expect(server).toMatch(/handleSilence: false/);
+  const voice = fs.readFileSync(path.join(__dirname, '../public/js/voice.js'), 'utf8');
+  expect(voice).not.toMatch(/replace\([^)]*ahah[^)]*'\[laugh\]'\)/);
+});
+
+test('v2d-66: composizione percorsi, libreria movimenti distinta dai luoghi', async ({ request }) => {
+  const compose = require('../public/js/clip-compose.js');
+  const movements = [
+    { id: 'studio-lace-sit', url: '/api/movements/studio-lace-sit.mp4', place: 'studio', outfit: 'lace-black', action: 'sit', from: 'stand', to: 'sit' },
+    { id: 'studio-lace-stand-up', url: '/api/movements/studio-lace-stand-up.mp4', place: 'studio', outfit: 'lace-black', action: 'stand', from: 'sit', to: 'stand' },
+    { id: 'studio-lace-turn', url: '/api/movements/studio-lace-turn.mp4', place: 'studio', outfit: 'lace-black', action: 'turn', from: 'stand', to: 'stand' },
+  ];
+  const location = [
+    { id: 'salotto-idle', url: '/api/locations/salotto/salotto-idle-listen.mp4', place: 'salotto', outfit: 'home-shirt', action: 'idle', from: 'petto', to: 'petto', kind: 'base' },
+  ];
+  const sit = compose.plan('sedersi', { place: 'studio', outfit: 'lace-black', from: 'stand', movements, location });
+  expect(sit.ok).toBe(true);
+  expect(sit.path.map((c) => c.id)).toEqual(['studio-lace-sit']);
+  const no = compose.plan('sedersi', { place: 'salotto', outfit: 'home-shirt', from: 'stand', movements, location });
+  expect(no.ok).toBe(false);
+  expect(no.reason).toMatch(/azione-assente|nessun-percorso|contesto/);
+  const report = compose.report({ movements, location });
+  const studio = report.find((r) => r.place === 'studio');
+  expect(studio.composable).toEqual(expect.arrayContaining(['sit', 'stand', 'turn']));
+  expect(studio.missing).toEqual(expect.arrayContaining(['talk', 'idle']));
+
+  const r = await request.post('/api/pin/setup', { data: { user: 'nicola', pin: '1357' }, headers: HEAD });
+  if (r.status() === 409) {
+    const l = await request.post('/api/login', { data: { user: 'nicola', pin: '1357' }, headers: HEAD });
+    expect(l.ok(), await l.text()).toBeTruthy();
+  } else expect(r.ok(), await r.text()).toBeTruthy();
+  const mov = await (await request.get('/api/movements', { headers: HEAD })).json();
+  expect(mov.library).toBe('movement');
+  expect(mov.clips.length).toBeGreaterThan(0);
+  expect(mov.clips.every((c) => c.library === 'movement' && c.place && c.outfit && c.action)).toBe(true);
+  const one = mov.clips.find((c) => c.id === 'studio-lace-sit');
+  expect(one).toBeTruthy();
+  const vid = await request.get(one.url, { headers: HEAD });
+  expect(vid.ok()).toBeTruthy();
+  expect(vid.headers()['content-type'] || '').toMatch(/video|octet/);
+  // i vecchi clip non ufficiali dello showroom non sono più serviti
+  expect((await request.get('/api/locations/showroom/showroom-talk-a.mp4', { headers: HEAD })).status()).toBe(404);
 });
