@@ -249,8 +249,16 @@
     },
   };
   // la foto mostrata (avatar, intestazione, poster dei video) è quella del look attuale
+  const IRA_ID = '5ce17a0000000001';
+  const IRA_OFFICIAL = '/api/avatars/c2d6200000000001.jpg';
+  App.IRA_ID = IRA_ID;
+  App.IRA_OFFICIAL_FACE = IRA_OFFICIAL;
   const baseFace = App.faceSrc;
-  App.faceSrc = (ch) => { const o = ch && !locked() && current(ch); return o ? o.avatar : baseFace(ch); };
+  App.faceSrc = (ch) => {
+    if (ch && ch.id === IRA_ID) return IRA_OFFICIAL;
+    const o = ch && !locked() && current(ch);
+    return o ? o.avatar : baseFace(ch);
+  };
   // punti del viso per il labiale: quelli misurati su questa foto; altrimenti quelli della base (non validi per il warp:
   // il riconoscimento del viso li misura sul telefono e li salva sul look con App.faceFound)
   // v2d-36: un look senza punti propri NON usa quelli della foto di base (bocca disegnata nel posto sbagliato): null ->

@@ -38,7 +38,7 @@ test('v2d-62: cache, viso ufficiale, chat visivamente vuota, niente richieste Gr
   fs.mkdirSync(SHOT, { recursive: true });
 
   const sw = await (await request.get('/sw.js')).text();
-  expect(sw).toMatch(/const CACHE = 'app-privata-v2d-(62|63|64)'/);
+  expect(sw).toMatch(/const CACHE = 'app-privata-v2d-(62|63|64|65)'/);
   expect(sw).toContain('/js/location-call.js');
   expect(sw).not.toContain("const CACHE = 'app-privata-v2d-61'");
 

@@ -426,6 +426,7 @@
     // da chiamare DENTRO il tocco che avvia la chiamata (sblocco audio + microfono in parallelo alla connessione)
     async start(ch, mode, greet) {
       if (S) App.rt.stop();
+      if (App.voice && App.voice.cancel) try { App.voice.cancel(); } catch {}
       const s = S = { ch, mode: mode === 'voice' ? 'voice' : 'video', voice: App.xaiVoice ? App.xaiVoice(ch) : 'eve', voiceExplicit: !!(App.xaiVoiceExplicit && App.xaiVoiceExplicit(ch)), early: [], sources: [], playT: 0, saveQ: Promise.resolve(), turns: 0, lat: [], volume: 1, muted: false, phase: 'connecting', closed: false };
       App.audio.callSession && App.audio.callSession(true); // iOS: registra+riproduce per tutta la chiamata (niente cambi di sessione)
       ctx(); LOG.length = 0; App.rt.lastError = ''; lipsWatch(s);

@@ -13,7 +13,12 @@
   // v8.4.5: microfono aperto (chiamata o modalità voce con trascrizione xAI): la voce passa SOLO dall'AudioContext condiviso
   const live = () => inCall() || xMode;
   // v8.4.5: in chiamata lei parla SEMPRE a voce, a prescindere dall'interruttore «Lettura» della chat
-  const speakOn = () => true; // v8.6.0: parla sempre (mai silenziosa)
+  // v2d-65: fuori chiamata parla sempre. In chiamata a tempo reale la voce è SOLO il flusso realtime
+  // (niente sintesi xAI/speechSynthesis in parallelo: era la seconda voce / l'eco).
+  const ttsBlocked = () => !!(App.call && App.call.active && App.rt && (
+    App.rt.active || (App.rt.live && App.rt.live()) || (App.call.engine && App.call.engine() === 'connecting')
+  ));
+  const speakOn = () => !ttsBlocked();
   const norm = (t) => String(t || '').toLowerCase().replace(/[^\p{L}\d ]+/gu, '').replace(/\s+/g, ' ').trim();
   // ---- v7.3: sblocco dell'audio su iPhone ----
   // iOS Safari/PWA: la sintesi vocale e l'audio Web restano muti finché non partono la prima volta DENTRO un tocco dell'utente.
@@ -145,7 +150,7 @@
           // microfono occupato (anche dal microfono «di prova» dell'avvio), vincoli non accettati o richiesta appesa: un secondo tentativo semplice
           this.micStats.retry = (this.micStats.retry || 0) + 1; this.micStats.firstErr = (e && e.name) || 'errore';
           dropPrime();
-          return await withTimeout(md.getUserMedia({ audio: true }), 6000);
+          return await withTimeout(md.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } }), 6000);
         }
       };
       this._micPAt = performance.now();
@@ -455,6 +460,7 @@
     listening: () => on && !!rec,
     // Frase detta dall'avatar anche con la lettura spenta (es. domanda di conferma)
     sayNow(text) {
+      if (ttsBlocked()) { NX.stop(); if (SS && (SS.speaking || SS.pending)) try { SS.cancel(); } catch {} return; }
       if (NX.enabled()) { if (SS && (SS.speaking || SS.pending)) SS.cancel(); NX.say(text); return; }
       if (!SS) return;
       speakNow(text, { before: (u) => App.avatarConv.speakUtterance(u, text) });
@@ -466,12 +472,13 @@
     mode: () => (on ? (xMode ? 'xai' : 'telefono') : 'off'),
     isListening: () => on,
     speak(text) {
-      if (!speakOn()) return;
+      if (ttsBlocked() || !speakOn()) return;
       if (NX.enabled()) { NX.say(text); return; }
       speakDevice(cleanTTS(text).replace(/\[laugh\]/g, ''));
     },
     // v8: lettura in streaming (frase per frase mentre arriva la risposta). Restituisce true se è attiva.
-    streamStart() { if (!speakOn() || !NX.enabled()) return false; if (SS && (SS.speaking || SS.pending)) SS.cancel(); NX.begin(); return true; },
+    streamStart() { if (ttsBlocked() || !speakOn() || !NX.enabled()) return false; if (SS && (SS.speaking || SS.pending)) SS.cancel(); NX.begin(); return true; },
+    ttsBlocked,
     streamFeed(delta) { NX.feed(delta); },
     streamEnd() { NX.end(); },
     cancel() { NX.stop(); if (App.simli) App.simli.interrupt(); if (SS && (SS.speaking || SS.pending)) try { SS.cancel(); } catch {} }, // v8.4.5: niente cancel() a vuoto (in chiamata nessun tocco alla sintesi del telefono)

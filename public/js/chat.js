@@ -243,6 +243,10 @@ App.chat = {
   // noAI = true: "solo messaggio" all'altra persona, l'IA non risponde (non serve la chiave).
   async send(text, noAI = false, photo = null, voice = null) {
     text = (text || '').trim(); if (voice && !text) text = 'Nota vocale'; if (photo && photo.localOnly && !text) text = 'Foto'; if ((!text && !photo && !voice) || !App.current || this.busy) return;
+    // v2d-65: in chiamata a tempo reale non si avvia un secondo modello/voce (TTS o stream). Il testo entra nella sessione live.
+    if (!noAI && !photo && !voice && App.call && App.call.active && App.rt && (App.rt.active || (App.rt.live && App.rt.live())) && App.rt.sendText) {
+      if (App.rt.sendText(text)) return;
+    }
     if (text && App.gestures && App.gestures.hear) App.gestures.hear(text, { defer: !noAI });
     if (!photo && this.pendingAdult) return this.answerAdult(text); // risposta sì/no alla domanda di conferma (resta sul telefono)
     if (!noAI && !App.hasAi()) return App.toast('🔑 Inserisci la chiave xAI in Impostazioni (oppure usa 💬 per scrivere solo all\'altra persona)');

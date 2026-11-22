@@ -237,7 +237,7 @@
     stage.classList.toggle('loc-call', locOn);
     // v2d-33: si suonano solo i clip del look attuale (vestito/capelli/trucco); in cache restano tutti
     // In videochiamata, se c'è un pacchetto luogo, quei clip (Ira già nella scena) hanno la precedenza.
-    const all = locLocked ? App.locationCall.lib() : (motionOn() && ch && G ? G.libraryOf(ch) : []);
+    const all = locLocked ? App.locationCall.lib() : ((App.call && App.call.active) ? [] : (motionOn() && ch && G ? G.libraryOf(ch) : []));
     const look0 = locOn ? all : (all.length ? lookLib(ch) : all);
     // v2d-36: qualità secondo la connessione (std / lite / still). Con 'still' niente clip: la foto con un respiro leggero.
     const net = App.net || window.NovaNet;
@@ -554,7 +554,8 @@
         const conv = $('#tab-conv'); if (conv) conv.classList.add('stage-mini');
       }
       const rt = $('#solo-rt'); if (rt) rt.addEventListener('click', () => this.toggleRt());
-      const home = $('#wa-home'); if (home) home.addEventListener('click', (e) => { e.stopPropagation(); this.showList(); }); // v2d-61: niente menu Impostazioni
+      const home = $('#wa-home'); if (home) home.addEventListener('click', (e) => { e.stopPropagation(); this.showList(); }); // v2d-61: niente menu Home
+      const gear = $('#list-settings'); if (gear) gear.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); this.showSettings(); });
       const bar = $('#look-bar');
       if (bar) bar.addEventListener('click', (e) => {
         if (e.target.closest('#nh-photo')) { e.preventDefault(); this.openPortrait(); return; }
@@ -590,7 +591,7 @@
         e.preventDefault();
         e.stopImmediatePropagation();
         if (document.body.classList.contains('solo-portrait')) { this.closePortrait(); return; }
-        if (document.body.dataset.tab === 'account') { this.showList(); return; } // v2d-61
+        if (document.body.classList.contains('solo-settings') || document.body.dataset.tab === 'account') { this.showList(); return; }
         if (document.body.dataset.tab === 'images' || document.body.dataset.tab === 'calls') { this.showChat(); return; }
         if (document.body.classList.contains('solo-home') && this._nh && this._nh !== 'list') { this.showPage('list'); return; }
         if (document.body.classList.contains('solo-home')) { this.showChat(); return; }
@@ -718,8 +719,23 @@
       const ira = soloChar();
       if (ira && App.current && App.current.id !== ira.id && App.chat && App.chat.open) App.chat.open(ira.id).catch(() => {});
     },
+    // v2d-65: Impostazioni dall'ingranaggio in alto a destra dell'elenco chat (tema scuro, stessi interruttori di account.js).
+    showSettings() {
+      if (this.full) this.toggleFull(false);
+      document.body.classList.remove('solo-chat', 'solo-home', 'solo-portrait', 'solo-calls', 'solo-list', 'wa-conv');
+      document.body.classList.add('solo-settings');
+      ['tab-conv', 'tab-chat', 'tab-calls', 'tab-images', 'tab-feed'].forEach((id) => { const el = document.getElementById(id); if (el) el.hidden = true; });
+      const acc = $('#tab-account'); if (acc) acc.hidden = false;
+      document.body.dataset.tab = 'account';
+      const title = $('#title'); if (title) title.textContent = 'Impostazioni';
+      this.paintBack('list');
+      const back = $('#back-btn');
+      if (back) back.setAttribute('aria-label', 'Torna alle chat');
+      this.syncSettings(soloChar());
+      if (App.account && App.account.load) App.account.load().catch(() => {});
+    },
     showHome() {
-      // v2d-61: il menu Impostazioni/Home non è più raggiungibile (resta il codice, si va all'elenco).
+      // v2d-61: il menu Home non è più raggiungibile (si resta sull'elenco). Impostazioni: solo l'ingranaggio.
       this.showList();
     },
     // v2d-61: la scheda Chiamate non è più raggiungibile; la videochiamata parte dal tasto video in chat.

@@ -46,7 +46,7 @@
   function play(id) {
     const clip = byId(id); if (!clip) return false;
     if (ownMotion()) { pending = null; return false; }
-    if (App.call && App.call.active && App.locationCall && App.locationCall.place && App.locationCall.place()) { pending = null; return false; }
+    if (App.call && App.call.active) { pending = null; return false; }
     if (App.faceLocked && App.faceLocked()) { pending = null; return false; } // v2d-46: i video di serie non sono la foto scelta
     if (simli()) { pending = null; return false; }
     if (talking()) { pending = id; return false; }
@@ -67,6 +67,7 @@
     return true;
   }
   function pump() {
+    if (App.call && App.call.active) { pending = null; if (playing) endClip(video(), playing); return; }
     if (simli()) { pending = null; if (playing) endClip(video(), playing); return; }
     if (talking()) { lastTalk = Date.now(); quietSince = 0; if (playing) endClip(video(), playing); return; }
     if (pending) {
@@ -87,16 +88,18 @@
       try { const r = await App.api('/api/gestures'); if (Array.isArray(r) && r.length) clips = r; } catch { /* resta l'elenco precedente */ }
     },
     hear(text, opts) {
+      if (App.call && App.call.active) { pending = null; return null; }
       const id = match(text); if (!id || simli()) return null;
       if (this._heard && this._heard.id === id && Date.now() - this._heard.at < 2500) return 'queued';
       this._heard = { id, at: Date.now() };
       if ((opts && opts.defer) || talking() || playing) { pending = id; quietSince = 0; return 'queued'; }
-      play(id); return 'play';
+      return play(id) ? 'play' : false;
     },
     request(id) {
+      if (App.call && App.call.active) { pending = null; return false; }
       if (!byId(id) || simli()) return false;
       if (talking() || playing) { pending = id; quietSince = 0; return 'queued'; }
-      play(id); return 'play';
+      return play(id) ? 'play' : false;
     },
     pump, playing: () => !!playing,
     state: () => ({ pending, playing: playing && playing.id, lastPlay }),

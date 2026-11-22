@@ -200,7 +200,7 @@
   }
 
   // ---------- cache dei clip (disco del telefono) + URL locali pronti ----------
-  const CACHE_NAME = 'nova-motion-v1';
+  const CACHE_NAME = 'nova-motion-v2d-65';
   const blobs = new Map(); // url -> objectURL (LRU)
   const BLOB_MAX = 6; // v2d-32: solo i clip vicini in memoria (prima 24: troppa RAM sul telefono)
   async function cached(url) {
