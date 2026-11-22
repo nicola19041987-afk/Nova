@@ -10,7 +10,7 @@ const SHOTS = process.env.V2D55_SHOTS || '/workspace/app-ira-v55';
 test('v2d-55: cache e pagina PIN nera con IRA, puntini Nicola e Luisa, senza logo', async ({ page, request, browserName }) => {
   test.skip(browserName === 'webkit', 'Questo WebKit chiude il processo sulla schermata di accesso. Il percorso è verificato su Chromium.');
   const sw = await (await request.get('/sw.js')).text();
-  expect(sw).toMatch(/const CACHE = 'app-privata-v2d-(5[5-9]|[6-9]\d)'/);
+  expect(sw).toMatch(/const CACHE = 'app-privata-v2d-(5[5-9]|[6-9]\d|65b)'/);
   expect(sw).not.toContain("const CACHE = 'app-privata-v2d-54'");
 
   const setup = await request.post('/api/pin/setup', { data: { user: 'nicola', pin: '1357' }, headers: HEAD });

@@ -11,11 +11,34 @@ const OFFICIAL = '/api/avatars/c2d6200000000001.jpg';
 
 test('v2d-65: cache del service worker, all\'attivazione si cancellano tutte le cache vecchie (anche nova-motion)', async ({ request }) => {
   const sw = await (await request.get('/sw.js')).text();
-  expect(sw).toMatch(/const CACHE = 'app-privata-v2d-65'/);
+  expect(sw).toMatch(/const CACHE = 'app-privata-v2d-65b'/);
   expect(sw).not.toContain("const CACHE = 'app-privata-v2d-64'");
   expect(sw).toContain('keys.filter((k) => k !== CACHE)');
   expect(sw).not.toContain("!k.startsWith('nova-motion-')");
   expect(sw).toMatch(/nova-motion/);
+});
+
+test('v2d-65b: icona e splash IRA (non Nova), cache-bust ?v=865', () => {
+  const html = fs.readFileSync(path.join(__dirname, '../public/index.html'), 'utf8');
+  const man = JSON.parse(fs.readFileSync(path.join(__dirname, '../public/manifest.json'), 'utf8'));
+  const sw = fs.readFileSync(path.join(__dirname, '../public/sw.js'), 'utf8');
+  expect(man.name).toBe('Ira');
+  expect(man.short_name).toBe('Ira');
+  expect(html).toContain('name="apple-mobile-web-app-title" content="Ira"');
+  expect(html).toContain('<title>Ira</title>');
+  expect(html).toMatch(/login-wordmark"[^>]*>IRA/);
+  expect(html).toContain('?v=865');
+  expect(html).not.toContain('?v=864');
+  expect(JSON.stringify(man)).toContain('?v=865');
+  expect(JSON.stringify(man)).not.toContain('?v=864');
+  expect(sw).toMatch(/const CACHE = 'app-privata-v2d-65b'/);
+  const icon = fs.readFileSync(path.join(__dirname, '../public/icons/icon-512.png'));
+  // PNG del wordmark IRA v2d-53 (rosso #E50914 su nero puntinato), non il wordmark Nova azzurro
+  expect(icon.length).toBeGreaterThan(1000);
+  const fav = fs.readFileSync(path.join(__dirname, '../public/icons/favicon.svg'), 'utf8');
+  expect(fav).toMatch(/#E50914/i);
+  expect(fav).not.toMatch(/#4FC3F7/i);
+  expect(fav.toLowerCase()).not.toContain('nova');
 });
 
 test('v2d-65: getUserMedia audio richiede sempre echoCancellation', async () => {

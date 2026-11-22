@@ -43,14 +43,14 @@ test('v2d-45: titolo, PWA e cache del service worker non dicono più Eris (oggi 
   const html = await (await request.get('/')).text();
   expect(html).toContain('<title>Ira</title>');
   expect(html).toContain('name="apple-mobile-web-app-title" content="Ira"');
-  expect(html).toContain('id="login-title">Ira<');
+  expect(html).toContain('id="login-title">IRA<'); // v2d-53+: wordmark login IRA, come v2d-51
   expect(html).not.toMatch(/>Eris</);
   expect(html).not.toMatch(/>Alpha</);
   const man = await (await request.get('/manifest.json')).json();
   expect(man.name).toBe('Ira');
   expect(man.short_name).toBe('Ira');
   const sw = await (await request.get('/sw.js')).text();
-  expect(sw).toMatch(/const CACHE = 'app-privata-v2d-(4[5-9]|[5-9]\d)'/); // v2d-51 alza la cache
+  expect(sw).toMatch(/const CACHE = 'app-privata-v2d-(4[5-9]|[5-9]\d|65b)'/); // v2d-65b alza la cache
   expect(sw).not.toContain("app-privata-v2d-44'");
 });
 

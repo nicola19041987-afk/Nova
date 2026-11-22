@@ -95,7 +95,7 @@ const vis = (page, sel) => page.evaluate((s) => { const e = document.querySelect
 
 test('v2d-46: cache del service worker e HTML: barra Chat · Chiamate · Impostazioni, niente Galleria nel menu', async ({ request }) => {
   const sw = await (await request.get('/sw.js')).text();
-  expect(sw).toMatch(/const CACHE = 'app-privata-v2d-(4[6-9]|[5-9]\d)'/); // v2d-50 alza la cache
+  expect(sw).toMatch(/const CACHE = 'app-privata-v2d-(4[6-9]|[5-9]\d|65b)'/); // v2d-65b alza la cache
   const html = await (await request.get('/')).text();
   expect(html).not.toContain('id="dock-gallery"');
   expect(html).not.toMatch(/<span>Galleria<\/span><em>/);

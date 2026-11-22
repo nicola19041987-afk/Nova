@@ -63,7 +63,7 @@ const vis = () => {
 
 test('v2d-50: cache del service worker app-privata-v2d-50', async ({ request }) => {
   const sw = await (await request.get('/sw.js')).text();
-  expect(sw).toMatch(/const CACHE = 'app-privata-v2d-(50|[5-9]\d)'/); // v2d-51 alza la cache
+  expect(sw).toMatch(/const CACHE = 'app-privata-v2d-(50|[5-9]\d|65b)'/); // v2d-65b alza la cache
   expect(sw).not.toContain("const CACHE = 'app-privata-v2d-49'");
 });
 

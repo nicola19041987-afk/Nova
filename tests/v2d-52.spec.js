@@ -66,7 +66,7 @@ async function blockLuisa(playwright, base) {
 
 test('v2d-52: cache del service worker e interfaccia senza testo di sospensione', async ({ request }) => {
   const sw = await (await request.get('/sw.js')).text();
-  expect(sw).toMatch(/const CACHE = 'app-privata-v2d-(5[2-9]|[6-9]\d)'/); // v2d-55 alza la cache
+  expect(sw).toMatch(/const CACHE = 'app-privata-v2d-(5[2-9]|[6-9]\d|65b)'/); // v2d-65b alza la cache
   expect(sw).not.toContain("const CACHE = 'app-privata-v2d-51'");
   const files = ['/js/auth.js', '/js/core.js', '/js/account.js', '/js/main.js', '/index.html'];
   for (const f of files) {
