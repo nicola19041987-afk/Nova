@@ -13,7 +13,8 @@
     'step-back': 'step-back', indietreggiare: 'step-back', indietro: 'step-back',
     approach: 'approach', avvicinarsi: 'approach', passi: 'approach', cammina: 'approach', camminare: 'approach',
     gesture: 'gesture', gesto: 'gesture', saluto: 'gesture', saluta: 'gesture', bacio: 'gesture', risata: 'gesture',
-    capelli: 'gesture', piega: 'gesture', piegarsi: 'gesture',
+    capelli: 'gesture', piega: 'gesture', piegarsi: 'gesture', mostra: 'gesture', vestito: 'gesture', 'mostra vestito': 'gesture',
+    giro360: 'turn', 'giro 360': 'turn',
     idle: 'idle', riposo: 'idle',
     talk: 'talk', parla: 'talk', parlare: 'talk',
   };

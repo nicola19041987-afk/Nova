@@ -1,6 +1,6 @@
 // Service worker: mette in cache solo la "scocca" dell'app (nessun dato privato).
-const CACHE = 'app-privata-v2d-66'; // v2d-66: clip luogo ufficiali, memoria gesti, video su richiesta, composizione movimenti; v2d-65b: icona e splash IRA (rossa su nero puntinato, ?v=865); v2d-65: una sola voce in chiamata, viso ufficiale v8 + pacchetti luogo, cache vecchie cancellate all'attivazione; v2d-64: una sola sessione vocale, luogo fisso, camera unica, presenza nel luogo; v2d-63: luoghi videochiamata, rotazione persistente; v2d-62: viso ufficiale Ira, videochiamata nello showroom; v2d-61: elenco e chat scuri; v2d-60: dopo il PIN l'elenco chat; v2d-59: elenco IRA/MERCY; v2d-58: colori chat Ira; v2d-57: elenco chat; v2d-55: ingresso PIN elegante
-const SHELL = ['/', '/index.html', '/style.css', '/avatar.js', '/js/motion-lib.js', '/js/live-motion.js', '/js/motion-graph.js', '/js/clip-compose.js', '/js/net.js', '/js/presence.js', '/js/core.js', '/js/outfits.js', '/js/simli.js', '/js/auth.js', '/js/account.js', '/js/chat.js', '/js/voice-note.js', '/js/voice.js', '/js/editor.js', '/js/docs.js', '/js/media.js', '/js/feed.js', '/js/motion.js', '/js/stage.js', '/js/gestures.js', '/js/actions.js', '/js/realtime.js', '/js/rt-worklet.js', '/js/callmic.js', '/js/diag.js', '/js/motion-memory.js', '/js/location-call.js', '/js/call-video.js', '/js/call.js', '/js/ios.js', '/js/gallery.js', '/js/attach.js', '/js/presets.js', '/js/sight.js', '/js/solo.js', '/js/mood.js', '/js/support.js', '/js/blocco.js', '/blocco.css', '/js/close.js', '/js/archive.js', '/js/frame.js', '/js/live.js', '/js/look-parse.js', '/js/avatar-look.js', '/js/main.js', '/manifest.json', '/icons/icon-192.png', '/icons/icon-512.png', '/icons/icon-180.png', '/avatars/mercy.jpg'];
+const CACHE = 'app-privata-v2d-67'; // v2d-67: chiamata a tutto schermo, Ira ti chiama (Web Push), fotocamera ~1 fps, look pizzo predefinito; v2d-66: clip luogo ufficiali, memoria gesti, video su richiesta, composizione movimenti; v2d-65b: icona e splash IRA (rossa su nero puntinato, ?v=865); v2d-65: una sola voce in chiamata, viso ufficiale v8 + pacchetti luogo, cache vecchie cancellate all'attivazione; v2d-64: una sola sessione vocale, luogo fisso, camera unica, presenza nel luogo; v2d-63: luoghi videochiamata, rotazione persistente; v2d-62: viso ufficiale Ira, videochiamata nello showroom; v2d-61: elenco e chat scuri; v2d-60: dopo il PIN l'elenco chat; v2d-59: elenco IRA/MERCY; v2d-58: colori chat Ira; v2d-57: elenco chat; v2d-55: ingresso PIN elegante
+const SHELL = ['/', '/index.html', '/style.css', '/avatar.js', '/js/motion-lib.js', '/js/live-motion.js', '/js/motion-graph.js', '/js/clip-compose.js', '/js/net.js', '/js/presence.js', '/js/core.js', '/js/outfits.js', '/js/simli.js', '/js/auth.js', '/js/account.js', '/js/chat.js', '/js/voice-note.js', '/js/voice.js', '/js/editor.js', '/js/docs.js', '/js/media.js', '/js/feed.js', '/js/motion.js', '/js/stage.js', '/js/gestures.js', '/js/actions.js', '/js/realtime.js', '/js/rt-worklet.js', '/js/callmic.js', '/js/diag.js', '/js/motion-memory.js', '/js/location-call.js', '/js/call-video.js', '/js/push.js', '/js/incoming-call.js', '/js/call.js', '/js/ios.js', '/js/gallery.js', '/js/attach.js', '/js/presets.js', '/js/sight.js', '/js/solo.js', '/js/mood.js', '/js/support.js', '/js/blocco.js', '/blocco.css', '/js/close.js', '/js/archive.js', '/js/frame.js', '/js/live.js', '/js/look-parse.js', '/js/avatar-look.js', '/js/main.js', '/manifest.json', '/icons/icon-192.png', '/icons/icon-512.png', '/icons/icon-180.png', '/avatars/mercy.jpg'];
 
 self.addEventListener('install', (e) => {
   // v8.4.5: la nuova versione si attiva subito SOLO alla prima installazione; negli aggiornamenti aspetta che la pagina
@@ -37,5 +37,33 @@ self.addEventListener('fetch', (e) => {
       if (e.request.mode === 'navigate') return (await caches.match('/index.html')) || Response.error();
       return Response.error();
     }
+  })());
+});
+
+self.addEventListener('push', (e) => {
+  let data = {};
+  try { data = e.data ? e.data.json() : {}; } catch {}
+  if (!data || data.type !== 'incoming-call') return;
+  const title = (data.name || 'Ira') + ' ti sta chiamando';
+  e.waitUntil(self.registration.showNotification(title, {
+    body: 'Tocca per rispondere',
+    icon: '/icons/icon-192.png',
+    badge: '/icons/icon-192.png',
+    tag: 'ira-incoming-call',
+    renotify: true,
+    requireInteraction: true,
+    data: { type: 'incoming-call', name: data.name || 'Ira', url: '/?incoming=1' },
+  }));
+});
+self.addEventListener('notificationclick', (e) => {
+  const data = (e.notification && e.notification.data) || {};
+  e.notification.close();
+  e.waitUntil((async () => {
+    const all = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    for (const c of all) {
+      try { c.postMessage({ type: 'incoming-call', name: data.name || 'Ira' }); } catch {}
+      if (c.focus) return c.focus();
+    }
+    if (self.clients.openWindow) return self.clients.openWindow(data.url || '/?incoming=1');
   })());
 });

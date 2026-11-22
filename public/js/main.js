@@ -192,6 +192,8 @@ App.refreshApp = async function () {
 const refreshBtn = document.getElementById('app-refresh');
 if (refreshBtn) refreshBtn.addEventListener('click', () => App.refreshApp());
 App.boot();
+try { if (App.push && App.push.enableIfGranted) App.push.enableIfGranted(); } catch {}
+
 (function () {
   const go = document.getElementById('adult-ask-go');
   const later = document.getElementById('adult-ask-later');

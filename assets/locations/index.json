@@ -1,14 +1,64 @@
 {
   "default": "showroom",
   "pick": "rotation",
-  "order": ["showroom", "barca", "auto", "salotto", "camera", "cucina", "palestra"],
+  "order": [
+    "showroom",
+    "barca",
+    "auto",
+    "salotto",
+    "casa",
+    "camera",
+    "cucina",
+    "palestra"
+  ],
   "places": [
-    { "id": "showroom", "label": "Showroom NF Motors", "ready": true, "dir": "showroom" },
-    { "id": "barca", "label": "Barca", "ready": true, "dir": "barca" },
-    { "id": "auto", "label": "Auto", "ready": true, "dir": "auto" },
-    { "id": "salotto", "label": "Salotto", "ready": true, "dir": "salotto" },
-    { "id": "camera", "label": "Camera", "ready": true, "dir": "camera" },
-    { "id": "cucina", "label": "Cucina", "ready": true, "dir": "cucina" },
-    { "id": "palestra", "label": "Palestra", "ready": true, "dir": "palestra" }
+    {
+      "id": "showroom",
+      "label": "Showroom NF Motors",
+      "ready": true,
+      "dir": "showroom"
+    },
+    {
+      "id": "barca",
+      "label": "Barca",
+      "ready": true,
+      "dir": "barca"
+    },
+    {
+      "id": "auto",
+      "label": "Auto",
+      "ready": true,
+      "dir": "auto"
+    },
+    {
+      "id": "salotto",
+      "label": "Salotto",
+      "ready": true,
+      "dir": "salotto"
+    },
+    {
+      "id": "casa",
+      "label": "Casa",
+      "ready": true,
+      "dir": "casa"
+    },
+    {
+      "id": "camera",
+      "label": "Camera",
+      "ready": true,
+      "dir": "camera"
+    },
+    {
+      "id": "cucina",
+      "label": "Cucina",
+      "ready": true,
+      "dir": "cucina"
+    },
+    {
+      "id": "palestra",
+      "label": "Palestra",
+      "ready": true,
+      "dir": "palestra"
+    }
   ]
 }

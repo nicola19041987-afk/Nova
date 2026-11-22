@@ -1837,3 +1837,145 @@ body.solo-mode.solo-settings a.arch-link{
 .call-video-head button{width:28px;height:28px;border:0;border-radius:50%;background:#fff2;color:#fff;font-size:14px;line-height:1}
 .call-video-progress{margin:0;padding:18px 8px;font-size:13px;text-align:center;color:#fffc}
 .call-video-panel video{display:block;width:100%;border-radius:10px;background:#000;max-height:36dvh}
+
+
+/* v2d-67: videochiamata a tutto schermo stile WhatsApp (Ira piena, PiP mobile, tasto rosso riaggancia, niente chat sotto). */
+body.in-call:not(.call-min) #messages,
+body.in-call:not(.call-min) #tab-conv #messages,
+body.solo-mode.in-call:not(.call-min) #messages,
+body.solo-mode.in-call:not(.call-min) #tab-conv #messages,
+body.in-call:not(.call-min) #typing,
+body.in-call:not(.call-min) #chat-form,
+body.in-call:not(.call-min) #chat-form.composer,
+body.solo-mode.in-call:not(.call-min) #chat-form.composer,
+body.in-call:not(.call-min) #call-text,
+body.solo-mode.in-call:not(.call-min) #call-text,
+body.solo-mode.in-call:not(.call-min) #call-text:not([hidden]),
+body.in-call:not(.call-min) #prova-toggle,
+body.in-call:not(.call-min) .stage-tools,
+body.in-call:not(.call-min) #prova-wave {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+body.solo-mode.in-call:not(.call-min) #stage,
+body.solo-mode.in-call:not(.call-min) #stage.call,
+body.in-call:not(.call-min) #stage.call {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 80 !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-height: none !important;
+  min-height: 100dvh !important;
+  flex: none !important;
+  background: #000 !important;
+}
+body.solo-mode.in-call:not(.call-min) #call-ui,
+body.solo-mode.in-call:not(.call-min):not(.simli-on) #call-ui {
+  position: absolute !important;
+  inset: 0 !important;
+  height: 100% !important;
+  background: linear-gradient(to bottom, rgba(0,0,0,.45), rgba(0,0,0,0) 36%) !important;
+  pointer-events: none;
+}
+body.in-call:not(.call-min) .call-top,
+body.in-call:not(.call-min) .call-bar,
+body.in-call:not(.call-min) .call-self,
+body.in-call:not(.call-min) #call-caption,
+body.in-call:not(.call-min) #call-video-panel { pointer-events: auto; }
+body.in-call:not(.call-min) #stage.call:not(.voice) #call-speaker,
+body.in-call:not(.call-min) #stage.call:not(.voice) #call-tovideo,
+body.in-call:not(.call-min) #stage.call:not(.voice) #call-cc,
+body.in-call:not(.call-min) #stage.call:not(.voice) #call-hot,
+body.in-call:not(.call-min) #stage.call:not(.voice) #call-videotoggle,
+body.solo-mode.in-call:not(.call-min) #stage.call:not(.voice) #call-speaker,
+body.solo-mode.in-call:not(.call-min) #stage.call:not(.voice) #call-tovideo,
+body.solo-mode.in-call:not(.call-min) #stage.call:not(.voice) #call-cc,
+body.solo-mode.in-call:not(.call-min) #stage.call:not(.voice) #call-hot,
+body.solo-mode.in-call:not(.call-min) #stage.call:not(.voice) #call-videotoggle {
+  display: none !important;
+}
+#call-hangup,
+body.solo-mode #call-hangup,
+body.solo-mode.in-call #call-hangup,
+body.in-call:not(.call-min) #call-hangup,
+body.solo-mode.in-call:not(.call-min) #call-hangup {
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  width: 58px;
+  height: 58px;
+  min-width: 58px;
+  min-height: 58px;
+  flex-basis: 58px;
+  border: 0;
+  border-radius: 50%;
+  background: #e0303f;
+  color: #fff;
+  font-size: 22px;
+  line-height: 1;
+  padding: 0;
+  transform: rotate(135deg);
+  box-shadow: 0 4px 14px #0006;
+}
+body.in-call.call-min #call-hangup { display: none !important; }
+body.solo-mode.in-call:not(.call-min) #stage.call:not(.voice) #call-self:not([hidden]),
+body.in-call:not(.call-min) #stage.call:not(.voice) #call-self:not([hidden]) {
+  display: block !important;
+  width: 92px !important;
+  height: 124px !important;
+  max-width: 28vw !important;
+  top: calc(env(safe-area-inset-top) + 64px) !important;
+  right: 12px !important;
+  bottom: auto !important;
+  left: auto !important;
+  object-fit: cover !important;
+  object-position: 50% 40% !important;
+  transform: scaleX(-1) !important;
+  border-radius: 14px !important;
+  z-index: 8;
+  touch-action: none;
+  box-shadow: 0 6px 18px #000a;
+}
+body.in-call:not(.call-min) .call-bar,
+body.solo-mode.in-call:not(.call-min) .call-bar {
+  display: flex !important;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(16px + env(safe-area-inset-bottom));
+  justify-content: center;
+  align-items: center;
+  gap: 16px;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+}
+
+/* Incoming call overlay */
+.incoming-call {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  background: #0b0b0d;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: calc(env(safe-area-inset-top) + 24px) 24px calc(env(safe-area-inset-bottom) + 24px);
+}
+.incoming-call[hidden] { display: none !important; }
+.incoming-call-card { text-align: center; width: min(100%, 360px); }
+.incoming-face {
+  width: 148px; height: 148px; border-radius: 50%; object-fit: cover; object-position: 50% 20%;
+  box-shadow: 0 8px 28px #0008; margin: 0 auto 18px; display: block; background: #222;
+}
+#incoming-name { font-size: 28px; font-weight: 650; margin: 0 0 6px; }
+.incoming-label { margin: 0 0 36px; opacity: .8; font-size: 16px; }
+.incoming-actions { display: flex; justify-content: center; gap: 36px; }
+.incoming-accept, .incoming-decline {
+  width: 72px; height: 72px; border-radius: 50%; border: 0; color: #fff; font-size: 13px; font-weight: 600;
+}
+.incoming-accept { background: #25d366; }
+.incoming-decline { background: #e0303f; }

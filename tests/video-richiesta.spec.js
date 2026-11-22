@@ -90,9 +90,9 @@ function mockXai({ pendingFirst = 1 } = {}) {
   return start.then((s) => { srv = s; return { srv, hits, close: () => new Promise((ok) => s.close(ok)) }; });
 }
 
-test('video-richiesta: cache app-privata-v2d-66', async ({ request }) => {
+test('video-richiesta: cache app-privata-v2d-66 o 67', async ({ request }) => {
   const sw = await (await request.get('/sw.js')).text();
-  expect(sw).toMatch(/const CACHE = 'app-privata-v2d-66'/);
+  expect(sw).toMatch(/const CACHE = 'app-privata-v2d-6[67]'/);
   expect(sw).toContain('/js/call-video.js');
 });
 

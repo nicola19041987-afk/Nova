@@ -4,7 +4,8 @@
   if (window.__novaSightBound) return;
   window.__novaSightBound = true;
   const CADENCE_MS = 8000;
-  function cadence() { return (App.call && App.call.active) ? 3000 : CADENCE_MS; }
+  const CALL_CADENCE_MS = 1000; // v2d-67: in chiamata ~1 fps, non uno scatto ogni 3 s
+  function cadence() { return (App.call && App.call.active) ? CALL_CADENCE_MS : CADENCE_MS; }
   const MAX_EDGE = 480;
   let want = false, owns = false, current = null, timer = null, latest = null, latestAt = 0, gen = 0, busy = false, lastTx = 0;
 
@@ -76,9 +77,16 @@
     if (!want || document.hidden) return null;
     return grab();
   }
+  function pump(frame) {
+    if (!frame) return;
+    if (!(App.call && App.call.active)) return;
+    if (App.rt && App.rt.sendFrame) {
+      try { App.rt.sendFrame(frame); } catch {}
+    }
+  }
   function arm() {
     if (timer) clearInterval(timer);
-    timer = setInterval(sample, cadence());
+    timer = setInterval(() => { const f = sample(); if (f) pump(f); }, cadence());
   }
   async function openStream() {
     let borrowed = borrowCall();
@@ -122,7 +130,7 @@
     const v = document.getElementById('sight-preview');
     if (v && v.srcObject !== stream) { v.srcObject = stream; v.muted = true; v.hidden = true; }
     if (timer) clearInterval(timer);
-    timer = setInterval(sample, cadence());
+    timer = setInterval(() => { const f = sample(); if (f) pump(f); }, cadence());
   }
   function stop() {
     want = false; gen += 1; busy = false; latest = null; latestAt = 0;
@@ -150,7 +158,7 @@
       if (mine !== gen || !want) return '';
       const note = String((r && r.note) || '').trim();
       if (!note) return '';
-      return 'Fotogramma della fotocamera (un istante, non un video). Il modello che ha visto l\'immagine riferisce: ' + note;
+      return 'Fotogramma della fotocamera (aggiornato circa una volta al secondo in chiamata, non un video). Il modello che ha visto l\'immagine riferisce: ' + note;
     } catch (e) {
       return '';
     } finally { if (mine === gen) busy = false; }
@@ -188,6 +196,7 @@
 
   App.sight = {
     CADENCE_MS,
+    CALL_CADENCE_MS,
     active: () => want,
     toggle() { if (want) stop(); else start(); },
     start, stop, watch, sample,

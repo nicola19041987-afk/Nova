@@ -8,7 +8,7 @@ const fs = require('fs');
 const HEAD = { 'X-Requested-With': 'app-privata' };
 const SHOT = '/workspace/nova-v2d63-shots';
 const IRA = '5ce17a0000000001';
-const ORDER = ['showroom', 'barca', 'auto', 'salotto', 'camera', 'cucina', 'palestra'];
+const ORDER = ['showroom', 'barca', 'auto', 'salotto', 'casa', 'camera', 'cucina', 'palestra'];
 
 async function loginNicola(page) {
   const r = await page.request.post('/api/pin/setup', { data: { user: 'nicola', pin: '1357' }, headers: HEAD });
@@ -80,12 +80,13 @@ async function pageEvaluateCall(page) {
 }
 
 test('v2d-63: cache, pacchetti pronti, prima chiamata casa, rotazione persistente, screenshot 390x844', async ({ page, request, browserName }) => {
+  test.setTimeout(90000);
   test.skip(browserName === 'webkit', 'Stesso percorso verificato su Chromium (390x844).');
   test.setTimeout(120000);
   fs.mkdirSync(SHOT, { recursive: true });
 
   const sw = await (await request.get('/sw.js')).text();
-  expect(sw).toMatch(/const CACHE = 'app-privata-v2d-(6[3-6]|65b)'/);
+  expect(sw).toMatch(/const CACHE = 'app-privata-v2d-(6[3-7]|65b)'/);
   expect(sw).toContain('/js/location-call.js');
   expect(sw).not.toContain("const CACHE = 'app-privata-v2d-62'");
 
@@ -103,7 +104,7 @@ test('v2d-63: cache, pacchetti pronti, prima chiamata casa, rotazione persistent
     expect(pack.still).toBe('/api/locations/' + id + '/still');
     expect((pack.clips || []).length).toBeGreaterThanOrEqual(2);
     expect((pack.clips || []).some((c) => c.kind === 'base')).toBe(true);
-    if (id === 'showroom') {
+    if (id === 'showroom' || id === 'casa') {
       expect(pack.framing).toBe('close');
       expect((pack.clips || []).every((c) => c.kind !== 'parla')).toBe(true);
     } else {
@@ -121,11 +122,12 @@ test('v2d-63: cache, pacchetti pronti, prima chiamata casa, rotazione persistent
   await openIraChat(page);
 
   // rotazione: pulisci lo storage (incluso il one-shot casa) e simula 8 avvii
-  const HOME_ROTATION = ['salotto', 'camera', 'cucina', 'palestra', 'showroom', 'barca', 'auto', 'salotto'];
+  const HOME_ROTATION = ['casa', 'camera', 'cucina', 'palestra', 'showroom', 'barca', 'auto', 'salotto', 'casa'];
   const rotated = await page.evaluate((order) => {
     App.ls.del('locationLast');
     App.ls.del('locationForce');
     App.ls.del('locationHomeV266');
+    App.ls.del('locationHomeV267');
     const out = [];
     for (let i = 0; i < order.length + 1; i++) {
       App.locationCall.onCallStart('video');
@@ -174,12 +176,12 @@ test('v2d-63: cache, pacchetti pronti, prima chiamata casa, rotazione persistent
   }
 
   // dopo aver tolto force, la prima chiamata vera parte da casa (salotto), poi ruota
-  await page.evaluate(() => { App.ls.del('locationForce'); App.ls.del('locationLast'); App.ls.del('locationHomeV266'); });
+  await page.evaluate(() => { App.ls.del('locationForce'); App.ls.del('locationLast'); App.ls.del('locationHomeV266'); App.ls.del('locationHomeV267'); });
   await startVideoCall(page);
   const first = await pageEvaluateCall(page);
-  expect(first.place).toBe('salotto');
-  expect(first.last).toBe('salotto');
-  const firstShot = path.join(SHOT, 'v2d-63-call-prima-salotto.png');
+  expect(first.place).toBe('casa');
+  expect(first.last).toBe('casa');
+  const firstShot = path.join(SHOT, 'v2d-63-call-prima-casa.png');
   await page.screenshot({ path: firstShot, animations: 'disabled' });
   await endVideoCall(page);
   await startVideoCall(page);

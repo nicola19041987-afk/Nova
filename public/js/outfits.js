@@ -267,14 +267,16 @@
   // controllo leggero: dopo una lunga assenza (nuova visita) la scena cambia; mai a metà conversazione
   setInterval(() => { try { if (document.visibilityState === 'visible') App.outfits.apply(false); } catch { /* */ } }, 60000);
 
-  // v2d-66: il default diventerà il set in pizzo quando Nicola approva le still in /workspace/ira-look-pizzo-v01/.
-  // Fino ad allora non si cambia nulla. Qualsiasi camicia deve restare aperta al collo, mai abbottonata fino alla gola.
+  // v2d-67: Nicola ha approvato il look pizzo v01 (03:45, Europe/Rome). È il look predefinito.
+  // Il viso ufficiale resta VISO-BLOCCATO-v8 / IRA_OFFICIAL (faceSrc non cambia).
+  // Qualsiasi camicia deve restare aperta al collo, mai abbottonata fino alla gola.
   App.outfitConfig = {
-    defaultOutfit: null,
+    defaultOutfit: 'lace-pizzo',
     futureDefaultOutfit: 'lace-pizzo',
-    futureDefaultEnabled: false,
+    futureDefaultEnabled: true,
     futureDefaultSource: 'ira-look-pizzo-v01',
     shirtCollar: 'open',
+    officialFaceUnchanged: true,
     activeDefault() { return this.futureDefaultEnabled ? this.futureDefaultOutfit : this.defaultOutfit; },
   };
 })(typeof window !== 'undefined' ? window : globalThis);

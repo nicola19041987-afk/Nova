@@ -322,6 +322,7 @@
     b.classList.toggle('on', onCam);
     b.setAttribute('aria-pressed', onCam ? 'true' : 'false');
     const f = $('#call-flip'); if (f) f.hidden = !onCam || mode !== 'video'; // v2d-41: cambia fotocamera sempre a portata
+    const hang = $('#call-hangup'); if (hang) hang.hidden = !on || minimized;
   }
   function camConstraints() {
     // facingMode anteriore, 3:4 naturale, niente ritaglio extra (evita inquadratura solo capelli/muro)
@@ -408,7 +409,7 @@
   // v2d-50: riga +/testo solo in videochiamata (anche con il microfono attivo)
   function paintCallText() {
     const form = $('#call-text'); if (!form) return;
-    form.hidden = !(on && mode === 'video' && !minimized);
+    form.hidden = true; // v2d-67: niente riga «Scrivile» sotto la videochiamata a tutto schermo
   }
   let callImg = null;
   function clearCallImg() {

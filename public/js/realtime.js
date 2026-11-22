@@ -513,6 +513,28 @@
     },
     interrupt() { if (S) bargeIn(S, true); },
     notifyVisible(text) { notifyVisible(S, text); },
+    // v2d-67: fotogrammi ~1 fps verso la sessione vocale. Non si chiama il modello di visione a pagamento ogni secondo
+    // (la voce realtime è audio; il JPEG resta in cache e, se il socket lo accetta, parte come input_image senza risposta).
+    sendFrame(frame) {
+      const s = S; const url = String(frame || '');
+      if (!s || s.closed || !url) return false;
+      s.latestFrame = url; s.latestFrameAt = Date.now();
+      if (!s.ws || s.ws.readyState !== 1) return false;
+      if (s._framePushAt && Date.now() - s._framePushAt < 900) return false;
+      if (s.framePushOff) return false;
+      s._framePushAt = Date.now();
+      try {
+        s.ws.send(JSON.stringify({
+          type: 'conversation.item.create',
+          item: { type: 'message', role: 'user', content: [
+            { type: 'input_image', image_url: url },
+            { type: 'input_text', text: 'Fotogramma della fotocamera (visione continua circa 1 fps, non un video). Non rispondere a questo aggiornamento.' },
+          ] },
+        }));
+      } catch { s.framePushOff = true; return false; }
+      return true;
+    },
+
     // v2d-50: testo (e foto) dalla riga sotto la videochiamata. Entra nella sessione vocale come istruzione,
     // lei risponde solo a voce; niente bolla in chat. Il filtro esplicito e la foto fissa restano quelli della sessione.
     async sendInstruction(text, opts) {

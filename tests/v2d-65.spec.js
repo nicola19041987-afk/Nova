@@ -11,7 +11,7 @@ const OFFICIAL = '/api/avatars/c2d6200000000001.jpg';
 
 test('v2d-65: cache del service worker, all\'attivazione si cancellano tutte le cache vecchie (anche nova-motion)', async ({ request }) => {
   const sw = await (await request.get('/sw.js')).text();
-  expect(sw).toMatch(/const CACHE = 'app-privata-v2d-(65|65b|66)'/);
+  expect(sw).toMatch(/const CACHE = 'app-privata-v2d-(65|65b|66|67)'/);
   expect(sw).not.toContain("const CACHE = 'app-privata-v2d-64'");
   expect(sw).toContain('keys.filter((k) => k !== CACHE)');
   expect(sw).not.toContain("!k.startsWith('nova-motion-')");
@@ -31,7 +31,7 @@ test('v2d-65b: icona e splash IRA (non Nova), cache-bust ?v=865', () => {
   expect(html).not.toContain('?v=864');
   expect(JSON.stringify(man)).toContain('?v=865');
   expect(JSON.stringify(man)).not.toContain('?v=864');
-  expect(sw).toMatch(/const CACHE = 'app-privata-v2d-(65b|66)'/);
+  expect(sw).toMatch(/const CACHE = 'app-privata-v2d-(65b|66|67)'/);
   expect(html).toContain('?v=865');
   const icon = fs.readFileSync(path.join(__dirname, '../public/icons/icon-512.png'));
   // PNG del wordmark IRA v2d-53 (rosso #E50914 su nero puntinato), non il wordmark Nova azzurro

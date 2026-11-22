@@ -2,7 +2,7 @@
  * (showroom, barca, auto, casa, palestra). 2D, clip muti, nessuna scritta sul video.
  * La voce resta solo quella in tempo reale. La foto della chat non si tocca.
  * I clip sono Ira già nella scena: mai un ritaglio sulla foto di sfondo.
- * Prima chiamata dopo il deploy v2d-66: casa/salotto (flag one-shot locationHomeV266).
+ * Prima chiamata dopo il deploy v2d-67: casa (look pizzo, flag one-shot locationHomeV267).
  * Poi rotazione deterministica persistita in localStorage.
  */
 (function () {
@@ -11,9 +11,9 @@
   const HOME = 'petto';
   const LS_LAST = 'locationLast';
   const LS_FORCE = 'locationForce'; // solo prova tecnica; vuoto = rotazione
-  const LS_HOME_ONCE = 'locationHomeV266'; // prima chiamata dopo questo deploy: salotto
-  const HOME_PLACE = 'salotto';
-  const DEFAULT_ORDER = ['showroom', 'barca', 'auto', 'salotto', 'camera', 'cucina', 'palestra'];
+  const LS_HOME_ONCE = 'locationHomeV267'; // prima chiamata dopo questo deploy: casa (look pizzo)
+  const HOME_PLACE = 'casa';
+  const DEFAULT_ORDER = ['showroom', 'barca', 'auto', 'salotto', 'casa', 'camera', 'cucina', 'palestra'];
   let index = { default: 'showroom', pick: 'rotation', order: DEFAULT_ORDER.slice(), places: [] };
   let packs = {}; // id -> { still, framing, clips:[{id,url,kind,from,to,label,weight}] }
   let current = null; // place id for THIS call
@@ -25,6 +25,7 @@
     barca: 'in barca, sul ponte di uno yacht al tramonto',
     auto: 'in auto, seduta in macchina',
     salotto: 'a casa, in salotto',
+    casa: 'a casa, nel soggiorno, con il set in pizzo',
     camera: 'a casa, in camera da letto',
     cucina: 'a casa, in cucina',
     palestra: 'in palestra',

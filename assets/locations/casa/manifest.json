@@ -1,0 +1,17 @@
+{
+  "id": "casa",
+  "label": "Casa",
+  "ready": true,
+  "framing": "close",
+  "still": "IRA-LOOK-PIZZO-v01-FRONTE-9x16.jpg",
+  "outfit": "lace-pizzo",
+  "place": "casa",
+  "notes": "Look predefinito approvato da Nicola il 22/11/2026 03:45 (Europe/Rome): set in pizzo v01 (camicia nera aperta, top in pizzo, minigonna). Still e clip già pronti in /workspace/ira-look-pizzo-v01/, integrati senza nuove generazioni a pagamento. Il viso ufficiale resta VISO-BLOCCATO-v8 (c2d6200000000001.jpg) per ritratti e face-lock; queste still/clip sono della stessa famiglia ma non identiche al v8 pixel per pixel. Tatuaggio mandala sul braccio destro (stessa famiglia, motivo un po' più denso). Nessun testo in sovrimpressione. Niente clip «parla». casa-giro-lato.mp4 è il tentativo «due passi indietro» (non è un passo indietro pulito: si gira di lato e torna; etichettato come turn). Idle = still-hold locale (niente video a pagamento).",
+  "clips": [
+    { "id": "casa-idle-stand", "file": "casa-idle-stand.mp4", "kind": "base", "from": "stand", "to": "stand", "label": "In piedi (casa, pizzo)", "weight": 1, "action": "idle" },
+    { "id": "casa-giro360", "file": "casa-giro360.mp4", "kind": "base", "from": "stand", "to": "stand", "label": "Giro 360", "weight": 1, "action": "turn" },
+    { "id": "casa-mostra-vestito", "file": "casa-mostra-vestito.mp4", "kind": "base", "from": "stand", "to": "stand", "label": "Mostra il vestito", "weight": 0.8, "action": "gesture" },
+    { "id": "casa-si-siede", "file": "casa-si-siede.mp4", "kind": "base", "from": "stand", "to": "sit", "label": "Si siede sullo sgabello", "weight": 1, "action": "sit" },
+    { "id": "casa-giro-lato", "file": "casa-giro-lato.mp4", "kind": "base", "from": "stand", "to": "stand", "label": "Si gira di lato e torna (non un passo indietro pulito)", "weight": 0.5, "action": "turn" }
+  ]
+}

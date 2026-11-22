@@ -55,6 +55,7 @@ const CALL_VIDEO_TTL_MS = 4 * 60 * 1000;
 const COOKIE_SECURE = String(process.env.COOKIE_SECURE || 'false') === 'true';
 const SESSION_DAYS = Number(process.env.SESSION_DAYS || 30);
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
+const webPushApp = require('./lib/push');
 const COOKIE = 'sid';
 
 // Solo due profili, nessuna registrazione pubblica. Accesso con PIN a 4 cifre (hash bcrypt in data/pins.json).
@@ -2603,6 +2604,7 @@ function locationSceneText(location) {
     barca: 'in barca, sul ponte di uno yacht al tramonto',
     auto: 'in auto, seduta in macchina',
     salotto: 'a casa, in salotto',
+    casa: 'a casa, nel soggiorno, con il set in pizzo (camicia nera aperta al collo, mai abbottonata fino alla gola)',
     camera: 'a casa, in camera da letto',
     cucina: 'a casa, in cucina',
     palestra: 'in palestra',
@@ -3666,6 +3668,40 @@ app.get('/api/movements/:file', auth, (req, res) => {
   if (!file.startsWith(MOVEMENTS_DIR + path.sep) || !fs.existsSync(file)) return res.status(404).end();
   sendPrivateFile(req, res, file);
 });
+
+// v2d-67: still del look pizzo (viso ufficiale v8 invariato; queste sono still del corpo/outfit).
+const LOOKS_DIR = path.join(__dirname, 'assets', 'looks');
+const LOOK_FILE = /^[a-zA-Z0-9._-]+\.(jpe?g|png|mp4)$/;
+app.get('/api/looks/:look/:file', auth, (req, res) => {
+  const look = String(req.params.look || '');
+  const name = String(req.params.file || '');
+  if (!/^[a-z0-9_-]+$/i.test(look) || !LOOK_FILE.test(name)) return res.status(404).end();
+  const dir = path.join(LOOKS_DIR, look);
+  const file = path.join(dir, name);
+  if (!dir.startsWith(LOOKS_DIR + path.sep) || !file.startsWith(dir + path.sep) || !fs.existsSync(file)) return res.status(404).end();
+  sendPrivateFile(req, res, file);
+});
+
+// v2d-67: Web Push — "Ira ti chiama". Chiave privata solo da env, mai in risposta o nei log.
+app.get('/api/push/config', auth, (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.json(webPushApp.config());
+});
+app.post('/api/push/subscribe', auth, (req, res) => {
+  const r = webPushApp.subscribe(DATA_DIR, req.user, req.body || {});
+  if (!r.ok) return res.status(400).json({ error: r.error || 'Iscrizione non valida' });
+  res.json(r);
+});
+app.post('/api/push/unsubscribe', auth, (req, res) => {
+  res.json(webPushApp.unsubscribe(DATA_DIR, req.user, req.body || {}));
+});
+app.post('/api/calls/ring', auth, requireActivated, async (req, res) => {
+  if (!webPushApp.enabled()) return res.status(503).json({ error: 'Push non configurato', enabled: false });
+  const payload = { type: 'incoming-call', name: 'Ira', at: new Date().toISOString() };
+  const r = await webPushApp.sendToUser(DATA_DIR, req.user, payload);
+  res.json({ ok: !!r.ok, delivered: r.delivered || 0, attempted: r.attempted || 0, reason: r.reason || '' });
+});
+
 
 // v2d-66: memoria dei gesti (metadati + conteggi d'uso, niente crescita di file media).
 const motionMem = require('./lib/motion-memory');

@@ -15,7 +15,7 @@ const STILLS = {
   cucina: 'IRA-CALL-CUCINA-v03.jpg',
   palestra: 'IRA-CALL-PALESTRA-v03.jpg',
 };
-const PLACES = ['showroom', 'barca', 'auto', 'salotto', 'camera', 'cucina', 'palestra'];
+const PLACES = ['showroom', 'barca', 'auto', 'salotto', 'casa', 'camera', 'cucina', 'palestra'];
 
 test('v2d-66: evict della memoria gesti (mai usati prima, catalogo protetto, cap 80)', () => {
   expect(motionMem.CAP).toBe(80);
@@ -44,7 +44,7 @@ test('v2d-66: evict della memoria gesti (mai usati prima, catalogo protetto, cap
 
 test('v2d-66: cache del service worker e pacchetti con still del tatuaggio ufficiale', async ({ request }) => {
   const sw = await (await request.get('/sw.js')).text();
-  expect(sw).toMatch(/const CACHE = 'app-privata-v2d-66'/);
+  expect(sw).toMatch(/const CACHE = 'app-privata-v2d-6[67]'/);
   expect(sw).not.toContain("const CACHE = 'app-privata-v2d-65'");
   expect(sw).toContain("'/js/motion-memory.js'");
   expect(sw).toContain("'/js/call-video.js'");
@@ -80,6 +80,11 @@ test('v2d-66: cache del service worker e pacchetti con still del tatuaggio uffic
     if (id === 'showroom') {
       expect(man.still).toBe('IRA-CALL-SHOWROOM-v04.jpg');
       expect(man.outfit).toBe('lace-black');
+      expect(man.framing).toBe('close');
+      expect(man.clips.every((c) => c.kind !== 'parla')).toBe(true);
+    } else if (id === 'casa') {
+      expect(man.still).toBe('IRA-LOOK-PIZZO-v01-FRONTE-9x16.jpg');
+      expect(man.outfit).toBe('lace-pizzo');
       expect(man.framing).toBe('close');
       expect(man.clips.every((c) => c.kind !== 'parla')).toBe(true);
     } else {
@@ -203,9 +208,9 @@ test('v2d-66: in chiamata il luogo resta fisso, i clip partono, la memoria regis
     still: App.locationCall.still(),
     ids: (App.locationCall.lib() || []).map((c) => c.id),
   }));
-  expect(first.place).toBe('salotto');
+  expect(first.place).toBe('casa');
   expect(first.locked).toBe(true);
-  expect(first.still).toBe('/api/locations/salotto/still');
+  expect(first.still).toBe('/api/locations/casa/still');
   expect(first.ids.length).toBeGreaterThan(0);
   expect(new Set(first.ids).size).toBe(first.ids.length);
 
@@ -213,7 +218,7 @@ test('v2d-66: in chiamata il luogo resta fisso, i clip partono, la memoria regis
     const v = document.getElementById('motion-video') || document.querySelector('#stage video');
     return !!(v && v.currentTime > 0.05);
   }, null, { timeout: 8000 });
-  await page.screenshot({ path: SHOT + '/call-salotto-home.png' });
+  await page.screenshot({ path: SHOT + '/call-casa-home.png' });
 
   await expect.poll(async () => {
     const mem = await (await page.request.get('/api/motion-memory', { headers: HEAD })).json();
@@ -221,7 +226,7 @@ test('v2d-66: in chiamata il luogo resta fisso, i clip partono, la memoria regis
   }, { timeout: 8000 }).toBeGreaterThan(0);
 
   const mid = await page.evaluate(() => App.locationCall.place());
-  expect(mid).toBe('salotto'); // ancora lo stesso luogo a metà chiamata
+  expect(mid).toBe('casa'); // ancora lo stesso luogo a metà chiamata
 
   await page.evaluate(() => { if (App.call && App.call.end) App.call.end({ silent: true }); });
   await page.waitForFunction(() => App.call && !App.call.active && !App.locationCall.place());
