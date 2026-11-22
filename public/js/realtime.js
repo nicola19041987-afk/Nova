@@ -7,6 +7,8 @@
  * dissolvenze sulla voce (niente click) e sessione audio iOS fissa su play-and-record per tutta la chiamata.
  * Le trascrizioni (tue e sue) finiscono nella chat condivisa. Se il tempo reale non si collega si usa la chiamata classica. */
 (function () {
+  if (window.__novaRealtimeBound) return;
+  window.__novaRealtimeBound = true;
   const RATE = 24000;
   const AC = window.AudioContext || window.webkitAudioContext;
   const supported = () => !!(window.WebSocket && AC && navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
@@ -221,7 +223,7 @@
     try {
       const ok = App.outfits && App.outfits.key ? App.outfits.key(s.ch) : ''; // v2d-36: cosa indossa (e se si è cambiata da sola)
       const oc = ok && App.outfits.pendingNote && App.outfits.pendingNote(s.ch) ? 'lei' : (s.dressed ? true : undefined); s.dressed = false;
-      const r = await App.api('/api/realtime/instructions', { method: 'POST', body: { characterId: s.ch.id, mode: s.mode, ...(ok ? { outfit: ok, ...(oc !== undefined ? { outfitChanged: oc } : {}) } : {}), ...(App.faceLocked && !App.faceLocked() ? { faceLock: false } : {}) } });
+      const r = await App.api('/api/realtime/instructions', { method: 'POST', body: { characterId: s.ch.id, mode: s.mode, ...(ok ? { outfit: ok, ...(oc !== undefined ? { outfitChanged: oc } : {}) } : {}), ...(App.faceLocked && !App.faceLocked() ? { faceLock: false } : {}), ...locBody() } });
       if (oc === 'lei' && App.outfits.told) App.outfits.told(s.ch);
       s.adult = r.adult; s.explicitTalk = r.explicitTalk; if (s.ws && s.ws.readyState === 1) s.ws.send(JSON.stringify({ type: 'session.update', session: { instructions: r.instructions } }));
     } catch {}
@@ -390,13 +392,20 @@
         const t = performance.now();
         // v8.5.0: token già pronto (preparato all'apertura della chat) -> la chiamata si collega subito
         const w = PRE && PRE.ch === s.ch.id && PRE.vid === s.voice && Date.now() - PRE.at < 200e3 ? PRE.modes[s.mode] : null; PRE = null;
-        s.cfg = (w && await w.p.catch(() => null)) || await App.api('/api/realtime/session', { method: 'POST', body: { characterId: s.ch.id, mode: s.mode, voice: s.voice, voiceExplicit: s.voiceExplicit === true, ...(App.faceLocked && !App.faceLocked() ? { faceLock: false } : {}) }, ai: true });
+        const loc = locBody();
+        const pre = (!loc.location && w) ? w : null;
+        s.cfg = (pre && await pre.p.catch(() => null)) || await App.api('/api/realtime/session', { method: 'POST', body: { characterId: s.ch.id, mode: s.mode, voice: s.voice, voiceExplicit: s.voiceExplicit === true, ...(App.faceLocked && !App.faceLocked() ? { faceLock: false } : {}), ...loc }, ai: true });
         if (w) note('token pronto in anticipo');
         s.tokenMs = Math.round(performance.now() - t); note('token', s.tokenMs + ' ms');
         s.adult = s.cfg.adult; s.explicitTalk = s.cfg.explicitTalk; await connect(s); return;
       } catch (e) { last = e; note('tentativo ' + (i + 1), e.message); if (e.status && e.status < 500 && e.status !== 408) break; }
     }
     throw last || new Error('Tempo reale non disponibile');
+  }
+
+  function locBody() {
+    const id = App.locationCall && App.locationCall.place && App.locationCall.place();
+    return id ? { location: String(id) } : {};
   }
 
   App.rt = {
@@ -413,6 +422,7 @@
     classicOnly: false,
     enabled: () => supported() && !!(App.hasAi && App.hasAi()) && !App.rt.classicOnly,
     get active() { return !!(S && !S.closed && S.isReady); },
+    live: () => !!(S && !S.closed),
     // da chiamare DENTRO il tocco che avvia la chiamata (sblocco audio + microfono in parallelo alla connessione)
     async start(ch, mode, greet) {
       if (S) App.rt.stop();

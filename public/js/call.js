@@ -2,10 +2,13 @@
  * Ascolto continuo (riconoscimento vocale del telefono) con invio automatico; mentre lei parla l'ascolto è in pausa (niente eco).
  * Tocca il suo viso per interromperla. Fotocamera facoltativa nel riquadrino in alto (resta sul telefono, nessun video inviato). */
 (function () {
+  if (window.__novaCallBound) return;
+  window.__novaCallBound = true;
   const stage = $('#stage'), ui = $('#call-ui');
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   let on = false, t0 = 0, tick = 0, prevTts = null, prevAuto = null, cam = null, muted = false, lastNod = 0, minimized = false;
   let rt = false, everVideo = false, warm = 0, connecting = false; // v8.4: conversazione in tempo reale (xAI Voice Agent)
+  let starting = false, mediaOpening = false; // v2d-64: evita una seconda getUserMedia mentre l'avvio apre già microfono+camera
   let why = '', micMode = ''; // v8.4.1: motivo della chiamata classica e microfono usato ('vad' = nostro, 'sr' = riconoscimento del telefono)
   // v8.4.1: indicatore sempre visibile del motore della chiamata (tocca per il motivo)
   function badge(kind, reason) {
@@ -52,7 +55,7 @@
     $('#call-tovideo').hidden = mode !== 'voice'; $('#call-speaker').hidden = mode !== 'voice';
     $('#call-cam').hidden = mode === 'voice'; $('#call-cc').hidden = mode === 'voice'; $('#call-hot').hidden = mode === 'voice';
     if (mode === 'voice') { stopCam(); $('#call-caption').hidden = true; }
-    else if (on && !cam && App.call && App.call.active) startCam(); // v2d-41: passando al video la fotocamera parte subito
+    else if (on && !cam && App.call && App.call.active && !starting && !mediaOpening) startCam(); // v2d-41: passando al video la fotocamera parte subito (non durante l'avvio combinato)
     paintCam();
     App.call.mode = mode; if (mode === 'video') everVideo = true;
     paintVideoToggle(); paintCallText();
@@ -92,21 +95,29 @@
     if (App.tts) App.tts.volume = v ? 1 : 0.45;
     if (rt) App.rt.setVolume(v ? 1 : 0.45);
   }
+  // v2d-64: un nuovo avvio (tasto video) mentre una chiamata è solo ridotta (✕, spesso scambiata per riaggancio)
+  // chiude prima la sessione precedente (una sola voce, una sola chat) e ne apre una nuova.
+  // Se la chiamata è già a tutto schermo, non se ne avvia una seconda: al massimo si cambia modalità.
+  function requestStart(m) {
+    if (on && minimized) end({ silent: true });
+    return start(m);
+  }
   async function start(m) {
     const ch = App.current; if (!ch) return;
-    if (on) return setMode(m || mode);
+    if (on) { if (minimized) restore(); return setMode(m || mode); }
     if (!App.hasAi()) return App.toast('🔑 Per la videochiamata serve la chiave xAI (Impostazioni)');
+    // eventuale sessione vocale rimasta da un avvio precedente o da uno script ricaricato
+    if (App.rt && App.rt.live && App.rt.live()) { try { App.rt.stop(); } catch {} }
     const useRt = App.rt && App.rt.enabled();
     App.ls.set('micOn', true);
     App.audio._autoRetried = false; App.audio.micError = null;
+    starting = true;
     on = true; t0 = Date.now(); muted = false; everVideo = false; rt = false; camAsked = false;
     App.call.active = true; if (App.voice.isListening && App.voice.isListening()) App.voice.stop(); // v8.4.4: niente riconoscimento vocale del telefono in chiamata (suoni di attacco/stacco)
     App.audio.callSession(true); // v8.4.1: una sola sessione audio (registra + riproduce) per tutta la chiamata
     App.audio.unlock(); // dentro il tocco: sblocca l'AudioContext condiviso (in chiamata nessun <audio>/sintesi di "riscaldamento")
-    // v8.4.4: il microfono si apre UNA volta, subito, dentro il tocco. v2d-41: in videochiamata la fotocamera si apre da sola
-    // subito dopo il microfono (niente secondo tocco su 📷; si spegne con 📷)
-    // v2d-41: se il microfono non parte non si tace più: avviso chiaro con «Riprova» (nuova richiesta di permesso dentro il tocco)
-    App.audio.mic().then(() => { micOk(); }, (e) => { micFail(e); }).then(() => { if (on && mode === 'video' && !cam) startCam(); });
+    // v2d-64: in videochiamata un solo getUserMedia (microfono + camera anteriore). Niente secondo permesso, niente traccia che ne ferma un'altra.
+    const mediaP = openCallMedia();
     micWatchStart();
     if (App.avatarConv) App.avatarConv.setCharacter(ch);
     App.stageFs.exit(); stage.classList.add('fs', 'call'); document.body.classList.add('avatar-fs-on', 'in-call'); if (App.fullscreenFix) App.fullscreenFix();
@@ -121,6 +132,7 @@
     const greet = GREET[Math.floor(Math.random() * GREET.length)].replace('{n}', App.me.name);
     App.avatarConv.react('smile');
     clearInterval(tick); tick = setInterval(state, 250); App.chat.header && App.chat.header();
+    try {
     if (useRt) { // v8.4: tempo reale (microfono e connessione partono insieme, già dentro il tocco)
       connecting = true; badge('conn'); state();
       const p = App.rt.start(ch, mode, greet);
@@ -128,6 +140,7 @@
       catch (e) { connecting = false; if (!on) return; console.warn('Tempo reale non disponibile:', e.message); retryRt(ch, mode); if (App.audio.micError && !App.audio.micLive()) { micFail(App.audio.micError); classic(greet, 'microfono non avviato'); return; } App.toast('⚡ Tempo reale non disponibile: ' + e.message + ' · per ora chiamata classica, riprovo da sola (dettagli: Impostazioni → Diagnostica voce)', 6000); classic(greet, e.message); return; }
     }
     classic(greet, !App.hasAi() ? 'manca la chiave xAI' : App.rt && !App.rt.supported() ? 'browser non compatibile con il tempo reale' : App.rt && App.rt.classicOnly ? 'prova tecnica (solo in memoria)' : '');
+    } finally { try { await mediaP; } catch {} starting = false; }
   }
   // v2d-37: se il tempo reale non si collega all'avvio, si riprova da solo e appena si collega la chiamata passa al tempo
   // reale senza toccare nulla. v2d-40: il tempo reale è SEMPRE inserito (nessuna impostazione lo spegne): la chiamata classica
@@ -234,9 +247,11 @@
   ['pointerdown', 'touchend'].forEach((k) => document.addEventListener(k, () => {
     if (!on) return; const c = App.audio.ctx; if (c && c.state !== 'running') c.resume().catch(() => {});
   }, { capture: true, passive: true }));
-  function end() {
+  function end(opts) {
     if (App.locationCall && App.locationCall.onCallEnd) App.locationCall.onCallEnd();
-    if (!on) return; on = false; App.call.active = false; cancelAnimationFrame(raf); clearTimeout(retryT); retryT = 0; retryAt = 0;
+    if (!on) return; on = false; App.call.active = false; starting = false; mediaOpening = false;
+    if (App.audio) App.audio.preferCallVideo = false;
+    cancelAnimationFrame(raf); clearTimeout(retryT); retryT = 0; retryAt = 0;
     micBanner(''); clearInterval(micWatchT); micWatchT = 0;
     stage.classList.remove('voice', 'nv-voicecall'); ui.classList.remove('voice'); App.call.mode = null;
     if (App.avatarConv && App.avatarConv.setVoiceView) App.avatarConv.setVoiceView(false); // v2d-40: inquadratura normale
@@ -251,7 +266,7 @@
     stopCam(); clearCallImg(); ui.hidden = true; stage.classList.remove('fs', 'call'); document.body.classList.remove('avatar-fs-on', 'in-call', 'call-min'); minimized = false; paintCallText();
     if (prevTts === false && App.voice.ttsOn()) $('#tts-btn').click();
     if (prevAuto !== null) $('#auto-send').checked = prevAuto;
-    App.toast((mode === 'voice' ? '📞 Chiamata vocale terminata · ' : '📹 Videochiamata terminata · ') + fmt(Date.now() - t0));
+    if (!(opts && opts.silent)) App.toast((mode === 'voice' ? '📞 Chiamata vocale terminata · ' : '📹 Videochiamata terminata · ') + fmt(Date.now() - t0));
     requestAnimationFrame(() => { App.fitFrame && App.fitFrame(); App.chat.scroll && App.chat.scroll(); }); App.chat.header && App.chat.header();
     if (App.solo && App.solo.syncMotion) App.solo.syncMotion();
   }
@@ -303,20 +318,63 @@
     b.setAttribute('aria-pressed', onCam ? 'true' : 'false');
     const f = $('#call-flip'); if (f) f.hidden = !onCam || mode !== 'video'; // v2d-41: cambia fotocamera sempre a portata
   }
+  function camConstraints() {
+    // facingMode anteriore, 3:4 naturale, niente ritaglio extra (evita inquadratura solo capelli/muro)
+    return { facingMode: { ideal: facing || 'user' }, width: { ideal: 720 }, height: { ideal: 960 }, aspectRatio: { ideal: 0.75 } };
+  }
+  function attachCam(st) {
+    if (!st) return;
+    if (!on || mode !== 'video') { try { st.getVideoTracks().forEach((t) => t.stop()); } catch {} return; }
+    cam = st;
+    const v = $('#call-self');
+    if (v) {
+      v.muted = true; v.defaultMuted = true; v.playsInline = true; v.setAttribute('playsinline', ''); v.setAttribute('muted', ''); v.autoplay = true;
+      v.style.objectFit = 'cover'; v.style.objectPosition = '50% 40%';
+      v.srcObject = cam; v.hidden = false; v.play().catch(() => {});
+    }
+    paintCam();
+    if (App.sight && App.sight.watch) App.sight.watch(cam);
+  }
+  async function openCallMedia() {
+    const wantVideo = (mode === 'video');
+    mediaOpening = true;
+    if (App.audio) {
+      App.audio.preferCallVideo = !!wantVideo;
+      if (wantVideo) App.audio.videoConstraints = camConstraints();
+    }
+    try {
+      if (wantVideo && App.audio && App.audio.adoptCombined && !App.audio.micLive() && !App.audio._micP) {
+        const st = await App.audio.adoptCombined({
+          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
+          video: camConstraints(),
+        });
+        if (App.audio.micLive()) micOk();
+        if (on && mode === 'video' && !cam && st && st.getVideoTracks && st.getVideoTracks().length) {
+          attachCam(new MediaStream(st.getVideoTracks()));
+        }
+        return;
+      }
+      if (App.audio._micP) await App.audio._micP.catch(() => {});
+      if (App.audio.micLive()) micOk();
+      else { await App.audio.mic(); micOk(); }
+    } catch (e) { micFail(e); }
+    finally { mediaOpening = false; if (App.audio) App.audio.preferCallVideo = false; }
+    if (on && mode === 'video' && !cam) await startCam();
+  }
   async function startCam() {
     if (cam || !on || mode !== 'video') return;
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
+    if (mediaOpening || (App.audio && App.audio._micP)) {
+      const t0 = Date.now();
+      while ((mediaOpening || (App.audio && App.audio._micP)) && !cam && Date.now() - t0 < 3000) await new Promise((r) => setTimeout(r, 40));
+      if (cam || !on || mode !== 'video') return;
+    }
     camAsked = true;
     try {
-      const st = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facing, width: { ideal: 480 }, height: { ideal: 640 } }, audio: false });
+      const st = await navigator.mediaDevices.getUserMedia({ video: camConstraints(), audio: false });
       if (!on || mode !== 'video') { st.getVideoTracks().forEach((t) => t.stop()); return; }
-      cam = st;
-      const v = $('#call-self'); v.muted = true; v.defaultMuted = true; v.playsInline = true; v.setAttribute('playsinline', ''); v.setAttribute('muted', ''); v.autoplay = true;
-      v.srcObject = cam; v.hidden = false; v.play().catch(() => {});
-      paintCam();
-      if (App.sight && App.sight.watch) App.sight.watch(cam);
-      if (!App.audio.micLive()) App.audio.mic().catch(() => {});
-    } catch (e) { cam = null; paintCam(); }
+      attachCam(st);
+    } catch (e) { cam = null; paintCam(); if (camAsked) App.toast(camHelp(e), 6000); }
   }
   function toggleCam() { if (cam) return stopCam(); return startCam(); } // v2d-41: interruttore; in videochiamata parte accesa
   function stopCam() {
@@ -373,7 +431,7 @@
     } finally { URL.revokeObjectURL(url); }
   }
   App.call = {
-    active: false, mode: null, start, end, setMode,
+    active: false, mode: null, start, requestStart, end, setMode,
     get realtime() { return rt; },
     engine: () => (!on ? null : rt ? 'realtime' : connecting ? 'connecting' : 'classic'),
     why: () => why, micMode: () => micMode,
@@ -388,8 +446,8 @@
     caption() { const c = $('#call-caption'); if (c) { c.hidden = true; c.textContent = ''; } },
     _captionOld(text) { if (!on || mode === 'voice') return; const c = $('#call-caption'); const t = String(text || '').replace(/\s+/g, ' ').trim(); c.hidden = !t || !App.ls.get('callCaptions', true); c.textContent = t.length > 160 ? '…' + t.slice(-158) : t; },
   };
-  $('#call-btn').addEventListener('click', (e) => { e.stopPropagation(); start('video'); });
-  $('#call-btn2').addEventListener('click', (e) => { e.stopPropagation(); start('video'); });
+  $('#call-btn').addEventListener('click', (e) => { e.stopPropagation(); requestStart('video'); });
+  $('#call-btn2').addEventListener('click', (e) => { e.stopPropagation(); requestStart('video'); });
   const videoBtn = $('#wa-video');
   if (videoBtn) {
     let videoTap = 0;
@@ -399,13 +457,13 @@
       const now = Date.now();
       if (now - videoTap < 600) return;
       videoTap = now;
-      start('video');
+      requestStart('video');
     };
     videoBtn.addEventListener('pointerup', openVideo);
     videoBtn.addEventListener('click', openVideo);
   }
   const voiceBtn = $('#wa-voice');
-  if (voiceBtn) voiceBtn.addEventListener('click', (e) => { e.stopPropagation(); start('voice'); });
+  if (voiceBtn) voiceBtn.addEventListener('click', (e) => { e.stopPropagation(); requestStart('voice'); });
   $('#call-tovideo').addEventListener('click', (e) => { e.stopPropagation(); setMode('video'); });
   $('#call-speaker').addEventListener('click', (e) => { e.stopPropagation(); setSpeaker(!speaker); });
   const vtg = $('#call-videotoggle');

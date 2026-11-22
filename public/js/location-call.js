@@ -5,6 +5,8 @@
  * Prima chiamata: showroom. Poi rotazione deterministica persistita in localStorage.
  */
 (function () {
+  if (window.__novaLocationCallBound) return;
+  window.__novaLocationCallBound = true;
   const HOME = 'petto';
   const LS_LAST = 'locationLast';
   const LS_FORCE = 'locationForce'; // solo prova tecnica; vuoto = rotazione
@@ -15,6 +17,15 @@
   let loaded = false;
 
   const readyPlaces = () => (index.places || []).filter((p) => p.ready && packs[p.id] && packs[p.id].clips && packs[p.id].clips.length);
+  const LABELS = {
+    showroom: 'nello showroom di NF Motors, tra le auto',
+    barca: 'in barca, sul ponte di uno yacht al tramonto',
+    auto: 'in auto, seduta in macchina',
+    salotto: 'a casa, in salotto',
+    camera: 'a casa, in camera da letto',
+    cucina: 'a casa, in cucina',
+    palestra: 'in palestra',
+  };
   const inVideoCall = () => {
     const body = document.body.classList;
     const stage = document.getElementById('stage');
@@ -22,6 +33,8 @@
     if (stage && stage.classList.contains('voice')) return false;
     return !!(App.call && App.call.active && App.call.mode !== 'voice');
   };
+  // Pacchetto bloccato per tutta la chiamata (anche ridotta o passata a vocale). Si sblocca solo riattaccando.
+  const locked = () => !!(current && App.call && App.call.active);
 
   function rotationPick(ready) {
     if (!ready.length) return null;
@@ -99,7 +112,10 @@
   App.locationCall = {
     loaded: () => loaded,
     place: () => current,
+    label: () => (current && LABELS[current]) || '',
     places: () => (index.places || []).slice(),
+    locked,
+    // clip a tutto schermo solo in videochiamata visibile; la libreria resta quella del luogo bloccato anche se ridotta
     usingClips: () => !!(inVideoCall() && current && libOf(current).length),
     lib: () => current ? libOf(current) : [],
     still: () => current ? stillOf(current) : '',
@@ -116,7 +132,12 @@
       } catch { loaded = true; }
     },
     onCallStart(mode) {
-      if (mode === 'voice') { current = null; applyFrame(false); return; }
+      // v2d-64: il luogo si sceglie UNA volta all'inizio e resta fino al riaggancio. Anche in vocale non si cancella.
+      if (mode === 'voice') {
+        applyFrame(false);
+        if (App.solo && App.solo.syncMotion) App.solo.syncMotion();
+        return;
+      }
       // start() chiama setMode (onMode) e poi di nuovo onCallStart: non rimescolare il luogo già scelto in questa chiamata.
       if (current) {
         applyFrame(true);

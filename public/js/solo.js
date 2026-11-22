@@ -232,11 +232,12 @@
     if (!v || !stage) return;
     const ch = soloChar() || (App.current || null);
     const G = window.MotionGraph;
+    const locLocked = !!(App.locationCall && App.locationCall.locked ? App.locationCall.locked() : (App.locationCall.place && App.locationCall.place() && App.call && App.call.active));
     const locOn = !!(App.locationCall && App.locationCall.usingClips && App.locationCall.usingClips());
     stage.classList.toggle('loc-call', locOn);
     // v2d-33: si suonano solo i clip del look attuale (vestito/capelli/trucco); in cache restano tutti
     // In videochiamata, se c'è un pacchetto luogo, quei clip (Ira già nella scena) hanno la precedenza.
-    const all = locOn ? App.locationCall.lib() : (motionOn() && ch && G ? G.libraryOf(ch) : []);
+    const all = locLocked ? App.locationCall.lib() : (motionOn() && ch && G ? G.libraryOf(ch) : []);
     const look0 = locOn ? all : (all.length ? lookLib(ch) : all);
     // v2d-36: qualità secondo la connessione (std / lite / still). Con 'still' niente clip: la foto con un respiro leggero.
     const net = App.net || window.NovaNet;
@@ -246,7 +247,7 @@
     stage.classList.toggle('nv-still', !!(motionOn() && !away && look0.length && !lib0.length));
     const P = motionPlayer();
     const vids = [v, document.getElementById('motion-video-b')].filter(Boolean);
-    const poster = (locOn && App.locationCall.still()) || (App.faceSrc && App.faceSrc(ch)) || '';
+    const poster = (locLocked && App.locationCall.still()) || (App.faceSrc && App.faceSrc(ch)) || '';
     const off = () => {
       if (!P || !P.on) { stage.classList.remove('has-motion'); return; }
       P.stop(); // dissolvenza verso la foto, poi il video sparisce

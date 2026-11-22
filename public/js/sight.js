@@ -1,6 +1,8 @@
 /* Camera dell'utente: Nova riceve fotogrammi, non un video.
    Spenta all'avvio. Nessun fotogramma salvato, niente ripresa in background dopo lo stop. */
 (function () {
+  if (window.__novaSightBound) return;
+  window.__novaSightBound = true;
   const CADENCE_MS = 8000;
   function cadence() { return (App.call && App.call.active) ? 3000 : CADENCE_MS; }
   const MAX_EDGE = 480;
@@ -79,9 +81,18 @@
     timer = setInterval(sample, cadence());
   }
   async function openStream() {
-    const borrowed = borrowCall();
+    let borrowed = borrowCall();
+    if (!borrowed && App.call && App.call.active && App.call.mode === 'video') {
+      const t0 = Date.now();
+      while (!borrowed && Date.now() - t0 < 2500) {
+        await new Promise((r) => setTimeout(r, 80));
+        borrowed = borrowCall();
+      }
+    }
+    // v2d-64: in chiamata non si apre una seconda fotocamera (menu «interrompi camera/microfono», microfono che cade)
+    if (!borrowed && App.call && App.call.active && App.call.mode === 'video') { owns = false; return; }
     owns = !borrowed;
-    const stream = borrowed || await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: 'user', width: { ideal: 480 }, height: { ideal: 640 } } });
+    const stream = borrowed || await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: 'user' }, width: { ideal: 720 }, height: { ideal: 960 }, aspectRatio: { ideal: 0.75 } } });
     if (!want) { if (!borrowed) stream.getVideoTracks().forEach((t) => t.stop()); return; }
     current = stream;
     const v = document.getElementById('sight-preview');

@@ -46,6 +46,7 @@
   function play(id) {
     const clip = byId(id); if (!clip) return false;
     if (ownMotion()) { pending = null; return false; }
+    if (App.call && App.call.active && App.locationCall && App.locationCall.place && App.locationCall.place()) { pending = null; return false; }
     if (App.faceLocked && App.faceLocked()) { pending = null; return false; } // v2d-46: i video di serie non sono la foto scelta
     if (simli()) { pending = null; return false; }
     if (talking()) { pending = id; return false; }

@@ -386,6 +386,8 @@ App.chat = {
 
 // ---- sincronizzazione dell'archivio condiviso ----
 // Chat: ogni 3 s mentre è visibile (in pausa se l'app è in background).
+if (!window.__novaChatPollBound) {
+window.__novaChatPollBound = true;
 setInterval(() => { if (App.chat.visible() && !App.chat.busy) App.chat.poll(); }, 3000);
 // v2d-48: vicino all'inizio della chat si aggiungono i messaggi precedenti (a blocchi)
 (function () { const m = document.getElementById('messages'); if (!m) return; let q = 0;
@@ -423,6 +425,7 @@ App.sync = async function () {
   } catch { /* riprova */ } finally { App._syncing = false; }
 };
 setInterval(() => App.sync(), 7000);
+}
 
 $('#char-list').addEventListener('click', (e) => {
   const ph = e.target.closest('li[data-placeholder]');

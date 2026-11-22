@@ -239,7 +239,7 @@ body.solo-mode.in-call.simli-on #call-ui{position:absolute!important;inset:0!imp
 .call-state{font-size:.8em;opacity:.85;background:#0006;border-radius:12px;padding:2px 10px;margin-top:2px}
 .call-ui.speaking .call-state{background:#1f9d5599}
 .call-ui.thinking .call-state{background:#7b2cbf99}
-.call-self{position:absolute;top:calc(env(safe-area-inset-top) + 12px);right:calc(env(safe-area-inset-right) + 12px);width:24%;max-width:130px;aspect-ratio:3/4;object-fit:cover;border-radius:12px;border:2px solid #fff8;box-shadow:0 4px 16px #0008;transform:scaleX(-1);background:#111}
+.call-self{position:absolute;top:calc(env(safe-area-inset-top) + 12px);right:calc(env(safe-area-inset-right) + 12px);width:24%;max-width:130px;aspect-ratio:3/4;object-fit:cover;object-position:50% 40%;border-radius:12px;border:2px solid #fff8;box-shadow:0 4px 16px #0008;transform:scaleX(-1);background:#111}
 .call-caption{align-self:center;max-width:min(92%,560px);margin:auto 0 10px;padding:6px 12px;border-radius:12px;background:#000a;font-size:.95em;line-height:1.35;text-align:center;pointer-events:none}
 .call-text{display:flex;gap:6px;margin:0 auto 10px;width:min(100%,520px)}
 .call-text input{margin:0;background:#000b;border-color:#fff4}
@@ -1427,7 +1427,9 @@ body.solo-mode #nh-photo .nh-avatar > img,body.solo-mode #nh-photo .nh-avatar > 
 /* v2d-37: Camera della chiamata di nuovo accessibile (v36 clean-call la nascondeva).
    Solo icona, mai testo/sottotitoli; anteprima locale muta, playsinline su Safari. */
 body.solo-mode.in-call:not(.call-min) #stage.call:not(.voice) #call-cam:not([hidden]){display:inline-flex!important;align-items:center;justify-content:center;width:48px;height:48px;padding:0;position:relative}
-body.solo-mode.in-call:not(.call-min) #stage.call:not(.voice) #call-self:not([hidden]){display:block!important;width:84px;height:112px;max-width:24vw;top:auto!important;bottom:calc(108px + env(safe-area-inset-bottom));right:12px;object-fit:cover;border-radius:12px;z-index:8}
+body.solo-mode.in-call:not(.call-min) #stage.call:not(.voice) #call-self:not([hidden]){display:block!important;width:84px;height:112px;max-width:24vw;top:auto!important;bottom:calc(108px + env(safe-area-inset-bottom));right:12px;object-fit:cover;object-position:50% 40%;transform:scaleX(-1);border-radius:12px;z-index:8}
+/* v2d-64: lo zoom viso+spalle dei clip di luogo non deve mai applicarsi alla fotocamera dell'utente */
+body.solo-mode.in-call #stage.call.loc-call #call-self{width:84px!important;height:112px!important;max-width:24vw!important;inset:auto!important;left:auto!important;object-fit:cover!important;object-position:50% 40%!important;transform:scaleX(-1)!important}
 /* v2d-37: la foto della Home (div.nh-avatar-face > img) riempie esattamente il riquadro, con lo stesso taglio del video piccolo
    che le si sovrappone (prima l'immagine restava alta 636 px e il video 360: due tagli diversi = giunta su iPhone). */
 body.solo-mode #nh-photo .nh-avatar > .nh-avatar-face{position:absolute;inset:0;width:100%;height:100%;margin:0;border-radius:0;overflow:hidden}

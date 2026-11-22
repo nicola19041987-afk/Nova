@@ -2,6 +2,8 @@
  * L'ascolto si riavvia da solo a ogni evento "end" finché il microfono è acceso: nessun limite di durata.
  * Mentre l'avatar parla l'ascolto è in pausa, per evitare l'eco. */
 (function () {
+  if (window.__novaVoiceBound) return;
+  window.__novaVoiceBound = true;
   const speechRec = () => window.SpeechRecognition || window.webkitSpeechRecognition;
   let xMode = false, xFailed = false; // v8.4.5: modalità voce con trascrizione xAI
   let rec = null, on = false, pausedForTTS = false, ttsOn = false, composerOnly = false;
@@ -72,17 +74,59 @@
     adoptLate(st) {
       if (!st) return;
       if (this.micLive() || !(this.inCall || (App.call && App.call.active))) { try { st.getTracks().forEach((x) => x.stop()); } catch { /* */ } return; }
-      this._mic = st; this.micError = null; this.micStats.late = (this.micStats.late || 0) + 1;
-      st.getAudioTracks().forEach((t) => { t.onended = () => { if (this._mic !== st) return; this._mic = null; this.micStats.lost++; if (this.inCall) this._micL.forEach((f) => { try { f(); } catch {} }); }; });
+      this.adoptMic(st);
+      this.micStats.late = (this.micStats.late || 0) + 1;
       try { document.dispatchEvent(new CustomEvent('nova-mic-late')); } catch { /* */ }
     },
+    // v2d-64: adotta tracce audio già aperte (anche da un getUserMedia audio+video). Mai fermare le tracce video: restano alla fotocamera della chiamata.
+    adoptMic(st) {
+      if (!st) return null;
+      const audioTracks = st.getAudioTracks ? st.getAudioTracks() : [];
+      const audio = audioTracks.length ? ((st.getVideoTracks && st.getVideoTracks().length) ? new MediaStream(audioTracks) : st) : st;
+      if (this.micLive()) {
+        if (audio !== this._mic && audio !== st) { try { audio.getAudioTracks().forEach((x) => { if (!this._mic.getAudioTracks().includes(x)) x.stop(); }); } catch { /* */ } }
+        return this._mic;
+      }
+      this._mic = audio; this.micError = null;
+      audio.getAudioTracks().forEach((t) => { t.onmute = () => { this.micStats.muted = (this.micStats.muted || 0) + 1; }; });
+      audio.getAudioTracks().forEach((t) => { t.onended = () => { if (this._mic !== audio) return; this._mic = null; this.micStats.lost++; if (this.inCall) this._micL.forEach((f) => { try { f(); } catch {} }); }; });
+      return audio;
+    },
+    // v2d-64: un solo getUserMedia (microfono + fotocamera anteriore) all'avvio della videochiamata. mic() in corso attende questa stessa promessa.
+    adoptCombined(constraints) {
+      if (this.micLive()) return Promise.resolve(this._mic);
+      if (this._micP) return this._micP;
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { const e = new Error('microfono non disponibile su questo browser'); e.name = window.isSecureContext ? 'NotFoundError' : 'SecurityError'; this.micError = e; return Promise.reject(e); }
+      this.micStats.gum++;
+      try { if (navigator.audioSession && navigator.audioSession.type !== 'play-and-record') navigator.audioSession.type = 'play-and-record'; } catch { /* */ }
+      const md = navigator.mediaDevices;
+      const withTimeout = (p, ms) => new Promise((ok, ko) => { let done = false; const t = setTimeout(() => { if (done) return; done = true; const e = new Error('nessuna risposta dal microfono'); e.name = 'TimeoutError'; ko(e); }, ms); p.then((v) => { if (done) { this.adoptLate(v); return; } done = true; clearTimeout(t); ok(v); }, (e) => { if (done) return; done = true; clearTimeout(t); ko(e); }); });
+      this._micPAt = performance.now();
+      const P = this._micP = withTimeout(md.getUserMedia(constraints), 9000)
+        .then((st) => {
+          this.adoptMic(st);
+          return st;
+        }, (e) => { this.micError = e || new Error('microfono non avviato'); this.micStats.lastErr = (e && e.name) || 'errore'; throw this.micError; })
+        .finally(() => { if (this._micP === P) { this._micP = null; this._micPAt = 0; } });
+      return P;
+    },
     micDenied(e) { const n = (e && e.name) || ''; return n === 'NotAllowedError' || n === 'SecurityError' || n === 'PermissionDeniedError'; },
+    preferCallVideo: false,
+    videoConstraints: null,
     async mic() {
       if (this.micLive()) return this._mic;
       if (this._micP) {
         // una richiesta appesa da più di 15 s (permesso mai risposto) non deve bloccare il nuovo tentativo
         if (this._micPAt && performance.now() - this._micPAt > 15000) { this._micP = null; this.micStats.stale = (this.micStats.stale || 0) + 1; }
         else return this._micP;
+      }
+      // v2d-64: in avvio videochiamata non si apre un secondo getUserMedia solo audio; si attende quello combinato.
+      if (this.preferCallVideo && this.adoptCombined && this.videoConstraints) {
+        await this.adoptCombined({
+          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
+          video: this.videoConstraints,
+        });
+        return this._mic;
       }
       this.micStats.gum++;
       // v8.4.7 (iPhone): la sessione audio diventa 'play-and-record' UNA volta, PRIMA del microfono. Un AudioContext nato in
@@ -137,7 +181,7 @@
     },
     noteCtx() { try { this._born = (navigator.audioSession && navigator.audioSession.type) || 'none'; } catch { this._born = 'none'; } },
     onMicLost(f) { this._micL.add(f); return () => this._micL.delete(f); },
-    releaseMic() { const s = this._mic; this._mic = null; this._micL.clear(); if (s) s.getTracks().forEach((t) => { this.micStats.stops++; t.onended = null; t.stop(); }); },
+    releaseMic() { const s = this._mic; this._mic = null; this._micL.clear(); if (s) (s.getAudioTracks ? s.getAudioTracks() : s.getTracks()).forEach((t) => { this.micStats.stops++; t.onended = null; t.stop(); }); },
     unlock() {
       try {
         const AC = window.AudioContext || window.webkitAudioContext;

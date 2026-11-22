@@ -2586,17 +2586,35 @@ app.get('/api/chats/:id/summary', auth, (req, res) => {
 // per entrambi). Il telefono apre il WebSocket direttamente con xAI: audio e risposte non passano dal server.
 const rtHits = new Map();
 const APP_INTENT_RT = 'BLOCCO NOTE E MODIFICHE DELL\'APP: se ti chiede ESPLICITAMENTE di segnare qualcosa (con «segna», «segnala», «segnalo» o «segnalalo»), il sistema lo salva da solo nel Blocco note: confermalo in breve. Altrimenti non dire mai di aver segnato o salvato qualcosa. Se ti chiede di modificare o sistemare l\'APP stessa (per esempio una frase che inizia con «sistema», «modifica l\'app…», «cambia il tasto…»), il sistema passa la richiesta: digli con naturalezza che l\'hai passata e che a Nicola verrà chiesto l\'ok prima di cambiare qualsiasi cosa. Non vale per richieste sul tuo carattere, i tuoi vestiti o il tuo comportamento, che segui come sempre.';
-function rtInstructions(user, ch, mode, faceLock) {
+function sanitizeLocation(v) {
+  const id = String(v || '').toLowerCase().trim();
+  return /^[a-z0-9_-]{1,40}$/.test(id) ? id : '';
+}
+function locationSceneText(location) {
+  const labels = {
+    showroom: 'nello showroom di NF Motors, tra le auto',
+    barca: 'in barca, sul ponte di uno yacht al tramonto',
+    auto: 'in auto, seduta in macchina',
+    salotto: 'a casa, in salotto',
+    camera: 'a casa, in camera da letto',
+    cucina: 'a casa, in cucina',
+    palestra: 'in palestra',
+  };
+  const id = sanitizeLocation(location);
+  const here = labels[id];
+  return `PRESENZA NEL LUOGO: sei Ira, una persona vera, in questa chiamata. ${here ? `In QUESTA chiamata sei fisicamente ${here}. Resti lì per tutta la chiamata, come se fossi davvero là.` : 'Sei davvero presente, nel luogo in cui ti trovi adesso.'} Non dire mai che esisti solo in un'app, che non hai un telefono, che non puoi cambiarti o spostarti, o frasi come «qui in app resto così». Resta in personaggio. Se ti chiede di richiamarlo tu o di andare ora da un'altra parte, spiega con naturalezza che in questa chiamata resti dove sei, e che alla prossima potrai collegarti da un altro posto (casa, showroom, auto, barca, palestra…). Non inventare di avviare tu una chiamata da un telefono tuo.`;
+}
+function rtInstructions(user, ch, mode, faceLock, location) {
   const c = readChat(ch.id), upto = (c.summary && c.summary.upto) || 0;
   const vis = c.messages.filter(visibleMsg), fresh = vis.filter((m) => m.n > upto);
   const recent = (fresh.length >= 10 ? fresh : vis.slice(-10)).slice(-24)
     .map((m) => `${m.role === 'user' ? authorLabel(m) : ch.name}: ${String(m.content || '').replace(/\s+/g, ' ').slice(0, 400)}${m.photo ? ' [foto dalla galleria]' : ''}`);
   return [buildSystem(user, ch, { call: true, callMode: mode, realtime: true, faceLock: faceLockOn(faceLock) }),
+    locationSceneText(location),
     recent.length && `ULTIMI MESSAGGI DELLA CHAT (contesto, continua da qui):\n${recent.join('\n')}`,
     `In questa chiamata parli solo con ${USERS[user].name} (la senti dal vivo: le sue parole non hanno il prefisso col nome).`, APP_INTENT_RT, !notesAllowed(user) && notesRuleText(user), BASE_RULE].filter(Boolean).join('\n\n');
 }
-// VAD del servizio voce: soglia alta, silenzio e prefisso più lunghi, così un rumore breve non chiude il turno.
-// Se un campo venisse rifiutato, il telefono riprova la configurazione a pezzi e tiene comunque le istruzioni.
+
 function chooseXaiVoice(v, explicit) {
   v = String(v || '').toLowerCase();
   if (!v || v === 'una') return 'eve';
@@ -2604,9 +2622,9 @@ function chooseXaiVoice(v, explicit) {
   return XAI_VOICES.includes(v) ? v : 'eve';
 }
 function rtVoice(v) { return chooseXaiVoice(v, true); }
-function rtSession(user, ch, mode, voice, faceLock) {
+function rtSession(user, ch, mode, voice, faceLock, location) {
   return {
-    instructions: rtInstructions(user, ch, mode, faceLock),
+    instructions: rtInstructions(user, ch, mode, faceLock, location),
     voice: rtVoice(voice),
     turn_detection: { type: 'server_vad', threshold: 0.7, silence_duration_ms: 900, prefix_padding_ms: 500 }, // v2d-39: 0.9 non sentiva chi la interrompe; l'eco resta filtrata dal controllo locale nel client
     tools: [{ type: 'web_search' }], // v8.6.0: attualità e fatti aggiornati in chiamata realtime
@@ -2634,7 +2652,7 @@ app.post('/api/realtime/session', auth, requireActivated, requireKey, async (req
     if (!token || typeof token !== 'string') return res.status(502).json({ error: 'Token non ricevuto dal servizio voce' });
     res.setHeader('Cache-Control', 'no-store');
     const t1 = Date.now();
-    res.json({ token, expiresAt: j.expires_at || null, url: `${REALTIME_URL}?model=${encodeURIComponent(REALTIME_MODEL)}`, model: REALTIME_MODEL, session: rtSession(req.user, ch, mode, voice, req.body.faceLock),
+    res.json({ token, expiresAt: j.expires_at || null, url: `${REALTIME_URL}?model=${encodeURIComponent(REALTIME_MODEL)}`, model: REALTIME_MODEL, session: rtSession(req.user, ch, mode, voice, req.body.faceLock, req.body.location),
       mintMs: t1 - now, adult: adultChat(), explicitTalk: explicitTalk(req.user), contentFilter: contentFilterOn(req.user) }); // v8.4.2: niente più extra con il modello di trascrizione (non previsto dallo schema)
   } catch (e) { console.error('Errore AI tempo reale:', e.message); res.status(502).json({ error: 'Servizio voce in tempo reale non raggiungibile' }); }
 });
@@ -2857,7 +2875,7 @@ app.post('/api/realtime/instructions', auth, requireActivated, (req, res) => {
   if (!ch) return res.status(404).json({ error: 'Personaggio non trovato' });
   res.setHeader('Cache-Control', 'no-store');
   const oc = req.body.outfitChanged === 'lei' ? 'lei' : req.body.outfitChanged === true;
-  res.json({ instructions: rtInstructions(req.user, ch, req.body.mode === 'voice' ? 'voice' : 'video', req.body.faceLock) + outfitNote(ch, req.body.outfit, oc), adult: adultChat(), explicitTalk: explicitTalk(req.user), contentFilter: contentFilterOn(req.user) });
+  res.json({ instructions: rtInstructions(req.user, ch, req.body.mode === 'voice' ? 'voice' : 'video', req.body.faceLock, req.body.location) + outfitNote(ch, req.body.outfit, oc), adult: adultChat(), explicitTalk: explicitTalk(req.user), contentFilter: contentFilterOn(req.user) });
 });
 // trascrizioni della chiamata salvate nella chat condivisa (come i messaggi delle videochiamate classiche)
 app.post('/api/chats/:id/voice-turn', auth, requireActivated, async (req, res) => {
