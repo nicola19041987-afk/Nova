@@ -41,6 +41,19 @@
     $('#call-mute').classList.toggle('off', muted); $('#call-mute').textContent = muted ? '🔇' : '🎙️';
   }
   // v8.2: modalità della chiamata (si può passare da vocale a video col tasto verde, il timer continua)
+  // v2d-67b: Simli non parte se un luogo è già scelto, se si usano i clip di luogo, o se esiste un pacchetto luogo pronto
+  // (altrimenti setMode avviava la sessione prima di onCallStart e il volto vecchio lampeggiava).
+  function locationBlocksSimli() {
+    try {
+      const L = App.locationCall;
+      if (!L) return false;
+      if (L.place && L.place()) return true;
+      if (L.usingClips && L.usingClips()) return true;
+      const places = L.places && L.places();
+      if (Array.isArray(places) && places.some((x) => x && x.ready)) return true;
+    } catch { /* location-call non pronto */ }
+    return false;
+  }
   function setMode(m) {
     mode = m === 'voice' ? 'voice' : 'video';
     // v2d-40: nell'app di Nova (solo-mode) la chiamata vocale resta vocale (niente fotocamera), ma lei si vede viva a tutto
@@ -63,8 +76,8 @@
     cancelAnimationFrame(raf); if (mode === 'voice' && !soloVoice) raf = requestAnimationFrame(portrait);
     requestAnimationFrame(() => App.fitFrame && App.fitFrame());
     if (on) { state(); App.chat.header && App.chat.header(); }
-    // v2d-66: un solo strato visivo per chiamata — se c'è un pacchetto luogo, Simli non parte (e viceversa).
-    const locLayer = !!(App.locationCall && ((App.locationCall.usingClips && App.locationCall.usingClips()) || (App.locationCall.place && App.locationCall.place())));
+    // v2d-67b: un solo strato visivo — con un luogo pronto/scelto Simli non parte affatto (niente sessione prima del clip).
+    const locLayer = locationBlocksSimli();
     if (App.simli) { if (on && mode === 'video' && App.me && App.me.simliFace && !locLayer) App.simli.start(); else App.simli.stop(); }
     if (App.locationCall && App.locationCall.onMode) App.locationCall.onMode(mode);
     if (App.solo && App.solo.syncMotion) App.solo.syncMotion();
@@ -125,8 +138,11 @@
     App.stageFs.exit(); stage.classList.add('fs', 'call'); document.body.classList.add('avatar-fs-on', 'in-call'); if (App.fullscreenFix) App.fullscreenFix();
     document.body.classList.remove('simli-on');
     ui.hidden = false; $('#call-name').textContent = ch.name; $('#call-caption').hidden = true;
-    setMode(m || 'video'); if (App.locationCall && App.locationCall.onCallStart) App.locationCall.onCallStart(mode);
-    if (App.simli && App.locationCall && App.locationCall.place && App.locationCall.place()) App.simli.stop();
+    // v2d-67b: prima si sceglie il luogo, poi setMode decide su Simli (mai /api/simli/session prima del luogo).
+    const wantMode = m || 'video';
+    if (App.locationCall && App.locationCall.onCallStart) App.locationCall.onCallStart(wantMode);
+    setMode(wantMode);
+    if (App.simli && locationBlocksSimli()) App.simli.stop();
     speaker = true; $('#call-speaker').classList.add('on'); $('#call-speaker').textContent = '🔊'; if (App.tts) App.tts.volume = 1;
     $('#act-menu').hidden = true; $('#scene-menu').hidden = true;
     prevTts = null; if (App.tts) App.tts.fails = 0; // v8.4.5: in chiamata lei parla sempre (App.voice.ttsOn() è vero in chiamata), senza toccare «Lettura»

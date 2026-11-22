@@ -189,3 +189,106 @@ test('la videochiamata non mostra il volto Simli e lascia la foto', async ({ pag
   expect(up.canvas).toBe(true);
   expect(simliDown).toBe(false);
 });
+
+
+test('con un luogo pronto non si chiama /api/simli/session e il video resta nascosto', async ({ page }) => {
+  await page.addInitScript(() => {
+    if (navigator.serviceWorker) navigator.serviceWorker.register = () => new Promise(() => {});
+  });
+  let sessionCalls = 0;
+  const json = (route, o, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(o) });
+  await page.route('**/api/**', async (route) => {
+    const p = new URL(route.request().url()).pathname;
+    if (p === '/api/simli/session') { sessionCalls += 1; return json(route, { session_token: 'tok-should-not', fallback: false }); }
+    if (p === '/api/me') return json(route, { user: 'nicola', name: 'Nico', admin: true, editor: true, activated: true, consent: { activatedAt: '2026-01-01T00:00:00.000Z', phrase: 'ok' }, adult: false, adultChat: false, solo: true, soloKey: 'greta', serverKey: true, simliFace: true });
+    if (p === '/api/characters') return json(route, [{ id: 'bbbbbbbbbbbbbbbb', name: 'Ira', ready: 'nova-scelta', avatar: '/api/avatars/c2d6200000000001.jpg', personality: 'x', style: '', orders: '', requests: '' }]);
+    if (p.startsWith('/api/chats/')) return json(route, { epoch: 'e1', last: 1, messages: [], typing: null });
+    if (p === '/api/settings') return json(route, { autoSave: false, allowExport: false, adultMode: false, videoModel: '', videoDuration: 6 });
+    if (p === '/api/adult-status') return json(route, { set: false, chat: false, users: [], missing: [] });
+    if (p === '/api/adult-keyword') return json(route, { set: false });
+    if (p === '/api/rules') return json(route, { text: '' });
+    if (p === '/api/memory') return json(route, []);
+    if (p === '/api/notes') return json(route, { text: '', toAI: false });
+    if (p === '/api/sync') return json(route, { chars: '1', memory: '1', adultChat: false });
+    if (p === '/api/actions') return json(route, { video: false, adult: false, seconds: 6, catalog: [], gestures: [] });
+    if (p === '/api/locations') return json(route, { default: 'casa', pick: 'rotation', order: ['casa'], places: [{ id: 'casa', label: 'Casa', ready: true, dir: 'casa' }] });
+    if (p === '/api/locations/casa') return json(route, { id: 'casa', ready: true, still: '/api/locations/casa/still', clips: [{ id: 'idle', url: '/api/locations/casa/idle.mp4', kind: 'base' }], outfit: 'lace-pizzo' });
+    return json(route, {});
+  });
+  await page.goto('/');
+  await page.waitForFunction(() => window.App && App.simli && App.locationCall && App.locationCall.loaded && App.locationCall.loaded());
+  const out = await page.evaluate(async () => {
+    App.me = Object.assign({}, App.me, { simliFace: true, name: 'Nico' });
+    App.call.active = true; App.call.mode = 'video';
+    if (App.locationCall.onCallStart) App.locationCall.onCallStart('video');
+    const started = await App.simli.start();
+    const video = document.getElementById('simli-video');
+    return {
+      started,
+      blocked: !!(App.simli.blockedByLocation && App.simli.blockedByLocation()),
+      place: App.locationCall.place && App.locationCall.place(),
+      on: document.body.classList.contains('simli-on'),
+      hidden: !video || video.hidden,
+      muted: !video || video.muted === true,
+      volume: video ? video.volume : null,
+      active: App.simli.active(),
+    };
+  });
+  expect(out.place).toBe('casa');
+  expect(out.blocked).toBe(true);
+  expect(out.started).toBe(false);
+  expect(sessionCalls).toBe(0);
+  expect(out.on).toBe(false);
+  expect(out.hidden).toBe(true);
+  expect(out.active).toBe(false);
+});
+
+test('stop durante la richiesta annulla la sessione in volo e il video non si mostra', async ({ page }) => {
+  await page.addInitScript(() => {
+    if (navigator.serviceWorker) navigator.serviceWorker.register = () => new Promise(() => {});
+  });
+  const json = (route, o, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(o) });
+  await page.route('**/api/**', async (route) => {
+    const p = new URL(route.request().url()).pathname;
+    if (p === '/api/simli/session') {
+      await new Promise((ok) => setTimeout(ok, 400));
+      return json(route, { session_token: 'tok-late', iceServers: [], fallback: false });
+    }
+    if (p === '/api/me') return json(route, { user: 'nicola', name: 'Nico', admin: true, editor: true, activated: true, consent: { activatedAt: '2026-01-01T00:00:00.000Z', phrase: 'ok' }, adult: false, adultChat: false, solo: true, soloKey: 'greta', serverKey: true, simliFace: true });
+    if (p === '/api/characters') return json(route, [{ id: 'bbbbbbbbbbbbbbbb', name: 'Ira', ready: 'nova-scelta', avatar: '/api/avatars/c2d6200000000001.jpg', personality: 'x', style: '', orders: '', requests: '' }]);
+    if (p.startsWith('/api/chats/')) return json(route, { epoch: 'e1', last: 1, messages: [], typing: null });
+    if (p === '/api/settings') return json(route, { autoSave: false, allowExport: false, adultMode: false, videoModel: '', videoDuration: 6 });
+    if (p === '/api/adult-status') return json(route, { set: false, chat: false, users: [], missing: [] });
+    if (p === '/api/adult-keyword') return json(route, { set: false });
+    if (p === '/api/rules') return json(route, { text: '' });
+    if (p === '/api/memory') return json(route, []);
+    if (p === '/api/notes') return json(route, { text: '', toAI: false });
+    if (p === '/api/sync') return json(route, { chars: '1', memory: '1', adultChat: false });
+    if (p === '/api/actions') return json(route, { video: false, adult: false, seconds: 6, catalog: [], gestures: [] });
+    if (p === '/api/locations') return json(route, { default: 'showroom', pick: 'rotation', order: [], places: [] });
+    return json(route, {});
+  });
+  await page.goto('/');
+  await page.waitForFunction(() => window.App && App.simli);
+  const out = await page.evaluate(async () => {
+    App.me = Object.assign({}, App.me, { simliFace: true, name: 'Nico' });
+    App.call.active = true; App.call.mode = 'video';
+    const pending = App.simli.start();
+    App.simli.stop();
+    const started = await pending;
+    const video = document.getElementById('simli-video');
+    return {
+      started,
+      on: document.body.classList.contains('simli-on'),
+      hidden: !video || video.hidden,
+      src: !!(video && video.srcObject),
+      active: App.simli.active(),
+      muted: !video || video.muted === true,
+    };
+  });
+  expect(out.on).toBe(false);
+  expect(out.hidden).toBe(true);
+  expect(out.src).toBe(false);
+  expect(out.active).toBe(false);
+  expect(out.muted).toBe(true);
+});

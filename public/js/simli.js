@@ -11,6 +11,18 @@
   let next = null; // v2d-49: sessione nuova in preparazione (cambio prima della durata massima)
   const retry = { n: 0, timer: 0, total: 0 };
   const stats = { handovers: 0, reconnects: 0 };
+  let connGen = 0; // v2d-67b: close() invalida le connessioni ancora in volo (niente volto dopo lo stop)
+  function blockedByLocation() {
+    try {
+      const L = App.locationCall;
+      if (!L) return false;
+      if (L.place && L.place()) return true;
+      if (L.usingClips && L.usingClips()) return true;
+      const places = L.places && L.places();
+      if (Array.isArray(places) && places.some((x) => x && x.ready)) return true;
+    } catch { /* location-call non pronto */ }
+    return false;
+  }
 
   // v2d-49: 24 kHz (o 44,1/48 kHz) -> 16 kHz con un filtro passa-basso prima del ricampionamento (niente frequenze ripiegate
   // sopra gli 8 kHz che diventano fruscio e «sibili» nella bocca di Simli). FIR finestrato, coda conservata tra un pezzo e l'altro.
@@ -85,30 +97,15 @@
     const v = document.getElementById('simli-video');
     if (v && !on) { v.hidden = true; try { v.pause(); } catch { /* già fermo */ } v.srcObject = null; }
     if (v && on) v.hidden = false;
-    voiceFrom(!!on);
+    voiceFrom(false); // v2d-67b: mai l'audio di Simli — la voce resta solo Eve in tempo reale
   }
-  // v2d-46: labiale perfetto con Simli = si sente l'audio che arriva INSIEME al video di Simli (stesso orologio della bocca).
-  // L'audio locale si abbassa solo quando dalla traccia di Simli arriva davvero voce; se tace mentre lei parla, torna l'audio locale.
+  // v2d-67b: il video Simli resta muto; non si collega mai la traccia audio di Simli alle casse (evita la doppia voce).
+  // Prima (v2d-46) si abbassava Eve quando arrivava audio da Simli: in chiamata si sentivano due voci.
   let sa = null;
   function voiceFrom(on) {
-    if (!on) { if (sa) { clearInterval(sa.t); try { sa.src.disconnect(); sa.g.disconnect(); } catch { /* */ } sa = null; } if (App.rt && App.rt.localMute) App.rt.localMute(false); return; }
-    const v = document.getElementById('simli-video'); const st = v && v.srcObject;
-    const c = App.audio && App.audio.ctx; if (!st || !c || sa || !st.getAudioTracks || !st.getAudioTracks().length) return;
-    try {
-      const src = c.createMediaStreamSource(new MediaStream(st.getAudioTracks())), an = c.createAnalyser(), g = c.createGain();
-      an.fftSize = 512; g.gain.value = 0; src.connect(an); an.connect(g); g.connect(c.destination);
-      const td = new Float32Array(an.fftSize);
-      sa = { src, an, g, td, heardAt: 0, ok: false };
-      sa.t = setInterval(() => {
-        an.getFloatTimeDomainData(td); let e = 0; for (let i = 0; i < td.length; i++) e += td[i] * td[i];
-        const rms = Math.sqrt(e / td.length), now = performance.now();
-        if (rms > 0.01) sa.heardAt = now;
-        const localTalking = !!(App.rt && App.rt.speaking && App.rt.speaking());
-        const want = sa.heardAt && now - sa.heardAt < 1500;
-        if (want && !sa.ok) { sa.ok = true; g.gain.setTargetAtTime(1, c.currentTime, 0.02); if (App.rt && App.rt.localMute) App.rt.localMute(true); }
-        else if (sa.ok && localTalking && !want) { sa.ok = false; g.gain.setTargetAtTime(0, c.currentTime, 0.02); if (App.rt && App.rt.localMute) App.rt.localMute(false); }
-      }, 50);
-    } catch (e) { console.warn('Audio Simli non collegato, resta la voce locale', e && e.message); }
+    // v2d-67b: nessuna uscita audio da Simli. Si stacca eventuale grafo precedente e si lascia Eve.
+    if (sa) { clearInterval(sa.t); try { sa.src.disconnect(); sa.g.disconnect(); } catch { /* */ } sa = null; }
+    if (App.rt && App.rt.localMute) App.rt.localMute(false);
   }
   function sendBytes(bytes) {
     const ws = session && session.ws;
@@ -129,6 +126,7 @@
   }
   // fine della videochiamata (o app in background): tutto chiuso, nessun nuovo tentativo
   function close(why) {
+    connGen += 1;
     const s = session; session = null; queue = [];
     clearTimeout(retry.timer); retry.timer = 0; retry.n = 0;
     const nx = next; next = null; teardown(nx);
@@ -149,7 +147,7 @@
     else if (!s && session && !session.closed) return;
     const wasShown = !!(s && s.shown);
     if (s) { session = null; teardown(s); }
-    if (!wanted() || !(App.me && App.me.simliFace)) { fail(why); return; }
+    if (!wanted() || !(App.me && App.me.simliFace) || blockedByLocation()) { fail(why); return; }
     if (wasShown) retry.n = 0; // funzionava: si riparte da capo con i tentativi
     if (retry.n >= RETRY_MAX) { fail(why || 'Video non disponibile'); return; }
     if (!next) show(false); // intanto la foto con la bocca sull'audio (la voce resta quella locale)
@@ -176,14 +174,14 @@
   }
   function wanted() { return !!(App.call && App.call.active && App.call.mode === 'video' && document.visibilityState !== 'hidden'); }
   function prime(video) {
-    video.muted = true; video.defaultMuted = true; video.autoplay = true; video.playsInline = true;
+    video.muted = true; video.defaultMuted = true; video.volume = 0; video.autoplay = true; video.playsInline = true;
     video.setAttribute('playsinline', ''); video.setAttribute('webkit-playsinline', '');
     video.setAttribute('muted', ''); video.setAttribute('autoplay', '');
     try { const p = video.play(); if (p && p.catch) p.catch(() => {}); } catch { /* fuori dal gesto */ }
   }
   function reveal(s) {
     const video = document.getElementById('simli-video');
-    if (!s || s.closed || session !== s || !wanted() || !video || !video.srcObject) return;
+    if (!s || s.closed || session !== s || !wanted() || blockedByLocation() || !video || !video.srcObject) return;
     s.shown = true; retry.n = 0;
     show(true);
     note('', 'clear');
@@ -246,7 +244,7 @@
   async function start() {
     if (!(App.me && App.me.simliFace)) { close(); return false; } // v2d-46: nessun volto di Ira pronto -> foto con la bocca sull'audio
     // v2d-66: mai Simli insieme ai clip di luogo (un solo strato visivo).
-    try { if (App.locationCall && ((App.locationCall.usingClips && App.locationCall.usingClips()) || (App.locationCall.place && App.locationCall.place()))) { close(); return false; } } catch {}
+    if (blockedByLocation()) { close(); return false; }
     if (!wanted()) return false;
     if (session && !session.closed) return true;
     if (starting) return starting;
@@ -261,16 +259,19 @@
     if (!asHandover && !(session && session.shown)) note('Connessione video…', 'wait');
     let s = null;
     const bad = (why, permanent) => { if (permanent || !s) { if (asHandover) return false; if (permanent) { fail(why); return false; } } ended(s, why); return false; };
+    const gen = connGen;
+    const stale = () => gen !== connGen;
     const run = (async () => {
       let data;
       try { data = await App.api('/api/simli/session', { method: 'POST', body: {} }); }
       catch (e) {
-        if (asHandover) return false;
+        if (stale() || asHandover) return false;
         const why = (e && e.message) || 'Video non disponibile';
         if (e && PERMANENT.has(e.status)) { fail(why); return false; }
         ended(null, why); return false;
       }
-      if (!wanted()) { if (!asHandover) fail('Video non disponibile'); return false; }
+      if (stale()) return false;
+      if (!wanted() || blockedByLocation()) { if (!asHandover) fail('Video non disponibile'); return false; }
       if (!data || !data.session_token) { if (!asHandover) fail(data && data.error ? data.error : 'Video non disponibile'); return false; }
       if (!video || !window.RTCPeerConnection || !window.WebSocket) { if (!asHandover) fail('Questo browser non mostra il video'); return false; }
       const pc = new RTCPeerConnection({ iceServers: data.iceServers || [{ urls: ['stun:stun.l.google.com:19302'] }] });
@@ -284,6 +285,7 @@
       pc.addEventListener('track', (evt) => {
         if (!evt.track || evt.track.kind !== 'video' || !evt.streams || !evt.streams[0] || s.closed) return;
         s.stream = evt.streams[0];
+        if (stale() || blockedByLocation() || !wanted()) { teardown(s); return; }
         if (session === s) { video.srcObject = evt.streams[0]; prime(video); watch(video, s); }
         else if (next === s) promote(s);
       });
@@ -294,11 +296,12 @@
         ws.addEventListener('open', res, { once: true });
         ws.addEventListener('error', () => rej(new Error('Collegamento video non riuscito')), { once: true });
       });
-      if (s.closed) return false;
-      if (!wanted()) { close(); return false; }
+      if (s.closed || stale()) return false;
+      if (!wanted() || blockedByLocation()) { close(); return false; }
       await pc.setLocalDescription(await pc.createOffer());
       await iceGathered(pc);
-      if (s.closed || ws.readyState !== 1) return false;
+      if (s.closed || stale() || ws.readyState !== 1) return false;
+      if (!wanted() || blockedByLocation()) { close(); return false; }
       ws.send(JSON.stringify({ type: pc.localDescription.type, sdp: pc.localDescription.sdp }));
       return true;
     })();
@@ -314,6 +317,7 @@
 
   App.simli = {
     start, stop: close,
+    blockedByLocation,
     active: () => !!(session && !session.closed),
     ready: () => !!(session && session.ready),
     log: () => lines.slice(),
