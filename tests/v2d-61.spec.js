@@ -29,7 +29,7 @@ const vis = (id) => {
 test('v2d-61: cache e tema scuro dell’elenco, chat inattive in grigio, niente Impostazioni', async ({ page, request, browserName }) => {
   test.skip(browserName === 'webkit', 'Questo WebKit chiude il processo aprendo la Home. Il percorso è verificato su Chromium.');
   const sw = await (await request.get('/sw.js')).text();
-  expect(sw).toMatch(/const CACHE = 'app-privata-v2d-(62|63|64|65|65b)'/);
+  expect(sw).toMatch(/const CACHE = 'app-privata-v2d-(6[2-6]|65b)'/);
   expect(sw).not.toContain("const CACHE = 'app-privata-v2d-61'");
 
   await disableSw(page);

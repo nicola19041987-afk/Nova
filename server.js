@@ -3489,6 +3489,50 @@ app.get('/api/locations/:place/:file', auth, (req, res) => {
   sendPrivateFile(req, res, file);
 });
 
+// v2d-66: memoria dei gesti (metadati + conteggi d'uso, niente crescita di file media).
+const motionMem = require('./lib/motion-memory');
+const motionMemFile = (u) => path.join(userDir(u), 'motion-memory.json');
+function catalogLocationUrls() {
+  const urls = new Set();
+  const idx = locationIndex();
+  for (const p of idx.places || []) {
+    const pack = p && p.id ? locationPack(p.id) : null;
+    if (pack && pack.clips) for (const c of pack.clips) if (c && c.url) urls.add(c.url);
+  }
+  return urls;
+}
+function emptyMotionMem() { return { v: 1, clips: {} }; }
+function loadMotionMem(u) {
+  const raw = readJSON(motionMemFile(u), emptyMotionMem()) || emptyMotionMem();
+  const clips = raw && raw.clips && typeof raw.clips === 'object' && !Array.isArray(raw.clips) ? raw.clips : {};
+  return { v: 1, clips };
+}
+function publicMotionMem(u) {
+  const catalog = catalogLocationUrls();
+  const mem = loadMotionMem(u);
+  const clips = motionMem.evict(mem.clips, { cap: motionMem.CAP, catalog });
+  const out = {};
+  for (const url of catalog) {
+    const e = clips[url] || {};
+    out[url] = { playCount: Number(e.playCount) || 0, lastPlayedAt: e.lastPlayedAt || null };
+  }
+  return { v: 1, cap: motionMem.CAP, clips: out };
+}
+app.get('/api/motion-memory', auth, (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.json(publicMotionMem(req.user));
+});
+app.post('/api/motion-memory/play', auth, (req, res) => {
+  const url = String((req.body && req.body.url) || '');
+  const catalog = catalogLocationUrls();
+  if (!motionMem.allowedUrl(url, catalog)) return res.status(400).json({ error: 'URL non consentito' });
+  return mutateJSON(motionMemFile(req.user), emptyMotionMem(), (cur) => {
+    const now = new Date().toISOString();
+    const clips = motionMem.recordPlay((cur && cur.clips) || {}, url, now);
+    return { v: 1, clips: motionMem.evict(clips, { cap: motionMem.CAP, catalog }) };
+  }).then(() => res.json(publicMotionMem(req.user)));
+});
+
 app.get('/api/actions', auth, (req, res) => {
   const adult = adultChat();
   res.json({ video: !!VIDEO_PATH, adult, seconds: ACTION_SECONDS,

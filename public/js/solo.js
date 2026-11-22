@@ -210,7 +210,7 @@
       talkClips: () => talkClipsOn(),
       speaking: () => speakingAudio(), // v2d-37: i clip «parla» solo mentre parla, cambio immediato
       onStall: () => { if (App.net) App.net.stall(); }, // v2d-36: clip lenti -> qualità più leggera
-      onClip: () => { const st = document.getElementById('stage'); if (st && motionOn()) st.classList.add('has-motion'); },
+      onClip: (clip) => { const st = document.getElementById('stage'); if (st && motionOn()) st.classList.add('has-motion'); if (App.motionMemory && App.motionMemory.record) App.motionMemory.record(clip); },
       onFail: () => { if (App.net) App.net.down('still', 'clip bloccati'); const st = document.getElementById('stage'); if (st) setTimeout(() => st.classList.remove('has-motion'), window.MotionGraph.XFADE_MS + 30); }, // v2d-32: clip bloccati -> foto; v2d-36: e qualità più leggera
     });
     App.motionPlayer.noPrune = true; // v2d-36: si scaricano solo i clip del look attuale, gli altri restano in cache
@@ -237,7 +237,8 @@
     stage.classList.toggle('loc-call', locOn);
     // v2d-33: si suonano solo i clip del look attuale (vestito/capelli/trucco); in cache restano tutti
     // In videochiamata, se c'è un pacchetto luogo, quei clip (Ira già nella scena) hanno la precedenza.
-    const all = locLocked ? App.locationCall.lib() : ((App.call && App.call.active) ? [] : (motionOn() && ch && G ? G.libraryOf(ch) : []));
+    const all0 = locLocked ? App.locationCall.lib() : ((App.call && App.call.active) ? [] : (motionOn() && ch && G ? G.libraryOf(ch) : []));
+    const all = (App.motionMemory && App.motionMemory.apply) ? App.motionMemory.apply(all0) : all0;
     const look0 = locOn ? all : (all.length ? lookLib(ch) : all);
     // v2d-36: qualità secondo la connessione (std / lite / still). Con 'still' niente clip: la foto con un respiro leggero.
     const net = App.net || window.NovaNet;

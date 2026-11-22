@@ -72,7 +72,7 @@ async function openIraChat(page) {
 
 test('v2d-64: cache del service worker app-privata-v2d-64', async ({ request }) => {
   const sw = await (await request.get('/sw.js')).text();
-  expect(sw).toMatch(/const CACHE = 'app-privata-v2d-(6[45]|65b)'/);
+  expect(sw).toMatch(/const CACHE = 'app-privata-v2d-(6[4-6]|65b)'/);
   expect(sw).not.toContain("const CACHE = 'app-privata-v2d-63'");
   expect(sw).toContain('/js/location-call.js');
 });

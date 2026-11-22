@@ -64,6 +64,7 @@ App.boot = async function () {
   await App.loadChars();
   App.editor.init(); App.voice.init();
   await App.account.load();
+  try { if (App.motionMemory && App.motionMemory.load) await App.motionMemory.load(); } catch (e) { console.warn(e); }
   App.chat.renderList();
   try { if (App.solo) await App.solo.boot(); } catch (e) { console.warn(e); }
   try { App.startLiveDefaults(); } catch (e) { console.warn(e); }

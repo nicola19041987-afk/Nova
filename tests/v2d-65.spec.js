@@ -11,7 +11,7 @@ const OFFICIAL = '/api/avatars/c2d6200000000001.jpg';
 
 test('v2d-65: cache del service worker, all\'attivazione si cancellano tutte le cache vecchie (anche nova-motion)', async ({ request }) => {
   const sw = await (await request.get('/sw.js')).text();
-  expect(sw).toMatch(/const CACHE = 'app-privata-v2d-65b'/);
+  expect(sw).toMatch(/const CACHE = 'app-privata-v2d-(65|65b|66)'/);
   expect(sw).not.toContain("const CACHE = 'app-privata-v2d-64'");
   expect(sw).toContain('keys.filter((k) => k !== CACHE)');
   expect(sw).not.toContain("!k.startsWith('nova-motion-')");

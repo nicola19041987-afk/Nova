@@ -3,10 +3,26 @@
   "label": "Cucina",
   "ready": true,
   "framing": "close",
-  "still": "IRA-CALL-CUCINA-v02.jpg",
-  "notes": "Ira già nella scena, still ufficiale/approvata, clip 9:16 720p muti image-to-video da quella still. Inquadratura viso+spalle. Nessun testo in sovrimpressione.",
+  "still": "IRA-CALL-CUCINA-v03.jpg",
+  "notes": "Ira già nella scena, still ufficiale/approvata con tatuaggio fine-line mandala sulla spalla e braccio destri. Clip 9:16 720p muti image-to-video da quella still. Inquadratura viso+spalle. Nessun testo in sovrimpressione.",
   "clips": [
-    { "id": "cucina-idle-listen", "file": "cucina-idle-listen.mp4", "kind": "base", "from": "petto", "to": "petto", "label": "Ascolto", "weight": 1 },
-    { "id": "cucina-talk", "file": "cucina-talk.mp4", "kind": "parla", "from": "petto", "to": "petto", "label": "Parla", "weight": 1 }
+    {
+      "id": "cucina-idle-listen",
+      "file": "cucina-idle-listen.mp4",
+      "kind": "base",
+      "from": "petto",
+      "to": "petto",
+      "label": "Ascolto",
+      "weight": 1
+    },
+    {
+      "id": "cucina-talk",
+      "file": "cucina-talk.mp4",
+      "kind": "parla",
+      "from": "petto",
+      "to": "petto",
+      "label": "Parla",
+      "weight": 1
+    }
   ]
 }

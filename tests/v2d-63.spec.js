@@ -85,7 +85,7 @@ test('v2d-63: cache, pacchetti pronti, prima chiamata showroom, rotazione persis
   fs.mkdirSync(SHOT, { recursive: true });
 
   const sw = await (await request.get('/sw.js')).text();
-  expect(sw).toMatch(/const CACHE = 'app-privata-v2d-(6[3-5]|65b)'/);
+  expect(sw).toMatch(/const CACHE = 'app-privata-v2d-(6[3-6]|65b)'/);
   expect(sw).toContain('/js/location-call.js');
   expect(sw).not.toContain("const CACHE = 'app-privata-v2d-62'");
 

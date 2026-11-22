@@ -200,7 +200,7 @@
   }
 
   // ---------- cache dei clip (disco del telefono) + URL locali pronti ----------
-  const CACHE_NAME = 'nova-motion-v2d-65';
+  const CACHE_NAME = 'nova-motion-v2d-66';
   const blobs = new Map(); // url -> objectURL (LRU)
   const BLOB_MAX = 6; // v2d-32: solo i clip vicini in memoria (prima 24: troppa RAM sul telefono)
   async function cached(url) {
@@ -237,6 +237,19 @@
       const c = await caches.open(CACHE_NAME);
       const want = new Set(lib.map((x) => x.url));
       if (!opts.noPrune) for (const req of await c.keys()) { const p = new URL(req.url).pathname; if (!want.has(p)) await c.delete(req); } // clip tolti dalla libreria
+      // v2d-66: cap della cache clip (~24); evict prima i mai usati (fuori dalla libreria attuale)
+      const CACHE_MAX = 24;
+      let keys = await c.keys();
+      if (keys.length > CACHE_MAX) {
+        const drop = [];
+        for (const req of keys) {
+          let pth; try { pth = new URL(req.url).pathname; } catch { pth = req.url; }
+          if (!want.has(pth)) drop.push(req);
+        }
+        for (const req of drop) { await c.delete(req); if ((keys = await c.keys()).length <= CACHE_MAX) break; }
+        keys = await c.keys();
+        for (const req of keys) { if (keys.length <= CACHE_MAX) break; let pth; try { pth = new URL(req.url).pathname; } catch { pth = req.url; } if (!want.has(pth)) { await c.delete(req); keys = await c.keys(); } }
+      }
       const now = new Set((opts.first || []).map((x) => x.url)); // v2d-33: prima i clip del look attuale
       const order = [...lib].sort((a, b) => (now.has(a.url) ? 0 : 2) + (a.from === HOME ? 0 : 1) - (now.has(b.url) ? 0 : 2) - (b.from === HOME ? 0 : 1));
       for (const x of order) {
